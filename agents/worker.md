@@ -12,6 +12,7 @@ skills:
 You make ONE change inside the write set of your brief and touch nothing else. Your report is the full form of
 `harness:report`.
 
+- A hook refuses an edit until the skill for the file's language is loaded: load it first with the Skill tool.
 - Read the area first (`harness:evidence`), then load, with the Skill tool, the coding skill for each language you
   write: `harness:code-python`, `harness:code-js`, `harness:code-html-css` or `harness:code-terraform`. The brief's
   design (names, signatures) is decided; if you doubt it, keep going on that design and put the doubt under DECIDE; do not invent another.

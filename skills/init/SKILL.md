@@ -48,6 +48,7 @@ Every key is optional; the key's presence turns its rule on. `{}` turns on the r
 {"guard": {"scratch": "scratch", "no_tmp": true}, "delegate": {"write_allow": [], "bash_allow": []}, "brief": {}}
 ```
 
+- `skill_gate`: init writes the template's defaults (`.py` to `harness:code-python`, JS and TS to `harness:code-js`, `.html` and `.css` to `harness:code-html-css`, `.tf` and `.tfvars` to `harness:code-terraform`); drop the entries of languages the project lacks.
 - `guard`: `scratch` is the throwaway folder; `no_tmp` refuses writes under `/tmp`.
 - `delegate`: the main session may edit only paths matching a `write_allow` glob (relative to the project root, matched
   with fnmatch) and may run Bash only when every simple command starts with a default or `bash_allow` prefix. A prefix

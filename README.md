@@ -60,7 +60,7 @@ under `.claude/rules/`.
 - **Without `.harness.json`** only the always-on safety guard runs: no `rm` or other deletes, no force push, no
   `git reset --hard`, no unquoted globs, no `sleep` in a polling loop. Nothing else is on.
 - **With `.harness.json`** (strict mode) the hooks also track the turn, check sub-agent reports and budgets, and each
-  key you set turns on its rule: package bans, a scratch folder, no `/tmp`, a Python lock, delegation, brief checks.
+  key you set turns on its rule: package bans, a scratch folder, no `/tmp`, a Python lock, delegation, brief checks, skills loaded before edits.
   See the [keys table](#harnessjson-keys).
 
 ### Update
@@ -148,6 +148,7 @@ A brief may step a role up to a stronger model (`models` skill).
 | `budget.py` | PreToolUse, every tool | Strict. Refuses every tool call of a sub-agent that is past its time budget, so it must send a partial report |
 | `guard.py` | PreToolUse: Bash, Write, Edit, NotebookEdit | Always: blocks `rm` and other deletes, force push, `git reset --hard`, unquoted globs, sleep polling. Strict and configured: blocks package changes, writes under `/tmp`, shell writes outside scratch, Python run outside a lock |
 | `delegate.py` | PreToolUse: same tools | The `delegate` key. Refuses edits and unlisted Bash from the main session |
+| `skill_gate.py` | PreToolUse: Edit, Write, NotebookEdit | The `skill_gate` key. Refuses an edit of a file until the calling agent has loaded the skill for that kind of file; scratch, unmatched files and paths outside the project pass |
 | `brief_lint.py` | PreToolUse: Agent, Task | The `brief` key. A brief for a role must hold its required lines, such as `Goal:` |
 | `turn.py` | PostToolUse, UserPromptSubmit, Stop | Strict. Tracks the turn; blocks a stop while the job status, lessons or feedback are left open |
 | `report_gate.py` | SubagentStop | Strict. Sends a bad report back up to 3 times, checks its claims against the transcript, writes the ledger |
@@ -184,6 +185,7 @@ Every key is optional; `{}` turns on the report and turn gates alone.
 | `delegate` | Turns on the main-session rule; `write_allow` globs it may edit, `bash_allow` extra command prefixes |
 | `brief` | Turns on brief checks; `required` maps a role (or `*`) to the line labels it needs |
 | `report` | `short` and `full` add agent types that owe a report; `causes` adds problem causes |
+| `skill_gate` | Maps a glob (a name pattern, or a root-relative path when it holds `/`) to the skills an agent must have loaded before editing a matching file; `/harness:init` writes defaults |
 | `budget` | Maps a role to minutes of working time |
 | `stop` | `min_calls`, the status `headings` a long turn must end with, and `rule_paths` that back a lesson |
 

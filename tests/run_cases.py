@@ -1310,6 +1310,58 @@ LOOP_CASES = [
 ]
 
 
+# skill gate
+
+
+def skill_call(skill: str, /) -> dict:  # keys are data
+    return assistant({"type": "tool_use", "id": f"t-{skill}", "name": "Skill", "input": {"skill": skill}})
+
+
+def skill_lines(*skills: str) -> str:
+    return "".join(json.dumps(skill_call(skill)) + "\n" for skill in skills)
+
+
+def skill_gate(name: str, path: str, blocks: bool, text: str = "", /, *, agent: str = "", main: tuple[str, ...] = (), **options: object) -> Case:  # keys are data
+    """An edit of `path`; `main` are the skills the session's transcript holds, `agent` the sub-agent's (a sub-agent call when set)."""
+
+    gate_config = {"guard": {"scratch": "scratch"}, "skill_gate": {"*.py": ["harness:code-python"], "*.css": ["harness:code-html-css"], "docs/*.md": ["write-docs"], "*.md": ["write-md"]}}
+    options.setdefault("config", gate_config)
+    event = {"tool_name": "Edit", "tool_input": {"file_path": path}, "transcript_path": "transcript.jsonl"}
+    if agent:
+        event |= {"agent_id": "a1", "transcript_path": "project/s.jsonl"}
+        options["files"] = (("s/subagents/agent-a1.jsonl", agent),)
+    options.setdefault("transcript", tuple(skill_call(skill) for skill in main))
+    event |= options.pop("event", {})
+
+    return Case(name, ("skill_gate.py",), event, blocks, text, **options)
+
+
+SKILL_GATE_CASES = [
+    skill_gate("skill gate: an edit with the skill missing is refused", "app.py", True, "Load the skill harness:code-python with the Skill tool before editing app.py, then repeat the edit."),
+    skill_gate("skill gate: a prefixed Skill call allows", "app.py", False, main=("harness:code-python",)),
+    skill_gate("skill gate: a bare Skill call allows", "app.py", False, main=("code-python",)),
+    skill_gate("skill gate: another skill does not allow", "app.py", True, main=("code-js",)),
+    skill_gate("skill gate: no key means no rule", "app.py", False, config={}),
+    skill_gate("skill gate: no project means no rule", "app.py", False, config=None),
+    skill_gate("skill gate: scratch is exempt", "scratch/t/x.py", False),
+    skill_gate("skill gate: an unmatched extension passes", "notes.txt", False),
+    skill_gate("skill gate: a path outside the project passes", "@ROOT@/elsewhere/app.py", False),
+    skill_gate("skill gate: a nested file matches a bare pattern", "pkg/deep/app.py", True, "pkg/deep/app.py"),
+    skill_gate("skill gate: a missing transcript lets the call run", "app.py", False, event={"transcript_path": "missing.jsonl"}),
+    skill_gate("skill gate: a broken config lets the call run", "app.py", False, config={"skill_gate": ["not", "a map"]}),
+    skill_gate("skill gate: a sub-agent reads its own transcript", "app.py", False, agent=skill_lines("harness:code-python")),
+    skill_gate("skill gate: a sub-agent does not borrow the session's skill", "app.py", True, "harness:code-python", agent=skill_lines("code-js"), main=("harness:code-python",)),
+    skill_gate("skill gate: the main session with an empty transcript is refused", "app.py", True, "harness:code-python"),
+    skill_gate("skill gate: a preloaded skill counts", "app.py", False, agent=json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": "<command-message>code-python</command-message>\n<command-name>harness:code-python</command-name>"}]}}) + "\n"),
+    skill_gate("skill gate: a slash pattern beats a bare one", "docs/a.md", True, "write-docs"),
+    skill_gate("skill gate: the winning pattern's skills are enough", "docs/a.md", False, main=("write-docs",)),
+    skill_gate("skill gate: a bare pattern applies outside the slash one", "a.md", True, "write-md"),
+    skill_gate("skill gate: every matching bare pattern is required", "app.py", True, "harness:code-html-css", config={"skill_gate": {"*.py": ["harness:code-python"], "app.*": ["harness:code-html-css"]}}, main=("code-python",)),
+    skill_gate("skill gate: the union is allowed when both are loaded", "app.py", False, config={"skill_gate": {"*.py": ["harness:code-python"], "app.*": ["harness:code-html-css"]}}, main=("code-python", "harness:code-html-css")),
+    skill_gate("skill gate: one line per missing skill", "app.py", True, "harness:code-html-css", config={"skill_gate": {"*.py": ["harness:code-python", "harness:code-html-css"]}}, main=("code-python",)),
+]
+
+
 def resolve(root: Path, name: str, /) -> Path:
     """A case's file: under the data folder when its name starts with `data/`, else under the project."""
 
@@ -1408,7 +1460,7 @@ def main() -> int:
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     arguments = parser.parse_args()
-    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(JOBS) as pool:

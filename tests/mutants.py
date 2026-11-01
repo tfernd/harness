@@ -176,6 +176,11 @@ MUTANTS = (
     ("handled-no-file-named-accepted", "turn.py", "if not name:\n        return", "if False:\n        return"),
     ("rejected-reason-length-ignored", "turn.py", "is_short = len(reason.split()) < MIN_REASON_WORDS", "is_short = False"),
     ("rejected-two-words-pass", "turn.py", "MIN_REASON_WORDS = 3", "MIN_REASON_WORDS = 2"),
+    # The skill gate.
+    ("skill-gate-always-allows", "skill_gate.py", "return 2 if missing else 0", "return 0"),
+    ("skill-gate-scratch-not-exempt", "skill_gate.py", "if scratch and (absolute == scratch", "if False and (absolute == scratch"),
+    ("skill-gate-bare-name-refused", "skill_gate.py", "return skill.removeprefix(PLUGIN_PREFIX)", "return skill"),
+    ('skill-gate-reads-the-session-transcript', "skill_gate.py", 'if event.get("agent_id"):\n        return get_agent_path(event)', 'if False:\n        return get_agent_path(event)'),
     # The folders.
     ("feedback-in-the-dot-folder", "common.py", 'FEEDBACK_FOLDER = "harness-feedback"', 'FEEDBACK_FOLDER = ".harness"'),
 )
