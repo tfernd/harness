@@ -29,6 +29,7 @@ not the reviewer's: see the last section.
 - **B:** a missing or futile test, a breach of layout or style the unit introduced, resource use past the budget. A and
   B block acceptance.
 - **C:** wording and taste. Never blocks.
+- A review reports A only, unless its brief asks for B or C: a long list costs more to act on than it finds.
 - A breach already present before the unit is **inherited**: listed with its rule, never blocking.
 
 ## A finding

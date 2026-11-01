@@ -5,29 +5,27 @@ description: Load when framing a job. Picks the job shape (scout fan-out, bug fi
 
 # Job shapes and size tiers
 
-Pick the shape, then the tier. The main session follows `harness:orchestrator`; each step below goes to an agent.
+Pick the shape, then the tier. The main session follows `harness:orchestrator`: it does each step itself unless the
+step names an agent or its cost rules say one pays.
 A **unit** is one change that one worker can finish inside one write set.
 
 ## Size tiers
 
 | Tier | Is | Steps |
 |---|---|---|
-| Small | one file, no public contract | worker, gates |
-| Medium | one unit across 2 or more files, no public contract | read-back, brief, one cold read, worker, gates, review |
+| Small | one file, no public contract | edit, gates |
+| Medium | one unit across 2 or more files, no public contract | read-back, edit (a script if repetitive), run it, gates, one reviewer |
 | Large | several units, or any public contract | the numbered steps below |
 
 Large steps, each with its owner:
 
-1. Read-back (main session).
-2. Spec (a worker writes it).
-3. Two cold readers.
-4. Spec review (reviewer).
-5. Parallel workers.
-6. Gates (runner).
-7. Audit of each report (auditor).
-8. Review (reviewer), then fix (the unit's worker).
-9. Integrate (one worker).
-10. Full test (runner).
+1. Read-back and a budget for the round (main session).
+2. Spec (main session), with one cold reader when a worker will build from it.
+3. A script for everything mechanical (main session).
+4. The plumbing and every serial step (main session); parallel workers only for units that are independent and large.
+5. Run the product: a smoke test first, then the gates (main session).
+6. One review of the whole diff, high severity only (reviewer), then each fix (main session).
+7. Full test (main session, or a runner when it is long).
 
 The read-back is one sentence of what stays and what goes (`harness:orchestrator`). The gates are the project's checks,
 named in its `AGENTS.md`.
@@ -36,6 +34,8 @@ named in its `AGENTS.md`.
 
 Use when the job rests on facts nobody has checked.
 
+A fact one `rg` or one read settles is read here, without a scout.
+
 1. One `scout` per question, Haiku, all in one message. Each answers one narrow question with `path:line` evidence
    (`harness:evidence`).
 2. Check each answer against the tree before using it. Two scouts that disagree are re-asked with the other's claim.
@@ -43,9 +43,9 @@ Use when the job rests on facts nobody has checked.
 
 ## Bug fix: a failing test first
 
-1. A worker writes a test that fails for the reported cause, runs it, and reports the failure text.
-2. A different worker, in a second brief, fixes the code with the test unchanged.
-3. Gates; reviewer. The test stays.
+1. Write a test that fails for the reported cause, and run it.
+2. Fix the code with the test unchanged.
+3. Gates. The test stays.
 
 A bug claim is probed before any fix (`harness:evidence`).
 
@@ -53,7 +53,8 @@ A bug claim is probed before any fix (`harness:evidence`).
 
 1. Write the spec (`harness:spec`): goal, non-goals, decisions, write sets, judges.
 2. Cold read of the spec as a brief (`harness:cold-read`); settle the differences.
-3. Workers build against the judges. Reviewer reads against the spec (`harness:review`).
+3. Build against the judges, with workers only where parallel pays. Run the product, then one reviewer reads against
+   the spec (`harness:review`).
 
 ## Spike
 
@@ -72,12 +73,12 @@ Use when the way is unknown.
 Use when units are independent.
 
 1. Contract: one file naming each unit, its write set, names shared between units, the judges.
-2. Cold read of the contract (two readers on a large job).
+2. Cold read of the contract.
 3. Disjoint write sets: no path appears in two. A change needed outside a write set is reported, not made.
 4. Workers run in one message, in the background.
-5. Check each unit's judges; audit each report (`harness:audit`).
-6. Integrate: one agent wires the units together and owns the shared files.
-7. Audit the integration; run the full check through a `runner`.
+5. Check each unit's judges.
+6. Integrate: the main session wires the units together and owns the shared files.
+7. Run the product and the full check, then one reviewer reads the whole diff.
 
 ## Parallel Agent calls or the Workflow tool
 
@@ -95,7 +96,7 @@ Use when units are independent.
 - Never hold fast units for a slow one. Start each stage's units as soon as what they need exists; audit finished units while others still build.
 - Give the slowest unit its own write set and start it first, so it does not gate the rest.
 - A stronger model buys judgment, not speed: step up for a hard decision, not for a large job (`harness:models`).
-- Tell the owner the expected time at launch, and say so as soon as a unit runs over.
+- Tell the owner the expected time and tokens at launch, and say so as soon as a unit runs over.
 - Brief every agent to read and edit in bulk with one Python call per step, and to test once when its unit is done.
 
 The shape of a dynamic workflow script: `references/dynamic.md`.

@@ -6,16 +6,15 @@ description: Load to set a project up for the harness plugin. Writes .harness.js
 # Initialize a project
 
 The plugin cannot ship rules or a project `AGENTS.md`, so this skill writes them from `${CLAUDE_PLUGIN_ROOT}/templates/`.
-A worker does the writing (`harness:orchestrator`); the owner approves the result. A sub-agent cannot ask the owner, so
-the main session asks (step 2) and puts the answers in the worker's brief.
+The main session asks (step 2) and does the writing; the owner approves the result.
 
 ## Steps
 
 1. **Detect.** Check which targets exist first: `.harness.json`, `AGENTS.md`, `CLAUDE.md`, `.claude/rules/*`. Then read
    the project root: `ls`, and `rg --files -g '*.py' -g '*.ts' -g '*.js' -g '*.html' -g '*.css' -g '*.tf' | head`. Note
    the languages, the test folder and the check commands (Makefile, `package.json` scripts, CI files).
-2. **Ask** (main session, before briefing) only what the files do not settle: the scratch folder name, the check
-   commands, which folders the main session may write (`delegate.write_allow`). The answers go in the worker's brief.
+2. **Ask** only what the files do not settle: the scratch folder name, the check
+   commands.
 3. **Pick the templates.**
 
    | Project has | Copy |
@@ -45,12 +44,12 @@ the main session asks (step 2) and puts the answers in the worker's brief.
 Every key is optional; the key's presence turns its rule on. `{}` turns on the report and turn gates alone.
 
 ```json
-{"guard": {"scratch": "scratch", "no_tmp": true}, "delegate": {"write_allow": [], "bash_allow": []}, "brief": {}}
+{"guard": {"scratch": "scratch", "no_tmp": true}, "brief": {}}
 ```
 
 - `skill_gate`: init writes the template's defaults (`.py` to `harness:code-python`, JS and TS to `harness:code-js`, `.html` and `.css` to `harness:code-html-css`, `.tf` and `.tfvars` to `harness:code-terraform`); drop the entries of languages the project lacks.
 - `guard`: `scratch` is the throwaway folder; `no_tmp` refuses writes under `/tmp`.
-- `delegate`: the main session may edit only paths matching a `write_allow` glob (relative to the project root, matched
+- `delegate` (optional, not in the starter; add it only to make agents do every edit): the main session may edit only paths matching a `write_allow` glob (relative to the project root, matched
   with fnmatch) and may run Bash only when every simple command starts with a default or `bash_allow` prefix. A prefix
   matches whole words: `git log` matches `git log -3`, not `git logs`. Default prefixes: `git status`, `git log`,
   `git diff`, `git show`, `git add`, `git commit`, `gh`, `ls`, `rg`, `head`, `wc` (the hook's

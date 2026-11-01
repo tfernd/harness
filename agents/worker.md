@@ -1,6 +1,6 @@
 ---
 name: worker
-description: Makes one change inside a write set, with its tests, and checks it with the brief's judges. Use for every edit; the brief names the write set, the judge and the model step-up if one is needed.
+description: Makes one change inside a write set, with its tests, and checks it with the brief's judges. Use for a large, independent unit worth a cold start, not for a serial step or a small edit; the brief names the write set, the judge and the model step-up if one is needed.
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 model: sonnet
 skills:

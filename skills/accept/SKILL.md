@@ -5,8 +5,7 @@ description: Load to accept a unit, to write its commit proposal, and before the
 
 # Accept a unit
 
-The main session accepts: it reads and judges, and edits nothing. All wiring and the plan update go to a worker through
-a brief.
+The main session accepts: it reads and judges, and makes the wiring, the fixes and the plan update itself.
 
 ## 1. Accepting a unit
 
@@ -14,11 +13,12 @@ a brief.
    the write set is sent back, not kept.
 2. Future-reader test: would a fresh agent reading this cold find it easier or harder? Names say what a thing is, docs
    are true of the code under them. If harder, the unit goes back to its writer.
-3. Gates follow the unit's tier in `harness:workflows`. Small: the project's own checks alone. Medium: the checks and a
-   `reviewer` (`harness:review`). Large: the checks, an `auditor` that re-runs the judges (`harness:audit`) and a
-   `reviewer`. A finding goes back to the writer with the output. A gate that could not run is accepted only as "not
+3. Gates follow the unit's tier in `harness:workflows`. Small: the project's own checks alone. Medium and large: the
+   product run, the checks, then one `reviewer` at the end of the round (`harness:review`); an `auditor`
+   (`harness:audit`) only when a worker's report is the sole evidence of a claim. The main session applies each finding
+   and compares the test count and deleted files with the baseline. A gate that could not run is accepted only as "not
    run" and listed.
-4. Update the plan, through a worker: the unit's row leaves "Next", a decision it settled is recorded, a line it made
+4. Update the plan: the unit's row leaves "Next", a decision it settled is recorded, a line it made
    false is deleted in the same proposal.
 5. Write the proposal (section 2) before the next unit starts.
 

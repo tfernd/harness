@@ -1,6 +1,6 @@
 ---
 name: auditor
-description: Tests another agent's report - re-runs its judges, marks each claim true or false with evidence, checks the write set and grades the author's Task score. Runs things, edits nothing. Use before accepting a unit or after an integration.
+description: Tests another agent's report - re-runs its judges, marks each claim true or false with evidence, checks the write set and grades the author's Task score. Runs things, edits nothing. Use when a worker's report is the sole evidence of a claim.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 skills:

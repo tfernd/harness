@@ -1,9 +1,8 @@
 # harness
 
-A Claude Code plugin for spec-driven work with several agents. The main session does not edit code. It writes briefs,
-hands them to sub-agents, and judges what comes back. No single agent is trusted: every unit is specified, reviewed,
-implemented, audited, fixed, integrated and tested by different agents, and the rules that keep this honest are hooks,
-not advice.
+A Claude Code plugin for spec-driven work, alone or with several agents. The main session does the work itself by
+default, uses a script for anything repetitive, and spawns agents only where parallel work pays. Its reports, gates and
+safety rules are hooks, not advice.
 
 This repo is both the plugin and its own marketplace. Rules for people who work on the repo are in
 [AGENTS.md](AGENTS.md).
@@ -12,15 +11,16 @@ This repo is both the plugin and its own marketplace. Rules for people who work 
 
 The main session ("the orchestrator") loads the `orchestrator` skill and works in this order:
 
-1. **Spec** a large job in a file with goals, settled decisions, write sets and judges (`spec`, `cold-read`).
-2. **Review** the spec or brief with a reader that has no history.
-3. **Implement** with a `worker` that may edit only the files in its write set.
-4. **Audit** the worker's report with an `auditor` that re-runs the judges and marks each claim true or false.
-5. **Fix** failures by the steps in the `review` skill, then **integrate** the units and **test** the whole.
+1. **Spec** a large job in a file with goals, settled decisions, write sets and judges (`spec`, `cold-read`), and state
+   a budget for the round.
+2. **Script** the mechanical part, then **implement** directly; a `worker` takes only a large, independent unit.
+3. **Run** the product before any review: a smoke test, then the gates.
+4. **Review** once, at the end: one `reviewer` reads the whole diff and reports high-severity bugs.
+5. **Fix** each finding in the main session and **test** the whole.
 
-Example: to add a retry flag to a command-line tool, the main session briefs one worker with `Goal:`, `Write set:` and
-`Judge:` lines. The worker edits two files and runs the test. A reviewer reads the diff. An auditor re-runs the test and
-checks the worker did not touch a third file. Only then does the main session accept the unit.
+Example: to add a retry flag to a command-line tool, the main session edits two files, runs the tool and the test, and
+accepts the change. To move hundreds of files, it writes one codemod. To migrate five independent features, it writes the
+plumbing, then briefs five workers with `Goal:`, `Write set:` and `Judge:` lines.
 
 ## Install and update
 

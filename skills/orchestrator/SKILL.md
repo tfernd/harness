@@ -1,15 +1,33 @@
 ---
 name: orchestrator
-description: Load at the start of every main session. The main session frames, briefs, judges reports, accepts and talks to the owner, and delegates every edit and run to an agent. Holds the roles, the brief template, checkpoints and the learning loop. Sub-agents never load it.
+description: Load at the start of every main session. The main session works directly by default and uses scripts first, agents only where parallel work pays. Holds the cost rules, the roles, the brief template, checkpoints and the learning loop. Sub-agents never load it.
 ---
 
 # The orchestrator
 
-**The main session never does the work.** It frames, briefs, judges reports, accepts (`harness:accept`) and talks to the
-owner. It edits no file and runs no build or test; every edit and every run goes to an agent, a one-line fix included.
-Its own Bash is for reading state (`git status`, `git log`, `ls`, `rg`). Where a project turns on the `delegate` key of
-`.harness.json`, a hook refuses the rest. Models per role: `harness:models`. Job shapes and size tiers:
-`harness:workflows`.
+**The main session does the work itself by default.** It has the context loaded, so it edits, runs and tests directly,
+accepts (`harness:accept`) and talks to the owner. An agent costs a cold start and a brief, so one is spawned only where
+the rules below say it pays. A project that sets the `delegate` key of `.harness.json` has a hook that refuses the main
+session's edits and runs: there, and only there, they go to agents. Models per role: `harness:models`. Job shapes and
+size tiers: `harness:workflows`.
+
+## What each round costs
+
+| Rule | In practice |
+|---|---|
+| **Script before agent** | Repetitive work (moves, renames, import rewrites, merges) is one codemod; agents get only what it cannot do |
+| **Edit directly** | A serial step stays here, where the context already is |
+| **Agents only where parallel pays** | Work that is truly independent and large; write the plumbing here first |
+| **Tight briefs** | Exact files, the contract and the done check, so an agent re-reads little |
+| **One round, one goal** | Never renames, contracts and clean-up together; small commits, each one usable |
+| **Run it first** | Start the product (a headless smoke test in the gate) before any review; polish waits until it runs |
+| **One reviewer at the end** | One read of the whole diff, high severity only (`harness:review`); the main session applies each fix |
+| **A budget per round** | State minutes and tokens up front; over it, stop, rethink and tell the owner |
+
+- Never hand a list of findings to one fixer. After any fix, compare the test count and the deleted files with the
+  baseline: a drop stops the round until it is explained.
+- A requested shape that fits badly (parallel Haikus, a dynamic workflow on mechanical work) is said to be a poor fit,
+  with the cheaper way and its cost, before it starts. The owner's word still decides.
 
 ## Start of a session
 
@@ -91,14 +109,14 @@ as not run. Fix the brief, then send it.
 
 ## Checkpoints
 
-After a batch or a big job: launch nothing new, run the project's full check through a `runner`, route the reports (the
+After a batch or a big job: launch nothing new, run the project's full check, route the reports (the
 loop below), give the owner the closing status (`harness:accept`), and go on only on their word.
 
 ## The learning loop
 
 1. Read the feedback of each report first: PROBLEMS MET, COMPLIANCE, FEEDBACK FOR THE ORCHESTRATOR. An auditor's Task grade of 3
    or less (the agent's own Task score where there is no audit) changes the brief template, the role or the skill it names.
-2. In the same turn, unasked, the orchestrator briefs a worker to write a prevention for each problem. A problem seen twice gets a hook or a gate,
+2. In the same turn, unasked, the orchestrator writes a prevention for each problem. A problem seen twice gets a hook or a gate,
    not a sentence (`harness:retro`).
 3. Each lesson has one home: a trap for every agent, the project `AGENTS.md`; a role's craft, `agents/`; writing, tests or
    review, the skill that owns it; a decision or open question, the plan file. A line an accepted change made false is
@@ -116,4 +134,4 @@ loop below), give the owner the closing status (`harness:accept`), and go on onl
 - Technical choices are the orchestrator's: decide and carry on. The owner decides direction, formats, deleting,
   pushing, installing and permissions.
 - Ask what must be true of the product, never which tests to use.
-- Settings files are written by an agent as a proposal in the scratch folder; the owner applies them.
+- Settings files are written as a proposal in the scratch folder; the owner applies them.
