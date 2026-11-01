@@ -97,6 +97,7 @@ text, and a determined or unusual command can get past them. A bug in a hook let
       "commands": ["bin/queue"],
       "free_env": "NO_QUEUE=",
       "free_scripts": ["bin/api_index.py"],
+      "free_prefixes": ["tools/", "tools."],
       "message": "this project's Python runs under its queue"
     }
   },

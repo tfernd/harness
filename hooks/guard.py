@@ -22,7 +22,8 @@ On when the project's `.harness.json` asks, under its `guard` key:
 7. `scratch`: the same shell writes into the project, outside that folder, and `mv` of a project file out of its place.
    Files change through the Edit and Write tools or a Python script; what Python code writes is not read.
 8. `lock`: `uv run python`, `uv run pytest` or the venv's python outside one of the `commands` (a queue for a GPU, say).
-   Allowed: `free_env` before the command, and the `free_scripts`. `message` is the refusal.
+   Allowed: `free_env` before the command, the `free_scripts`, and any script or `-m` module starting with a
+   `free_prefixes` entry. `message` is the refusal.
 
 Writing commands: redirects (`>`, `>>`, `&>`; not `2>&1`, `>&2` or `/dev/null` as a file), `tee`, `mkdir`, `touch`,
 `cp`, `mv`, `ln`, `install`, `rsync` (the destination), `sed -i` and `perl -i` (the existing files), `curl -o` and `-O`,
@@ -146,6 +147,7 @@ class Policy(NamedTuple):
     lock_commands: frozenset[str] = frozenset()
     free_env: str = ""
     free_scripts: frozenset[str] = frozenset()
+    free_prefixes: tuple[str, ...] = ()  # a script path or module name starting with one needs no lock
     lock_message: str = ""
 
 
@@ -169,6 +171,7 @@ def get_policy(cwd: str, /) -> Policy:
         lock_commands=frozenset(lock.get("commands", ())),
         free_env=lock.get("free_env", ""),
         free_scripts=frozenset(lock.get("free_scripts", ())),
+        free_prefixes=tuple(lock.get("free_prefixes", ())),
         lock_message=lock.get("message", ""),
     )
 
@@ -241,7 +244,9 @@ def is_python_run(command: Command, /) -> bool:
         return False
     script = next((argument for argument in rest if not argument.startswith("-")), "")
 
-    return script.removeprefix("./") not in POLICY.free_scripts
+    script = script.removeprefix("./")
+
+    return script not in POLICY.free_scripts and not script.startswith(POLICY.free_prefixes)
 
 
 def get_git_subcommand(arguments: list[str], /) -> str:

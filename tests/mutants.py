@@ -33,6 +33,7 @@ MUTANTS = (
     ("out-of-order-not-checked", "report_gate.py", 'problems.append(f"out of order: {heading}")', "pass"),
     ("git-reset-any", "guard.py", 'return subcommand == "reset" and "--hard" in arguments', 'return subcommand == "reset"'),
     ("blocks-not-reset-at-pass", "turn.py", 'blocks_path.write_text("0")\n    if problems:', "if problems:"),
+    ("free-prefixes-ignored", "guard.py", "and not script.startswith(POLICY.free_prefixes)", ""),
     # The shell reader.
     ("arithmetic-read-as-commands", "shell.py", 'if text.startswith("$((", start):', 'if False:'),
     ("arithmetic-substitution-not-read", "shell.py", "self.read_expansions(start + 3, end - 2)", "pass"),
