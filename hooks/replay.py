@@ -1,3 +1,10 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """Replay judge: run every Bash command of the owner's past sessions through the guard's always-on rules.
 
 Why: those rules run in every project, so a false refusal costs the most. This reads `~/.claude/projects/**/*.jsonl`,
@@ -5,7 +12,7 @@ read-only, runs the guard in no-project mode in-process, and prints the total, t
 so a person can judge which class is false. A command is counted once however many sessions hold it, and prints cut to
 120 characters on one line. It writes nothing. Stdlib only.
 
-python3 tests/replay.py [--root FOLDER] [--sample N] [--rule RULE] [--find TEXT]
+uv run --script hooks/replay.py [--root FOLDER] [--sample N] [--rule RULE] [--find TEXT]
 """
 
 from __future__ import annotations
@@ -20,9 +27,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
-
-from guard import find_command_breaches  # noqa: E402
+from guard import find_command_breaches
 
 MAX_SHOWN = 120
 # A line holds a Bash call only if it holds this text, which saves parsing most of the bytes.

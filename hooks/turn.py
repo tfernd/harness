@@ -1,20 +1,28 @@
-#!/usr/bin/env -S python3 -I
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """The main session's turn, in a project with `.harness.json`: `reset` at its start, `add` per call, `stop` at its end.
 
-`turn.py reset` (UserPromptSubmit) empties the call count and saves the state of the rule files. A task notification also
-fires UserPromptSubmit (probed in a headless run), so a count left for a status that is still due is kept. `turn.py add`
+`turn.py reset` (UserPromptSubmit) empties the call count and saves a hash of each rule file. A task notification also
+fires UserPromptSubmit (probed in a headless run); while a status is still due (a `deferred` mark exists), `reset` keeps the
+count and the saved hashes. `turn.py add`
 (PostToolUse on Agent, Task, Edit, Write) counts a call of the main session; a call that carries `agent_id` came from a
 sub-agent. `turn.py stop` (Stop) holds the turn, up to MAX_BLOCKS times, on three checks:
   - a turn with `min_calls` calls or more ends with the headings, unless a background agent of the session still runs:
     then the turn is a progress note, the count is kept, and the status is due once the last agent has finished;
-  - a closing Lessons section needs a rule file changed this turn, against the state saved at its start; a section that
+  - a closing Lessons section needs a rule file changed this turn: its hash now differs from the one saved at `reset` (contents only, no git); a section that
     defers its lessons fails the same way, and "Lessons: none" on a line of its own is the only way to have none. A rule
-    file dirty at the turn's start and committed in it is no change;
+    file edited before the turn's start and committed in it is no change, since only contents are compared;
   - each id this session filed in the project's `harness-feedback/inbox.md` needs a line in
-    `harness-feedback/handled.md`. Once the blocks run out, its open ids stop holding this session, after one warning.
+    `harness-feedback/handled.md`: `rule written in FILE`, where FILE exists and differs from its hash saved at `reset` (a file
+    outside the project needs only to exist), or `rejected: REASON` of at least 3 words. Once MAX_BLOCKS blocks are spent, the ids still open are released: one warning lists them and they no longer hold this session.
 
 `.harness.json` may set, under `stop`: `min_calls` (3), `headings`, `rule_paths` (files or folders whose change counts as
-a rule change; relative to the project, or absolute, as for this plugin's own checkout). `.claude/worktrees/` is no rule
+a rule change; relative to the project, or absolute for rules kept outside it, such as this plugin's own checkout). `.claude/worktrees/` is no rule
 path.
 """
 
@@ -27,9 +35,8 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from common import HANDLED as HANDLED_NAME, INBOX, data_folder, find_project, get_unfenced_lines  # noqa: E402
+# HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
+from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, data_folder, find_project, get_unfenced_lines
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
@@ -38,6 +45,7 @@ RULE_PATHS = ("AGENTS.md", "CLAUDE.md", ".claude", ".harness.json")
 NOT_RULES = {"settings.local.json"}
 # The folders under a rule path that hold no rule.
 NOT_RULE_FOLDERS = {"__pycache__", ".git"}
+# Read by index: [0] is the folder that holds worktrees, [1] the worktrees folder skipped inside it.
 WORKTREES = (".claude", "worktrees")
 MAX_BLOCKS = 3
 # The line that starts the Lessons section: a heading or a bold label, or a plain "Lessons:" label.
@@ -45,12 +53,13 @@ LESSONS = re.compile(r"^\s*((#+\s+|\*\*)Lessons?|Lessons?:)", re.I)
 # "Lessons: none" on a line of its own, with the colon inside or outside the bold markers.
 LESSONS_NONE = re.compile(r"^\s*(#+\s+)?\*{0,2}Lessons?\*{0,2}:\*{0,2}\s*none\b", re.I | re.M)
 SECTION_END = re.compile(r"^(#+[ \t]|\s*\*\*[^*]+\*\*)")
-# Words that put the lessons off to a later turn.
+# Words that put the lessons off to a later turn; a "unit" is one accepted piece of work, such as a worker's change.
 DEFERS = re.compile(r"next unit|next turn|next session|will add|to be written|will be written", re.I)
 # A tool id and the first status after it, which is its own notification's.
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
 FINISHED_STATUSES = {"completed", "failed", "killed"}
-HANDLED = re.compile(r"^([0-9a-f]{8}): (rule written in|rejected:)", re.M)
+HANDLED = re.compile(r"^([0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
+MIN_REASON_WORDS = 3
 ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+) ", re.M)
 
 
@@ -134,6 +143,7 @@ def count_running_agents(transcript: list[dict], /) -> int:  # keys are data
                     launched.add(block.get("id"))
         elif line.get("type") == "user":
             for block in blocks:
+                # A background launch is told by the text of its tool result, which is the host's wording, not a field.
                 is_result = isinstance(block, dict) and block.get("type") == "tool_result"
                 if is_result and "Async agent launched" in json.dumps(block.get("content")):
                     launched.add(block.get("tool_use_id"))
@@ -180,6 +190,8 @@ def check_lessons(message: str, rules_path: Path, root: Path, config: dict, /) -
     section = get_lessons(message)
     if not section or LESSONS_NONE.search(section):
         return []
+    # Skipped when no state was saved (no `reset` ran in this session), or when a rule file differs from it: that is the
+    # change the lessons need.
     if not rules_path.exists() or json.loads(rules_path.read_text()) != get_rule_state(root, config):
         return []
     if DEFERS.search(section):
@@ -191,14 +203,56 @@ def check_lessons(message: str, rules_path: Path, root: Path, config: dict, /) -
     ]
 
 
-def get_open_feedback(root: Path, session: str, released: set[str], /) -> list[str]:
-    """The ids this session filed in the inbox with no line in the handled file, past those already released."""
+def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /) -> str:  # keys are data
+    """Why a `rule written in FILE` line does not count, or an empty string when FILE was written this turn."""
+
+    if not name:
+        return "it names no file after `rule written in`"
+    path = Path(os.path.expanduser(name))
+    path = (path if path.is_absolute() else root / path).resolve()
+    if not path.is_file():
+        return f"{name} does not exist: write the rule into an existing file, then name it"
+    if not path.is_relative_to(root):
+        return ""
+    # Skipped when no state was saved (no `reset` ran in this session): only the file's existence counts.
+    if not rules_path.exists():
+        return ""
+    state = get_rule_state(root, config)
+    if str(path) not in state:
+        return f"{name} is no rule file (not under rule_paths): name the rule file that changed"
+    if json.loads(rules_path.read_text()).get(str(path)) == state[str(path)]:
+        return f"{name} was not changed this turn (same content as at the turn's start): write the rule into it"
+
+    return ""
+
+
+def get_handled(root: Path, rules_path: Path, config: dict, /) -> tuple[set[str], dict[str, str]]:  # keys are data
+    """The ids with a valid line in the handled file, and the reason the last line fails for each id with none."""
+
+    path = root / HANDLED_NAME
+    handled: set[str] = set()
+    invalid: dict[str, str] = {}
+    for match in HANDLED.finditer(path.read_text(errors="replace") if path.exists() else ""):
+        item_id, name, reason = match.group(1), match.group("file"), match.group("reason")
+        if name is None:
+            is_short = len(reason.split()) < MIN_REASON_WORDS
+            problem = f"rejected needs a reason of at least {MIN_REASON_WORDS} words" if is_short else ""
+        else:
+            problem = check_handled_file(name.strip(FILE_EDGES), root, rules_path, config)
+        if problem:
+            invalid[item_id] = problem
+        else:
+            handled.add(item_id)
+
+    return handled, {item_id: why for item_id, why in invalid.items() if item_id not in handled}
+
+
+def get_open_feedback(root: Path, session: str, released: set[str], handled: set[str], /) -> list[str]:
+    """The ids this session filed in the inbox with no valid line in the handled file, past those already released."""
 
     inbox = root / INBOX
     if not inbox.exists():
         return []
-    handled_path = root / HANDLED_NAME
-    handled = {match.group(1) for match in HANDLED.finditer(handled_path.read_text())} if handled_path.exists() else set()
     ids = [item_id for item_id, owner in ITEM_ID.findall(inbox.read_text()) if owner == session]
 
     return [item_id for item_id in ids if item_id not in handled and item_id not in released]
@@ -228,12 +282,15 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
             )
     problems += check_lessons(message, rules_path, root, config)
     released = set(released_path.read_text().split()) if released_path.exists() else set()
-    open_ids = get_open_feedback(root, session, released)
+    handled, invalid = get_handled(root, rules_path, config)
+    open_ids = get_open_feedback(root, session, released, handled)
     if open_ids:
         problems.append(
             f"sub-agent feedback is unhandled, ids {' '.join(open_ids)} ({INBOX}): for each, have its rule, role, skill, hook "
-            f'or gate written now, then add "<id>: rule written in FILE" or "<id>: rejected: REASON" to {HANDLED_NAME}'
+            f'or gate written now, then add "<id>: rule written in FILE" (FILE changed this turn) or "<id>: rejected: REASON" '
+            f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}"
         )
+    problems += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
     blocks = int(blocks_path.read_text()) if blocks_path.exists() else 0
     if problems and blocks < MAX_BLOCKS:
         blocks_path.write_text(str(blocks + 1))

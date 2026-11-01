@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """What the hooks share: the project and its `.harness.json`, the roles the plugin judges, the data folder, fences."""
 
 from __future__ import annotations
@@ -10,18 +16,22 @@ CONFIG_NAME = ".harness.json"
 PLUGIN_PREFIX = "harness:"
 FEEDBACK_FOLDER = "harness-feedback"
 INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
+# The path of the handled file; `turn.py` imports it as HANDLED_NAME, since it names its own line pattern HANDLED.
 HANDLED = f"{FEEDBACK_FOLDER}/handled.md"
+# The characters a file named in the handled file may carry around it, such as a closing period or backticks.
+FILE_EDGES = "`'\".,;:()"
 # The plugin's roles, by the report form each owes.
 FULL_ROLES = {"worker", "reviewer", "auditor"}
 SHORT_ROLES = {"scout", "runner", "cold-reader"}
 ROLES = FULL_ROLES | SHORT_ROLES
 
 
-def find_project(cwd: str, /) -> tuple[Path | None, dict]:  # keys are data
+def find_project(cwd: str, /) -> tuple[Path | None, dict]:  # keys are data: the dict holds keys of the user's config, not names in code
     """The folder holding `.harness.json` and its contents, or (None, {}) when there is none.
 
     The search starts from `CLAUDE_PROJECT_DIR`, so a `cd` in a session does not change its project; from `cwd` only when
-    the variable is not set. Without the file a project gets the always-on guard rules and no pipeline gate. A broken
+    the variable is not set. Without the file a project gets the always-on guard rules and no other hook acts (no budget,
+    brief, delegate, report or turn check). A broken
     file raises: each hook then exits 1, which shows the error and lets the call run.
     """
 
@@ -34,7 +44,7 @@ def find_project(cwd: str, /) -> tuple[Path | None, dict]:  # keys are data
     return None, {}
 
 
-def get_scratch(root: Path, config: dict, /) -> str:  # keys are data
+def get_scratch(root: Path, config: dict, /) -> str:  # config keys
     """The resolved absolute folder of `guard.scratch` (`scratch/` and `./scratch` are `scratch`), empty when not set."""
 
     scratch = config.get("guard", {}).get("scratch")
@@ -42,11 +52,11 @@ def get_scratch(root: Path, config: dict, /) -> str:  # keys are data
     return os.path.realpath(root / scratch) if scratch else ""
 
 
-def get_report_form(agent_type: str, settings: dict, /) -> str:  # keys are data
+def get_report_form(agent_type: str, settings: dict, /) -> str:  # config keys
     """The report an agent type owes under `.harness.json`'s `report` settings: "full", "short", or "" for not judged.
 
-    The six roles count with or without the plugin's prefix, so `other:worker` is another plugin's agent. `report.short`
-    and `report.full` add roles by the name the event carries.
+    The name is compared with the plugin prefix stripped, for the six roles and for `report.short` and `report.full`:
+    list a role without the prefix. `other:worker` is another plugin's agent and is not judged.
     """
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)

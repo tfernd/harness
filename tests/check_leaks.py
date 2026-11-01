@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """Fail when a tracked or trackable file names a person, a machine or a private project.
 
 Checks every file git would track for absolute home paths, email addresses and

@@ -1,10 +1,17 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """The control of the hook cases: each mutant breaks one rule in a copy of the hooks, and some case must then fail.
 
 Why: a case that cannot fail proves nothing. A mutant that stays green is a rule no case guards. A mutant whose old text
 is gone from its hook is an error, so the list cannot rot. A row prints per mutant as it finishes; the exit code is 1 when
 any mutant survives. Copies go under `scratch/hook-mutants`. Stdlib only.
 
-python3 tests/mutants.py [--only SUBSTRING] [--jobs N]
+uv run python tests/mutants.py [--only SUBSTRING] [--jobs N]
 """
 
 from __future__ import annotations
@@ -152,6 +159,23 @@ MUTANTS = (
     ("context-forms-swapped", "context.py", 'text = FORM_TEXTS.get(form, "")', 'text = FORM_TEXTS.get("full" if form == "short" else "short", "") if form else ""'),
     ("context-tells-every-agent", "context.py", 'text = FORM_TEXTS.get(form, "")', 'text = FORM_TEXTS.get(form, FORM_TEXTS["full"])'),
     ("context-without-a-project", "context.py", "if root is None:\n        return 0\n", ""),
+    # The report gate's claim and auto-item rules.
+    ("exit-claim-matches-any-code", "report_gate.py", "        if code not in seen\n", "        if False\n"),
+    ("failed-call-counts-as-exit-zero", "report_gate.py", "            if call_id not in failed:\n                seen.add(0)", "            if True:\n                seen.add(0)"),
+    ("read-quote-not-checked", "report_gate.py", "if not all(part in window for part in parts if part):", "if False:"),
+    ("read-quote-searches-the-whole-file", "report_gate.py", "lines[first_line : line + QUOTE_WINDOW]", "lines"),
+    ("auto-decide-not-filed", "report_gate.py", 'for heading in ("DECIDE", "OUTSIDE"):', 'for heading in ("OUTSIDE",):'),
+    ("auto-outside-not-filed", "report_gate.py", 'for heading in ("DECIDE", "OUTSIDE"):', 'for heading in ("DECIDE",):'),
+    ("auto-none-bullet-filed", "report_gate.py", 'for text in texts if text and not NO_FEEDBACK.fullmatch(text)]\n    for line in sections', 'for text in texts]\n    for line in sections'),
+    ("auto-low-task-not-filed", "report_gate.py", "if score and int(score.group(1)) <= LOW_TASK:", "if False:"),
+    ("auto-high-task-filed", "report_gate.py", "if score and int(score.group(1)) <= LOW_TASK:", "if score:"),
+    # The turn's handled-line check.
+    ("handled-file-missing-accepted", "turn.py", "if not path.is_file():", "if False:"),
+    ("handled-file-unchanged-accepted", "turn.py", "if json.loads(rules_path.read_text()).get(str(path)) == state[str(path)]:", "if False:"),
+    ("handled-file-not-a-rule-accepted", "turn.py", "if str(path) not in state:", "if False:"),
+    ("handled-no-file-named-accepted", "turn.py", "if not name:\n        return", "if False:\n        return"),
+    ("rejected-reason-length-ignored", "turn.py", "is_short = len(reason.split()) < MIN_REASON_WORDS", "is_short = False"),
+    ("rejected-two-words-pass", "turn.py", "MIN_REASON_WORDS = 3", "MIN_REASON_WORDS = 2"),
     # The folders.
     ("feedback-in-the-dot-folder", "common.py", 'FEEDBACK_FOLDER = "harness-feedback"', 'FEEDBACK_FOLDER = ".harness"'),
 )
@@ -169,7 +193,7 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> tuple[str, int,
     if old not in text:
         raise ValueError(f"{name}: the text to break is gone from {script}: {old[:60]!r}")
     path.write_text(text.replace(old, new))
-    command = [sys.executable, str(RUN_CASES), "--hooks", str(folder)]
+    command = ["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder)]
     run = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT)
     failed = [line[5:].split(":")[0] for line in run.stdout.splitlines() if line.startswith("FAIL")]
     shutil.rmtree(folder)

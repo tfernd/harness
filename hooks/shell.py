@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """The shell reader of the hooks: cuts a command into the simple commands it runs, as a shell reads it, word by word.
 
 A heredoc's body, a quoted string, a `$((...))` and a `[[ ... ]]` hold no separator. What runs inside a word is read as
@@ -17,7 +23,8 @@ SEPARATORS = ";&|()\n"
 SEPARATOR_OPERATOR = re.compile(r";;&|;;|;&|&&|\|\||\|&|[;&|()\n]")
 REDIRECT_OPERATOR = re.compile(r"<<<|<<-|<<|<>|<&|<|&>>|&>|>>|>&|>\||>")
 PIPES = {"|", "|&"}
-# The parameters whose second character is no glob and no comment (`$?`, `$*`, `$#`).
+# The characters that, after a `$`, name a special parameter (`$?`, `$*`, `$#`): the pair is one word, so the `?` or `*` is
+# not a glob and the `#` does not start a comment.
 SPECIAL_PARAMETERS = "?*@#$!-"
 # The keywords that open a loop. A sleep in a while or until loop waits for a result; one in a for loop waits a fixed
 # count, so only the two polling keywords count as polling.
@@ -333,6 +340,8 @@ class Scanner:
                 self.segments[-1] = self.segments[-1]._replace(in_group=True)
             self.in_pipeline = True
         elif has_command or operator != "\n":
+            # The pipeline ends at a separator that follows a command, or at any separator but a newline; a newline with no
+            # command before it (`a |` then `b` on the next line) continues the pipeline.
             self.in_pipeline = False
         if operator == "&":
             for index in range(self.list_start, len(self.segments)):

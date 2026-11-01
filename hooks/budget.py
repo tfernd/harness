@@ -1,11 +1,17 @@
-#!/usr/bin/env -S python3 -I
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """PreToolUse hook on every tool: in a project with `.harness.json`, a sub-agent past its time budget is refused every
 tool call and told to send its report now, as a partial one. A call without `agent_id` came from the main session and
 passes.
 
 The budget is the line `Budget: N` of the agent's brief (its transcript's first line), N in minutes; `N minutes` and
-`N min` also count. Without one the role's default stands: `.harness.json`'s `budget` maps a role to minutes, DEFAULT_BUDGET
-when the key is absent; a role with no entry has no budget. The clock starts at the first line's timestamp. Ending needs
+`N min` also count. Without one the role's default stands: `.harness.json`'s `budget` maps a role to minutes and REPLACES the whole DEFAULT_BUDGET
+table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The clock starts at the first line's timestamp. Ending needs
 no tool, so the agent is never trapped. Only that first line is read, since this runs on every call.
 """
 
@@ -19,9 +25,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from common import PLUGIN_PREFIX, find_project, get_unfenced_lines  # noqa: E402
+from common import PLUGIN_PREFIX, find_project, get_unfenced_lines
 
 DEFAULT_BUDGET = {"scout": 5, "cold-reader": 5, "runner": 10, "reviewer": 10, "auditor": 10, "worker": 15}
 BUDGET_LINE = re.compile(r"[\s\-*#]*Budget:?\**\s*([0-9]+(?:\.[0-9]+)?)\s*(?:minutes?|min)?\W*", re.I)
@@ -128,7 +132,7 @@ def main() -> int:
         return 0
     print(
         f"Blocked by the harness budget rule: your budget of {minutes:g} minutes is spent ({spent:.0f} minutes since you "
-        "started). Stop now. Send your report now as a partial report: done, not done, what is on disk. Ending needs no tool.",
+        "started). Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. Ending needs no tool.",
         file=sys.stderr,
     )
 

@@ -1,6 +1,12 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """Self-scores per role and model from a ledger, with the model read from each agent's transcript.
 
-Usage: python3 -I by_model.py LEDGER.jsonl TRANSCRIPT_ROOT [PROJECT]
+Usage: uv run --script by_model.py LEDGER.jsonl TRANSCRIPT_ROOT [PROJECT]
 
 LEDGER.jsonl: rows written by `bin/harness-import` or `hooks/report_gate.py`.
 TRANSCRIPT_ROOT: the folder holding `*/subagents/agent-<agent_id>.meta.json`, for example

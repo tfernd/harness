@@ -19,16 +19,18 @@ The hook also checks your report against your own transcript, and sends it back 
 
 - Each file you changed through Edit, Write or NotebookEdit is named by its absolute or project-relative path, unless it
   lies under the project's scratch folder.
-- `exit <N>` needs a Bash call of yours in the transcript.
+- Each `exit <N>` is the result of a Bash call of yours: the code a failed call printed (`Exit code N`), or 0 for a
+  call that did not fail.
 - READ `` `path:line` `` names an existing file with at least that many lines; a relative path is from the project root;
-  `path:a-b` checks `b`.
+  `path:a-b` checks `b`. A text quoted right after it, in "..." or backticks, must lie on that line or within 3 lines.
 
 ## Filling it
 
 - Keep notes as you work: each retry, failed call, and rule that pulled the other way; a report written from memory
   drops them.
-- Mark each claim READ, DERIVED or PROBED, with `path:line` or the command and its exit code.
-- A writer opens Work with the files changed, one line each: the file, the function, what changed.
+- Mark each claim READ, DERIVED or PROBED, with `path:line` or the command and its exit code; an unmarked claim is
+  not refused, but the orchestrator trusts it less.
+- A writer opens Work with the files changed, one line each: the file, the function, what changed (advice, not checked).
 - Score honestly: a low score fixes the next brief; a mistake or broken rule left out is the worse failure.
 
 ## The full form
@@ -70,8 +72,8 @@ Gates: <gate> exit <code>; <others>, or "no gate applied"
 
 ## The short form
 
-The same headings, fewer: `## Answer`, `## Work` (at most 10 findings, each marked sure or unsure, or one line per
-command run with its exit code), `## NOT CHECKED`, `## PROBLEMS MET`, `## REPORT CARD` (the table and the two lines).
+The same headings, fewer: `## Answer`, `## Work` (at most 10 findings, each marked READ, DERIVED or PROBED, or one line per
+command run with its exit code; a longer list goes under Answer), `## NOT CHECKED`, `## PROBLEMS MET`, `## REPORT CARD` (the table and the two lines).
 
 ## What each section needs
 
@@ -83,3 +85,5 @@ command run with its exit code), `## NOT CHECKED`, `## PROBLEMS MET`, `## REPORT
   file and the problem it would have prevented; status and results go in Answer or Work. Each item lands in the
   project's `harness-feedback/inbox.md` and holds the main session's turn until it is handled. `none`, `N/A`, `No
   feedback.` and `None needed.` file nothing.
+- **DECIDE, OUTSIDE and a low Task score:** each DECIDE bullet, each OUTSIDE bullet and a Task score of 3 or lower also
+  land in the inbox, marked `[auto]` (at most 5 a report), and the orchestrator must handle them before its turn ends.

@@ -13,7 +13,7 @@ facts and URLs are in `../SKILL.md`.
 
 ## Self-scores by model 
 
-Command: `python3 bin/harness-import --ledger scratch/g4/ledger.jsonl` (160 reports with a report card, from one real multi-agent project), then `python3 -I references/by_model.py <ledger> <transcript root> <project>`, which reads each
+Command: `bin/harness-import --ledger <ledger>` (160 reports with a report card, from one real multi-agent project), then `uv run --script references/by_model.py <ledger> <transcript root> <project>`, which reads each
 agent's model from its `.meta.json`, else from the `model` field in its transcript. Scores are the agent's own Task,
 Brief and Ease, 1 to 5. Audit grades were not in these reports. Groups under 10 reports are dropped (`harness:models`).
 

@@ -29,14 +29,14 @@ the main session asks (step 2) and puts the answers in the worker's brief.
 
 4. **Propose.** Write each file first to `scratch/init/<file>` (the project's scratch folder): `harness.json` as
    `.harness.json`; `AGENTS.md`; each rule as its name. Replace every placeholder in angle brackets with a project fact;
-   leave none. `TOPIC` in `AGENTS.md` stays literal: it names a folder the agents choose. Adjust each rule's `paths`
+   leave none. `TOPIC` is the one placeholder you leave unchanged: it names a folder the agents choose. Adjust each rule's `paths`
    globs to the project's real folders.
 5. **Diff and install.** For each proposal, run `diff -u <target> scratch/init/<file>` (a missing target is a new
-   file). Overwrite or create a target only on the owner's word: keep, replace, or merge. A new file with no target may
-   be installed once the owner approves the set. When merging into an existing `AGENTS.md`, add the missing sections and
+   file). An existing target is overwritten only on the owner's word: keep, replace, or merge; ask. A new file (no target) is
+   installed after the owner approves the whole set. When merging into an existing `AGENTS.md`, add the missing sections and
    leave the owner's lines as they are. Targets: `.harness.json` and `AGENTS.md` at the root, rules under
    `.claude/rules/`.
-6. **Check.** Parse `.harness.json` (`python3 -c 'import json; json.load(open(".harness.json"))'`). Confirm each rule's
+6. **Check.** Parse `.harness.json` (`uv run python -c 'import json; json.load(open(".harness.json"))'`). Confirm each rule's
    `paths` matches at least one file (`rg --files -g '<glob>'`).
 7. **Report** the files written, the files skipped and why, and the choices left to the owner.
 
@@ -52,9 +52,9 @@ Every key is optional; the key's presence turns its rule on. `{}` turns on the r
 - `delegate`: the main session may edit only paths matching a `write_allow` glob (relative to the project root, matched
   with fnmatch) and may run Bash only when every simple command starts with a default or `bash_allow` prefix. A prefix
   matches whole words: `git log` matches `git log -3`, not `git logs`. Default prefixes: `git status`, `git log`,
-  `git diff`, `git show`, `git add`, `git commit`, `git push`, `gh`, `ls`, `rg`, `head`, `wc`. An empty `write_allow`
-  lets the main session edit nothing.
+  `git diff`, `git show`, `git add`, `git commit`, `gh`, `ls`, `rg`, `head`, `wc` (the hook's
+  list, `hooks/delegate.py`). A push is not on the list: it needs the owner's word, or a `bash_allow` entry of the project. The main session commits only on the owner's word, whatever the list allows. An empty `write_allow` lets the main session edit nothing.
 - `brief`: turns on the brief check. Default `required` is `{"worker": ["Goal:", "Write set:", "Judge:"], "*":
-  ["Goal:"]}`; it applies to the six harness roles only.
+  ["Goal:"]}`; it applies to the six harness roles only (scout, cold-reader, worker, reviewer, auditor, runner).
 
 Feedback of sub-agents lands in `harness-feedback/inbox.md` and `harness-feedback/handled.md`; commit both.

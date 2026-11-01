@@ -7,7 +7,7 @@ description: How a spec is written for a large or public-contract job - a file w
 
 A spec is a file in the repo (`scratch/<topic>/SPEC.md` unless the project names a place), written before any
 worker starts. Workers and readers get its path in the brief. A spec that lives only in chat is not a spec.
-The orchestrator decides what goes in; an agent writes the file. Sizes that need one: `harness:workflows`.
+The orchestrator decides what goes in and briefs a worker to write the file. Sizes that need one: `harness:workflows`.
 
 ## Sections, in this order
 
@@ -17,14 +17,14 @@ The orchestrator decides what goes in; an agent writes the file. Sizes that need
    behaviour. Every "or", "maybe", "TBD", "probably" and "should" is settled here or moved to Open questions.
 4. **Write sets:** one per unit: the files it may create or change, as paths or globs. Sets are disjoint. A file two
    units need is assigned to one of them, and the other gets the change under OUTSIDE.
-5. **Judges:** per unit, the commands that decide done, with the expected result and the baseline of an "unchanged".
+5. **Judges:** per unit, the commands that decide done, with the expected result; for an "unchanged" result, the value measured before the change.
    Every decision that can break has a judge (`harness:testing`).
-6. **Contract:** only for a public interface: its exact shape, so two units written apart still fit. One home per
-   fact; other units point to it.
+6. **Contract:** only for a public interface: its exact shape, so two units written apart still fit.
 7. **Open questions:** only what the owner must answer. Work that depends on one does not start.
 
 ## Rules
 
+- **One home per fact.** A fact is stated once, in the contract or the decision that owns it; other units point to it.
 - **No unsettled choice.** Search the draft for "or", "either", "if possible", "etc.", "similar". Each hit is a
   decision to make or a sentence to cut.
 - **Names exist.** Every path, function, command and test id the spec cites is checked in the tree (`harness:evidence`)

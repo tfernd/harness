@@ -1,13 +1,11 @@
 # Brief checks
 
-Checks the main session makes before a brief goes out, and when it accepts. Each is one line.
+Checks the main session makes before a brief goes out, and when it accepts, in addition to the lists in
+`harness:orchestrator` (none repeats them). Each is one line.
 
 ## Framing
 
 - Measure first: a method gets its result against a baseline before anything is built.
-- A change to a format or public contract waits for the owner's yes; when a word could mean two code objects, name the
-  one meant.
-- A report's claim about a shape or a bug is probed on real data before the main session edits on it.
 - The tool's worktree isolation may start from an older commit: make the worktree from the base branch and name its path
   in the brief.
 
@@ -22,7 +20,7 @@ Checks the main session makes before a brief goes out, and when it accepts. Each
 - Two workers edit a shared file only with small anchored edits, each re-read right before it; the brief names the owner
   of a shared comment.
 - A refactor brief says `Runs: none` and names a static check or a grep as its judge.
-- A new judge's deliberate bug is read off the code, not assumed; a helper two trees will share goes in the write set.
+- A helper two trees will share goes in the write set.
 - A brief that adds code states the file's line count against the limit.
 
 ## Accepting

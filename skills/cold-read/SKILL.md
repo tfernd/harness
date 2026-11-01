@@ -10,21 +10,21 @@ text so the worker does not have to guess. It never does the job and edits nothi
 
 ## What the reader does
 
-1. Read the brief once, whole. Open only the files it names.
+1. Read the brief once, whole. Open only the files it names; to check that a name exists, grep the tree.
 2. Write the **read-back**, in this order:
    - **Goal:** one sentence.
    - **Files touched:** every file you would create or change, from the brief alone.
    - **Done when:** the judge and the result that counts as done.
    - **GUESS list:** every decision you would have to guess: a name, a signature, a default, an order, a file the
-     brief does not assign, a word with two readings ("or", "maybe", "similar"). Empty is allowed, and suspect.
+     brief does not assign, a word with two readings ("or", "maybe", "similar"). Empty is allowed, and suspect: if empty, say so and show what you checked.
 3. **Names:** for every path, function, command, test id, flag and skill the brief mentions, say whether it exists. A
    claim of existence quotes the matching line with `path:line`. A claim with no quoted line counts as not checked.
-   A name the brief says is new is checked only for a clash with an existing one.
+   A name the brief says is new is checked only for a clash (the same name already exists in the tree).
 4. **Verdict:** `ready` (no GUESS, every name found) or `needs_work`, with the gaps ranked: a gap that would make two
    workers diverge first.
 
-Report in the short form of `harness:report`: Answer holds the verdict, the four-part read-back and the GUESS list; Work
-holds one line per name with its quote.
+Report in the short form of `harness:report`: Answer holds the verdict, the four-part read-back, the GUESS list and
+the ranked gaps; Work holds one line per name with its quote.
 
 ## Rules for the reader
 
@@ -33,7 +33,7 @@ holds one line per name with its quote.
 - A name you cannot find is reported as missing, not guessed around. Say where you looked.
 - You judge the text, never the owner's intent: if the goal looks wrong, say it is ambiguous, not mistaken.
 
-## Rules for the orchestrator
+## Rules for the orchestrator (skip if you are the reader)
 
 - **Two readers on a large job,** run separately, neither seeing the other. Where their read-backs differ, the brief is
   ambiguous there: fix the text, never pick a reader.

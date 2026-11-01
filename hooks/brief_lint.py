@@ -1,9 +1,15 @@
-#!/usr/bin/env -S python3 -I
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """PreToolUse hook on Agent and Task: in a project whose `.harness.json` has a `brief` key, the main session's prompt for a
 harness role holds the lines the role needs. A call that carries `agent_id` came from a sub-agent and passes.
 
-`brief.required` maps a role, or `*` for the rest, to the labels a line of the prompt must start with; DEFAULT_REQUIRED
-stands when it is not set. It applies only to the six roles, with or without the `harness:` prefix; every other
+`brief.required` maps a role, or `*` for the rest, to the labels a line of the prompt must start with. A custom `required` REPLACES
+DEFAULT_REQUIRED: a role it does not list is unchecked unless a `*` entry covers it. DEFAULT_REQUIRED stands when it is not set. It applies only to the six roles, with or without the `harness:` prefix; every other
 `subagent_type` passes.
 """
 
@@ -13,9 +19,7 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from common import PLUGIN_PREFIX, ROLES, find_project  # noqa: E402
+from common import PLUGIN_PREFIX, ROLES, find_project
 
 DEFAULT_REQUIRED = {"worker": ["Goal:", "Write set:", "Judge:"], "*": ["Goal:"]}
 # What may stand before a label on its line: a list bullet, a heading mark, bold markers.

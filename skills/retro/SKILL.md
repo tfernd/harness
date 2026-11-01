@@ -16,7 +16,7 @@ stopped agent, written by `hooks/report_gate.py`; past reports come in through `
 
 Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_backs`, `open_problems`, `scores`
 (`Task`, `Brief`, `Ease`, each `"N/5"` or a bare digit, null when unreadable), `causes`, `feedback_ids`, `report` (full
-text). Read rows with `python3`; `references/queries.md` holds the queries.
+text). Read rows with `uv run python`; `references/queries.md` holds the queries.
 
 ## Steps
 
@@ -26,13 +26,13 @@ text). Read rows with `python3`; `references/queries.md` holds the queries.
    report's first line, `# Report: <role>, <task>`). A cause named once is a note; twice is a pattern.
 3. **Read the reports behind a pattern.** Open the `report` text of at least two rows per pattern. A count with no
    quoted problem line is not a finding.
-4. **Compare scores.** An auditor's report holds one line `Grade: N/5 for <role> <unit>` in Work, `<unit>` being the exact task text of the author's `# Report:
-   <role>, <task>` title, and the author's score on the next line. For each unit, set the
-   audit grade beside that role's self `Task` score for the same unit. Report the gap per role. A role whose self-score
-   exceeds its audit grade by 1 or more twice is overrating its work: the fix is a stricter judge or report line, not a
-   reminder. Units with no audit grade are listed as unaudited, never scored.
+4. **Compare scores.** An auditor's report holds one line in Work, for example `Grade: 3/5 for worker fix the
+   parser`, where the unit is the exact task text of the author's `# Report: <role>, <task>` title. Set that
+   audit grade beside the role's self `Task` score for the same unit and report the gap per role. A role whose
+   self-score exceeds its audit grade by 1 or more twice is overrating its work: the fix is a stricter judge or report
+   line, not a reminder. Units with no audit grade are listed as unaudited, never scored.
 5. **Check the send-backs.** `open_problems` is filled only when the gate stops sending back (the cap), so read it only
-   on rows with `accepted` false for that step; a row with `send_backs` above 0 and `accepted` true names no rule. A
+   on rows with `accepted` false; a row with `send_backs` above 0 and `accepted` true names no rule. A
    report rule failed twice is a rule agents cannot read: rewrite it in `harness:report` or give the gate a clearer message.
 6. **Propose changes.** One per pattern, in the form below.
 7. **Model evidence.** Update `harness:models` measured facts only from the same query output, with sample sizes.
@@ -49,10 +49,11 @@ Check: <how the same problem is caught next time, and how to show the check fail
 ## Which kind of change
 
 - A problem seen twice gets a hook or a gate: something that refuses, not a sentence an agent may skip. A hook
-  needs cases in `tests/run_cases.py`, shown to fail under a deliberate bug.
+  needs cases in `tests/run_cases.py` (in the plugin repo, not the project), shown to fail under a deliberate bug.
 - A rule is for what a tool cannot check; it must be checkable by a reviewer against code or a report.
 - A brief-caused problem changes the brief template or `harness:cold-read`, not the agent.
-- An `environment` or `tool` cause is the project's: report it, do not write a plugin rule for it.
+- An `environment` or `tool` cause gets no rule unless it was seen twice; then it is the project's: report it, do not
+  write a plugin rule for it.
 - `the agent itself` repeated across one role is a role or model question: see `harness:models`.
 
 ## Limits
@@ -61,3 +62,4 @@ Check: <how the same problem is caught next time, and how to show the check fail
 - Causes are what the agent chose; check one against the problem text before counting it.
 - Do not edit the ledger. Do not rerun `bin/harness-import` without `--dry-run` first: it appends.
 - A retro writes proposals and the files they name; the owner accepts them.
+- Last step: touch `${CLAUDE_PLUGIN_DATA}/retro-marker` (else `~/.cache/harness/retro-marker`), so the SessionStart "N reports since the last retro" line clears.

@@ -1,19 +1,28 @@
-#!/usr/bin/env -S python3 -I
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """SessionStart and SubagentStart hook: in a project with `.harness.json`, tells a session what it owes.
 
 SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells a role the report gate judges
-which report form it owes. Any other agent type gets nothing. The text reaches the model as `additionalContext`.
+which report form it owes, and the last lessons handled for its role. Any other agent type gets nothing. SessionStart also
+says when ten or more reports of the project are newer than the plugin data folder's `retro-marker` file (the `retro` skill
+writes it). The text reaches the model as `additionalContext`.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+from datetime import datetime
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from common import find_project, get_report_form  # noqa: E402
+from common import FILE_EDGES, HANDLED, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 FORM_TEXTS = {
@@ -22,6 +31,60 @@ FORM_TEXTS = {
     "short": "End with the short form of the `harness:report` skill: Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD. "
     "A hook sends back a report that breaks the form.",
 }
+LESSONS_HEADING = "Lessons from past runs of this role:"
+MAX_LESSONS = 5
+# Characters of the lessons text, heading included.
+MAX_LESSONS_CHARS = 600
+RETRO_ROWS = 10
+RETRO_MARKER = "retro-marker"
+INBOX_LINE = re.compile(r"^- id=([0-9a-f]{8}) session=\S+ agent=(\S+) (.+)$", re.M)
+RULE_LINE = re.compile(r"^([0-9a-f]{8}): rule written in[ \t]*(\S+)", re.M)
+LEDGER_TIME = "%Y-%m-%dT%H:%M:%S%z"
+
+
+def get_lessons(root: Path, agent_type: str, /) -> str:
+    """The role's last handled lessons, newest last, within the character limit; empty when there are none or a file fails."""
+
+    role = agent_type.removeprefix(PLUGIN_PREFIX)
+    try:
+        inbox = (root / INBOX).read_text(errors="replace")
+        handled = (root / HANDLED).read_text(errors="replace")
+    except OSError:
+        return ""
+    files = {item_id: name.strip(FILE_EDGES) for item_id, name in RULE_LINE.findall(handled)}
+    lines = [f"- {text.strip()} (rule: {files[item_id]})" for item_id, owner, text in INBOX_LINE.findall(inbox) if owner == role and item_id in files]
+    lines = lines[-MAX_LESSONS:]
+    while len(lines) > 1 and len(LESSONS_HEADING + "".join(f"\n{line}" for line in lines)) > MAX_LESSONS_CHARS:
+        lines.pop(0)
+    if not lines:
+        return ""
+
+    return (LESSONS_HEADING + "".join(f"\n{line}" for line in lines))[:MAX_LESSONS_CHARS]
+
+
+def get_retro_line(root: Path, /) -> str:
+    """The line telling a retro is due when ten reports of the project are newer than the retro marker, else empty."""
+
+    folder = data_folder()
+    ledger = folder / "ledger.jsonl"
+    if not ledger.is_file():
+        return ""
+    marker = folder / RETRO_MARKER
+    try:
+        since = marker.stat().st_mtime if marker.exists() else 0.0
+        lines = ledger.read_text(errors="replace").splitlines()
+    except OSError:
+        return ""
+    count = 0
+    for line in lines:
+        try:
+            row = json.loads(line)
+            is_new = row.get("project") == str(root) and datetime.strptime(row["time"], LEDGER_TIME).timestamp() > since
+        except (ValueError, KeyError, TypeError, AttributeError, OverflowError):
+            continue
+        count += is_new
+
+    return f"{count} reports since the last retro: run harness:retro." if count >= RETRO_ROWS else ""
 
 
 def main() -> int:
@@ -32,10 +95,11 @@ def main() -> int:
     name = event.get("hook_event_name")
     text = ""
     if name == "SessionStart":
-        text = SESSION_TEXT
+        text = "\n".join(part for part in (SESSION_TEXT, get_retro_line(root)) if part)
     elif name == "SubagentStart":
-        form = get_report_form(event.get("agent_type") or "", config.get("report", {}))
-        text = FORM_TEXTS.get(form, "")
+        agent_type = event.get("agent_type") or ""
+        form = get_report_form(agent_type, config.get("report", {}))
+        text = "\n\n".join(part for part in (FORM_TEXTS.get(form, ""), get_lessons(root, agent_type)) if part)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 

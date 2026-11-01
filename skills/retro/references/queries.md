@@ -1,6 +1,6 @@
 # Ledger queries
 
-Run with `python3 -I`. Set `LEDGER` to the ledger path first.
+Run with `uv run python`. Set `LEDGER` to the ledger path first.
 
 ```python
 import json, os, re, collections

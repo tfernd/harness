@@ -1,6 +1,6 @@
 ---
 name: accept
-description: Load to accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict, Done, Needs you, Next, Lessons, Agents). The three always follow one another. Main session only.
+description: Load to accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict, Done, Needs you, Next, Lessons, Agents): the proposal after each unit, the closing status after a batch. Main session only.
 ---
 
 # Accept a unit
@@ -26,7 +26,7 @@ a brief.
 
 The owner commits, or the main session when the owner asks. A sub-agent never runs a git command that writes.
 
-- One validated unit per proposal; two units are two proposals. Read state with `git status --short -- <paths>`,
+- One accepted unit per proposal (it passed section 1); two units are two proposals. Read state with `git status --short -- <paths>`,
   `git diff -- <paths>` and `git log -n 5 --pretty=format:'%s'` for the subject style.
 - Layout: `Paths:` (every file of the unit, one per line from the repository root, a removed tracked file marked
   `(removed)`; no folder, glob or `.`), a blank line, `Left out:` if a file is not the unit's, then `Message:`.
@@ -43,14 +43,14 @@ The owner commits, or the main session when the owner asks. A sub-agent never ru
 Due after a turn that ran agents or edited many files, once no background agent is still running (until then the turn is
 a progress note). A quick answer does not need it.
 
-Plain words first, then narrow tables, under these exact `##` headings in this order. A section with nothing in it is
-left out, except Needs you and Lessons.
+Plain words first, then narrow tables, under these exact `##` headings in this order. Required: `## Verdict`,
+`## Done`, `## Needs you`, `## Next`, `## Lessons`. The others are left out when empty.
 
 1. `## Verdict`: one or two sentences: done, partly done or blocked, and the one thing that matters most.
 2. `## Done`: table Item | Result (done, partly, failed) | Evidence (the proposal file, or the command and exit code).
-3. Optional: Decisions (Decision | Reason | Alternative rejected | Taken by), so the owner can overrule one; Problems
+3. Optional: `## Decisions` (Decision | Reason | Alternative rejected | Taken by), so the owner can overrule one; `## Problems`
    (Problem | Fix | State), where a fix is a rule, hook or gate named by its file, never "be careful".
-4. Agents: one row per agent run, and a one-line model fit (was each model right for its task).
+4. Optional: `## Agents`: one row per agent run, and a one-line model fit (was each model right for its task).
 
    | Agent (role, model) | Task | Result | Quality 1-5 | What went wrong | Brief fix |
    |---|---|---|---|---|---|
@@ -58,11 +58,11 @@ left out, except Needs you and Lessons.
    Quality is the auditor's `Grade: N/5` where there is one, else yours. Show the agent's own Task score beside it when
    they differ by 2 or more.
 5. `## Needs you`: actions only the owner can take, each with what happens if they do nothing; "nothing" when empty.
-6. Optional: Not verified (what was skipped or only read); Numbers (only those the verdict rests on, a signed percent
+6. Optional: `## Not verified` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
    against a named baseline with its command).
 7. `## Next`: the one thing to do next, with its cost.
 8. `## Lessons`: each lesson and the rule file written this turn. A Lessons section needs a rule-file change made in the
-   turn; with none, write `Lessons: none` alone on a line.
+   turn; with none, the body of the `## Lessons` section is the single line `Lessons: none`.
 
 Rules: say what a thing does before its jargon. Report failures and bent rules as plainly as successes. Mark each claim
 measured (ran, with the command) or read (seen, not run).

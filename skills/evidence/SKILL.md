@@ -9,10 +9,10 @@ A claim counts only with its evidence; climb only as far as the question needs.
 
 ## The ladder and the marks
 
-1. **Read** the code and the docs, `path:line` for every claim. Code beats docs; docs beat the plan (report a clash).
+1. **Read** the code and the docs, `path:line` for every claim. Code beats docs; docs beat the plan, meaning the project's plan file if it has one (report a clash).
 2. **Read the installed library's source** for a library claim, never upstream or memory. Name the version.
-3. **Probe** only what reading cannot settle: the exact expression, operand order, type and environment of the claim.
-   A probe uses the smallest input that shows it and runs nothing exhaustive.
+3. **Probe** only what reading cannot settle, using the exact expression, operand order, type and environment of the
+   claim. A probe uses the smallest input that shows it and runs nothing exhaustive.
 
 - **READ** `path:line`: seen in the code or a doc, not run. Quote the line's text with it; line numbers go stale.
 - **DERIVED**: worked out from read facts; say from which.
@@ -37,14 +37,15 @@ that matches today's inputs.
 
 ## Answering as a scout
 
-ONE narrow question, fast, no file written; stop when you can answer. Bash only reads (`cat`, `sed -n`, `grep`, `find`,
-`wc`, `git show|log|diff`); name the folders for `find`. Report the answer first, then `path:line` evidence with the
-line's text, at most 10 findings each marked sure or unsure, and what you did not check.
+ONE narrow question, fast, no file written; stop when you can answer. Read with the project's read tools (Read, Grep,
+Glob); Bash only for read-only commands and probes (`wc`, `git show|log|diff`); name the folders for `find`. Report the answer first, then `path:line` evidence with the
+line's text, at most 10 findings each marked READ, DERIVED or PROBED, as in `harness:report`, and what you did not check.
 
-## For the orchestrator
+## For the orchestrator (skip if you are a scout or another reader)
 
 - Cut a fan-out along an area, or along a kind of problem across a wider area (redefined helpers, false comments, dead
-  code, docs against code). One cell per agent, at most 20 per wave, never over files another agent is editing.
+  code, docs against code). A **cell** is one agent's slice (as in `harness:review`); a **wave** is the cells launched
+  in one message, at most 20, never over files another agent is editing.
 - The brief is short: the question, the files and callers, a ready grep, "report; build and test nothing", a time
   limit. A question about a syntax pattern (every call, every decorator) is a parse of the syntax tree, never a regex.
 - After: merge duplicates, check every claim yourself, hand the owner only the checked ones and how many were false.

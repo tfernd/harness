@@ -27,14 +27,17 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Signatures and types
 
-- `from __future__ import annotations` first; then three import blocks (standard library, third party, relative).
+- `from __future__ import annotations` first (redundant only on Python 3.14 or newer, where annotations are deferred;
+  the starter targets 3.12); then three import blocks (standard library, third party, relative).
 - Type hints on every signature; no `Any` where a type exists.
 - `/` after the positional inputs and `*` before options, so options are keyword-only.
 - No default for a value the caller must decide (a device, a dtype, a size).
-- A small closed set is a `Literal`, with the tuple of all its values beside it. A size that is not a finite set is
+- A small closed set is a `Literal`, with the tuple of all its values beside it
+  (`Mode = Literal["fast", "exact"]` and `MODES: tuple[Mode, ...] = ("fast", "exact")`). A size that is not a finite set is
   an `int`, checked once where it enters.
-- No `typing.cast` and no ignore comment of any checker (`# type: ignore`, `# noqa`, `# pyright:`). Narrow with
-  `isinstance`, `assert`, `match` or a lookup table typed to the `Literal`.
+- No `typing.cast` and no checker ignore comment (`# type: ignore`, `# noqa`, `# pyright:`). Narrow with
+  `isinstance`, `assert`, `match` or a lookup table typed to the `Literal`; if a third-party stub forces one, narrow
+  with `isinstance` or `assert` and say why in a comment.
 - A fixed group of results is a `NamedTuple` or a frozen `dataclass`, never a `dict` and never optional fields filled
   by convention. A function returning a dict because its keys are data says so on its signature's closing line.
 - No `.0` on a whole number unless it is a float on purpose.
@@ -47,11 +50,13 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
   name.
 - Two functions that differ by one step become one with an optional parameter whose docstring says what `None` means,
   or a function-valued parameter.
-- Checks (`ValueError`, `TypeError`) only at public entries, once, where input enters. Inside, plain `assert`.
+- Public entry points (called from outside the module) raise `ValueError` or `TypeError` for bad caller input, once,
+  where it enters. Internal invariants use `assert` (stripped under `-O`, so never for input).
 - Dispatch over a closed set is one `match`; `case _: raise` only over an unchecked outside value. Ties go by order
   and the docstring says so.
-- No `global`, no module-level mutable state. No `_private` helpers, aliases (`old = new`), re-exports or one-line
-  wrappers: change the callers.
+- No `global`, no module-level mutable state (a list, dict, set or cache changed at run time; frozen constants such as
+  a tuple, a `frozenset` or a number are fine). No `_private` functions (a leading underscore hides a helper that
+  should be shared or deleted), aliases (`old = new`), re-exports or one-line wrappers: change the callers.
 - A guarded division is a named helper, not a multiply by a reciprocal.
 
 ## Layout
@@ -61,7 +66,7 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
   holds its types, then its functions, a helper before its first caller. Divider: `# ` plus 75 `=`.
 - A call or signature that fits the line limit is one line, however many arguments. One that does not gets one
   argument per line with a trailing comma and the closer on its own line. Name an intermediate rather than hugging
-  all arguments on one middle line.
+  all arguments on one middle line. (Unenforced: `ruff format` keeps a left-over magic trailing comma exploded.)
 - A constant is defined once and imported, never copied into a test or script.
 - Imports point down a fixed order of layers; a step two layers need moves to the earlier one.
 - An `__init__.py` holds only imports and `__all__`. A new module stays out of it until accepted.

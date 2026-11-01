@@ -11,9 +11,9 @@ Script side: `harness:code-js`. Comments: `harness:comments`.
 
 - Plain HTML, `<!doctype html>`, `<html lang>`, `charset` and `viewport` metas, a `<title>`. No framework and no build
   step for our own code unless the project has one.
-- Two-space indent, lower-case tags and attributes, double-quoted values, one element per line. Follow the file you
-  edit when a long tag is kept on one line.
-- Interactive controls are real `<button type="button">`, `<a href>`, `<input>` with an `aria-label` or a `<label>`;
+- Two-space indent, lower-case tags and attributes, double-quoted values. One block element per line; inline elements may share a line
+  with their text. Follow the file you edit when a long tag is kept on one line.
+- Interactive controls are real `<button type="button">`, `<a href>`, `<input>` with an `aria-label` or a `<label>` (`for` or wrapping);
   a landmark (`nav`, `main`, `aside`) where it applies; `role` and `aria-*` only when no native element fits.
 - Images have `alt` (empty when decorative).
 - Hidden state uses the `hidden` attribute, and the base CSS keeps `[hidden] { display: none !important }`.
@@ -26,7 +26,7 @@ Script side: `harness:code-js`. Comments: `harness:comments`.
   hyphenated class names.
 - A value used more than once (colour, size, spacing, radius, font, duration, z-index) is a custom property declared
   once on `:root`, not repeated as a literal.
-- Selectors stay shallow: a class, a state class, a pseudo-class; no id selectors, no `!important` except the
+- Selectors stay shallow: a class, a state class or a pseudo-class. No id selectors, and no `!important` except the
   `[hidden]` rule.
 - Visible focus is kept (`:focus-visible`), and pointer-only affordances have a keyboard path.
 - A comment explains a trap or why a value is what it is, one line above the rule.

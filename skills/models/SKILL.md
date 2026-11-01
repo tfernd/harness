@@ -10,8 +10,8 @@ Model IDs: `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5`.
 
 ## Documented (official docs)
 
-Source for the table: https://platform.claude.com/docs/en/about-claude/models/overview (fetched in the session that wrote this
-skill; refetch before relying on prices).
+Source for the table: https://platform.claude.com/docs/en/about-claude/models/overview (fetched when this skill was written;
+prices and the Fable id below are documented as of that fetch, so refetch before relying on them).
 
 | | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
 |---|---|---|---|
@@ -35,7 +35,8 @@ skill; refetch before relying on prices).
 
 ## Roles
 
-A role's model is set in `agents/<name>.md` (`model:` is the alias `haiku` or `sonnet`); no role defaults to Opus.
+This table is the single source of each role's model (`harness:orchestrator` points here). A role's model is set in
+`agents/<name>.md` (`model:` is the alias `haiku` or `sonnet`); the worker default is Sonnet; no role defaults to Opus.
 
 | Role | Model | Why |
 |---|---|---|
@@ -62,6 +63,7 @@ Lowering effort before changing model is the documented first lever; the session
 
 ## Keeping this skill true
 
+- An unmeasured default stays valid until a ledger table disagrees with it.
 - Re-run `bin/harness-import` and the measured query `references/by_model.py` (usage in `references/measured.md`) after a large batch of reports.
 - A measured claim needs its sample size and its confound; drop it when the sample is under 10 and nothing else backs it.
 - Change a role's model only with a ledger table behind it, in the same edit as the agent file.

@@ -16,17 +16,16 @@ Comments: `harness:comments`. Web pages: `harness:code-html-css`.
   with `verbatimModuleSyntax` on.
 - Two-space indent, double quotes, semicolons, 120 columns, trailing commas in multi-line lists. The formatter owns
   this; do not hand-format against it.
-- No migrations or backward-compatibility code unless asked.
 
 ## TypeScript
 
-- Strict, with `noUncheckedIndexedAccess` and `verbatimModuleSyntax` on, plus `strict`,
-  `noEmit`, `allowImportingTsExtensions`.
+- Strict compiler flags, listed once in `references/biome-tsconfig.md` (at least `strict`, `noUncheckedIndexedAccess`,
+  `verbatimModuleSyntax`).
 - Named exports only; no default exports.
-- Banned: `any`, `enum`, `!` non-null assertions, `@ts-ignore`, `namespace`. Use a union of literals
-  instead of an enum, a type guard or an `in` check instead of an assertion.
+- Banned: `any`, `enum`, `!` non-null assertions, `as` casts, `@ts-ignore`, `namespace`. Use a union of literals
+  instead of an enum, a type guard or an `in` check instead of an assertion or a cast.
 - A fixed group is a `type` with named fields, not a tuple or a loose object. A function with more than two
-  parameters, or with flags, takes one destructured options object.
+  parameters, or any boolean parameter, takes one destructured options object.
 - A wrong input throws one sentence naming the value and what was expected.
 - Arrow functions in a `const` by default; `function` where `this` is needed. Follow the file you edit.
 
@@ -44,7 +43,8 @@ Comments: `harness:comments`. Web pages: `harness:code-html-css`.
   a shared folder, and a module never imports from a sibling feature.
 - A server validates input where it enters: paths resolve inside their root, subprocesses take an argument list,
   never a shell string.
-- A function that grows past what reads as one list of steps is split into named helpers.
+- A function that grows past what reads as one list of steps is split into named helpers (biome
+  `noExcessiveCognitiveComplexity` flags size; the starter turns it on).
 
 ## Enforcing tools
 

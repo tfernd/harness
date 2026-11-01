@@ -1,12 +1,18 @@
-#!/usr/bin/env -S python3 -I
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """PreToolUse hook on Bash, Write, Edit and NotebookEdit: in a project whose `.harness.json` has a `delegate` key, the main
 session hands its edits and runs to agents. A call that carries `agent_id` came from a sub-agent and passes.
 
-`delegate.write_allow` holds globs relative to the project root, matched with fnmatch; a file outside them is refused,
+`delegate.write_allow` holds globs relative to the project root, matched with fnmatch (its `*` also matches `/`, so `docs/*` covers `docs/a/b.md`); a file outside them is refused,
 apart from `harness-feedback/handled.md`. `delegate.bash_allow` adds prefixes to DEFAULT_BASH_ALLOW; each simple command of
 a Bash call must start with one, whole word by whole word, so `git status && make x` is refused. A shell redirect into
 a file is refused too, since it would be an edit. `$(cat <<'EOF' ...)`, the form of a commit message, reads no file: a
-bare `cat` is allowed.
+bare `cat` (the word `cat` alone, with no argument) is allowed.
 """
 
 from __future__ import annotations
@@ -17,10 +23,8 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from common import HANDLED, find_project  # noqa: E402
-from shell import Segment, get_segments  # noqa: E402
+from common import HANDLED, find_project
+from shell import Segment, get_segments
 
 DEFAULT_BASH_ALLOW = (
     "git status",
@@ -29,7 +33,6 @@ DEFAULT_BASH_ALLOW = (
     "git show",
     "git add",
     "git commit",
-    "git push",
     "gh",
     "ls",
     "rg",
@@ -92,7 +95,7 @@ def main() -> int:
         refused = check_bash(tool_input.get("command") or "", settings)
         if not refused:
             return 0
-        message = f"`{refused}` is not on this project's list of main-session commands"
+        message = f"`{refused}` is not on this project's list of main-session commands, or it redirects into a file"
     else:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         if is_allowed_path(path, root, settings, cwd):

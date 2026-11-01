@@ -11,7 +11,8 @@ A starter pair. Copy only when the project has none; adjust `include` and `types
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended",
+      "recommended": true,
+      "complexity": { "noExcessiveCognitiveComplexity": "error" },
       "suspicious": { "noExplicitAny": "error" },
       "style": {
         "noNonNullAssertion": "error",
@@ -27,10 +28,10 @@ A starter pair. Copy only when the project has none; adjust `include` and `types
 
 `useIgnoreFile: true` makes `biome check` fail in a folder with no `.gitignore`: the starter needs one (or set
 `useIgnoreFile` to `false`). Source: an audit probe of this starter in a folder with no `.gitignore` (`scratch/audit-b/js`); not re-run when this
-line was written.
+line was written. The `"recommended": true` form and the `complexity` rule are the Biome 2 syntax and were not re-probed.
 
 An override turns `noBarrelFile` and `noReExportAll` off for the one public entry file (`src/index.ts`).
 
-`tsconfig.json` compiler options: `strict`, `skipLibCheck`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+`tsconfig.json` compiler options (the one list; `harness:code-js` points here): `strict`, `skipLibCheck`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
 `noImplicitOverride`, `noFallthroughCasesInSwitch`, `erasableSyntaxOnly`, `verbatimModuleSyntax`,
 `allowImportingTsExtensions`, `noEmit`, `target` and `module` `esnext`, `moduleResolution` `bundler`.

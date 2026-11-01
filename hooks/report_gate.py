@@ -1,4 +1,10 @@
-#!/usr/bin/env -S python3 -I
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
 """SubagentStop hook: in a project with `.harness.json`, a harness role stops only with a report in the `report` skill's
 form, whose claims its own transcript backs.
 
@@ -9,11 +15,14 @@ and `auditor` owe the full form; `scout`, `runner` and `cold-reader` the short f
 
 The claims come from the agent's transcript, never from git, since parallel agents share a tree: each file it changed
 through Edit, Write or NotebookEdit is named in the report by its absolute or project-relative path (`guard.scratch` is
-exempt), an `exit <N>` needs a Bash call, and a READ `path:line` names an existing file with that many lines.
+exempt), each `exit <N>` is the result of a Bash call (the transcript shows a code only for a failed call, `Exit code N`;
+a call that did not fail is 0), and a READ `path:line` names an existing file with that many lines; a text quoted after
+it must lie within 3 lines of that line.
 
 A bad report goes back to the agent, up to MAX_SEND_BACKS times; then the agent may stop and the orchestrator is warned.
 Once it stops, one row goes to `ledger.jsonl` in the plugin's data folder, and each item of FEEDBACK FOR THE ORCHESTRATOR
-goes to the project's `harness-feedback/inbox.md`, where the Stop hook (`turn.py`) holds its session's turn until each is
+goes to the project's `harness-feedback/inbox.md`, with one `[auto] ` item (at most 5) for each DECIDE and OUTSIDE bullet
+and for a Task score of 3 or lower, where the Stop hook (`turn.py`) holds its session's turn until each is
 handled.
 
 `.harness.json` may set, under `report`: `short` and `full` (more roles owing that form), `causes` (more causes a problem
@@ -30,10 +39,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from budget import get_agent_path, get_duration  # noqa: E402
-from common import INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines  # noqa: E402
+from budget import get_agent_path, get_brief, get_default, get_duration, get_minutes
+from common import INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines
 
 FULL = (
     "Answer",
@@ -51,6 +58,8 @@ SHORT = ("Answer", "Work", "NOT CHECKED", "PROBLEMS MET", "REPORT CARD")
 REQUIRED = {"full": FULL, "short": SHORT}
 # The sections where "none" is not an answer.
 NEVER_NONE = {"Answer", "Work", "PROBLEMS MET", "COMPLIANCE", "LEARNED", "REPORT CARD"}
+# The sections that state results, where "pending" or "TBD" means the work is unfinished; NOT CHECKED, OUTSIDE and DECIDE may
+# use those words for real (a pending decision).
 NO_PLACEHOLDER = {"Answer", "Work", "COMPLIANCE"}
 PLACEHOLDER = re.compile(r"\b(pending|tbd|not yet known)\b", re.I)
 CAUSES = ("brief", "tool", "rule", "environment", "other agent", "the agent itself")
@@ -58,6 +67,16 @@ CLOSING_TAGS = re.compile(r"(</[A-Za-z][A-Za-z0-9_-]*>|\s)*$")
 EXIT_CODE = re.compile(r"exit\s+[0-9]+", re.I)
 ANSWER_HEADING = re.compile(r"^## Answer\s*$", re.M)
 READ_CLAIM = re.compile(r"READ `([^`:]+):([0-9]+)(?:-([0-9]+))?`")
+# The text a READ claim quotes: right after the claim, in double quotes or backticks.
+READ_QUOTE = re.compile(r'[\s:,;\u2013\u2014-]*(?:"([^"\n]+)"|`([^`\n]+)`)')
+PATH_LINE = re.compile(r"[^\s:]+:[0-9]+(-[0-9]+)?")
+QUOTE_WINDOW = 3
+EXIT_CLAIM = re.compile(r"exit\s+([0-9]+)", re.I)
+EXIT_RESULT = re.compile(r"\s*Exit code ([0-9]+)")
+REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
+MAX_AUTO = 5
+AUTO_PREFIX = "[auto] "
+LOW_TASK = 3
 EDIT_TOOLS = {"Edit", "Write", "NotebookEdit"}
 # What a FEEDBACK item says when it holds no feedback.
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
@@ -144,7 +163,7 @@ def check_compliance(lines: list[str], /) -> list[str]:
     if EXIT_CODE.search(text) or NO_GATE.search(text):
         return []
 
-    return ["COMPLIANCE names no gate with an exit code and does not say no gate applied"]
+    return ["COMPLIANCE names no gate with an exit code (the words `exit N`) and does not say no gate applied"]
 
 
 def get_scores(lines: list[str], /) -> dict[str, str]:  # keys are data
@@ -203,7 +222,7 @@ def check_report(report: str, required: tuple[str, ...], cause_pattern: re.Patte
 
     sections = read_sections(report)
     problems = check_headings(sections, required)
-    bodies = dict(reversed(sections))
+    bodies = dict(reversed(sections))  # a dict keeps the last pair of a repeated key: reversed, the FIRST occurrence wins
     for heading in required:
         if heading not in bodies:
             continue
@@ -226,11 +245,25 @@ def check_report(report: str, required: tuple[str, ...], cause_pattern: re.Patte
     return problems
 
 
-def read_assistant_blocks(path: str, /) -> tuple[list[dict], set[str]]:  # keys are data
-    """The content blocks of a transcript's assistant lines, and the ids of the tool calls whose result was an error."""
+def result_text(block: dict, /) -> str:  # keys are data
+    """The text of a tool_result block, whether its content is a string or a list of text blocks."""
+
+    content = block.get("content")
+    if isinstance(content, list):
+        return "\n".join(part.get("text") or "" for part in content if isinstance(part, dict))
+
+    return content if isinstance(content, str) else ""
+
+
+def read_assistant_blocks(path: str, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
+    """The content blocks of a transcript's assistant lines, the text of each error result by tool call id, the model.
+
+    The transcript carries an exit code only for a failed call, as the first line `Exit code N` of its error result.
+    """
 
     blocks: list[dict] = []
-    failed: set[str] = set()
+    failed: dict[str, str] = {}
+    model: str | None = None
     with open(path, errors="replace") as file:
         for line in file:
             try:
@@ -238,15 +271,17 @@ def read_assistant_blocks(path: str, /) -> tuple[list[dict], set[str]]:  # keys 
                 content = entry.get("message", {}).get("content")
             except (ValueError, AttributeError):
                 continue
+            if entry.get("type") == "assistant" and isinstance((entry.get("message") or {}).get("model"), str):
+                model = entry["message"]["model"]
             for block in content if isinstance(content, list) else ():
                 if not isinstance(block, dict):
                     continue
                 if entry.get("type") == "assistant":
                     blocks.append(block)
                 elif entry.get("type") == "user" and block.get("type") == "tool_result" and block.get("is_error"):
-                    failed.add(block.get("tool_use_id"))
+                    failed[block.get("tool_use_id")] = result_text(block)
 
-    return blocks, failed
+    return blocks, failed, model
 
 
 def get_report(event: dict, blocks: list[dict], /) -> str:  # keys are data
@@ -265,18 +300,34 @@ def get_report(event: dict, blocks: list[dict], /) -> str:  # keys are data
     return report or last
 
 
-def get_changed_files(blocks: list[dict], failed: set[str], cwd: str, /) -> list[str]:  # keys are data
-    """The resolved paths the agent changed through the edit tools; a call whose result was an error changed nothing."""
+def count_lines(text: object, /) -> int:
+    return len(text.splitlines()) if isinstance(text, str) else 0
 
-    paths: set[str] = set()
+
+def get_file_changes(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> dict[str, int]:  # keys are data
+    """The resolved path of each file changed through the edit tools, with an estimate of the lines it gained.
+
+    A call whose result was an error changed nothing. The estimate sums the lines of each call's new text (`new_string`,
+    `content` or `new_source`); it ignores the lines a call removed, so a rewrite counts in full.
+    """
+
+    changes: dict[str, int] = {}
     for block in blocks:
         if block.get("type") == "tool_use" and block.get("name") in EDIT_TOOLS and block.get("id") not in failed:
             tool_input = block.get("input") or {}
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if path:
-                paths.add(os.path.realpath(os.path.join(cwd, path)))
+                key = os.path.realpath(os.path.join(cwd, path))
+                added = sum(count_lines(tool_input.get(name)) for name in ("new_string", "content", "new_source"))
+                changes[key] = changes.get(key, 0) + added
 
-    return sorted(paths)
+    return changes
+
+
+def get_changed_files(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> list[str]:  # keys are data
+    """The resolved paths the agent changed through the edit tools; a call whose result was an error changed nothing."""
+
+    return sorted(get_file_changes(blocks, failed, cwd))
 
 
 def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
@@ -289,24 +340,63 @@ def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
 
 
 def check_read_claims(report: str, root: str, /) -> list[str]:
-    """Each READ `path:line` names an existing file with at least that many lines; `path:a-b` checks `b`."""
+    """Each READ `path:line` names an existing file with at least that many lines; `path:a-b` checks `b`.
+
+    A claim followed by a quoted text needs that text on its lines or within QUOTE_WINDOW lines of them.
+    """
 
     problems: list[str] = []
-    for path, first, last in READ_CLAIM.findall(report):
+    for match in READ_CLAIM.finditer(report):
+        path, first, last = match.groups()
         full = os.path.join(root, os.path.expanduser(path))
         if not os.path.isfile(full):
             problems.append(f"READ names a file that does not exist: {path}")
             continue
-        with open(full, "rb") as file:
-            count = sum(1 for _ in file)
+        with open(full, errors="replace") as file:
+            lines = file.read().splitlines()
+        count = len(lines)
         line = int(last or first)
         if line > count:
             problems.append(f"READ {path}:{line} is past the end of the file, which has {count} lines")
+            continue
+        quote = READ_QUOTE.match(report, match.end())
+        quoted = quote and (quote.group(1) or quote.group(2))
+        if quoted and not PATH_LINE.fullmatch(quoted):
+            first_line = max(int(first) - 1 - QUOTE_WINDOW, 0)
+            window = " ".join(" ".join(lines[first_line : line + QUOTE_WINDOW]).split())
+            parts = [" ".join(part.split()) for part in re.split(r"\.\.\.|\u2026", quoted)]
+            if not all(part in window for part in parts if part):
+                problems.append(
+                    f"READ {path}:{line} quotes text that is not on that line or within {QUOTE_WINDOW} lines of it "
+                    f"({quoted[:50]!r}): quote the line's own text, or fix the line number"
+                )
 
     return problems
 
 
-def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: set[str], /) -> list[str]:  # keys are data
+def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /) -> list[str]:  # keys are data
+    """Each `exit N` of the report is the result of a Bash call: a failed call's `Exit code N`, or 0 for a call that did not fail."""
+
+    seen: set[int] = set()
+    for block in blocks:
+        if block.get("type") == "tool_use" and block.get("name") == "Bash":
+            call_id = block.get("id")
+            match = EXIT_RESULT.match(failed[call_id]) if call_id in failed else None
+            if call_id not in failed:
+                seen.add(0)
+            elif match:
+                seen.add(int(match.group(1)))
+    claimed = sorted({int(code) for code in EXIT_CLAIM.findall(report)})
+
+    return [
+        f"the report claims `exit {code}` and no Bash call of the transcript ended with that code "
+        f"(codes seen: {', '.join(map(str, sorted(seen))) or 'none'}): write the exit code each command printed, or drop the claim"
+        for code in claimed
+        if code not in seen
+    ]
+
+
+def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: dict[str, str], /) -> list[str]:  # keys are data
     """What the report claims against what its transcript shows; no transcript leaves only the READ claims."""
 
     problems = check_read_claims(report, root)
@@ -318,9 +408,12 @@ def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list
         is_exempt = scratch and (path == scratch or path.startswith(scratch + os.sep))
         if not is_exempt and not is_named(path, report, folders):
             problems.append(f"the report does not name a file the agent changed: {path}")
+    # No Bash call at all is its own message; with some, each `exit N` is matched to a result.
     has_bash = any(block.get("type") == "tool_use" and block.get("name") == "Bash" for block in blocks)
     if EXIT_CODE.search(report) and not has_bash:
         problems.append("the report claims an exit code, and the transcript holds no Bash call")
+    elif has_bash:
+        problems += check_exit_claims(report, blocks, failed)
 
     return problems
 
@@ -334,13 +427,40 @@ def get_feedback(report: str, /) -> list[str]:
     return [text for text in texts if text and not NO_FEEDBACK.fullmatch(text)]
 
 
+def get_task_title(report: str, /) -> str:
+    """The task text of the title line `# Report: <role>, <task>`, empty when there is none."""
+
+    match = REPORT_TITLE.search(report)
+
+    return match.group(1) if match else ""
+
+
+def get_auto_items(report: str, /) -> list[str]:
+    """Items the gate files itself: each DECIDE and OUTSIDE bullet that is not "none", and a Task score of 3 or lower."""
+
+    sections = dict(reversed(read_sections(report)))
+    items: list[str] = []
+    for heading in ("DECIDE", "OUTSIDE"):
+        texts = [item_text(item) for item in get_items(sections.get(heading, []))]
+        items += [f"{AUTO_PREFIX}{heading}: {text}" for text in texts if text and not NO_FEEDBACK.fullmatch(text)]
+    for line in sections.get("REPORT CARD", []):
+        cells = [cell.strip() for cell in line.split("|")] if line.lstrip().startswith("|") else []
+        score = re.match(r"([1-5])(/5)?$", cells[2]) if len(cells) > 3 and cells[1] == "Task" else None
+        if score and int(score.group(1)) <= LOW_TASK:
+            title = get_task_title(report) or "(no title)"
+            items.append(f"{AUTO_PREFIX}Task score {score.group(1)} for {title}: {cells[3] or '(no reason given)'}")
+            break
+
+    return items[:MAX_AUTO]
+
+
 def file_feedback(root: str, session: str, role: str, items: list[str], /) -> list[str]:
     """Appends each item new to this session to the project's inbox; returns the ids of all the items."""
 
     inbox = os.path.join(root, INBOX)
     known = open(inbox, errors="replace").read() if os.path.exists(inbox) else ""
-    ids = []
-    for text in items:
+    ids: list[str] = []
+    for text in dict.fromkeys(items):
         item_id = hashlib.sha1(text.encode()).hexdigest()[:8]
         ids.append(item_id)
         if f"id={item_id} session={session} " not in known:
@@ -351,8 +471,28 @@ def file_feedback(root: str, session: str, role: str, items: list[str], /) -> li
     return ids
 
 
-def write_ledger(event: dict, root: str, role: str, report: str, send_backs: int, problems: list[str], ids: list[str], /) -> None:  # keys are data
-    """Appends one row for the stopped agent to the plugin's ledger, which the `retro` skill reads."""
+def get_budget_min(event: dict, config: dict, role: str, /) -> float | None:  # keys are data
+    """The minutes budget.py gives this agent: its brief's `Budget:` line, else the role's default; None if neither."""
+
+    path = get_agent_path(event)
+    minutes = None
+    if path is not None:
+        try:
+            with open(path, errors="replace") as file:
+                minutes = get_minutes(get_brief(json.loads(file.readline())))
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    return minutes if minutes is not None else get_default(config, role)
+
+
+def write_ledger(
+    event: dict, root: str, role: str, report: str, send_backs: int, problems: list[str], ids: list[str], extra: dict, /
+) -> None:  # keys are data
+    """Appends one row for the stopped agent to the plugin's ledger, which the `retro` skill reads.
+
+    `extra` holds the fields read from the transcript and the config: model, budget_min, files_changed.
+    """
 
     sections = dict(reversed(read_sections(report)))
     scores = get_scores(sections.get("REPORT CARD", []))
@@ -374,6 +514,11 @@ def write_ledger(event: dict, root: str, role: str, report: str, send_backs: int
         "scores": {name: scores.get(name) for name in SCORES},
         "causes": [cause.strip().lower() for cause in causes],
         "feedback_ids": ids,
+        "model": event.get("model") or extra.get("model"),
+        "budget_min": extra.get("budget_min"),
+        "files_changed": extra.get("files_changed", []),
+        "claim_marks": {mark: len(re.findall(rf"\b{mark}\b", report)) for mark in ("READ", "DERIVED", "PROBED")},
+        "brief_hash": hashlib.sha1(get_task_title(report).encode()).hexdigest()[:8] if get_task_title(report) else None,
         "report": report,
     }
     with open(data_folder() / "ledger.jsonl", "a") as file:
@@ -395,7 +540,17 @@ def get_send_backs(event: dict, /) -> int:  # keys are data
     return int(path.read_text()) if path.exists() else 0
 
 
-def finish(event: dict, root: str, role: str, report: str, problems: list[str], /) -> None:  # keys are data
+def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: str | None, config: dict, role: str, root: str, /) -> dict:  # keys are data
+    """The ledger fields that come from the transcript and the config."""
+
+    cwd = event.get("cwd") or root
+    changes = get_file_changes(blocks, failed, cwd)
+    files = [{"path": os.path.relpath(path, root) if path.startswith(root + os.sep) else path, "lines_added": added} for path, added in changes.items()]
+
+    return {"model": model, "budget_min": get_budget_min(event, config, role), "files_changed": files}
+
+
+def finish(event: dict, root: str, role: str, report: str, problems: list[str], extra: dict, /) -> None:  # keys are data
     """The agent stops: its feedback and its ledger row are filed, and its send-back count is dropped."""
 
     path = get_send_backs_path(event)
@@ -403,7 +558,8 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
     if path.exists():
         path.unlink()
     session = event.get("session_id") or "unknown"
-    write_ledger(event, root, role, report, send_backs, problems, file_feedback(root, session, role, get_feedback(report)))
+    items = [*get_feedback(report), *get_auto_items(report)]
+    write_ledger(event, root, role, report, send_backs, problems, file_feedback(root, session, role, items), extra)
 
 
 def main() -> int:
@@ -415,21 +571,23 @@ def main() -> int:
     if root is None or not form:
         return 0
     required = REQUIRED[form]
-    # A cause followed by " |" is the form's own list, copied and not chosen, so it does not count.
+    # A cause counts as a whole word, and not when a `|` follows it: the skill's template lists the causes as
+    # `brief | tool | ...`, and a copied list is not a choice.
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
     cause_pattern = re.compile(rf"cause:\s*({causes})(?![a-z]|\s*\|)", re.I)
     path = event.get("agent_transcript_path") or ""
-    blocks, failed = read_assistant_blocks(path) if os.path.isfile(path) else ([], set())
+    blocks, failed, model = read_assistant_blocks(path) if os.path.isfile(path) else ([], {}, None)
     report = get_report(event, blocks)
     problems = check_report(report, required, cause_pattern)
     problems += check_claims(report, event, str(root), get_scratch(root, config), blocks, failed)
+    extra = get_extra(event, blocks, failed, model, config, name, str(root))
     if not problems:
-        finish(event, str(root), name, report, [])
+        finish(event, str(root), name, report, [], extra)
         return 0
     listed = "; ".join(problems)
     tries = get_send_backs(event)
     if tries >= MAX_SEND_BACKS:
-        finish(event, str(root), name, report, problems)
+        finish(event, str(root), name, report, problems, extra)
         warning = f"Sub-agent {name} stopped with a bad report after {tries} send-backs: {listed}"
         print(json.dumps({"systemMessage": warning}))
         return 0
@@ -440,7 +598,7 @@ def main() -> int:
         f"Send the WHOLE report again, not only the fix. Each heading on its own line, once, in this order:\n{headings}\n"
         'A section has a body; "none" only in OUTSIDE, DECIDE, NOT CHECKED and FEEDBACK FOR THE ORCHESTRATOR. A PROBLEMS '
         'MET with no problem reads "no problem met: <what ran clean>"; otherwise each item says "cause: <one of '
-        f'{", ".join(CAUSES)}>". COMPLIANCE names a gate with its exit code, or says no gate applied. REPORT CARD has a '
+        f'{", ".join(CAUSES)}>". COMPLIANCE names a gate with its exit code (`exit N`), or says no gate applied. REPORT CARD has a '
         "Task, Brief and Ease row with a Value 1 to 5, then the two labelled lines."
     )
     print(json.dumps({"decision": "block", "reason": reason}))

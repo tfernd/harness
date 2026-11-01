@@ -1,5 +1,11 @@
-#!/usr/bin/env -S python3 -I
-"""PreToolUse hook on Bash, Write, Edit and NotebookEdit: refuses dangerous commands, in every project.
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
+"""PreToolUse hook on Bash, Write, Edit and NotebookEdit: refuses dangerous commands, in every project, for sub-agents as well as the main session.
 
 It judges commands, not text: `shell.py` reads the command as a shell does, so a heredoc's body, a quoted string or an
 argument (`ls .venv/bin/python`) is never taken for a command, and what runs inside `$(...)`, backticks and `<(...)` is.
@@ -8,8 +14,8 @@ any `VAR=value` and prefixes such as `sudo -u root`, `env`, `timeout 60`, `xargs
 
 Always on:
 1. Deletes: `rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`. `git rm` stays allowed.
-2. History: a push that rewrites or deletes remote history (`--force`, `-f` in a cluster, `+ref`, `:ref`, `--delete`,
-   `--mirror`) and `git reset --hard`.
+2. History: a push that rewrites or deletes remote history (`--force` and its variants, `--delete`, `--mirror`, `--prune`, `-f` or `-d`
+   alone or in a cluster such as `-fu`, `+ref`, `:ref`) and `git reset --hard`.
 3. Globs: an unquoted glob in any argument (`ls *.py`, `--include=*.py`, the pattern of `find -name` or `rg -g`), which
    zsh expands or refuses with "no matches found". No glob: `$?`, `$*`, `${...}`, `$((...))`, the arguments of `[`, `[[`,
    `case` and `test`, and the value of `export NAME=...`.
@@ -19,10 +25,11 @@ Always on:
 On when the project's `.harness.json` asks, under its `guard` key:
 5. `deny_packages`: package changes (`uv add|remove|lock|sync|pip`, `uv run pip`, `pip`, `pip3`, `python -m pip`).
 6. `no_tmp`: throwaway files under `/tmp`: a path a command writes there, or a Write or Edit whose path lies there.
-7. `scratch`: the same shell writes into the project, outside that folder, and `mv` of a project file out of its place.
+7. `scratch`: a write by the writing commands below that lands inside the project but outside that folder is refused, and
+   so is `mv` of a project file out of its place. A write outside the project is not this rule's.
    Files change through the Edit and Write tools or a Python script; what Python code writes is not read.
-8. `lock`: `uv run python`, `uv run pytest` or the venv's python outside one of the `commands` (a queue for a GPU, say).
-   Allowed: `free_env` before the command, the `free_scripts`, and any script or `-m` module starting with a
+8. `lock`: `uv run python`, `uv run pytest` or the venv's python outside a call wrapped by one of the `commands` (the
+   wrapper words that set the lock, a queue for a GPU, say). Allowed: `free_env` (the whole `NAME=value` word) before the command, the `free_scripts`, and any script or `-m` module starting with a
    `free_prefixes` entry. `message` is the refusal.
 
 Writing commands: redirects (`>`, `>>`, `&>`; not `2>&1`, `>&2` or `/dev/null` as a file), `tee`, `mkdir`, `touch`,
@@ -31,11 +38,11 @@ Writing commands: redirects (`>`, `>>`, `&>`; not `2>&1`, `>&2` or `/dev/null` a
 from the working directory the command reaches: the event's, moved by each `cd`, `pushd` or `popd` before it in the
 same command (`cd X && ...`, `cd X; ...`). Paths are compared resolved, so a symlink or a `..` changes nothing. Where that
 folder is not known (a `cd` with no target, `cd -`, a variable, a substitution, a glob, a missing folder, a `cd` inside a
-`( )` group, a substitution, a pipeline or the background, `eval`, `source`), a relative written path is refused from
-there on when rule 7 is on; a shell variable in a path is not expanded.
+`( )` group, a substitution, a pipeline or the background, `eval`, `source`), a relative written path is refused for the
+rest of that command, until a `cd` to an absolute existing folder, when the `scratch` rule (7) is on; a shell variable in a path is not expanded.
 
 Exit 2 blocks the call and hands the message on stderr to the agent; exit 0 lets it run; exit 1 (a bug in this guard or
-a broken `.harness.json`) shows the error and lets the call run.
+a broken `.harness.json`) shows the error and lets the call run: the guard fails open, so a broken config drops every rule.
 """
 
 from __future__ import annotations
@@ -47,12 +54,11 @@ import re
 import sys
 from typing import NamedTuple
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import find_project, get_scratch
+from shell import GLOB_CHARACTERS, Segment, Word, get_segments
 
-from common import find_project, get_scratch  # noqa: E402
-from shell import GLOB_CHARACTERS, Segment, Word, get_segments  # noqa: E402
-
-# The words that run the next word as the command, with no option of their own.
+# The words after which the next word is the command, with no option of their own: wrappers (`command`, `exec`, `nohup`,
+# `time`, `builtin`, `noglob`) and shell keywords or punctuation (`then`, `do`, `else`, `elif`, `if`, `while`, `until`, `!`, `{`, `}`).
 PREFIXES = {
     "command",
     "exec",
@@ -94,10 +100,11 @@ FIND_RUNNER_ENDS = {";", "+"}
 PYTHONS = {"python", "python3", "pytest"}
 # The options of `uv run` that take a value in the next word.
 UV_VALUE_OPTIONS = {"--with", "--project", "--directory", "--python", "-p", "--group", "--extra", "--env-file"}
-# The `uv` subcommands that change packages: the settings deny them, and so does the guard after `&&` or `;`.
+# The `uv` subcommands that change packages; refused when `deny_packages` is on, wherever they stand in the command.
 UV_DENIED = {"add", "remove", "lock", "sync", "pip"}
 # The `git push` options that rewrite or delete history on the remote; a plain push of a branch is allowed.
 PUSH_DENIED = {"--force", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "--prune"}
+# The short letters of a push option that force (`-f`) or delete (`-d`), alone or in a cluster.
 PUSH_DENIED_LETTERS = set("fd")
 # The options of git before its subcommand that take a value in the next word.
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"}
@@ -209,7 +216,7 @@ def resolve(segment: Segment, /) -> Command:
         elif word in OPTION_PREFIXES:
             index = skip_options(words, index + 1, OPTION_PREFIXES[word])
             if word == "timeout":
-                index += 1
+                index += 1  # skip its duration, the first non-option word
         elif word.removeprefix("./") in POLICY.lock_commands:
             is_locked = True
             index = skip_options(words, index + 1, set())
@@ -684,6 +691,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in the guard must not block every call
+    except Exception as error:  # fail open (exit 1 lets the call run): a bug in the guard must not block every call
         print(f"the harness guard failed and let the call run: {error!r}", file=sys.stderr)
         sys.exit(1)

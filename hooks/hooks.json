@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
             "timeout": 10
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/budget.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/budget.py\"",
             "timeout": 10
           }
         ]
@@ -37,12 +37,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\"",
             "timeout": 10
           }
         ]
@@ -52,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/brief_lint.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/brief_lint.py\"",
             "timeout": 10
           }
         ]
@@ -64,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" add",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" add",
             "timeout": 10
           }
         ]
@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" reset",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" reset",
             "timeout": 10
           }
         ]
@@ -86,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\"",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\"",
             "timeout": 10
           }
         ]
@@ -97,7 +97,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" stop",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" stop",
             "timeout": 10
           }
         ]

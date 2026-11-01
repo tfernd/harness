@@ -12,10 +12,11 @@ brief it answered and the tree, and finds out which claims hold. It edits nothin
 
 1. **Collect the claims.** List each claim of the report: every Work line, every gate result, every "not changed", every
    file named. Include what the report leaves out: files changed that it does not name (`git status` and `git diff
-   --stat` are reading; the project may share a tree with other agents, so attribute only what the report's write set
-   allows).
+   --stat` are reading; the project may share a tree with other agents, so blame the author only for files inside its
+   write set).
 2. **Re-run the judges.** Run the brief's Judge commands yourself, once each, as the brief wrote them. Compare with the
-   exit codes and counts the report quotes. Smallest case first; follow the project's rules for shared resources.
+   exit codes and counts the report quotes. Smallest case first; follow the project's rules for shared resources. A
+   brief that lists no judge command is a brief gap: say so, grade at most 3, and run the project's gate if it has one.
 3. **Mark each claim** TRUE or FALSE, with evidence in the marks of `harness:evidence`: READ `path:line` with the
    quoted line, or PROBED with the command and exit code. A claim you cannot settle is UNSETTLED with the reason; it
    never counts as true.
@@ -31,19 +32,20 @@ Grade the author's **Task** score: the value it gave itself for how much of the 
 | Grade | Meaning |
 | --- | --- |
 | 5 | Done and every claim true; judges pass when you rerun them |
-| 4 | Done; a claim wrong in a way that does not change the result |
+| 4 | Done; a wrong claim about detail (a count, a name) while the result and every claim of success hold |
 | 3 | A required part missing or a judge failing; the report said so |
-| 2 | A required part missing or failing that the report did not say |
+| 2 | A required part missing or failing that the report did not say; or a judge fails on rerun while the report claims it passed |
 | 1 | Most of the brief not done, or the report mostly false |
 
-The grade is the auditor's honest reading, not a repeat of the self-score. A false claim of success caps the grade at 2.
+The grade is the auditor's honest reading, not a repeat of the self-score. A false claim of success (a judge or part
+reported done that is not) caps the grade at 2; grade 4 is only for wrong claims that are not about success.
 
 ## The report
 
 The full form of `harness:report`. Work holds, in this order:
 
 - One line, exactly `Grade: N/5 for <role> <unit>`, where `<unit>` is the exact task text of the author's
-  `# Report: <role>, <task>` title. Nothing follows it on the line. `harness:retro` and its `references/queries.md`
+  `# Report: <role>, <task>` title (when the task holds a comma, the unit is everything after the first comma and space). Nothing follows it on the line. `harness:retro` and its `references/queries.md`
   join on that text, so its shape is fixed.
 - On its own next line, the author's self-score: `Author's Task score: M/5`.
 - Claims, one line each: TRUE, FALSE or UNSETTLED, the claim in a few words, the evidence.

@@ -3,7 +3,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## What it is
 - Skills, agents, hooks and templates for spec-driven multi-agent work. `README.md` says what ships and how to install.
-- Every push reaches every project that has it installed, so run `python3 tests/run_cases.py` and `python3 tests/check_leaks.py` before pushing.
+- Every push reaches every project that has it installed, so run `uv run python tests/run_cases.py` and `uv run python tests/check_leaks.py` before pushing.
 - Once per clone: `git config core.hooksPath .githooks` (the pre-push check).
 
 ## Skills
@@ -23,7 +23,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Stdlib Python 3.10 only. A bug in a hook lets the call run: never fail closed on an exception.
 - Each new rule gets a case in `tests/run_cases.py` and a deliberate-bug control in `tests/mutants.py` that the case
   catches. A rule that cannot fail is not a rule.
-- A new guard rule is checked with `tests/replay.py` for false refusals against real commands.
+- A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.
 - The feedback folder is `harness-feedback/`, not a dot-folder, which Claude Code refuses to write.
 
 ## Working efficiently

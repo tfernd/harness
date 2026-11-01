@@ -1,19 +1,33 @@
 ---
 name: workflows
-description: Load when framing a job. Picks the job shape (scout fan-out, bug fix, spec-first feature, spike, parallel build), the size tier (small, medium, large), and between parallel Agent calls and the Workflow tool, with how a dynamic workflow is shaped.
+description: Load when framing a job. Picks the job shape (scout fan-out, bug fix, spec-first feature, spike, parallel build), the size tier (small, medium, large), and between parallel Agent calls and the Workflow tool, with a pointer to the shape of a dynamic workflow.
 ---
 
 # Job shapes and size tiers
 
 Pick the shape, then the tier. The main session follows `harness:orchestrator`; each step below goes to an agent.
+A **unit** is one change that one worker can finish inside one write set.
 
 ## Size tiers
 
 | Tier | Is | Steps |
 |---|---|---|
 | Small | one file, no public contract | worker, gates |
-| Medium | one unit | read-back, brief, one cold read, worker, gates, review |
-| Large | several units, or a public contract | read-back, spec, two cold readers, spec review, parallel workers, gates, audit, review and fix, integrate, audit, full test |
+| Medium | one unit across 2 or more files, no public contract | read-back, brief, one cold read, worker, gates, review |
+| Large | several units, or any public contract | the numbered steps below |
+
+Large steps, each with its owner:
+
+1. Read-back (main session).
+2. Spec (a worker writes it).
+3. Two cold readers.
+4. Spec review (reviewer).
+5. Parallel workers.
+6. Gates (runner).
+7. Audit of each report (auditor).
+8. Review (reviewer), then fix (the unit's worker).
+9. Integrate (one worker).
+10. Full test (runner).
 
 The read-back is one sentence of what stays and what goes (`harness:orchestrator`). The gates are the project's checks,
 named in its `AGENTS.md`.
@@ -30,7 +44,7 @@ Use when the job rests on facts nobody has checked.
 ## Bug fix: a failing test first
 
 1. A worker writes a test that fails for the reported cause, runs it, and reports the failure text.
-2. A different worker (or the same one, in a second brief) fixes the code with the test unchanged.
+2. A different worker, in a second brief, fixes the code with the test unchanged.
 3. Gates; reviewer. The test stays.
 
 A bug claim is probed before any fix (`harness:evidence`).
@@ -50,7 +64,7 @@ Use when the way is unknown.
 3. Freeze the judge as a test in the project, and record the judge file's sha256 (`sha256sum <file>`) in the report
    at the freeze.
 4. Clean the code into place with the judge unchanged. At the end of clean-up compare the file's sha256 with the
-   recorded one; a difference is a breach, since the owner commits and git cannot show it.
+   recorded one; a difference is a breach: no commit happens between freeze and clean-up, so git cannot show a change.
 5. A reviewer confirms behaviour did not change: same judge, same output on the same inputs.
 
 ## Parallel build
@@ -63,7 +77,7 @@ Use when units are independent.
 4. Workers run in one message, in the background.
 5. Check each unit's judges; audit each report (`harness:audit`).
 6. Integrate: one agent wires the units together and owns the shared files.
-7. Audit again; run the full check through a `runner`.
+7. Audit the integration; run the full check through a `runner`.
 
 ## Parallel Agent calls or the Workflow tool
 
@@ -74,7 +88,8 @@ Use when units are independent.
 
 ## Parallel without waste
 
-- Split by time, not by topic: a unit an agent cannot finish in 10 minutes is split before it goes out. Many fixes in one file, a rewrite and a measurement are three units.
+- Split by time, not by topic: a unit an agent cannot finish in 10 minutes is split before it goes out (this sizes work; the 10 minutes of
+  `harness:orchestrator` are a stall check on a running agent). Many fixes in one file, a rewrite and a measurement are three units.
 - Every brief states a budget in minutes, and asks for a partial report when it runs out: done, not done, what is on disk. A stopped agent with no report leaves the main session guessing.
 - At the budget, check the tree (run the judges) instead of waiting; work on disk counts.
 - Never hold fast units for a slow one. Start each stage's units as soon as what they need exists; audit finished units while others still build.
@@ -83,20 +98,4 @@ Use when units are independent.
 - Tell the owner the expected time at launch, and say so as soon as a unit runs over.
 - Brief every agent to read and edit in bulk with one Python call per step, and to test once when its unit is done.
 
-## Shape of a dynamic workflow
-
-Facts below are from the `workflow-authoring` skill (load it with the Skill tool before writing a script; it is not a
-plugin skill).
-
-- A script starts with `export const meta = {name, description, phases}`, a pure literal.
-- Default to `pipeline(items, stage1, stage2)`: each item moves through its stages with no barrier. Use `parallel`
-  (a barrier) only when a stage needs every earlier result: dedup, early exit, comparison between findings.
-- One pipeline per item: find, then verify, then act.
-- Adversarial verify: several skeptics per finding, each told to refute; keep the finding when a majority fails to.
-  Give each a different lens (correctness, reproduction, impact) when the finding can fail in more than one way.
-- Pass a `schema` to `agent()` for structured output; it returns the validated object. Without one it returns text.
-- `agent()` returns null on a skipped or dead agent: filter with `.filter(Boolean)`.
-- No `Date.now()` or `Math.random()` in the script; pass timestamps through `args`.
-- Resume: relaunch with `{scriptPath, resumeFromRunId}`; the unchanged prefix of calls returns cached results.
-- Log what a cap drops; never truncate silently.
-- Worktree isolation only for agents that edit in parallel and would conflict.
+The shape of a dynamic workflow script: `references/dynamic.md`.
