@@ -24,6 +24,8 @@ PLACEHOLDERS = {"user", "you", "name", "username", "me", "yourname", "your-name"
 HOME = re.compile(r"(?:/ho" r"me/|/Us" r"ers/|[A-Za-z]:\\Us" r"ers\\)([^/\\\s\"'`)]+)")
 EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
 EMAIL_OK = {"anthropic.com", "users.noreply.github.com"}
+# The one place a handle may appear: the repo's own install path.
+REPO_PATH = "tfernd/harness"
 
 
 def private_words() -> list[str]:
@@ -55,7 +57,7 @@ def main() -> int:
         except (UnicodeDecodeError, OSError):
             continue
         for n, line in enumerate(text.splitlines(), 1):
-            low = line.lower()
+            low = line.lower().replace(REPO_PATH, "")
             kinds = []
             for m in HOME.finditer(line):
                 if m.group(1).lower() not in PLACEHOLDERS:

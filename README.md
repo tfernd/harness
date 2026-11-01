@@ -24,27 +24,71 @@ checks the worker did not touch a third file. Only then does the main session ac
 
 ## Install and update
 
-The hooks run as `uv run --script`, so `uv` must be on `PATH`.
+### What you get
 
-Git auth comes from your machine. Background updates never prompt, so a stored credential is required.
+Install once per machine. The plugin gives every project its skills (invoked as `harness:<name>`, for example
+`harness:orchestrator`), the six agents (`harness:worker` and others) and the hooks. The install copies nothing into a
+project.
+
+### Requirements
+
+- Claude Code.
+- `uv` on `PATH`, because the hooks run as `uv run --script`. To install it: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+- `git` access to this repo. For a private repo, store a credential once with `gh auth setup-git`.
+
+### Install
 
 ```bash
-gh auth setup-git
-claude plugin marketplace add OWNER/harness
+claude plugin marketplace add tfernd/harness
 claude plugin install harness@harness --scope user
 ```
 
-- `plugin.json` has no `version` on purpose: each pushed commit is a new version.
-- Update by hand with `claude plugin update harness@harness`, then `/reload-plugins`.
-- Auto-update is switched on under `/plugin`, Marketplaces. For a private repo it works only with a stored git
-  credential, because the background check cannot ask for a password.
-- Develop against a checkout without touching the installed copy: `claude --plugin-dir .`.
+Then restart Claude Code, or run `/reload-plugins` in a session.
 
-### A new project
+### Check it worked
 
-Run `/harness:init` (the `init` skill). It looks at the project's languages, asks only what the files do not settle,
-writes proposals to the project's scratch folder, shows a diff against any existing file, and installs only on your
-word. It writes `.harness.json`, `AGENTS.md` and the matching files under `.claude/rules/`.
+- `claude plugin list` shows `harness@harness` enabled.
+- In a session, typing `/harness:init` autocompletes.
+- The line "This project runs under the harness plugin" shows at session start only in projects that have a `.harness.json`.
+
+### Set up each project
+
+Run `/harness:init` in the project, once. It looks at the project's languages, asks only what the files do not settle,
+and shows a diff before it touches an existing file. It writes `.harness.json`, `AGENTS.md` and the matching files
+under `.claude/rules/`.
+
+- **Without `.harness.json`** only the always-on safety guard runs: no `rm` or other deletes, no force push, no
+  `git reset --hard`, no unquoted globs, no `sleep` in a polling loop. Nothing else is on.
+- **With `.harness.json`** (strict mode) the hooks also track the turn, check sub-agent reports and budgets, and each
+  key you set turns on its rule: package bans, a scratch folder, no `/tmp`, a Python lock, delegation, brief checks.
+  See the [keys table](#harnessjson-keys).
+
+### Update
+
+```bash
+claude plugin marketplace update harness
+claude plugin update harness@harness
+```
+
+Restart Claude Code to apply it. Each pushed commit is a new version (`plugin.json` has no `version`). Auto-update is
+switched on under `/plugin`, Marketplaces; a private repo needs a stored git credential, since the background check
+cannot ask for a password.
+
+### Share with a team
+
+Commit `.harness.json`, `AGENTS.md` and `.claude/rules/`. Teammates still install the plugin themselves. To prompt them,
+list the marketplace and plugin in the project's `.claude/settings.json` (`extraKnownMarketplaces`, `enabledPlugins`;
+see Claude Code's plugin docs for the shape).
+
+### Uninstall
+
+Run `claude plugin uninstall harness@harness`.
+
+### Troubleshooting
+
+- Hooks do nothing: `uv` is missing from `PATH`, or the project has no `.harness.json` (only the safety guard runs).
+- A message starting "harness guard blocked" says which rule fired and what to change; follow it.
+- To develop the plugin without touching the installed copy, run `claude --plugin-dir .` in a checkout.
 
 ## Repo map
 
