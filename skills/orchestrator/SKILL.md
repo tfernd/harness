@@ -66,6 +66,7 @@ Report:    the report form it owes (`harness:report`), headings in order
 - A brief that changes a public signature lists every caller, found by `rg`.
 - A size limit states what it counts (file or report, frontmatter, fenced blocks) and which moves can reach it.
 - Re-read the whole brief before sending: no sentence contradicts another.
+- More checks before a brief goes out and at acceptance: `references/brief-checks.md`.
 
 ## Cold read
 

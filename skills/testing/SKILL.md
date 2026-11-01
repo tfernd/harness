@@ -63,6 +63,7 @@ A judge of a hook, gate or script is shown the same way: plant the bug in a copy
 - A run that cannot happen here (a missing tool or device) is listed under NOT CHECKED with the command for the owner,
   never replaced by a looser check.
 - A passing run counts only for the code it ran. After a change, rerun; a run from before it is not evidence.
+- More tips for writing a judge: `references/judge-tips.md`.
 
 ## Where judges come from
 
