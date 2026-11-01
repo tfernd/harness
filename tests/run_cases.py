@@ -1274,14 +1274,28 @@ SUB_WORKER = {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"
 LESSON_FILES = (
     (INBOX_NAME, inbox_line("aaaaaaa1", "worker", "check the unit twice") + inbox_line("aaaaaaa2", "scout", "scout only text")),
     (HANDLED_NAME, "aaaaaaa1: rule written in AGENTS.md.\naaaaaaa2: rule written in AGENTS.md\n"),
+    ("AGENTS.md", "a rule\n"),
 )
-def lessons(padding: int, /) -> tuple[tuple[str, str], tuple[str, str]]:
+def lessons(padding: int, /) -> tuple[tuple[str, str], tuple[str, str], tuple[str, str]]:
     """Six handled lessons of the worker, entry1 oldest, each padded to `padding` characters."""
 
     return (
         (INBOX_NAME, "".join(inbox_line(f"bbbbbbb{n}", "worker", f"entry{n} " + "x" * padding) for n in range(1, 7))),
         (HANDLED_NAME, "".join(f"bbbbbbb{n}: rule written in AGENTS.md\n" for n in range(1, 7))),
+        ("AGENTS.md", "a rule\n"),
     )
+
+
+def auto_lesson_files() -> tuple[tuple[str, str], tuple[str, str], tuple[str, str]]:
+    """One handled worker lesson whose inbox text is an auto item."""
+
+    return (
+        (INBOX_NAME, inbox_line("aaaaaaa1", "worker", "[auto] DECIDE: pick one")),
+        LESSON_FILES[1],
+        LESSON_FILES[2],
+    )
+
+
 LOOP_CASES = [
     handled_turn("loop: a rule line with an unchanged file is refused", HANDLED_AGENTS[1], True, "was not changed"),
     handled_turn("loop: a rule line with a changed file is allowed", HANDLED_AGENTS[1], False, rewrite="a new rule\n"),
@@ -1293,13 +1307,17 @@ LOOP_CASES = [
     handled_turn("loop: a one-word rejection is refused", "deadbeef: rejected: no\n", True, "at least 3 words"),
     handled_turn("loop: an empty rejection is refused", "deadbeef: rejected:\n", True, "at least 3 words"),
     handled_turn("loop: a three-word rejection is allowed", "deadbeef: rejected: not a rule\n", False),
-    context("loop: a worker is told the role's handled lessons", SUB_WORKER, "Lessons from past runs of this role:\\n- check the unit twice (rule: AGENTS.md)", files=LESSON_FILES),
+    context("loop: a worker is told the role's handled lessons", SUB_WORKER, "- (rule in AGENTS.md) check the unit twice", files=LESSON_FILES),
+    context("loop: the lessons carry the already-acted header", SUB_WORKER, "do not redo the request:\\n- (rule in AGENTS.md)", files=LESSON_FILES),
+    context("loop: a lesson whose rule file is gone is skipped", SUB_WORKER, lacks="check the unit twice", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rule written in gone.md\n"))),
+    context("loop: an auto lesson is skipped", SUB_WORKER, "full form", lacks="pick one", files=auto_lesson_files()),
+    context("loop: a lesson text is cut to 140 characters", SUB_WORKER, "entry6 " + "x" * 133, lacks="x" * 134, files=lessons(300)),
     context("loop: another role's lesson is not told", SUB_WORKER, lacks="scout only", files=LESSON_FILES),
-    context("loop: a rejected lesson is not told", SUB_WORKER, lacks="Lessons from", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rejected: not a rule\n"))),
+    context("loop: a rejected lesson is not told", SUB_WORKER, lacks="Past feedback", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rejected: not a rule\n"))),
     context("loop: only the last five lessons are told", SUB_WORKER, "entry6", lacks="entry1", files=lessons(5)),
     context("loop: the lessons stay within 600 characters", SUB_WORKER, "entry6", lacks="entry2", files=lessons(100)),
-    context("loop: an inbox with no handled file is no crash", SUB_WORKER, "full form", lacks="Lessons from", files=(LESSON_FILES[0],)),
-    context("loop: a handled file with no inbox is no crash", SUB_WORKER, "full form", lacks="Lessons from", files=(LESSON_FILES[1],)),
+    context("loop: an inbox with no handled file is no crash", SUB_WORKER, "full form", lacks="Past feedback", files=(LESSON_FILES[0],)),
+    context("loop: a handled file with no inbox is no crash", SUB_WORKER, "full form", lacks="Past feedback", files=(LESSON_FILES[1],)),
     context("loop: ten new reports ask for a retro", {"hook_event_name": "SessionStart"}, "10 reports since the last retro: run harness:retro.", files=(ledger(10, OLD_TIME),)),
     context("loop: nine reports ask for nothing", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(9, OLD_TIME),)),
     context("loop: another project's reports do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME, project="/elsewhere"),)),

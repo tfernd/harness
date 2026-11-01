@@ -29,3 +29,4 @@ Checks the main session makes before a brief goes out, and when it accepts, in a
 - An outline pass looks for misplaced names.
 - A problem not resolved carries to the next status.
 - "Not verified" lists every check that could not run.
+- A judge that imports a plugin hook module by path (importlib) must say that hook scripts import their siblings (`common`, `budget`): load those first through importlib, or run the hook as a script with a JSON event on stdin.

@@ -31,7 +31,13 @@ FORM_TEXTS = {
     "short": "End with the short form of the `harness:report` skill: Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD. "
     "A hook sends back a report that breaks the form.",
 }
-LESSONS_HEADING = "Lessons from past runs of this role:"
+LESSONS_HEADING = (
+    "Past feedback to this role. Each item was already acted on; its rule now lives in the file named. "
+    "Read that file if it touches your task; do not redo the request:"
+)
+# Characters of an inbox text kept in a lesson line.
+MAX_LESSON_TEXT = 140
+AUTO_PREFIX = "[auto]"
 MAX_LESSONS = 5
 # Characters of the lessons text, heading included.
 MAX_LESSONS_CHARS = 600
@@ -43,7 +49,7 @@ LEDGER_TIME = "%Y-%m-%dT%H:%M:%S%z"
 
 
 def get_lessons(root: Path, agent_type: str, /) -> str:
-    """The role's last handled lessons, newest last, within the character limit; empty when there are none or a file fails."""
+    """The role's last handled lessons (no auto items, no vanished rule file), newest last, within the character limit; empty when there are none or a file fails."""
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)
     try:
@@ -52,7 +58,11 @@ def get_lessons(root: Path, agent_type: str, /) -> str:
     except OSError:
         return ""
     files = {item_id: name.strip(FILE_EDGES) for item_id, name in RULE_LINE.findall(handled)}
-    lines = [f"- {text.strip()} (rule: {files[item_id]})" for item_id, owner, text in INBOX_LINE.findall(inbox) if owner == role and item_id in files]
+    lines = [
+        f"- (rule in {files[item_id]}) {text.strip()[:MAX_LESSON_TEXT]}"
+        for item_id, owner, text in INBOX_LINE.findall(inbox)
+        if owner == role and item_id in files and not text.lstrip().startswith(AUTO_PREFIX) and (root / files[item_id]).exists()
+    ]
     lines = lines[-MAX_LESSONS:]
     while len(lines) > 1 and len(LESSONS_HEADING + "".join(f"\n{line}" for line in lines)) > MAX_LESSONS_CHARS:
         lines.pop(0)
