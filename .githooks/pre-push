@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Every pushed commit reaches every project through auto-update, so a push must pass the hook cases.
+root=$(git rev-parse --show-toplevel)
+python3 "$root/tests/run_cases.py" || exit 1
+exec python3 "$root/tests/check_leaks.py"

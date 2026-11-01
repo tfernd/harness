@@ -1,0 +1,43 @@
+---
+name: spec
+description: How a spec is written for a large or public-contract job - a file with goal, non-goals, decisions with every "or" settled, write sets and judges. Load before writing a spec, or before reviewing one or briefing workers from one.
+---
+
+# A spec
+
+A spec is a file in the repo (`scratch/<topic>/SPEC.md` unless the project names a place), written before any
+worker starts. Workers and readers get its path in the brief. A spec that lives only in chat is not a spec.
+The orchestrator decides what goes in; an agent writes the file. Sizes that need one: `harness:workflows`.
+
+## Sections, in this order
+
+1. **Goal:** one sentence with the why. A reader who stops here knows what is being built.
+2. **Non-goals:** what a reasonable worker might add and must not. Each is a thing someone could be tempted to do.
+3. **Decisions:** one line per choice, already made: names, signatures, formats, file locations, defaults, error
+   behaviour. Every "or", "maybe", "TBD", "probably" and "should" is settled here or moved to Open questions.
+4. **Write sets:** one per unit: the files it may create or change, as paths or globs. Sets are disjoint. A file two
+   units need is assigned to one of them, and the other gets the change under OUTSIDE.
+5. **Judges:** per unit, the commands that decide done, with the expected result and the baseline of an "unchanged".
+   Every decision that can break has a judge (`harness:testing`).
+6. **Contract:** only for a public interface: its exact shape, so two units written apart still fit. One home per
+   fact; other units point to it.
+7. **Open questions:** only what the owner must answer. Work that depends on one does not start.
+
+## Rules
+
+- **No unsettled choice.** Search the draft for "or", "either", "if possible", "etc.", "similar". Each hit is a
+  decision to make or a sentence to cut.
+- **Names exist.** Every path, function, command and test id the spec cites is checked in the tree (`harness:evidence`)
+  or marked NEW with the file that will define it.
+- **Facts carry evidence.** A claim about the existing code has `path:line`; a claim about a tool or model has the doc
+  or command that showed it.
+- **Short.** A spec states decisions, not reasoning; the reasoning goes in a line after the decision, only where a
+  worker would otherwise undo it.
+- **Frozen once started.** A change after workers start is an edit by the orchestrator, and every unit it
+  touches is re-briefed.
+
+## Checking a spec
+
+A spec is accepted only after a cold read (`harness:cold-read`; two readers on a large job) and a review
+(`harness:review`, Interface lens). The reviewer checks that the write sets are disjoint, that every unit has a judge, and
+that no decision contradicts another.

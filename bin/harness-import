@@ -1,0 +1,184 @@
+#!/usr/bin/env -S python3 -I
+"""Imports past sub-agent report cards from Claude Code transcripts into the plugin's ledger.
+
+Reads `agent-*.jsonl` files under `<source>/*/*/subagents/` (default source `~/.claude/projects`), never writes there.
+An agent's final report is its last `SubagentHandback` message, else its last assistant text; only a report with a
+`## REPORT CARD` section becomes a row. The row has the shape `write_ledger` in `hooks/report_gate.py` writes, with
+`accepted` true, `send_backs` 0, no open problems or feedback ids, and `imported` true. `scores` is null unless the
+Task value is `1`-`5` or `N/5`; only the causes of `hooks/report_gate.py` are kept. `role` is the `agentType` of the
+sibling `.meta.json`, else `unknown`. An agent already in the ledger (same `agent_id`) is skipped, so a rerun adds nothing.
+
+A `--source` that is not a folder is warned about and skipped. `--dry-run` needs no ledger: with none it counts every
+report as new and adds nothing.
+
+    harness-import [--ledger PATH] [--source DIR ...] [--dry-run]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+
+from report_gate import CAUSES, SCORES, get_scores, read_sections  # noqa: E402
+
+CAUSE = re.compile(rf"cause:\s*({'|'.join(CAUSES)})", re.I)
+TASK = re.compile(r"[1-5](/5)?")
+
+
+def read_events(path: Path, /) -> list[dict]:  # keys are data
+    """The transcript's lines that parse to an object; a torn line or any other JSON value is skipped."""
+
+    events: list[dict] = []
+    with open(path, errors="replace") as file:
+        for line in file:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+
+    return events
+
+
+def find_report(events: list[dict], /) -> tuple[str, dict]:  # keys are data
+    """The agent's final report and the event holding it, or ("", {}) when it ended with none."""
+
+    for event in reversed(events):
+        if event.get("type") != "assistant":
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        blocks = [block for block in content if isinstance(block, dict)]
+        for block in reversed(blocks):
+            if block.get("type") == "tool_use" and block.get("name") == "SubagentHandback":
+                handback = block.get("input")
+                return str(handback.get("message", "") if isinstance(handback, dict) else ""), event
+        text = "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
+        if text.strip():
+            return text, event
+
+    return "", {}
+
+
+def read_role(path: Path, /) -> str:
+    """The `agentType` of the transcript's `.meta.json`, else "unknown"."""
+
+    try:
+        return str(json.loads(path.with_suffix(".meta.json").read_text()).get("agentType") or "unknown")
+    except (OSError, ValueError):
+        return "unknown"
+
+
+def make_row(path: Path, /) -> dict | None:  # keys are data
+    """The ledger row for one transcript, or None when its final report has no REPORT CARD section."""
+
+    events = read_events(path)
+    report, last = find_report(events)
+    sections = dict(reversed(read_sections(report)))
+    if "REPORT CARD" not in sections:
+        return None
+    scores = get_scores(sections["REPORT CARD"])
+    if not TASK.fullmatch(scores.get("Task", "").strip()):
+        scores = {}
+    causes = CAUSE.findall("\n".join(sections.get("PROBLEMS MET", [])))
+
+    return {
+        "time": last.get("timestamp"),
+        "project": next((e["cwd"] for e in events if e.get("cwd")), None),
+        "session": next((e["sessionId"] for e in events if e.get("sessionId")), None),
+        "agent_id": path.stem.removeprefix("agent-"),
+        "role": read_role(path),
+        "accepted": True,
+        "send_backs": 0,
+        "open_problems": [],
+        "scores": {name: scores.get(name) for name in SCORES} if scores else None,
+        "causes": [cause.strip().lower() for cause in causes],
+        "feedback_ids": [],
+        "report": report,
+        "imported": True,
+    }
+
+
+def read_known(ledger: Path, /) -> set[str]:
+    """The agent ids the ledger already holds."""
+
+    known: set[str] = set()
+    if ledger.is_file():
+        for line in ledger.read_text(errors="replace").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(row, dict):
+                known.add(str(row.get("agent_id")))
+
+    return known
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Import past sub-agent report cards into the ledger.")
+    parser.add_argument("--ledger", help="ledger file; default $CLAUDE_PLUGIN_DATA/ledger.jsonl")
+    parser.add_argument("--source", action="append", help="folder of project transcripts; default ~/.claude/projects")
+    parser.add_argument("--dry-run", action="store_true", help="print counts, write nothing")
+    args = parser.parse_args()
+
+    ledger: Path | None = None
+    if args.ledger:
+        ledger = Path(args.ledger)
+    elif os.environ.get("CLAUDE_PLUGIN_DATA"):
+        ledger = Path(os.environ["CLAUDE_PLUGIN_DATA"]) / "ledger.jsonl"
+    elif not args.dry_run:
+        print("harness-import: pass --ledger PATH or set CLAUDE_PLUGIN_DATA", file=sys.stderr)
+        return 2
+
+    paths: list[Path] = []
+    for source in args.source or [str(Path.home() / ".claude" / "projects")]:
+        folder = Path(source).expanduser()
+        if not folder.is_dir():
+            print(f"harness-import: warning: source {folder} is not a folder; nothing read from it", file=sys.stderr)
+            continue
+        paths += sorted(folder.glob("*/*/subagents/agent-*.jsonl"))
+
+    known = read_known(ledger) if ledger else set()
+    rows: list[dict] = []
+    seen = skipped = 0
+    for path in paths:
+        row = make_row(path)
+        if row is None:
+            continue
+        seen += 1
+        if row["agent_id"] in known:
+            skipped += 1
+        else:
+            rows.append(row)
+
+    print(f"transcripts: {len(paths)}; with a report card: {seen}; already in ledger: {skipped}; to add: {len(rows)}")
+    if rows and not args.dry_run and ledger:
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with open(ledger, "ab+") as binary:
+            binary.seek(0, os.SEEK_END)
+            has_text = binary.tell() > 0
+            if has_text:
+                binary.seek(-1, os.SEEK_END)
+            lacks_newline = has_text and binary.read(1) != b"\n"
+        with open(ledger, "a") as file:
+            if lacks_newline:
+                file.write("\n")
+            for row in rows:
+                file.write(json.dumps(row) + "\n")
+        print(f"wrote {len(rows)} rows to {ledger}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
