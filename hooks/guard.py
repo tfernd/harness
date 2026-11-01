@@ -16,8 +16,11 @@ Always on:
 1. Deletes: `rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`. `git rm` stays allowed.
 2. History: a push that rewrites or deletes remote history (`--force` and its variants, `--delete`, `--mirror`, `--prune`, `-f` or `-d`
    alone or in a cluster such as `-fu`, `+ref`, `:ref`) and `git reset --hard`.
-3. Globs: an unquoted glob in any argument (`ls *.py`, `--include=*.py`, the pattern of `find -name` or `rg -g`), which
-   zsh expands or refuses with "no matches found". No glob: `$?`, `$*`, `${...}`, `$((...))`, the arguments of `[`, `[[`,
+3. Globs: an unquoted glob that fails or changes the command: one that matches no file from the folder the command runs
+   in, which zsh refuses with "no matches found" (`ls *.nothing`), one in an option (`--include=*.py`), and the pattern of
+   `find -name`, `rg -g` or `grep --include`, which the shell would expand first. A glob that matches a file is what the
+   author meant (`wc -l src/*.py`). Not judged, so allowed: a relative glob from an unknown folder, and a word with `$`, a
+   backtick or a brace, whose expansion is not read. No glob: `$?`, `$*`, `${...}`, `$((...))`, the arguments of `[`, `[[`,
    `case` and `test`, and the value of `export NAME=...`.
 4. Polling: a `sleep` inside a `while` or `until` loop, also in a `$(...)` or a `bash -c` string inside one. A command
    that waits runs in the background. A `for` loop, a loop without a sleep and a sleep outside any loop are not refused.
@@ -121,6 +124,14 @@ TEMPORARY = "/tmp"
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
 # The commands whose arguments are patterns they match themselves, not paths the shell expands.
 PATTERN_COMMANDS = {"[", "[[", "case", "test"}
+# The options whose value is a pattern the command matches itself, by command.
+GLOB_PATTERN_OPTIONS = {
+    "find": {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-lname", "-ilname", "-regex", "-iregex"},
+    "rg": {"-g", "--glob", "--iglob"},
+    "grep": {"--include", "--exclude", "--exclude-dir"},
+}
+# The characters of a word the guard does not expand, so what its glob matches is not known.
+UNEXPANDED = "$`{"
 # The builtins whose `NAME=value` arguments are assignments, which no shell expands as a path.
 DECLARERS = {"export", "readonly", "declare", "typeset", "local"}
 # The commands that move the working directory: `cd` and `pushd` to a folder, `popd` to a stacked one.
@@ -133,8 +144,8 @@ MESSAGES = {
     "tracked file that must go uses `git rm`; anything else goes to the owner.",
     "denied": "this rewrites history or changes packages, which is the owner's to run.",
     "lock": "this project's Python runs under its lock.",
-    "glob": "zsh expands an unquoted glob or fails with 'no matches found'. Quote it (`--include='*.py'`), or use the "
-    "Grep tool or `rg -g '*.py'`.",
+    "glob": "this unquoted glob matches no file, so zsh fails with 'no matches found', or it is a pattern for the command "
+    "that the shell would expand first. Quote it (`--include='*.py'`), or use the Grep tool or `rg -g '*.py'`.",
     "temporary": "throwaway files go in the project's scratch folder, never under /tmp.",
     "repo": "project files change through the Edit and Write tools or a Python script. A shell redirect, tee, sed -i, "
     "cp, mv, curl or tar may write only under the scratch folder. A relative path is taken from the working directory "
@@ -328,15 +339,32 @@ def is_denied(command: Command, /) -> bool:
     return POLICY.deny_packages and is_package_change(command)
 
 
-def has_unquoted_glob(command: Command, /) -> bool:
-    """Whether an argument holds an unquoted glob, in a command that does not test patterns itself."""
+def is_failing_glob(text: str, directory: str | None, /) -> bool:
+    """Whether a glob word fails in zsh: an option, or a path that matches no file from `directory` (None: not known)."""
+
+    if text.startswith("-"):
+        return True
+    if any(character in text for character in UNEXPANDED) or (directory is None and not is_absolute(text)):
+        return False
+
+    return next(glob.iglob(resolve_path(text, directory or ""), recursive=True), None) is None
+
+
+def has_failing_glob(command: Command, directory: str | None, /) -> bool:
+    """Whether an argument holds an unquoted glob that fails or is a pattern for the command, which then must be quoted."""
 
     name = os.path.basename(command.name)
     if name in PATTERN_COMMANDS:
         return False
     is_declarer = name in DECLARERS
+    pattern_options = GLOB_PATTERN_OPTIONS.get(name, set())
+    for index, word in enumerate(command.arguments):
+        is_judged = word.is_glob and not (is_declarer and ASSIGNMENT.match(word.text))
+        is_pattern = index > 0 and command.arguments[index - 1].text in pattern_options
+        if is_judged and (is_pattern or is_failing_glob(word.text, directory)):
+            return True
 
-    return any(word.is_glob and not (is_declarer and ASSIGNMENT.match(word.text)) for word in command.arguments)
+    return False
 
 
 # ===========================================================================
@@ -609,7 +637,7 @@ def get_command_breaches(
         ("delete", is_delete(command)),
         ("denied", is_denied(command)),
         ("lock", bool(POLICY.lock_commands) and is_python_run(command) and not is_lock_free),
-        ("glob", has_unquoted_glob(command)),
+        ("glob", has_failing_glob(command, directory)),
         ("temporary", any(is_temporary(path) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path) for path in [*written, *moved])),
         ("poll", os.path.basename(command.name) == "sleep" and is_looping),
