@@ -7,7 +7,7 @@
 # ///
 """SessionStart and SubagentStart hook: in a project with `.harness.json`, tells a session what it owes.
 
-Both get the rule on tool turns. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells a role the report gate judges
+Both get the rule on tool turns and the setup facts that cost past agents a refused call: which tools may be missing, the shell, and the scratch folder. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells a role the report gate judges
 which report form it owes, and the last lessons handled for its role. Any other agent type gets nothing. SessionStart also
 says when ten or more reports of the project are newer than the plugin data folder's `retro-marker` file (the `retro` skill
 writes it). The text reaches the model as `additionalContext`.
@@ -29,8 +29,11 @@ TOOL_TURNS_TEXT = (
     "Use few tool turns; each one costs the owner time. Send independent calls together in one message (several Reads, a Bash "
     "beside a Read) and wait only when a call needs the previous result. Read or edit several files with one script that "
     "prints only what you need and asserts each edit, not a run of cat, sed, grep and ls. Do not read an unchanged file again "
-    "or rerun an unchanged command. Test once, when the unit is done."
+    "or rerun an unchanged command. Test once, when the unit is done. No clock limits you, only turns: run a long check in the "
+    "background, since waiting for it costs no turn."
 )
+TOOLS_TEXT = "If Grep or Glob is not among your tools, use `rg` and `find` through Bash."
+ZSH_TEXT = "The shell is zsh: quote every glob, and read exit codes from `$pipestatus`, not `$PIPESTATUS`."
 FORM_TEXTS = {
     "full": "End with the full form of the `harness:report` skill: the ten sections, from Answer to FEEDBACK FOR THE "
     "ORCHESTRATOR. A hook sends back a report that breaks the form.",
@@ -52,6 +55,21 @@ RETRO_MARKER = "retro-marker"
 INBOX_LINE = re.compile(r"^- id=([0-9a-f]{8}) session=\S+ agent=(\S+) (.+)$", re.M)
 RULE_LINE = re.compile(r"^([0-9a-f]{8}): rule written in[ \t]*(\S+)", re.M)
 LEDGER_TIME = "%Y-%m-%dT%H:%M:%S%z"
+
+
+def get_setup_text(config: dict, /) -> str:  # config keys
+    """The facts of this machine and project that a first call would otherwise learn from a refusal."""
+
+    guard = config.get("guard", {})
+    lines = [TOOLS_TEXT]
+    if os.path.basename(os.environ.get("SHELL") or "") == "zsh":
+        lines.append(ZSH_TEXT)
+    if guard.get("scratch"):
+        lines.append(f"Throwaway files go in `{guard['scratch']}/`.")
+    if guard.get("no_tmp"):
+        lines.append("A write under `/tmp` is refused, even where the environment names a scratchpad there.")
+
+    return " ".join(lines)
 
 
 def get_lessons(root: Path, agent_type: str, /) -> str:
@@ -111,11 +129,11 @@ def main() -> int:
     name = event.get("hook_event_name")
     text = ""
     if name == "SessionStart":
-        text = "\n".join(part for part in (SESSION_TEXT, TOOL_TURNS_TEXT, get_retro_line(root)) if part)
+        text = "\n".join(part for part in (SESSION_TEXT, TOOL_TURNS_TEXT, get_setup_text(config), get_retro_line(root)) if part)
     elif name == "SubagentStart":
         agent_type = event.get("agent_type") or ""
         form = get_report_form(agent_type, config.get("report", {}))
-        text = "\n\n".join(part for part in (FORM_TEXTS.get(form, ""), TOOL_TURNS_TEXT, get_lessons(root, agent_type)) if part)
+        text = "\n\n".join(part for part in (FORM_TEXTS.get(form, ""), TOOL_TURNS_TEXT, get_setup_text(config), get_lessons(root, agent_type)) if part)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 

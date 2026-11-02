@@ -19,6 +19,7 @@ uv run python tests/mutants.py [--only SUBSTRING] [--jobs N] [--check]
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -30,8 +31,23 @@ HOOKS = HARNESS / "hooks"
 RUN_CASES = HARNESS / "tests" / "run_cases.py"
 WORK = HARNESS / "scratch" / "hook-mutants"
 TIMEOUT = 170
+# Each case starts `uv` and a hook, so jobs times threads is what the machine carries: 6 on 24 cores. Six jobs of eight froze one.
+CASE_THREADS = 2
+DEFAULT_JOBS = max(1, (os.cpu_count() or 8) // 8)
+LOW_PRIORITY = 10
 # Name, file, the text to break, what it becomes.
 MUTANTS = (
+    # What the sub-agents' feedback asked for.
+    ("context-no-tools-text", "context.py", "lines = [TOOLS_TEXT]", "lines = []"),
+    ("context-zsh-always", "context.py", 'if os.path.basename(os.environ.get("SHELL") or "") == "zsh":', "if True:"),
+    ("context-no-setup-for-session", "context.py", "get_setup_text(config), get_retro_line(root))", "get_retro_line(root))"),
+    ("context-no-setup-for-agent", "context.py", "get_setup_text(config), get_lessons(root, agent_type))", "get_lessons(root, agent_type))"),
+    ("context-scratch-unnamed", "context.py", 'if guard.get("scratch"):', "if False:"),
+    ("context-tmp-always", "context.py", 'if guard.get("no_tmp"):', "if True:"),
+    ("budget-note-never", "budget.py", "if num_turns != limit - left:", "if True:"),
+    ("budget-note-every-turn", "budget.py", "if num_turns != limit - left:", "if num_turns > limit - left:"),
+    ("budget-note-no-floor", "budget.py", "left = max(MIN_TURNS_LEFT, limit // 5)", "left = limit // 5"),
+    ("budget-note-not-context", "budget.py", '"additionalContext": warning', '"note": warning'),
     # The independent review's nine.
     ("herestring-word-kept-as-argument", "shell.py", 'if operator.startswith("<<<"):\n            self.target = "herestring"', 'if operator.startswith("<<<"):\n            self.target = ""'),
     ("heredoc-bodies-read-as-commands", "shell.py", 'if operator == "\\n" and self.heredocs:\n            self.skip_heredocs()', 'if operator == "\\n" and self.heredocs:\n            self.heredocs = []'),
@@ -255,7 +271,7 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> tuple[str, int,
     shutil.copytree(HOOKS, folder, ignore=shutil.ignore_patterns("__pycache__"))
     path = folder / script
     path.write_text(path.read_text().replace(old, new))
-    command = ["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder)]
+    command = ["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder), "--fail-fast", "--first", script, "--threads", str(CASE_THREADS)]
     run = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT)
     failed = [line[5:].split(":")[0] for line in run.stdout.splitlines() if line.startswith("FAIL")]
     shutil.rmtree(folder)
@@ -272,7 +288,7 @@ def get_rotted_names() -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--only", default="", help="run the mutants whose name holds this text")
-    parser.add_argument("--jobs", type=int, default=6, help="mutants at once; each runs its cases on eight threads")
+    parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help="mutants at once; each runs its cases on CASE_THREADS threads")
     parser.add_argument("--check", action="store_true", help="only find the mutants whose text is gone")
     arguments = parser.parse_args()
     rotted = get_rotted_names()
@@ -281,6 +297,7 @@ def main() -> int:
         return 1 if rotted else 0
     chosen = [mutant for mutant in MUTANTS if arguments.only in mutant[0]]
     survivors = 0
+    os.nice(LOW_PRIORITY)
     with ThreadPoolExecutor(arguments.jobs) as pool:
         futures = [pool.submit(run_mutant, *mutant) for mutant in chosen]
         for future in as_completed(futures):

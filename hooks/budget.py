@@ -13,7 +13,8 @@ A turn is one model message, however many tools it calls, so a slow machine or a
 `Budget: N` or `Budget: N turns` outside a fence and a backtick quote in the agent's brief (its transcript's first line), opening a line or a
 sentence, so prose such as `over budget: 20` does not count. Any other unit (`Budget: 5 files`, `Budget: 5 minutes`) does not count; the brief rule refuses it. Without one the role's default stands: `.harness.json`'s `budget` maps a role to turns and REPLACES the whole DEFAULT_BUDGET
 table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The handback
-always passes, so the agent is never trapped. Only that first line is read, since this runs on every call.
+always passes, so the agent is never trapped. A note, no refusal, says when about a fifth of the budget is left, so an agent can
+plan its report instead of meeting the refusal. Only that first line is read, since this runs on every call.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from pathlib import Path
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, read_events
 
 # Turns, near the 99th percentile of past agents of each role, so a default stops a runaway agent and no ordinary one.
+# The fewest turns left when the note comes; a budget under this gets no note.
+MIN_TURNS_LEFT = 3
 DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70}
 BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
 # A line that labels a budget, as opposed to prose that opens with the word.
@@ -94,6 +97,16 @@ def get_default(config: dict, role: str, /) -> int | None:  # keys are data
     return int(turns) if isinstance(turns, (int, float)) and not isinstance(turns, bool) else None
 
 
+def get_warning_text(num_turns: int, limit: int, /) -> str:
+    """The note due at this turn, empty at every other turn."""
+
+    left = max(MIN_TURNS_LEFT, limit // 5)
+    if num_turns != limit - left:
+        return ""
+
+    return f"Harness note, not a refusal: {left} of your {limit} turns are left. Plan your report now; waiting for a background check costs no turn."
+
+
 def get_duration(path: Path | None, /) -> float | None:
     """Seconds from an agent transcript's first timestamp to its last, None when unknown."""
 
@@ -137,6 +150,9 @@ def main() -> int:
     is_written = not call_id or any(call.get("id") == call_id for call in (turns[-1] if turns else ()))
     num_turns = len(turns) + (not is_written)
     if num_turns <= limit:
+        warning = get_warning_text(num_turns, limit)
+        if warning:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": warning}}))
         return 0
     print(
         f"Blocked by the harness budget rule: your budget of {limit} turns is spent ({num_turns} turns so far). "

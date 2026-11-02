@@ -141,6 +141,28 @@ HISTORY = "owner's to run"
 GLOB = "unquoted glob"
 REPO = "project files change"
 GUARD_CASES = [
+    bash("a bare uv run does not crash", "uv run", False),
+    bash("a bare tar does not crash", "tar", False),
+    bash("a quote in a quoted parameter opens nothing", """echo "${X:-it's}"; uv pip install y""", True),
+    bash("a command after an ansi quote is still read", "echo $'a'; uv pip install y", True),
+    bash("a command in a counted for loop is still read", "for ((i=0;i<1;i++)); do uv pip install y; done", True),
+    bash("a bare bash -c does not crash", "bash -c", False),
+    bash("a script named like a command is no command string", 'bash -x "pip install y"', False),
+    bash("the words of a plain find run nothing", "find . pip install y", False),
+    Case("a notebook under the temporary folder is refused", ("guard.py",), {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/n.ipynb"}}, True, config=STRICT),
+    bash("an escaped letter stays in its word", r"p\ip install x", True),
+    bash("a sleep under find is no polling", r"find . -exec sleep 1 \;", False),
+    bash("a sleep under an unended find is no polling", "find . -exec sleep 1", False),
+    bash("git with options alone passes", "git --version", False),
+    bash("uv with options alone passes", "uv --version", False),
+    bash("an export of another variable frees nothing", "export FOO=1; uv run python x.py", True, LOCK_MESSAGE),
+    bash("a positional parameter stays in a path", "echo a > /$1tmp/y", False),
+    bash("a tar made under the temporary folder is refused", "tar -cf /tmp/a.tar b", True),
+    bash("a cd in a subshell does not move the next step", "(cd scratch); echo hi > AGENTS.md", True, REPO),
+    bash("an open backtick does not crash", "echo `ls", False),
+    bash("a command after a parameter is still read", "echo ${X}; uv pip install y", True),
+    bash("an open parameter does not crash", "echo ${X", False),
+    bash("an in-place edit of a missing file is no write", "sed -i s/a/b/ /tmp/nope.txt", False),
     bash("rm is refused", "rm x", True, "nothing is deleted"),
     bash("git clean is refused", "git clean -fd", True, "nothing is deleted"),
     bash("a plain git push is allowed", "git push -u origin topic", False),
@@ -403,6 +425,25 @@ CLEAN_REPORT = work_report("- nothing changed")
 FEEDBACK_REPORT = make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", "- add a rule to the report skill"))
 BAD_REPORT = make_report(skip="OUTSIDE", replace=("FEEDBACK FOR THE ORCHESTRATOR", "- add a rule"))
 GATE_CASES = [
+    gate("a Read is no Bash call for an exit code", transcript_event(make_report()), True, "holds no Bash call", transcript=(assistant({"type": "tool_use", "id": "r", "name": "Read", "input": {}}),)),
+    gate("a broken transcript line is skipped", {**transcript_event(make_report()), "agent_transcript_path": f"{ROOT}/project/broken.jsonl"}, False, files=(("broken.jsonl", "not json\n" + json.dumps(bash_call("t1")) + "\n"),)),
+    gate("a block that is no object is skipped", transcript_event(make_report()), False, transcript=(assistant("text"), bash_call("t1"))),
+    gate(
+        "a message to another agent is no report",
+        transcript_event("done"),
+        True,
+        "missing: Answer",
+        transcript=(assistant({"type": "tool_use", "id": "s", "name": "SendMessage", "input": {"message": make_report()}}),),
+    ),
+    gate(
+        "an exit code in a list result counts",
+        transcript_event(make_report(replace=("COMPLIANCE", "Gates: the style gate exit 1"))),
+        False,
+        transcript=(bash_call("t1"), {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": [{"type": "text", "text": "Exit code 1\noutput"}]}]}}),
+    ),
+    gate("a what line above the table is refused", stop_event(make_report(replace=("REPORT CARD", "**What would have helped:** nothing\n\n" + CARD.split("\n\n")[0] + "\n\n**How I would do it again:** the same"))), True, "must follow the table", lacks='has no "What'),
+    gate("an indented line joins its feedback item", stop_event(make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", "first item\n  more of it\nsecond item"))), False, wrote=(INBOX_NAME, "first item more of it")),
+    gate("an unindented line is its own feedback item", stop_event(make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", "first item\nsecond item"))), False, wrote=(INBOX_NAME, "agent=worker second item")),
     gate("a complete full report is accepted", stop_event(make_report()), False),
     gate("a report with a heading missing goes back", stop_event(make_report(skip="OUTSIDE")), True, "missing: OUTSIDE"),
     gate("a repeated heading goes back", stop_event(make_report() + "\n## Answer\nagain"), True, "duplicated: Answer"),
@@ -943,6 +984,9 @@ LESSONS = "Done.\n\n**Lessons:** the brief was vague, so a rule is needed.\n"
 # No rule path: the state now is `{}`, so RULES_KEPT means nothing changed and RULES_OTHER that something did.
 NO_RULE_PATHS = {"stop": {"rule_paths": []}}
 TURN_CASES = [
+    turn("the status is read from the transcript when the event has none", "", False, calls=BUSY_CALLS, transcript=(assistant({"type": "text", "text": FULL_STATUS}),)),
+    turn("a last line that is a tool call does not crash", "", False, transcript=(assistant({"type": "text", "text": "Done."}), assistant({"type": "tool_use", "id": "t", "name": "Bash", "input": {}}))),
+    Case("no mode does nothing", ("turn.py",), {"session_id": SESSION}, False, config={}),
     turn("a progress note with a background agent running is allowed", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1")),
     turn(
         "a background agent marked only by its result counts as running",
@@ -1269,6 +1313,7 @@ def brief(name: str, role: str, prompt: str, blocks: bool, text: str = "", /, **
 
 GOOD_BRIEF = "Do it.\nGoal: x\nWrite set: y\nJudge: z\n"
 BRIEF_CASES = [
+    brief("a fence with a language hides a budget", "scout", "Goal: x\n```python\nBudget: 5 minutes\n```", False),
     brief("a whole worker brief passes", "worker", GOOD_BRIEF, False),
     brief("a budget in minutes is refused", "scout", "Goal: x\nBudget: 5 minutes", True, "counts model turns"),
     brief("a budget in a sentence in minutes is refused", "scout", "Goal: x. Budget: 40 minutes. Folder: a", True, "counts model turns"),
@@ -1330,6 +1375,11 @@ def budget(name: str, brief_text: str, blocks: bool, text: str = "", /, *, turns
 
 
 BUDGET_CASES = [
+    budget("a note comes with a fifth of the budget left", "Budget: 30", False, "6 of your 30 turns are left", turns=24),
+    budget("the note is hook context", "Budget: 30", False, '"hookEventName": "PreToolUse", "additionalContext": "Harness note', turns=24),
+    budget("no note one turn before", "Budget: 30", False, lacks="additionalContext", turns=23),
+    budget("no note one turn after", "Budget: 30", False, lacks="additionalContext", turns=25),
+    budget("a small budget gets its note at three left", "Budget: 6", False, "3 of your 6 turns are left", turns=3),
     budget("a worker past its default budget is refused", "Goal: x", True, "Send your report now"),
     budget("the refusal counts the turns", "Goal: x", True, "budget of 70 turns is spent (100 turns so far)"),
     budget("the refusal asks for a partial report", "Goal: x", True, "done, not done, what is on disk"),
@@ -1419,6 +1469,11 @@ def nudge(name: str, turns: list[list[dict]], text: str = "", /, *, path: str = 
 
 REPEATED = [[read_call("r0", "a.py")], [read_call("r1", "a.py")], [read_call("r2", "a.py")], [read_call("r3", "a.py")]]
 NUDGE_CASES = [
+    nudge(
+        "a repeat with its keys in another order is a repeat",
+        [[{"type": "tool_use", "id": "r0", "name": "Read", "input": {"file_path": "a.py", "limit": 1}}], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"limit": 1, "file_path": "a.py"}}]],
+        "already made this same read",
+    ),
     nudge("four single reads in a row are nudged", make_reads(4), "one small read each"),
     nudge("the nudge is hook context", make_reads(4), '"hookEventName": "PostToolUse"'),
     nudge("three single reads are not", make_reads(3), lacks="additionalContext"),
@@ -1468,6 +1523,10 @@ IMPORT_LINES = (
 )
 IMPORT_TEXT = "".join(json.dumps(line) + "\n" for line in IMPORT_LINES)
 TOOL_CASES = [
+    Case("a handback's message is the report", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "h", "name": "SubagentHandback", "input": {"message": make_report()}}]}})),)),
+    Case("another tool's message is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "s", "name": "SendMessage", "input": {"message": make_report()}}]}})),)),
+    Case("a report in a user line is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "user", "timestamp": NEW, "message": {"content": [{"type": "text", "text": make_report()}]}})),)),
+    Case("a line with no content does not hide the report", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT + json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m4", "content": None}})),)),
     Case("an imported report becomes a row", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"imported": true')),
     Case("an imported row counts its tool turns", ("import_reports.py",), {}, False, files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"tool_turns": {"turns": 2, "calls": 2, "one_call_turns": 2, "longest_small_run": 2, "small_reads": 2, "repeats": 0}')),
     Case("a transcript with no report card is no row", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps(IMPORT_LINES[0]) + "\n"),), not_wrote=("data/ledger.jsonl", "imported")),
@@ -1489,6 +1548,15 @@ def context(name: str, event: dict, text: str = "", /, **options: object) -> Cas
 
 
 CONTEXT_CASES = [
+    context("a sub-agent is told no clock limits it", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "No clock limits you"),
+    context("a sub-agent is told what stands in for Grep", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "use `rg` and `find`"),
+    context("a session is told what stands in for Grep", {"hook_event_name": "SessionStart"}, "use `rg` and `find`"),
+    context("a zsh user's agent is told the shell", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "The shell is zsh"),
+    context("another shell is not called zsh", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="The shell is zsh", shell="/bin/bash"),
+    context("the scratch folder is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "Throwaway files go in `scratch/`", config={"guard": {"scratch": "scratch"}}),
+    context("no scratch folder, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="Throwaway"),
+    context("the temporary folder rule is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "A write under `/tmp` is refused", config={"guard": {"no_tmp": True}}),
+    context("no temporary folder rule, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="/tmp"),
     context("a session start names the orchestrator", {"hook_event_name": "SessionStart"}, "harness:orchestrator"),
     context("a session start's output is hook-specific", {"hook_event_name": "SessionStart"}, '"hookEventName": "SessionStart"'),
     context("a worker is told the full form", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "full form"),
@@ -1753,14 +1821,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
+    parser.add_argument("--fail-fast", action="store_true", help="stop at the first failure, for the bug-planting tools")
+    parser.add_argument("--first", default="", help="run the cases of this hook first")
+    parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
     every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
+    cases.sort(key=lambda case: arguments.first not in case.script)
     failures = 0
-    with ThreadPoolExecutor(JOBS) as pool:
+    with ThreadPoolExecutor(arguments.threads) as pool:
         for case, reason in zip(cases, pool.map(lambda case: run_case(case, arguments.hooks), cases)):
             failures += bool(reason)
             print(f"FAIL {case.name}: {reason}" if reason else f"ok   {case.name}", flush=True)
+            if reason and arguments.fail_fast:
+                pool.shutdown(wait=False, cancel_futures=True)
+                break
     print(f"{len(cases)} cases, {failures} failed")
 
     return 1 if failures else 0

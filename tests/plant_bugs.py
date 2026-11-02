@@ -9,7 +9,8 @@
 
 Why: `tests/mutants.py` holds the bugs someone thought of, so it cannot show what nobody thought of. This one changes a token
 at a random site (a comparison, a boolean, a branch) and runs the cases on the copy. A survivor is either a rule no case guards
-or a change that alters nothing; read it to tell which. The same seed on the same code plants the same bugs; after a code change the sites move, so two scores compare only roughly. Nothing
+or a change that alters nothing; read it to tell which. This is an audit to run by hand after a big hook change, `--only` the
+hook changed; no push or CI runs it. Each bug stops at its first failing case, its own hook's cases first. The same seed on the same code plants the same bugs; after a code change the sites move, so two scores compare only roughly. Nothing
 outside `scratch/hook-mutants` changes. A row prints per bug as it finishes; the last lines hold the score per hook. Always
 exits 0, since a survivor is a lead, not a failure.
 
@@ -21,6 +22,7 @@ from __future__ import annotations
 import argparse
 import collections
 import io
+import os
 import random
 import shutil
 import subprocess
@@ -30,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import NamedTuple
 
-from mutants import HOOKS, RUN_CASES, TIMEOUT, WORK
+from mutants import CASE_THREADS, DEFAULT_JOBS, HOOKS, LOW_PRIORITY, RUN_CASES, TIMEOUT, WORK
 
 # What each token becomes. Only code tokens are read, so a string, a comment or a docstring is never changed.
 SWAPS = {
@@ -55,6 +57,8 @@ SWAPS = {
     "any": "all",
     "all": "any",
 }
+# The hook whose cases exercise a hook that has none of its own.
+CASES_OF = {"shell.py": "guard.py", "common.py": "report_gate.py"}
 # A hand-run tool whose one case reads its summary alone.
 SKIPPED = {"replay.py"}
 
@@ -106,7 +110,8 @@ def run_site(index: int, site: Site, /) -> tuple[Site, str, str]:
     path.write_text(text)
     changed = text.split("\n")[site.line - 1].strip()
     try:
-        run = subprocess.run(["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder)], capture_output=True, text=True, timeout=TIMEOUT)
+        first = CASES_OF.get(site.script, site.script)
+        run = subprocess.run(["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder), "--fail-fast", "--first", first, "--threads", str(CASE_THREADS)], capture_output=True, text=True, timeout=TIMEOUT)
         verdict = "survived" if run.returncode == 0 else "killed"
     except subprocess.TimeoutExpired:
         verdict = "killed"
@@ -120,7 +125,7 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=200, help="how many bugs to plant")
     parser.add_argument("--seed", type=int, default=1, help="the same seed plants the same bugs")
     parser.add_argument("--only", default="", help="plant only in the hooks whose name holds this text")
-    parser.add_argument("--jobs", type=int, default=6, help="bugs at once; each runs its cases on eight threads")
+    parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help="bugs at once; each runs its cases on CASE_THREADS threads")
     arguments = parser.parse_args()
     scripts = sorted(path.name for path in HOOKS.glob("*.py") if path.name not in SKIPPED and arguments.only in path.name)
     sites = [site for script in scripts for site in get_sites(script)]
@@ -128,6 +133,7 @@ def main() -> int:
     print(f"{len(sites)} sites in {len(scripts)} hooks; planting {len(chosen)}, seed {arguments.seed}", flush=True)
     totals: collections.Counter[str] = collections.Counter()
     survivors: collections.Counter[str] = collections.Counter()
+    os.nice(LOW_PRIORITY)
     with ThreadPoolExecutor(arguments.jobs) as pool:
         futures = [pool.submit(run_site, index, site) for index, site in enumerate(chosen)]
         for future in as_completed(futures):

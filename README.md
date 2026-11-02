@@ -204,7 +204,7 @@ Every key is optional; `{}` turns on the report and turn gates alone.
 - **The ledger**, `ledger.jsonl`: one row per sub-agent with its whole report, scores and causes. It lives in the plugin's
   data folder (`$CLAUDE_PLUGIN_DATA`, else `~/.cache/harness`), not in the project.
 - **Budgets:** a brief may hold a line `Budget: 30 turns`. A turn is one model message, however many tools it calls, so a slow
-  machine costs nothing. Past it, `budget.py` refuses the agent's tool calls and
+  machine costs nothing. With a fifth of them left the agent gets a note; past it, `budget.py` refuses the agent's tool calls and
   the agent reports what it has. Without the line, the `budget` key gives a default per role.
 - **`scratch/`:** the project's throwaway folder for probes, proposals and one-off output. It is git-ignored and agents
   use it instead of `/tmp`; the guard refuses `/tmp` when `guard.no_tmp` is set. This repo has its own git-ignored
