@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks mutants check replay clean
+.PHONY: help setup init validate test leaks skills mutants check replay clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -24,18 +24,23 @@ test: ## Hook cases
 leaks: ## Fail when a file names a person, machine, home path or private word
 	uv run python tests/check_leaks.py
 
+skills: ## Fail when a skill or agent leaves the form AGENTS.md demands
+	uv run python tests/check_skills.py
+
 mutants: ## Deliberate-bug audit of every rule; slow, run it once (MUTANT=text narrows it)
 	uv run python tests/mutants.py $(if $(MUTANT),--only $(MUTANT),)
 
-check: ## What the pre-push hook runs: cases, mutant check, leaks
+check: ## What the pre-push hook runs: cases, mutant check, skill form, leaks
 	uv run python tests/run_cases.py
 	uv run python tests/mutants.py --check
+	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py
 
-clean: ## Empty scratch/ and remove caches (never touches tracked files or .venv)
+clean: ## Empty scratch/ and remove caches (never touches tracked files or .venv); refuses while a mutant audit runs
+	@test ! -e scratch/hook-mutants || { echo "a mutant audit is using scratch/"; exit 1; }
 	find scratch -mindepth 1 -delete 2>/dev/null || true
 	find . -path ./.git -prune -o -path ./.venv -prune -o -name __pycache__ -type d -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
