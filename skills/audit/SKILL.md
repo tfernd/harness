@@ -45,7 +45,7 @@ reported done that is not) caps the grade at 2; grade 4 is only for wrong claims
 The full form of `harness:report`. Work holds, in this order:
 
 - One line, exactly `Grade: N/5 for <role> <unit>`, where `<unit>` is the exact task text of the author's
-  `# Report: <role>, <task>` title (when the task holds a comma, the unit is everything after the first comma and space). Nothing follows it on the line. `harness:retro` and its `references/queries.md`
+  `# Report: <role>, <task>` title (when the task holds a comma, the unit is everything after the first comma and space). Nothing follows it on the line. the queries of `harness:retro`
   join on that text, so its shape is fixed.
 - On its own next line, the author's self-score: `Author's Task score: M/5`.
 - Claims, one line each: TRUE, FALSE or UNSETTLED, the claim in a few words, the evidence.

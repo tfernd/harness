@@ -20,8 +20,8 @@ Script side: `harness:code-js`. Comments: `harness:comments`. Long lists and exa
 - Action is a `<button type="button">`; navigation is an `<a href>`. A clickable `div` is a defect.
 - Every control has a name: a `<label>` (`for` or wrapping) or an `aria-label`; an icon-only button always has one.
 - Images have `alt` saying what they show or do; empty `alt=""` when decorative. Never "image of".
-- Hidden state uses the `hidden` attribute; the base CSS keeps `[hidden] { display: none !important }` (the one allowed
-  `!important`).
+- Hidden state uses the `hidden` attribute; the base CSS keeps `[hidden] { display: none !important }` (one of the two allowed
+  `!important` uses, the other being the reduced-motion block).
 - No inline `style` attribute, no inline event handlers (`onclick=`), no `title` as the only label.
 - Script hooks are `data-*` attributes (or ids used only by `for`, anchors and `aria-*`), not styling classes; CSS does
   not select by them, except state exposed as `[data-state]`-style attributes the project documents.
@@ -35,7 +35,7 @@ Script side: `harness:code-js`. Comments: `harness:comments`. Long lists and exa
 - Name by one scheme per project (component prefix such as `card`, `card-title`; or BEM): a selector starts with its
   component's name or is a state class (`is-open`, `has-error`). State is set by toggling a class, not by inline style.
 - Selectors stay shallow: at most 3 compound parts. No id selectors, no element-qualified classes (`div.card`), no
-  `!important` except the `[hidden]` rule. Fix a specificity clash by lowering the other selector or by layer order.
+  `!important` except the `[hidden]` rule and the reduced-motion block. Fix a specificity clash by lowering the other selector or by layer order.
 - (if the project defines tokens) every colour, space, radius, font size, weight, duration and z-index is `var(--name)`
   from the tokens file; a raw hex or non-zero `px` appears only there. Without tokens: a value used more than once is a
   custom property on `:root`.
@@ -66,7 +66,7 @@ Script side: `harness:code-js`. Comments: `harness:comments`. Long lists and exa
 
 ## Enforcing tools
 
-- Use the project's own gate first. Biome (`harness:code-js`, `references/biome-tsconfig.md`) formats and lints CSS;
+- Use the project's own gate first. Biome (its starter is in `harness:code-js`) formats and lints CSS;
   Prettier formats HTML and CSS; Stylelint (with its standard config) can flag id selectors, `!important`,
   duplicate selectors and unknown properties, and with plugins or rules can ban raw colours or enforce a class pattern;
   html-validate (or the W3C validator) flags invalid nesting, missing `alt`, missing `lang`, duplicate ids and

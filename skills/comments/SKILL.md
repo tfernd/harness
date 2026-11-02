@@ -41,9 +41,9 @@ dates (the patterns are a starting point, not a gate).
 - The first line of a function, class or method is a summary in plain words, at most 100 characters: what it
   returns or does. A property or one-line function gets only that.
 - A class says in one sentence what it represents; each field gets a short comment.
-- After the summary, only if needed and at most 4 short lines: an edge case that happens (zero, empty, ties, a sign,
-  saturation); the shapes when arrays go in or out; a `Note:` for what a caller must know that is not about the
-  result (precision, a sync, a memory cost); what `None` or `undefined` means for an optional parameter.
+- After the summary, only if needed and at most 4 short lines: an edge case that happens (zero, empty, ties, a
+  sign); a `Note:` for what a caller must know that is not about the result (precision, a sync, a memory cost); what
+  `None` or `undefined` means for an optional parameter.
 - No `Args:` / `Returns:` / `@param` / `@returns` blocks where the type hints already carry them (`@param` is allowed in
   plain JS, where there are no type hints). No examples. No
   proofs or derivations: point to the doc section by its heading.

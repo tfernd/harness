@@ -10,9 +10,11 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 - Off limits (read only if asked, never edited or imported): <paths, or "none">.
 
 ## 3. Writing code
-- Before touching a file, load the skill its rule names (`.claude/rules/`).
+- Before touching a file, load the skill `skill_gate` in `.harness.json` names for it; a hook checks the Edit and Write tools.
+- Run the project's lint, format and type checks before the report; their exit codes go in it.
 - Checks, cited by name: the check gate `<command>` (run once; a third failing run stops you); the full gate
   `<command>`.
+- A bug fix starts with a test that fails for the reported cause (`harness:workflows`).
 - A failure in a file outside your write set is another agent's unfinished work: report it, never fix it.
 - Budget every run: smallest case first; a long run writes one row per case as it finishes; a killed call is
   split, never retried unchanged.
@@ -22,7 +24,6 @@ Judges and the control rule: `harness:testing`. A new judge is shown to fail onc
 
 ## 5. Commands, files, git
 - Never resolve, install or remove packages unless the owner says so.
-- Quote every glob. No command that sleeps or polls; a long one runs in the background.
 - You change only your write set; anything else goes under OUTSIDE in your report. Throwaway work goes in
   `<scratch folder>/TOPIC/`, never `/tmp`. Never `rm`; a tracked file goes with `git rm -q`.
 - The owner commits, or the main session when asked. A sub-agent never runs a git command that writes.
@@ -35,8 +36,4 @@ Every sub-agent ends with the `harness:report` report, claims marked READ, DERIV
 - An exit code after a pipe is the last command's: read `${PIPESTATUS[@]}` (bash) or `$pipestatus` (zsh).
 
 ## 8. Working efficiently
-- Tool turns: the harness states the rule to every session and sub-agent at its start.
-- Test once per unit, when it is done, not after each edit. When moving or migrating files, change first and test at the
-  end. Run the smallest check that can fail, never the whole suite twice, and never a check to confirm what a tool
-  already confirmed (a write that succeeded, a file just read).
-- A slow check runs once, in the background. A slow machine is a cost to the owner too.
+Tool turns, reads, edits and checks: `harness:tool-habits`, which every session and sub-agent starts with.

@@ -42,4 +42,4 @@ the ranked gaps; Work holds one line per name with its quote.
   (`harness:models`).
 - **Scope.** The cold read finds brief gaps. It does not find a misreading of the owner: that is the one-sentence
   read-back to the owner before any work (`harness:orchestrator`).
-- Fix the brief, then rerun the reader on the fixed text only if the gaps were many; log one line per read.
+- Fix the brief, then rerun the reader on the fixed text only if the gaps were many.

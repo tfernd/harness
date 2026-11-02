@@ -19,9 +19,9 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
 ## Names
 
 - Functions are verbs, one verb per kind of job, kept the same across the project: `get_*` computes a value, `make_*`
-  builds an object from parts, `search_*` picks by a score. A project adds its own verbs for its own kinds of job.
-- Data is a noun; a collection is plural for what each element is; a count is `num_<things>`; a candidate is
-  `candidate_<x>`; the running winner is `best_<x>`.
+  builds an object from parts. A project adds its own verbs for its own kinds of job.
+- Data is a noun; a collection is plural for what each element is; a count is `num_<things>` (`num_files`).
+  A role in a loop reads as that role (`current_file`, `longest_name`).
 - No single letters or clipped words (`n`, `tmp`, `res`, `cfg`). One word per idea, project-wide.
 - Booleans read as a statement: `is_better`, `has_zero`. A non-trivial boolean expression is named.
 
@@ -31,7 +31,7 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
   the starter targets 3.12); then three import blocks (standard library, third party, relative).
 - Type hints on every signature; no `Any` where a type exists.
 - `/` after the positional inputs and `*` before options, so options are keyword-only.
-- No default for a value the caller must decide (a device, a dtype, a size).
+- No default for a value the caller must decide (a path, a unit, a size).
 - A small closed set is a `Literal`, with the tuple of all its values beside it
   (`Mode = Literal["fast", "exact"]` and `MODES: tuple[Mode, ...] = ("fast", "exact")`). A size that is not a finite set is
   an `int`, checked once where it enters.
@@ -44,8 +44,7 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Functions
 
-- One job each. The ruff complexity limit (`max-complexity = 9` in the starter config) fails a function that
-  branches more: split it, never raise the limit.
+- One job each. The ruff complexity limit fails a function that branches more: split it, never raise the limit.
 - A function reads in phases separated by blank lines: checks, preparation, compute, return. Every intermediate has a
   name.
 - Two functions that differ by one step become one with an optional parameter whose docstring says what `None` means,
@@ -73,10 +72,18 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Enforcing tools
 
-Starter setup: `ruff format` (line length 130, double quotes, spaces, `docstring-code-format`)
-and `ruff check` with `E W F I B UP C90 SIM RET PLW0602 PLW0603 ARG`, `E501` ignored (the formatter owns layout),
-`max-complexity = 9`, tests exempt from `C901` and `ARG`. A type checker (`ty`) runs on the same files. Run them as
-the project's `make`/`uv` targets say; a project without a config starts from `references/pyproject-ruff.md`. Use the project's package tool only, and never resolve or install packages unasked.
+`ruff format` and `ruff check`, plus a type checker (`ty`) on the same files. Run them as the project's `make`/`uv`
+targets say; a project without a config starts from `references/pyproject-ruff.md`, which holds the line length, the
+rule set and the complexity limit.
+
+## Scripts and dependencies
+
+- A saved standalone script carries a PEP 723 header in its comment block: `requires-python`, `dependencies` and
+  `[tool.uv]` with `exclude-newer = "7 days"`. It runs with `uv run --script`.
+- A project sets `[tool.uv]` `exclude-newer = "7 days"` in `pyproject.toml`. uv then ignores releases newer than 7
+  days, so a fresh broken or compromised release is not picked up.
+- Throwaway Python inside a tool call (`python3 - <<'EOF'` to edit a file or inspect data) takes no header: it uses
+  the standard library, and a header wastes tokens.
 
 ## What no tool checks
 

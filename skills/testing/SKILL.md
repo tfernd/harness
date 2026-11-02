@@ -22,8 +22,7 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
   before it measures also has a cold case, or says in its docstring that the cold path is not judged. Example: a judge of `if cache_is_full: evict()` fills the
   cache past its limit and asserts the evicted entry is gone; a judge that only inserts one item never runs the branch.
 - **Named edge cases,** each its own case: empty, one element, the boundary values of the type or range (minimum,
-  maximum, zero, a value just past a limit), a size that does not divide evenly into the unit the code works in, one of
-  each sign or kind.
+  maximum, zero, a value just past a limit), one of each sign or kind.
 - **Tunable constants defended:** a constant someone could change for speed (a chunk size, a tolerance, a timeout) has a
   test that runs the real value and fails when the value breaks a property. One no test can defend is marked in the code
   and listed as open work.
@@ -60,7 +59,7 @@ A judge of a hook, gate or script is shown the same way: plant the bug in a copy
 - A case that skips says why and is counted: a silent skip is a pass nobody earned.
 - A fixture is shared through the project's conftest; a helper module a test cannot import is a layout fact to probe,
   not to guess.
-- A bit-exact claim is compared bit for bit; a float claim has a measured relative bound.
+- An exact claim is compared for equality; a float claim has a measured relative bound.
 - A test of a script that reads its environment clears those variables first, since the runner may set them.
 - A run that cannot happen here (a missing tool or device) is listed under NOT CHECKED with the command for the owner,
   never replaced by a looser check.

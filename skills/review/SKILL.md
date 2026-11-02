@@ -42,7 +42,7 @@ unsure, not as a finding: unsure items go in a separate list after C. Agreement 
 
 - **Maths:** for each claim of correctness in all cases, an optimality claim or a "never worse" claim, the proof, the
   input that breaks it, and whether the code does what the proof assumes (order of operations, precision, ties, boundary
-  values, a size that does not divide evenly).
+  values).
 - **Concurrency:** shared state, ordering, a resource released on every path, a retry that repeats a side effect.
 - **Interface:** what a caller can now do that it could not, an old caller that breaks, a name that lies.
 - **Security:** untrusted input reaching a shell, path, query or template; a secret in a log.

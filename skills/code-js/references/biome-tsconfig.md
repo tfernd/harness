@@ -26,9 +26,7 @@ A starter pair. Copy only when the project has none; adjust `include` and `types
 }
 ```
 
-`useIgnoreFile: true` makes `biome check` fail in a folder with no `.gitignore`: the starter needs one (or set
-`useIgnoreFile` to `false`). Source: an audit probe of this starter in a folder with no `.gitignore` (`scratch/audit-b/js`); not re-run when this
-line was written. The `"recommended": true` form and the `complexity` rule are the Biome 2 syntax and were not re-probed.
+`useIgnoreFile: true` needs a `.gitignore`; with none, set it to `false`.
 
 An override turns `noBarrelFile` and `noReExportAll` off for the one public entry file (`src/index.ts`).
 

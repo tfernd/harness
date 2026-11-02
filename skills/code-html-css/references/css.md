@@ -57,7 +57,7 @@ specificity, which is why a component cannot restyle a shared piece by selector 
 - A shared file carries no component names; variants are modifiers of the shared class.
 
 ## Size and files
-- One component per file; a file past about 700 lines splits into sibling files of the same component.
+- One component per file.
 - JavaScript never writes colours or looks through `element.style`; a run-time size may be handed over with
   `style.setProperty("--name", value)` and read by CSS.
 

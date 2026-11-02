@@ -22,6 +22,10 @@ max-complexity = 9
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+[tool.uv]
+# ignore releases newer than 7 days
+exclude-newer = "7 days"
 ```
 
 Meaning of the selected sets: pycodestyle errors and warnings (`E`, `W`), pyflakes (`F`), import order (`I`),
