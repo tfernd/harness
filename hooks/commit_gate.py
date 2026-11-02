@@ -8,7 +8,7 @@
 """PreToolUse hook on Bash: in a project with `.harness.json`, a commit message follows `harness:git-commit`.
 
 The message comes from `-m`, `-F` or a heredoc in the same command. A subject is `type(scope): summary` with no trailing period,
-then a blank line and `* ` bullets, then an optional footer. A pull request is checked for AI attribution only.
+then a blank line and `* ` or `- ` bullets, then an optional footer. A pull request is checked for AI attribution only.
 Git's own subjects (merge, revert, fixup) pass. A commit that opens the editor or reuses a message cannot be read, so it passes.
 `guard.commit_style: false` in `.harness.json` turns the rule off.
 """
@@ -26,7 +26,7 @@ from shell import get_segments
 
 SUBJECT = re.compile(r"(feat|fix|perf|refactor|test|docs|style|build|ci|chore|revert)(\([^()\s]+\))?!?: \S")
 GIT_SUBJECT = re.compile(r"(fixup!|squash!|amend!|Merge |Revert \")")
-BULLET = "* "
+BULLETS = ("* ", "- ")
 FOOTER = re.compile(r"(BREAKING CHANGE|[A-Z][A-Za-z-]+): \S")
 AI_NAME = r"(claude|anthropic|copilot|chatgpt|gpt-|openai|gemini|cursor|codex|\bAI\b)"
 AI_ATTRIBUTION = re.compile(rf"co-authored-by:[^\n]*{AI_NAME}|generated (with|by)[^\n]*{AI_NAME}|\U0001f916", re.I)
@@ -106,9 +106,9 @@ def check_body(lines: list[str], /) -> list[str]:
     if lines and lines[0].strip():
         return ["the subject needs a blank line after it"]
     body = [line for line in lines if line.strip()]
-    if not any(line.startswith(BULLET) for line in body):
-        return [f"the body needs `{BULLET}` bullets saying what was done and why"]
-    stray = [line for line in body if not line.startswith((BULLET, " ", "\t")) and not FOOTER.match(line)]
+    if not any(line.startswith(BULLETS) for line in body):
+        return ["the body needs `* ` bullets saying what was done and why"]
+    stray = [line for line in body if not line.startswith((*BULLETS, " ", "\t")) and not FOOTER.match(line)]
 
     return [f"this body line is no bullet: {stray[0][:60]}"] if stray else []
 

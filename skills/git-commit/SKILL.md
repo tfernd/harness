@@ -31,7 +31,7 @@ feat(scope): add the thing
 
 ## The body
 
-- A blank line after the subject, then at least one `* ` bullet. A long bullet continues on an indented line.
+- A blank line after the subject, then at least one `* ` bullet (`- ` also counts). A long bullet continues on an indented line.
 - Say what was done and why, including the reason the diff can't show, and evidence where it matters: the check that ran, a
   measured number with its baseline.
 - It describes only what this commit holds.

@@ -59,11 +59,11 @@ two meet: a skill says what to write, a hook checks it.
 | Hook | When | What it does |
 |---|---|---|
 | `context.py` | Session or agent starts | Adds text agents would otherwise forget: load the orchestrator, the whole `tool-habits` skill, the report form owed, past lessons, open problems. Refuses nothing |
-| `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early, and `sleep` inside a `while` or `until` loop |
+| `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`; `rm` works inside a named scratch folder), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early, and `sleep` inside a `while` or `until` loop |
 | `guard.py`, configured | Before a command or edit | Asks you before package changes. Refuses writes under `/tmp`, shell writes outside the scratch folder, and Python run outside its lock wrapper |
 | `commit_gate.py` | Before a command | Refuses a commit whose message `-m`, `-F` or a heredoc shows is not `type(scope): title` with `* ` bullets, and a commit or pull request whose text shows AI attribution. It cannot read a commit that opens an editor, or a message in a variable set by an earlier call |
 | `delegate.py` | Before a command or edit | With the `delegate` key, refuses edits and unlisted commands from the main session, so agents do the work |
-| `skill_gate.py` | Before an Edit or Write | With the `skill_gate` key, refuses an edit until the skill for that kind of file is loaded |
+| `skill_gate.py` | Before a command or edit | With the `skill_gate` key, refuses an edit until the skill for that kind of file is loaded, including a shell write or a Python script that writes, and a commit or pull request until `git-commit` is loaded. The agent loads it and repeats the call |
 | `brief_lint.py` | Before an agent starts | With the `brief` key, refuses a brief with no `Goal:`, a worker brief with no `Write set:` and `Judge:`, and a budget in anything but turns |
 | `budget.py` | Before every call | Refuses every call but the handback from an agent past its turns, so it sends a partial report. Any agent type has a default |
 | `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent. Refuses nothing |
@@ -85,8 +85,7 @@ ledger.
 - **It fails open.** A bug in a hook, or a broken `.harness.json`, lets the call run. A hook never blocks on its own error.
 - **Read-only agents still have Bash.** `scout`, `reviewer` and the others have no Edit or Write tool, but a shell command
   can write; only the guard applies to it.
-- **Skills are mostly advice.** `skill_gate` forces a load only before the Edit and Write tools, so a script that edits a
-  file gets past it. `tool-habits` is injected, but nothing checks that it is followed.
+- **Skills are mostly advice.** `skill_gate` reads a script's text, so a path built at run time gets past it. `tool-habits` is injected, but nothing checks that it is followed.
 - **Reports are checked for form and for claims it can verify** (files, exit codes, quoted lines). Whether the conclusion
   is right is not checked; an `auditor` or you must do that.
 - **It does not judge the code.** Style rules live in skills and tests, not in hooks.

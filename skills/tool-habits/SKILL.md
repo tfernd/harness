@@ -24,7 +24,7 @@ costs no turn.
 - The script asserts that each target occurs once, so a missing text fails loudly and never edits nothing in silence.
 - A failed step must stop the rest: join with `&&`, never `;`. A failed edit must not feed a test, a build or a commit.
 - One-off Python in a tool call takes no PEP 723 header and no dependencies: `python3 -` and the standard library.
-- Before editing a kind of file, load its language skill. A hook only sees the Edit and Write tools, so a script is on you.
+- Before editing a kind of file, load its language skill, or a hook refuses the edit and asks you to.
 
 A whole unit, from edit to done, in one call:
 
@@ -75,8 +75,8 @@ git diff --stat
 
 ## Clean
 
-- Keep probes and one-off output in the project's scratch folder when it names one. Delete nothing yourself: the guard
-  refuses a delete, so leave those files for the owner.
+- Keep probes and one-off output in the project's scratch folder when it names one. `rm` works only inside that folder, on
+  named paths; the guard refuses a delete anywhere else, so leave those files for the owner.
 - Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.
 
 ## Shell

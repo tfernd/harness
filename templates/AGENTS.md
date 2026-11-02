@@ -10,7 +10,7 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 - Off limits (read only if asked, never edited or imported): <paths, or "none">.
 
 ## 3. Writing code
-- Before touching a file, load the skill `skill_gate` in `.harness.json` names for it; a hook checks the Edit and Write tools.
+- Before touching a file, load the skill `skill_gate` in `.harness.json` names for it; a hook checks edits, shell writes and commits.
 - Run the project's lint, format and type checks before the report; their exit codes go in it.
 - Checks, cited by name: the check gate `<command>` (run once; a third failing run stops you); the full gate
   `<command>`.
@@ -25,7 +25,7 @@ Judges and the control rule: `harness:testing`. A new judge is shown to fail onc
 ## 5. Commands, files, git
 - Never resolve, install or remove packages unless the owner says so.
 - You change only your write set; anything else goes under Open in your report. Throwaway work goes in
-  `<scratch folder>/TOPIC/`, never `/tmp`. Never `rm`; a tracked file goes with `git rm -q`.
+  `<scratch folder>/TOPIC/`, never `/tmp`. `rm` works only inside the scratch folder; a tracked file goes with `git rm -q`.
 - The owner commits, or the main session when asked. A sub-agent never runs a git command that writes.
 
 ## 6. The report

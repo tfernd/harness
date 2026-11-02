@@ -13,7 +13,8 @@ The strings of `sh -c` and `eval` and the commands of `find -exec` are read as c
 any `VAR=value` and prefixes such as `sudo -u root`, `env`, `timeout 60`, `xargs`.
 
 Always on:
-1. Deletes: `rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`. `git rm` stays allowed.
+1. Deletes: `rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`. `git rm` stays allowed. With `scratch` set, a plain `rm` or
+   `rmdir` of literal paths inside that folder is allowed too.
 2. History: a push that rewrites or deletes remote history (`--force` and its variants, `--delete`, `--mirror`, `--prune`, `-f` or `-d`
    alone or in a cluster such as `-fu`, `+ref`, `:ref`) and `git reset --hard`.
 3. Globs: an unquoted glob that fails or changes the command: one that matches no file from the folder the command runs
@@ -96,6 +97,7 @@ OPTION_PREFIXES = {
 }
 # The commands that delete, and the shells whose -c string is a command.
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
+SCRATCH_DELETERS = {"rm", "rmdir"}
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 # Commands that make no file unless they redirect, so a glob after them is judged by what exists now.
 READ_ONLY_COMMANDS = frozenset("cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [[".split())
@@ -147,7 +149,7 @@ IN_SHELL_RUNNERS = {"eval", "source", "."}
 ASK_RULE = "packages"
 MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Write a new file name, or truncate a log with `: > file`. A "
-    "tracked file that must go uses `git rm`; anything else, throwaway files included, stays for the owner.",
+    "tracked file that must go uses `git rm`; anything else stays for the owner, except that `rm` works inside a scratch folder the project names.",
     "denied": "this rewrites history or discards uncommitted work, which is the owner's to run.",
     ASK_RULE: "changing packages is the owner's to run, so they are asked first.",
     "lock": "this project's Python runs under its lock.",
@@ -282,6 +284,18 @@ def get_git_subcommand(arguments: list[str], /) -> str:
         index += 2 if arguments[index] in GIT_VALUE_OPTIONS else 1
 
     return arguments[index] if index < len(arguments) else ""
+
+
+def is_scratch_delete(command: Command, directory: str | None, /) -> bool:
+    """Whether a plain `rm` or `rmdir` names only literal paths inside the scratch folder, never the folder itself."""
+
+    if not POLICY.scratch or directory is None or os.path.basename(command.name) not in SCRATCH_DELETERS:
+        return False
+    paths = [word for word in command.arguments if not word.text.startswith("-")]
+    is_literal = all(not word.is_glob and "$" not in word.text and "`" not in word.text for word in paths)
+    inside = [os.path.realpath(os.path.join(directory, word.text)).startswith(POLICY.scratch + os.sep) for word in paths]
+
+    return bool(paths) and is_literal and all(inside)
 
 
 def is_delete(command: Command, /) -> bool:
@@ -655,7 +669,7 @@ def get_command_breaches(
     moved = get_written_paths(get_moved_sources(os.path.basename(command.name), arguments), directory)
     is_unknown_write = bool(POLICY.scratch) and directory is None and not all(is_absolute(word) for word in words)
     checks = [
-        ("delete", is_delete(command)),
+        ("delete", is_delete(command) and not is_scratch_delete(command, directory)),
         ("denied", is_denied(command)),
         (ASK_RULE, POLICY.ask_packages and is_package_change(command)),
         ("lock", bool(POLICY.lock_commands) and is_python_run(command) and not is_lock_free),

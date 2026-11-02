@@ -235,6 +235,18 @@ GUARD_CASES = [
     bash("a git clean long dry run is allowed", "git clean --dry-run -d", False),
     bash("a real git clean is refused", "git clean -fd", True, "deleted"),
     bash("a config that is a list drops no rule", "git push --force origin main", True, "rewrites history", config=[]),
+    bash("rm inside the scratch folder passes", "rm scratch/x.txt", False, config={"guard": {"scratch": "scratch"}}, files=(("scratch/x.txt", ""),)),
+    bash("rm -rf of a folder inside scratch passes", "rm -rf scratch/old", False, config={"guard": {"scratch": "scratch"}}),
+    bash("rm after a cd into scratch passes", "cd scratch && rm x.txt", False, config={"guard": {"scratch": "scratch"}}, files=(("scratch/x.txt", ""),)),
+    bash("rmdir inside the scratch folder passes", "rmdir scratch/old", False, config={"guard": {"scratch": "scratch"}}),
+    bash("rm of the scratch folder itself is refused", "rm -rf scratch", True, "deleted", config={"guard": {"scratch": "scratch"}}),
+    bash("rm out of scratch through dots is refused", "rm scratch/../a.txt", True, "deleted", config={"guard": {"scratch": "scratch"}}),
+    bash("rm of a project file is refused with a scratch folder", "rm a.txt", True, "deleted", config={"guard": {"scratch": "scratch"}}),
+    bash("rm beside a scratch path is refused", "rm scratch/x.txt a.txt", True, "deleted", config={"guard": {"scratch": "scratch"}}),
+    bash("rm of a glob in scratch is refused", "rm scratch/*.txt", True, "deleted", config={"guard": {"scratch": "scratch"}}, files=(("scratch/x.txt", ""),)),
+    bash("rm of a variable in scratch is refused", "rm scratch/$x", True, "deleted", config={"guard": {"scratch": "scratch"}}),
+    bash("shred in scratch is refused", "shred scratch/x.txt", True, "deleted", config={"guard": {"scratch": "scratch"}}),
+    bash("rm with no scratch folder is refused", "rm scratch/x.txt", True, "deleted", config={"guard": {}}),
     bash("a guard key that is null drops no rule", "git push --force origin main", True, "rewrites history", config={"guard": None}),
     bash("a glob that matches a file is allowed", "wc -l *.py", False, files=(("a.py", ""),)),
     bash("a loop over a glob that matches is allowed", "for name in *.py; do echo $name; done", False, files=(("a.py", ""),)),
@@ -1664,6 +1676,7 @@ COMMIT_CASES = [
     commit("a later command naming a tool is no attribution", "git commit -m 'feat: add y' -m '* did it'; rg 'generated with' a; claude plugin list", False),
     commit("a pull request body held in a variable is refused", "T='Generated with Claude Code'; gh pr create --body \"$T\"", True, "AI attribution"),
     commit("an unreadable message does not read later steps", "git commit -m \"$M\"; rg 'generated with claude' a", False),
+    commit("dash bullets pass", "git commit -m 'feat: add y\n\n- did it\n- because z'", False),
     commit("the rule can be turned off", "git commit -m 'add y'", False, config={"guard": {"commit_style": False}}),
     commit("no project means no rule", "git commit -m 'add y'", False, config=None),
     commit("a broken config lets the call run", "git commit -m 'add y'", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
@@ -1793,8 +1806,29 @@ def skill_gate(name: str, path: str, blocks: bool, text: str = "", /, *, agent: 
     return Case(name, ("skill_gate.py",), event, blocks, text, **options)
 
 
+def shell_gate(name: str, command: str, blocks: bool, text: str = "", /, *, main: tuple[str, ...] = (), **options: object) -> Case:
+    return skill_gate(name, "", blocks, text, main=main, event={"tool_name": "Bash", "tool_input": {"command": command}}, **options)
+
+
+PY_EDIT = "python3 - <<'EOF'\np = 'src/app.py'\ns = open(p).read()\nopen(p, 'w').write(s)\nEOF"
 SKILL_GATE_CASES = [
-    skill_gate("skill gate: an edit with the skill missing is refused", "app.py", True, "Load the skill harness:code-python with the Skill tool before editing app.py, then repeat the edit."),
+    shell_gate("a commit needs its skill", "git commit -m 'feat: y'", True, "harness:git-commit"),
+    shell_gate("a commit with its skill passes", "git commit -m 'feat: y'", False, main=("harness:git-commit",)),
+    shell_gate("a commit deep in a chain needs its skill", "git add a && git -C x commit -m y", True, "harness:git-commit"),
+    shell_gate("a pull request needs the skill", "gh pr create --title t", True, "harness:git-commit"),
+    shell_gate("git status needs no skill", "git status", False),
+    shell_gate("a redirect onto code needs its skill", "echo x > app.py", True, "harness:code-python"),
+    shell_gate("sed -i on code needs its skill", "sed -i s/a/b/ app.py", True, "harness:code-python", files=(("app.py", ""),)),
+    shell_gate("a shell write into scratch needs nothing", "echo x > scratch/app.py", False),
+    shell_gate("a redirect onto another kind of file needs nothing", "echo x > notes.txt", False),
+    shell_gate("a Python edit script needs its skill", PY_EDIT, True, "harness:code-python"),
+    shell_gate("a Python edit with its skill passes", PY_EDIT, False, main=("harness:code-python",)),
+    shell_gate("a read-only Python script needs nothing", "python3 - <<'EOF'\nprint(open('a.py').read())\nEOF", False),
+    shell_gate("a write_text script needs its skill", "python3 - <<'EOF'\nPath('a.css').write_text('x')\nEOF", True, "harness:code-html-css"),
+    shell_gate("a heredoc to cat is no script", "cat <<'EOF'\nopen('a.py', 'w')\nEOF", False),
+    shell_gate("a script writing into scratch needs nothing", "python3 - <<'EOF'\nopen('scratch/a.py', 'w')\nEOF", False),
+    shell_gate("running a script needs nothing", "python3 app.py", False),
+    skill_gate("skill gate: an edit with the skill missing is refused", "app.py", True, "Load the skill harness:code-python with the Skill tool before editing app.py, then repeat the call."),
     skill_gate("skill gate: a prefixed Skill call allows", "app.py", False, main=("harness:code-python",)),
     skill_gate("skill gate: a bare Skill call allows", "app.py", False, main=("code-python",)),
     skill_gate("skill gate: another skill does not allow", "app.py", True, main=("code-js",)),
