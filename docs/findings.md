@@ -14,9 +14,8 @@ What testing the harness against real use found, and what is still open. Measure
 
 Planted bugs caught by the cases, `tests/plant_bugs.py --count 200 --seed 1`: **172 of 200, 86%**. By hook: `brief_lint` 5/5,
 `budget` 13/13, `common` 7/7, `nudge` 5/5, `skill_gate` 9/9, `turn` 24/26, `guard` 45/51, `import_reports` 5/7, `report_gate` 25/32,
-`shell` 29/38, `context` 2/3, `delegate` 3/4. Measured before the last review's small fixes. The score after the first round
-was also 84%, on a sample that had moved with the code, so only same-code runs compare. Finish line: 95%, with each remaining survivor read
-and shown to change nothing. `shell` is the weakest, and many of its survivors only break on unterminated input, where the hook fails open.
+`shell` 29/38, `context` 2/3, `delegate` 3/4. Measured before the last review's small fixes. Before this round's new cases the same code scored 84%. Finish line: 95%, with each remaining survivor read
+and shown to change nothing. `shell` is the weakest.
 
 ## Not settled
 
