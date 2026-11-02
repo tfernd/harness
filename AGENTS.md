@@ -36,7 +36,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Test once per unit, when it is done, not after each edit. When moving or migrating files, change first and test at the
   end. Run the smallest check that can fail, never the whole suite twice, and never a check to confirm what a tool
   already confirmed (a write that succeeded, a file just read).
-- A check that takes over a minute runs once, in the background. A slow machine is a cost to the owner too.
+- A slow check runs once, in the background. A slow machine is a cost to the owner too.
 
 ## Files
 - `.claude-plugin/marketplace.json` and `plugin.json` carry no `version`, on purpose: each commit is a version.

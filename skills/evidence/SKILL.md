@@ -46,7 +46,7 @@ line's text, at most 10 findings each marked READ, DERIVED or PROBED, as in `har
 - Cut a fan-out along an area, or along a kind of problem across a wider area (redefined helpers, false comments, dead
   code, docs against code). A **cell** is one agent's slice (as in `harness:review`); a **wave** is the cells launched
   in one message, at most 20, never over files another agent is editing.
-- The brief is short: the question, the files and callers, a ready grep, "report; build and test nothing", a time
-  limit. A question about a syntax pattern (every call, every decorator) is a parse of the syntax tree, never a regex.
+- The brief is short: the question, the files and callers, a ready grep, "report; build and test nothing", a turn
+  budget. A question about a syntax pattern (every call, every decorator) is a parse of the syntax tree, never a regex.
 - After: merge duplicates, check every claim yourself, hand the owner only the checked ones and how many were false.
 - How to shape the whole job: `harness:workflows`.
