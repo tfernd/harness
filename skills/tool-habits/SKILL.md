@@ -83,6 +83,10 @@ git diff --stat
 - Quote every glob: zsh refuses one that matches nothing. Read exit codes from `$pipestatus` in zsh.
 - A long run goes in the background. Never poll with `sleep` in a loop.
 
+## Git
+
+- Before any commit, load `harness:git-commit`. No AI attribution, ever.
+
 ## When a call is refused
 
 - Read the reason and change what the command does, or use the tool it names. A command with the same effect in other

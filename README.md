@@ -61,12 +61,13 @@ two meet: a skill says what to write, a hook checks it.
 | `context.py` | Session or agent starts | Adds text agents would otherwise forget: load the orchestrator, the whole `tool-habits` skill, the report form owed, past lessons, open problems. Refuses nothing |
 | `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early, and `sleep` inside a `while` or `until` loop |
 | `guard.py`, configured | Before a command or edit | Asks you before package changes. Refuses writes under `/tmp`, shell writes outside the scratch folder, and Python run outside its lock wrapper |
+| `commit_gate.py` | Before a command | Refuses a commit whose message `-m`, `-F` or a heredoc shows is not `type(scope): title` with `* ` bullets, and any commit or pull request with AI attribution. A commit that opens an editor cannot be read |
 | `delegate.py` | Before a command or edit | With the `delegate` key, refuses edits and unlisted commands from the main session, so agents do the work |
 | `skill_gate.py` | Before an Edit or Write | With the `skill_gate` key, refuses an edit until the skill for that kind of file is loaded |
 | `brief_lint.py` | Before an agent starts | With the `brief` key, refuses a brief with no `Goal:`, a worker brief with no `Write set:` and `Judge:`, and a budget in anything but turns |
 | `budget.py` | Before every call | Refuses every call but the handback from an agent past its turns, so it sends a partial report. Any agent type has a default |
 | `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent. Refuses nothing |
-| `report_gate.py` | An agent stops | Any agent type must end with a report: the full form for `worker`, `reviewer` and `auditor`, the short form for the rest. Sends back a malformed one, or one its transcript does not back, up to 3 times. Files problems and writes the ledger |
+| `report_gate.py` | An agent stops | Any agent type must end with a report: Answer, Not proven and a Verdict of done, partial or blocked, plus Problems, Next time, Open and Feedback when they have something to say. Sends back a malformed one, or one its transcript does not back, up to 3 times. Files problems and writes the ledger |
 | `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, a lesson with no rule changed, a bare "no lessons" after a refused call, or a due retro |
 
 A refusal says which rule fired and what to change.
@@ -115,13 +116,13 @@ ledger.
 | Process | `orchestrator`, `workflows`, `accept`, `init`, `report` | How the main session works, picks a job shape, accepts a unit, sets a project up, and how agents report |
 | Quality | `spec`, `cold-read`, `review`, `audit`, `evidence`, `testing`, `debug`, `refactor` | Writing a spec, checking a brief, reviewing, auditing, settling facts, writing tests that can fail, finding a bug's cause, changing structure safely |
 | Languages | `code-python`, `code-js`, `code-html-css`, `code-terraform`, `code-shell` | Style rules, loaded before touching those files |
-| Writing | `comments` | When a comment stays and how it reads |
+| Writing | `comments`, `git-commit` | When a comment stays and how it reads; how a commit is written |
 | Learning | `models`, `retro` | Which model suits each role; turning past problems into rules |
 
 ## The learning loop
 
-1. Each report's feedback, problems with a cause of brief, rule or tool, and low scores land in
-   `harness-feedback/inbox.md`. Questions about the task (DECIDE, OUTSIDE) stay in the report for you.
+1. Each report's Feedback items land in `harness-feedback/inbox.md`. Its Problems go to the ledger, and its Open items stay
+   in the report for you.
 2. When 20 items wait, the Stop hook holds a session that filed one until a retro is done. Separately, ten new reports
    add a one-line reminder at session start.
 3. One `analyst` groups the items by meaning, checks them against the code and proposes up to three changes.
@@ -134,12 +135,12 @@ Every key is optional; `{}` turns on the report and turn checks alone.
 
 | Key | Effect |
 |---|---|
-| `guard` | `scratch` names the scratch folder, `no_tmp` refuses `/tmp`, `ask_packages` asks before package changes, `lock` forces Python through a wrapper |
+| `guard` | `scratch` names the scratch folder, `no_tmp` refuses `/tmp`, `ask_packages` asks before package changes, `lock` forces Python through a wrapper, `commit_style: false` turns the commit rule off |
 | `delegate` | The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
 | `brief` | Briefs must hold the lines each role needs. `required` replaces the defaults |
 | `skill_gate` | Maps a file pattern to the skills to load before editing it |
 | `budget` | Model turns per role, with `*` for the rest. It replaces the default table, so an unlisted role has none. A brief overrides it with `Budget: 30 turns` |
-| `report` | Agent types that owe the full form, extra problem causes |
+| `report` | Extra problem causes |
 | `stop` | Minimum calls before a status is due, its headings, and which files count as rules |
 
 Files the plugin writes in a project: `harness-feedback/` (inbox, handled lines, open problems, the retro mark). Throwaway

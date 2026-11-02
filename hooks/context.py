@@ -8,7 +8,7 @@
 """SessionStart and SubagentStart hook: in a project with `.harness.json`, tells a session what it owes.
 
 Both get the `tool-habits` skill and the setup facts that cost past agents a refused call: which tools may be missing, the shell, and the scratch folder. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells any agent
-which report form it owes, the last lessons handled for its role and the open problems a retro kept. SessionStart also
+the report form, the last lessons handled for its role and the open problems a retro kept. SessionStart also
 says when ten or more reports of the project are newer than the plugin data folder's `retro-marker` file (the `retro` skill
 writes it). The text reaches the model as `additionalContext`.
 """
@@ -22,23 +22,18 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from common import FILE_EDGES, HANDLED, INBOX, OPEN_PROBLEMS, PLUGIN_PREFIX, ROLES, data_folder, find_project, get_report_form
+from common import FILE_EDGES, HANDLED, INBOX, OPEN_PROBLEMS, PLUGIN_PREFIX, data_folder, find_project
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
 HABITS_FALLBACK = "Use few tool turns; each one costs the owner time. Load the `harness:tool-habits` skill before shell work."
 TOOLS_TEXT = "If Grep or Glob is not among your tools, use `rg` and `find` through Bash."
 ZSH_TEXT = "The shell is zsh: quote every glob, and read exit codes from `$pipestatus`, not `$PIPESTATUS`."
-FORM_TEXTS = {
-    "full": "End with the full form of the `harness:report` skill: the ten sections, from Answer to FEEDBACK FOR THE "
-    "ORCHESTRATOR. A hook sends back a report that breaks the form.",
-    "short": "End with the short form of the `harness:report` skill: Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD. "
-    "A hook sends back a report that breaks the form.",
-}
-# An agent type that is not a harness role may lack the Skill tool, so the headings come in the text itself.
-INLINE_FORM_TEXT = (
-    "Whatever the task, you owe a report. End with these sections, each under its exact ## heading, once, in this order: "
-    "Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD. A hook sends the report back and says what is missing."
+# An agent may lack the Skill tool, so the headings come in the text itself.
+FORM_TEXT = (
+    "End with the `harness:report` report, each section under its exact ## heading, in this order: Answer, Not proven, then "
+    "only if they have something to say Problems, Next time, Open and Feedback, then Verdict, which opens with done, partial or "
+    "blocked. A hook sends back a report that breaks the form."
 )
 LESSONS_HEADING = (
     "Past feedback to this role. Each item was already acted on; its rule now lives in the file named. "
@@ -46,7 +41,7 @@ LESSONS_HEADING = (
 )
 PROBLEMS_HEADING = (
     "Problems a retro found for your role that no rule fixes yet. Avoid them, "
-    "or name one under PROBLEMS MET if you hit it:"
+    "or name one under Problems if you hit it:"
 )
 MAX_PROBLEMS = 2
 # Characters of an inbox text kept in a lesson line.
@@ -166,9 +161,7 @@ def main() -> int:
         text = "\n".join(part for part in (SESSION_TEXT, habits, get_setup_text(config), get_retro_line(root)) if part)
     elif name == "SubagentStart":
         agent_type = event.get("agent_type") or ""
-        form = get_report_form(agent_type, config.get("report", {}))
-        inline = INLINE_FORM_TEXT if form == "short" and agent_type.removeprefix(PLUGIN_PREFIX) not in ROLES else ""
-        text = "\n\n".join(part for part in (FORM_TEXTS[form], inline, habits, get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type)) if part)
+        text = "\n\n".join(part for part in (FORM_TEXT, habits, get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type)) if part)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 

@@ -8,7 +8,7 @@ skills:
   - evidence
 ---
 
-You answer ONE question from sources outside the repository, by `harness:evidence`, and report in the short form of `harness:report`. You write no file and
+You answer ONE question from sources outside the repository, by `harness:evidence`, and report by `harness:report`. You write no file and
 change nothing.
 
 - Answer first. Each claim carries its URL and the words it rests on, quoted.

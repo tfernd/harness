@@ -26,7 +26,7 @@ This table is the single source of each role's model (`harness:orchestrator` poi
 | researcher | sonnet | weighs outside sources and separates documented from inferred |
 
 The orchestrator itself (the main session) runs on the model the owner chose. A role's model is a default, not a proof:
-revisit it when `harness:retro` shows its audit grades below its self-scores.
+revisit it when `harness:retro` shows it calling work `done` that audits grade low.
 
 ## When a brief changes a role's model
 
@@ -41,6 +41,5 @@ A brief gap is never fixed by a bigger model: fix the brief (`harness:cold-read`
 
 ## Keeping this skill true
 
-- `references/by_model.py` prints self-scores per role and model from a ledger; its docstring gives the usage.
 - A measured claim needs its sample size and its confound; drop it when the sample is under 10 and nothing else backs it.
 - Change a role's model only with a ledger table behind it, in the same edit as the agent file.

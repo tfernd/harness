@@ -31,10 +31,25 @@ from pathlib import Path
 
 from common import HANDBACK_TOOL, read_events
 from nudge import get_turn_stats
-from report_gate import CAUSES, SCORES, get_scores, read_sections
+from report_gate import CAUSES, read_sections
+
+SCORES = ("Task", "Brief", "Ease")
 
 CAUSE = re.compile(rf"cause:\s*({'|'.join(CAUSES)})", re.I)
 TASK = re.compile(r"[1-5](/5)?")
+
+
+def get_scores(lines: list[str], /) -> dict[str, str]:  # keys are data
+    """The Value cell of each row of an old report's card, by the row's name."""
+
+    scores: dict[str, str] = {}
+    for line in lines:
+        if line.lstrip().startswith("|"):
+            cells = [cell.strip() for cell in line.split("|")]
+            if len(cells) > 2:
+                scores.setdefault(cells[1], cells[2])
+
+    return scores
 
 
 def find_report(events: list[dict], /) -> tuple[str, dict]:  # keys are data
@@ -79,7 +94,7 @@ def make_row(path: Path, /) -> dict | None:  # keys are data
     scores = get_scores(sections["REPORT CARD"])
     if not TASK.fullmatch(scores.get("Task", "").strip()):
         scores = {}
-    causes = CAUSE.findall("\n".join(sections.get("PROBLEMS MET", [])))
+    causes = CAUSE.findall("\n".join(sections.get("PROBLEMS MET", sections.get("Problems", []))))
 
     return {
         "time": last.get("timestamp"),

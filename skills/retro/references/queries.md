@@ -13,10 +13,10 @@ for r in live:
     for c in r["causes"]:
         by[r["role"]][c] += 1
 
-# self Task score per role
-def task(r):
-    v = (r["scores"] or {}).get("Task")
-    return int(v[0]) if v and v[0].isdigit() else None
+# verdicts per role
+verdicts = collections.defaultdict(collections.Counter)
+for r in live:
+    verdicts[r["role"]][r.get("verdict")] += 1
 
 # brief of a row: (role, task text) from the title "# Report: <role>, <task>"
 def brief(r):
@@ -27,8 +27,8 @@ def brief(r):
 grades = {(role, unit.strip()): int(g) for r in live if r["role"] == "auditor"
           for g, role, unit in re.findall(r"^Grade: (\d)/5 for (\S+) (.+)$", r["report"], re.M)}
 
-# (brief, audit grade, self Task) for each audited unit
-pairs = [(brief(r), grades[brief(r)], task(r)) for r in live if brief(r) in grades]
+# (brief, audit grade, verdict) for each audited unit
+pairs = [(brief(r), grades[brief(r)], r.get("verdict")) for r in live if brief(r) in grades]
 
 # tool turns per role: calls per turn, repeats per agent, share of calls that are small reads; rows before the field have none
 waste = collections.defaultdict(list)

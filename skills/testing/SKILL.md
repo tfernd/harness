@@ -37,7 +37,7 @@ A judge that has never failed has not been shown to work. Before a new judge is 
 1. **Name the bug** the judge is for, and say which result the bug changes before running anything.
 2. **Plant it in a copy,** never in the real source: copy the code under test into the scratch folder, apply the bug
    there, and point the judge at the copy (a path setting or an environment variable the project documents; with none, copy the module and import the copy by
-   path, and if that is impossible report it under OUTSIDE). A test that spawns a subprocess must pass the copy's path
+   path, and if that is impossible report it under Open). A test that spawns a subprocess must pass the copy's path
    to it too.
 3. **Run the judge:** it must fail, and fail on the bug's own assertion. Record the command and the failing line.
 4. **Run it on the real source:** it must pass.
@@ -61,7 +61,7 @@ A judge of a hook, gate or script is shown the same way: plant the bug in a copy
   not to guess.
 - An exact claim is compared for equality; a float claim has a measured relative bound.
 - A test of a script that reads its environment clears those variables first, since the runner may set them.
-- A run that cannot happen here (a missing tool or device) is listed under NOT CHECKED with the command for the owner,
+- A run that cannot happen here (a missing tool or device) is listed under Not proven with the command for the owner,
   never replaced by a looser check.
 - A passing run counts only for the code it ran. After a change, rerun; a run from before it is not evidence.
 - More tips for writing a judge: `references/judge-tips.md`.

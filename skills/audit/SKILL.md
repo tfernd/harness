@@ -1,6 +1,6 @@
 ---
 name: audit
-description: How an auditor tests another agent's report - re-runs its judges, marks each claim true or false with evidence, and grades the author's Task score. Load when you are the auditor, or when you judge an audit.
+description: How an auditor tests another agent's report - re-runs its judges, marks each claim true or false with evidence, and grades the author's work. Load when you are the auditor, or when you judge an audit.
 ---
 
 # Audit
@@ -21,8 +21,8 @@ brief it answered and the tree, and finds out which claims hold. It edits nothin
    quoted line, or PROBED with the command and exit code. A claim you cannot settle is UNSETTLED with the reason; it
    never counts as true.
 4. **Check the write set.** Every changed file is inside the brief's write set; anything else is a breach and is listed.
-5. **Check the report's honesty:** NOT CHECKED holds what really was not run; PROBLEMS MET holds the retries and failures
-   visible in the evidence; the card scores follow from what you found.
+5. **Check the report's honesty:** Not proven holds what really was not run; Problems holds the retries and failures
+   visible in the evidence; the Verdict follows from what you found.
 6. **Grade.**
 
 ## The grade
@@ -37,22 +37,21 @@ Grade the author's **Task** score: the value it gave itself for how much of the 
 | 2 | A required part missing or failing that the report did not say; or a judge fails on rerun while the report claims it passed |
 | 1 | Most of the brief not done, or the report mostly false |
 
-The grade is the auditor's honest reading, not a repeat of the self-score. A false claim of success (a judge or part
+The grade is the auditor's honest reading, not a repeat of the author's Verdict. A false claim of success (a judge or part
 reported done that is not) caps the grade at 2; grade 4 is only for wrong claims that are not about success.
 
 ## The report
 
-The full form of `harness:report`. Work holds, in this order:
+`harness:report`. Answer holds, in this order:
 
 - One line, exactly `Grade: N/5 for <role> <unit>`, where `<unit>` is the exact task text of the author's
   `# Report: <role>, <task>` title (when the task holds a comma, the unit is everything after the first comma and space). Nothing follows it on the line. the queries of `harness:retro`
   join on that text, so its shape is fixed.
-- On its own next line, the author's self-score: `Author's Task score: M/5`.
 - Claims, one line each: TRUE, FALSE or UNSETTLED, the claim in a few words, the evidence.
 - Judges re-run: the command, the exit code, the counts.
 - Write-set breaches and unreported changes.
 
-NOT CHECKED holds each claim and judge you could not settle, and why.
+Not proven holds each claim and judge you could not settle, and why.
 
 ## Rules
 

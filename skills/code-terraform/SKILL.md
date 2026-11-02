@@ -62,7 +62,7 @@ Local modules live in `./modules/<module_name>`.
 
 - `terraform fmt -recursive` (it skips subfolders without `-recursive`) and `terraform validate` (syntax and types
   only; run `terraform init -backend=false` first). Run `terraform version` first.
-- TFLint is the guide's suggested linter for further rules; if `tflint` is missing, report TFLint as NOT CHECKED.
+- TFLint is the guide's suggested linter for further rules; if `tflint` is missing, report TFLint as Not proven.
 - `terraform test` for modules, run in CI (guide).
 
 ## What no tool checks

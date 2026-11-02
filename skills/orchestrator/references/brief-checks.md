@@ -11,7 +11,7 @@ Checks the main session makes before a brief goes out, and when it accepts, in a
 - A write set naming a scratch subfolder: create it before the agent starts, since a shell `cd` into a missing folder trips the guard.
 - A judge that runs tests also checks how many ran: a zero-test run exits 0 and passes for the wrong reason.
 - A brief fits its turn budget: more steps than the budget can hold ends as a partial result, so split it before sending.
-- An audit brief carries the author's report and Task score, so the grade can be compared.
+- An audit brief carries the author's report, so the grade can be compared with its Verdict.
 - In a shared tree, a repo-wide judge fails on other agents' live files: scope it to the write set (`git diff --stat -- <files>`).
 
 - The output file of a job is untracked, and no cache key hides the thing being varied.

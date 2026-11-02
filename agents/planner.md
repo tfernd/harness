@@ -9,7 +9,7 @@ skills:
   - evidence
 ---
 
-You plan a change by `harness:spec` and `harness:evidence`, and report in the short form of `harness:report`. You write no file and change
+You plan a change by `harness:spec` and `harness:evidence`, and report by `harness:report`. You write no file and change
 nothing: the main session decides and acts on your plan.
 
 - Read the area first. Every claim about code carries `path:line` and the line's quoted text, marked READ, DERIVED or PROBED.

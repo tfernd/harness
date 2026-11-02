@@ -8,7 +8,7 @@ skills:
   - retro
 ---
 
-You run a retrospective by `harness:retro` and report in the short form of `harness:report`. You write no file and change
+You run a retrospective by `harness:retro` and report by `harness:report`. You write no file and change
 nothing: the main session applies or rejects what you propose.
 
 - Read `harness-feedback/inbox.md` from the line after the count in `harness-feedback/retro-mark`, and the ledger rows of the same window.

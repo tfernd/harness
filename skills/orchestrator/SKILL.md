@@ -71,7 +71,7 @@ Write set: every file it may change, or an explicit glob, disjoint from every ru
 Judge:     the commands or tests that decide it is done, and the baseline of "unchanged"
 Runs:      what it may run, smallest case first; one result row per case as it finishes
 Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them; the brief check refuses any other unit
-Report:    the report form it owes (`harness:report`), headings in order
+Report:    `harness:report`, headings in order
 ```
 
 A project that sets the `brief` key of `.harness.json` has a hook that refuses a worker brief without `Goal:`,
@@ -117,15 +117,15 @@ loop below), give the owner the closing status (`harness:accept`), and go on onl
 
 ## The learning loop
 
-1. Read the feedback of each report first: PROBLEMS MET, COMPLIANCE, FEEDBACK FOR THE ORCHESTRATOR. An auditor's Task grade of 3
-   or less (the agent's own Task score where there is no audit) changes the brief template, the role or the skill it names.
+1. Read each report's Problems, Next time and Feedback first. A Verdict of partial or blocked, or an auditor's grade of 3 or
+   less, changes the brief template, the role or the skill it names.
 2. In the same turn, unasked, the orchestrator writes a prevention for each problem. A problem seen twice gets a hook or a gate,
    not a sentence (`harness:retro`).
 3. Each lesson has one home: a trap for every agent, the project `AGENTS.md`; a role's craft, `agents/`; writing, tests or
    review, the skill that owns it; a decision or open question, the plan file. A line an accepted change made false is
    deleted in the same change.
-4. In a project with `.harness.json`, each FEEDBACK item, each problem with a cause of brief, rule or tool, and each Task
-   score of 3 or lower lands in `harness-feedback/inbox.md`. DECIDE and OUTSIDE stay in the report: put them to the owner.
+4. In a project with `.harness.json`, each Feedback item lands in `harness-feedback/inbox.md`. Open items stay in the report: put
+   them to the owner.
 5. No item needs a verdict of its own. When 20 items wait, the Stop hook holds a session that filed one until a retro is
    done: run one `harness:analyst`, apply or reject each proposal, keep its open problems in `harness-feedback/open.md`
    (the hook tells them to agents at their start), and add the line the hook names to `harness-feedback/handled.md`:

@@ -5,27 +5,24 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""SubagentStop hook: in a project with `.harness.json`, a sub-agent stops only with a report in the `report` skill's
+"""SubagentStop hook: in a project with `.harness.json`, every sub-agent stops only with a report in the `report` skill's
 form, whose claims its own transcript backs.
 
-The headings come first, each once and in order; then each section has the body the skill gives it. `worker`, `reviewer`
-and `auditor` owe the full form; `scout`, `runner` and `cold-reader` the short form. They count with or without the
-`harness:` prefix; every other agent type owes the short form. The report is the agent's last block, handback or text, holding
-`## Answer`, else its last message.
+Answer, Not proven and Verdict are required; Problems, Next time, Open and Feedback appear when they have something to say.
+Each heading comes once, in the form's order, with Verdict last. Each section has the shape the skill gives it. The report is
+the agent's last block, handback or text, holding `## Answer`, else its last message.
 
 The claims come from the agent's transcript, never from git, since parallel agents share a tree: each file it changed
 through Edit, Write or NotebookEdit is named in the report by its absolute or project-relative path (`guard.scratch` is
-exempt), each `exit <N>` is the result of a Bash call (the transcript shows a code only for a failed call, `Exit code N`;
-a call that did not fail is 0), and a READ `path:line` names an existing file with that many lines; a text quoted after
-it must lie within 3 lines of that line.
+exempt), a claim that a check passed needs a Bash call, each `exit <N>` is the result of a Bash call (the transcript shows a
+code only for a failed call, `Exit code N`; a call that did not fail is 0), and a READ `path:line` names an existing file with
+that many lines; a text quoted after it must lie within 3 lines of that line.
 
 A bad report goes back to the agent, up to MAX_SEND_BACKS times; then the agent may stop and the orchestrator is warned.
-Once it stops, one row goes to `ledger.jsonl` in the plugin's data folder, and each item of FEEDBACK FOR THE ORCHESTRATOR
-goes to the project's `harness-feedback/inbox.md`, with one `[auto] ` item (at most 5) for each problem met with a cause of brief, rule or tool
-and for a Task score of 3 or lower (DECIDE and OUTSIDE stay in the report), where they wait for a retro (`turn.py`).
+Once it stops, one row goes to `ledger.jsonl` in the plugin's data folder, and each Feedback item goes to the project's
+`harness-feedback/inbox.md`, where it waits for a retro (`turn.py`).
 
-`.harness.json` may set, under `report`: `short` and `full` (more roles owing that form), `causes` (more causes a problem
-may name).
+`.harness.json` may set, under `report`: `causes` (more causes a problem may name).
 """
 
 from __future__ import annotations
@@ -39,30 +36,21 @@ import time
 from pathlib import Path
 
 from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
-from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines, read_events
+from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_scratch, get_unfenced_lines, read_events
 from nudge import get_turn_stats
 
-FULL = (
-    "Answer",
-    "Work",
-    "NOT CHECKED",
-    "OUTSIDE",
-    "DECIDE",
-    "PROBLEMS MET",
-    "COMPLIANCE",
-    "LEARNED",
-    "REPORT CARD",
-    "FEEDBACK FOR THE ORCHESTRATOR",
-)
-SHORT = ("Answer", "Work", "NOT CHECKED", "PROBLEMS MET", "REPORT CARD")
-REQUIRED = {"full": FULL, "short": SHORT}
-# The sections where "none" is not an answer.
-NEVER_NONE = {"Answer", "Work", "PROBLEMS MET", "COMPLIANCE", "LEARNED", "REPORT CARD"}
-# The sections that state results, where "pending" or "TBD" means the work is unfinished; NOT CHECKED, OUTSIDE and DECIDE may
-# use those words for real (a pending decision).
-NO_PLACEHOLDER = {"Answer", "Work", "COMPLIANCE"}
+# The form's sections in order; the rest are left out when they have nothing to say.
+ORDER = ("Answer", "Not proven", "Problems", "Next time", "Open", "Feedback", "Verdict")
+REQUIRED = ("Answer", "Not proven", "Verdict")
 PLACEHOLDER = re.compile(r"\b(pending|tbd|not yet known)\b", re.I)
 CAUSES = ("brief", "tool", "rule", "environment", "other agent", "the agent itself")
+# A bare "nothing" under Not proven says no more than an empty section.
+MIN_NOT_PROVEN_WORDS = 3
+VERDICT = re.compile(r"^\W*(done|partial|blocked)\b\W*(\S.*)", re.I | re.S)
+# A path with a folder, or a file name with an extension.
+FILE_NAME = re.compile(r"[\w.-]+/[\w./-]+|\b[\w-]+\.[A-Za-z]\w*\b")
+# A statement that a check succeeded, which only a run can back.
+PASS_CLAIM = re.compile(r"\b(tests?|lint|checks?|gates?|build)\b[^.\n]{0,40}\b(pass(?:es|ed)?|clean|green)\b", re.I)
 CLOSING_TAGS = re.compile(r"(</[A-Za-z][A-Za-z0-9_-]*>|\s)*$")
 EXIT_CODE = re.compile(r"exit\s+[0-9]+", re.I)
 ANSWER_HEADING = re.compile(r"^## Answer\s*$", re.M)
@@ -74,18 +62,9 @@ QUOTE_WINDOW = 3
 EXIT_CLAIM = re.compile(r"exit\s+([0-9]+)", re.I)
 EXIT_RESULT = re.compile(r"\s*Exit code ([0-9]+)")
 REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
-MAX_AUTO = 5
-AUTO_PREFIX = "[auto] "
-LOW_TASK = 3
-# A problem with one of these causes can be fixed by a rule, a brief or a tool; the others are the task's own.
-PROBLEM_CAUSE = re.compile(r"\(?cause:\s*(brief|rule|tool)\b", re.I)
 # What a FEEDBACK item says when it holds no feedback.
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
-NO_GATE = re.compile(r"no gates? (was |were )?applied", re.I)
-SCORE = re.compile(r"^[1-5](/5)?$")
-SCORES = ("Task", "Brief", "Ease")
-WHAT_LABEL = "What would have helped"
-HOW_LABEL = "How I would do it again"
+NO_PROBLEM = re.compile(r"(- +)?no problem", re.I)
 MAX_SEND_BACKS = 3
 # Seconds this hook waits for a report to reach the transcript, and between looks; well under the hook's timeout of 10.
 REPORT_WAIT_S = 3
@@ -128,123 +107,78 @@ def is_none(lines: list[str], /) -> bool:
     return item_text(" ".join(lines)).rstrip(" .").lower() == "none"
 
 
-def check_headings(sections: list[tuple[str, list[str]]], required: tuple[str, ...], /) -> list[str]:
-    """Each required heading once, and in order."""
+def check_headings(sections: list[tuple[str, list[str]]], /) -> list[str]:
+    """The required headings are there, each heading is the form's and comes once, in order, with Verdict last."""
 
     names = [name for name, _ in sections]
-    problems: list[str] = []
-    last = -1
-    for heading in required:
-        if heading not in names:
-            problems.append(f"missing: {heading}")
-            continue
-        if names.count(heading) > 1:
-            problems.append(f"duplicated: {heading}")
-        index = names.index(heading)
-        if index < last:
-            problems.append(f"out of order: {heading}")
-        else:
-            last = index
+    problems = [f"missing: {heading}" for heading in REQUIRED if heading not in names]
+    problems += [f"not a section of the form: {name}" for name in dict.fromkeys(names) if name not in ORDER]
+    problems += [f"duplicated: {heading}" for heading in ORDER if names.count(heading) > 1]
+    known = [name for name in dict.fromkeys(names) if name in ORDER]
+    problems += [f"out of order: {name}" for name, expected in zip(known, sorted(known, key=ORDER.index)) if name != expected]
+    if "Verdict" in names and names[-1] != "Verdict":
+        problems.append("Verdict must be the last section")
 
     return problems
 
 
 def check_problems(lines: list[str], cause_pattern: re.Pattern[str], /) -> list[str]:
-    """Each PROBLEMS MET item names a cause from the list, or one line says no problem was met."""
+    """Each Problems item names a cause from the list and what would have helped."""
 
-    if len(lines) == 1 and re.match(r"(- +)?no problem met", lines[0]):
+    if len(lines) == 1 and NO_PROBLEM.match(lines[0]):
         return []
-
-    return [
-        f"PROBLEMS MET item names no cause from the skill's list: {item[:70]}"
-        for item in get_items(lines)
-        if not cause_pattern.search(item)
-    ]
-
-
-def check_compliance(lines: list[str], /) -> list[str]:
-    text = "\n".join(lines)
-    if EXIT_CODE.search(text) or NO_GATE.search(text):
-        return []
-
-    return ["COMPLIANCE names no gate with an exit code (the words `exit N`) and does not say no gate applied"]
-
-
-def get_scores(lines: list[str], /) -> dict[str, str]:  # keys are data
-    """The Value cell of each table row, by the row's name."""
-
-    scores: dict[str, str] = {}
-    for line in lines:
-        if line.lstrip().startswith("|"):
-            cells = [cell.strip() for cell in line.split("|")]
-            if len(cells) > 2:
-                scores.setdefault(cells[1], cells[2])
-
-    return scores
-
-
-def find_label(lines: list[str], label: str, /) -> tuple[int, str]:
-    """The index of the first line starting with a label, bold or not, and the text after the label; (-1, "") if none."""
-
-    pattern = re.compile(rf"^\s*\*{{0,2}}{label}:?\*{{0,2}}:?\s*(.*)")
-    for index, line in enumerate(lines):
-        match = pattern.match(line)
-        if match:
-            return index, match.group(1).strip()
-
-    return -1, ""
-
-
-def check_report_card(lines: list[str], /) -> list[str]:
-    """A Value 1 to 5 for Task, Brief and Ease, then the two labelled lines in order."""
-
     problems: list[str] = []
-    scores = get_scores(lines)
-    for name in SCORES:
-        if name not in scores:
-            problems.append(f"REPORT CARD has no {name} row")
-        elif not SCORE.match(scores[name]):
-            problems.append(f"REPORT CARD {name} value is '{scores[name]}', not an integer 1 to 5")
-    rows = [index for index, line in enumerate(lines) if line.lstrip().startswith("|")]
-    what_line, what_text = find_label(lines, WHAT_LABEL)
-    how_line, how_text = find_label(lines, HOW_LABEL)
-    for label, line, text in ((WHAT_LABEL, what_line, what_text), (HOW_LABEL, how_line, how_text)):
-        if line < 0:
-            problems.append(f'REPORT CARD has no "{label}" line')
-        elif not text:
-            problems.append(f'REPORT CARD "{label}" has no text')
-    if what_line >= 0 and rows and what_line < rows[-1]:
-        problems.append("REPORT CARD lines must follow the table")
-    if what_line >= 0 and 0 <= how_line < what_line:
-        problems.append(f'REPORT CARD "{HOW_LABEL}" must follow "{WHAT_LABEL}"')
+    for item in get_items(lines):
+        if not cause_pattern.search(item):
+            problems.append(f"Problems item names no cause from the skill's list: {item[:70]}")
+        if "helped" not in item.lower():
+            problems.append(f"Problems item does not say what would have helped: {item[:70]}")
 
     return problems
 
 
-def check_report(report: str, required: tuple[str, ...], cause_pattern: re.Pattern[str], /) -> list[str]:
+def check_feedback(lines: list[str], /) -> list[str]:
+    """Each Feedback item names a file to change."""
+
+    texts = [item_text(item) for item in get_items(lines)]
+
+    return [f"Feedback item names no file to change: {text[:70]}" for text in texts if not NO_FEEDBACK.fullmatch(text) and not FILE_NAME.search(text)]
+
+
+def check_section(heading: str, lines: list[str], cause_pattern: re.Pattern[str], /) -> list[str]:
+    """Why one section's body breaks the form."""
+
+    text = " ".join(lines)
+    match heading:
+        case "Answer" if is_none(lines):
+            return ["Answer says none; it says what was asked and what was done"]
+        case "Answer" if PLACEHOLDER.search(text):
+            return ["Answer holds placeholder text (pending, TBD or not yet known)"]
+        case "Not proven" if len(item_text(text).split()) < MIN_NOT_PROVEN_WORDS:
+            return ["Not proven is bare; say what was not run or shown, or why nothing was left"]
+        case "Problems" if not is_none(lines):
+            return check_problems(lines, cause_pattern)
+        case "Feedback":
+            return check_feedback(lines)
+        case "Verdict" if not VERDICT.match(item_text(text)):
+            return ["Verdict must open with done, partial or blocked, then one sentence"]
+
+    return []
+
+
+def check_report(report: str, cause_pattern: re.Pattern[str], /) -> list[str]:
     """Every way a report breaks its form."""
 
     sections = read_sections(report)
-    problems = check_headings(sections, required)
+    problems = check_headings(sections)
     bodies = dict(reversed(sections))  # a dict keeps the last pair of a repeated key: reversed, the FIRST occurrence wins
-    for heading in required:
+    for heading in ORDER:
         if heading not in bodies:
             continue
-        lines = bodies[heading]
-        if not lines:
+        if bodies[heading]:
+            problems += check_section(heading, bodies[heading], cause_pattern)
+        else:
             problems.append(f"{heading} is empty")
-            continue
-        if heading in NEVER_NONE and is_none(lines):
-            problems.append(f"{heading} says none; it says what it checked or met")
-            continue
-        if heading in NO_PLACEHOLDER and PLACEHOLDER.search("\n".join(lines)):
-            problems.append(f"{heading} holds placeholder text (pending, TBD or not yet known)")
-        if heading == "COMPLIANCE":
-            problems += check_compliance(lines)
-        elif heading == "PROBLEMS MET":
-            problems += check_problems(lines, cause_pattern)
-        elif heading == "REPORT CARD":
-            problems += check_report_card(lines)
 
     return problems
 
@@ -414,6 +348,8 @@ def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list
             problems.append(f"the report does not name a file the agent changed: {path}")
     # No Bash call at all is its own message; with some, each `exit N` is matched to a result.
     has_bash = any(block.get("type") == "tool_use" and block.get("name") == "Bash" for block in blocks)
+    if PASS_CLAIM.search(report) and not has_bash:
+        problems.append("the report says a check passed, and the transcript holds no Bash call")
     if EXIT_CODE.search(report) and not has_bash:
         problems.append("the report claims an exit code, and the transcript holds no Bash call")
     elif has_bash:
@@ -423,9 +359,9 @@ def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list
 
 
 def get_feedback(report: str, /) -> list[str]:
-    """The items of FEEDBACK FOR THE ORCHESTRATOR that are not "none"."""
+    """The items of Feedback that are not "none"."""
 
-    lines = dict(reversed(read_sections(report))).get("FEEDBACK FOR THE ORCHESTRATOR", [])
+    lines = dict(reversed(read_sections(report))).get("Feedback", [])
     texts = [item_text(item) for item in get_items(lines)]
 
     return [text for text in texts if text and not NO_FEEDBACK.fullmatch(text)]
@@ -437,29 +373,6 @@ def get_task_title(report: str, /) -> str:
     match = REPORT_TITLE.search(report)
 
     return match.group(1) if match else ""
-
-
-def get_auto_items(report: str, /) -> list[str]:
-    """Items the gate files itself: each problem met with a cause of brief, rule or tool, and a Task score of 3 or lower.
-
-    DECIDE and OUTSIDE bullets are the task's own questions: they stay in the report for the orchestrator.
-    """
-
-    sections = dict(reversed(read_sections(report)))
-    items: list[str] = []
-    for text in (item_text(item) for item in get_items(sections.get("PROBLEMS MET", []))):
-        cause = PROBLEM_CAUSE.search(text)
-        if cause:
-            items.append(f"{AUTO_PREFIX}PROBLEM {cause.group(1).lower()}: {text[: cause.start()].strip(' (')}")
-    for line in sections.get("REPORT CARD", []):
-        cells = [cell.strip() for cell in line.split("|")] if line.lstrip().startswith("|") else []
-        score = re.match(r"([1-5])(/5)?$", cells[2]) if len(cells) > 3 and cells[1] == "Task" else None
-        if score and int(score.group(1)) <= LOW_TASK:
-            title = get_task_title(report) or "(no title)"
-            items.append(f"{AUTO_PREFIX}Task score {score.group(1)} for {title}: {cells[3] or '(no reason given)'}")
-            break
-
-    return items[:MAX_AUTO]
 
 
 def file_feedback(root: str, session: str, role: str, items: list[str], /) -> list[str]:
@@ -503,8 +416,8 @@ def write_ledger(
     """
 
     sections = dict(reversed(read_sections(report)))
-    scores = get_scores(sections.get("REPORT CARD", []))
-    causes = re.findall(rf"cause:\s*({'|'.join(CAUSES)}|[^;)|]+)", "\n".join(sections.get("PROBLEMS MET", [])), re.I)
+    verdict = VERDICT.match(" ".join(sections.get("Verdict", [])))
+    causes = re.findall(rf"cause:\s*({'|'.join(CAUSES)}|[^;)|]+)", "\n".join(sections.get("Problems", [])), re.I)
     try:
         path = get_agent_path(event)
         duration = get_duration(path)
@@ -521,7 +434,7 @@ def write_ledger(
         "send_backs": send_backs,
         "duration_s": duration,
         "open_problems": problems,
-        "scores": {name: scores.get(name) for name in SCORES},
+        "verdict": verdict.group(1).lower() if verdict else None,
         "causes": [cause.strip().lower() for cause in causes],
         "feedback_ids": ids,
         "model": event.get("model") or extra.get("model"),
@@ -569,8 +482,7 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
     if path.exists():
         path.unlink()
     session = event.get("session_id") or "unknown"
-    items = [*get_feedback(report), *get_auto_items(report)]
-    write_ledger(event, root, role, report, send_backs, problems, file_feedback(root, session, role, items), extra)
+    write_ledger(event, root, role, report, send_backs, problems, file_feedback(root, session, role, get_feedback(report)), extra)
 
 
 def wait_for_report(event: dict, path: str, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
@@ -594,10 +506,8 @@ def main() -> int:
     root, config = find_project(event.get("cwd") or os.getcwd())
     settings = config.get("report", {})
     name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
-    form = get_report_form(name, settings)
-    if root is None or not form:
+    if root is None:
         return 0
-    required = REQUIRED[form]
     # A cause counts as a whole word, and not when a `|` follows it: the skill's template lists the causes as
     # `brief | tool | ...`, and a copied list is not a choice.
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
@@ -605,7 +515,7 @@ def main() -> int:
     path = event.get("agent_transcript_path") or ""
     blocks, failed, model = wait_for_report(event, path) if os.path.isfile(path) else ([], {}, None)
     report = get_report(event, blocks)
-    problems = check_report(report, required, cause_pattern)
+    problems = check_report(report, cause_pattern)
     problems += check_claims(report, event, str(root), get_scratch(root, config), blocks, failed)
     extra = get_extra(event, blocks, failed, model, config, name, str(root))
     if not problems:
@@ -622,14 +532,12 @@ def main() -> int:
         print(json.dumps({"systemMessage": warning}))
         return 0
     get_send_backs_path(event).write_text(str(tries + 1))
-    headings = "\n".join(f"## {heading}" for heading in required)
+    headings = "\n".join(f"## {heading}" for heading in ORDER)
     reason = (
         f"Your report breaks the report skill's form: {listed}\n"
-        f"Send the WHOLE report again, not only the fix. Each heading on its own line, once, in this order:\n{headings}\n"
-        'A section has a body; "none" only in OUTSIDE, DECIDE, NOT CHECKED and FEEDBACK FOR THE ORCHESTRATOR. A PROBLEMS '
-        'MET with no problem reads "no problem met: <what ran clean>"; otherwise each item says "cause: <one of '
-        f'{", ".join(CAUSES)}>". COMPLIANCE names a gate with its exit code (`exit N`), or says no gate applied. REPORT CARD has a '
-        "Task, Brief and Ease row with a Value 1 to 5, then the two labelled lines."
+        f"Send the WHOLE report again, not only the fix. Sections in this order, each heading on its own line, once; Answer, Not proven and Verdict always, the rest only if they have something to say:\n{headings}\n"
+        f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped. Each Feedback item names a file to change. '
+        "Verdict is last and opens with done, partial or blocked, then one sentence."
     )
     print(json.dumps({"decision": "block", "reason": reason}))
 

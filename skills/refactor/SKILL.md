@@ -41,7 +41,7 @@ Behaviour stays; only the structure moves. Medium and large jobs follow `harness
 - After the change, `rg` the old name again over the whole repository: zero hits, or each hit explained. Include
   strings, config, docs, build files and dynamic access (`getattr`, a name in a string, a registry key).
 - A public name (exported, documented, used by another project or by a stored file) changes only on the owner's word.
-  Without it, keep the old name as the one that works and report the proposed change under DECIDE.
+  Without it, keep the old name as the one that works and report the proposed change under Open.
 
 ## Prove behaviour held
 

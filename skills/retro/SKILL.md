@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Turns the ledger of past agent reports into rule changes - groups problems by cause, role and brief, compares self-scores with audit grades, proposes a hook or gate for a problem seen twice. Load for a retrospective, after a big job, or when the same problem comes back.
+description: Turns the ledger of past agent reports into rule changes - groups problems by cause, role and brief, compares verdicts with audit grades, proposes a hook or gate for a problem seen twice. Load for a retrospective, after a big job, or when the same problem comes back.
 ---
 
 # Retro
@@ -21,8 +21,8 @@ line the hook names to `harness-feedback/handled.md`; the hook moves the mark.
 stopped agent, written by `hooks/report_gate.py`; past reports come in through `bin/harness-import` (rows carry
 `"imported": true`, `accepted` true and `send_backs` 0, so they say nothing about the gate).
 
-Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_backs`, `open_problems`, `scores`
-(`Task`, `Brief`, `Ease`, each `"N/5"` or a bare digit, null when unreadable), `causes`, `feedback_ids`, `tool_turns` (`turns`, `calls`,
+Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_backs`, `open_problems`, `verdict`
+(`done`, `partial` or `blocked`, null on an old row), `causes`, `feedback_ids`, `tool_turns` (`turns`, `calls`,
 `one_call_turns`, `longest_small_run`, `small_reads`, `repeats`), `report` (full text). Read rows with `uv run python`; `references/queries.md` holds the queries.
 
 ## Steps
@@ -33,11 +33,9 @@ Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_back
    report's first line, `# Report: <role>, <task>`). A cause named once is a note; twice is a pattern.
 3. **Read the reports behind a pattern.** Open the `report` text of at least two rows per pattern. A count with no
    quoted problem line is not a finding.
-4. **Compare scores.** An auditor's report holds one line in Work, for example `Grade: 3/5 for worker fix the
-   parser`, where the unit is the exact task text of the author's `# Report: <role>, <task>` title. Set that
-   audit grade beside the role's self `Task` score for the same unit and report the gap per role. A role whose
-   self-score exceeds its audit grade by 1 or more twice is overrating its work: the fix is a stricter judge or report
-   line, not a reminder. Units with no audit grade are listed as unaudited, never scored.
+4. **Compare verdicts.** An auditor's report holds one line, for example `Grade: 3/5 for worker fix the parser`, where the unit
+   is the exact task text of the author's `# Report: <role>, <task>` title. A role whose `done` gets a grade of 3 or less twice is
+   overrating its work: the fix is a stricter judge or report line, not a reminder. Units with no grade are listed as unaudited.
 5. **Check the send-backs.** `open_problems` is filled only when the gate stops sending back (the cap), so read it only
    on rows with `accepted` false; a row with `send_backs` above 0 and `accepted` true names no rule. A
    report rule failed twice is a rule agents cannot read: rewrite it in `harness:report` or give the gate a clearer message.
@@ -45,7 +43,6 @@ Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_back
    small reads, each beside the last retro's value. One-call turns alone prove nothing, since many need the previous
    result. A figure that got worse is a pattern; read two of its transcripts.
 7. **Propose changes.** One per pattern, in the form below.
-8. **Model evidence.** Update `harness:models` measured facts only from the same query output, with sample sizes.
 
 ## Proposal form
 
@@ -69,7 +66,7 @@ Check: <how the same problem is caught next time, and how to show the check fail
 
 ## Limits
 
-- Self-scores are the agent's opinion. Never let them stand alone; use them only beside an audit grade or a problem line.
+- A Verdict is the agent's opinion. Never let it stand alone; use it only beside an audit grade or a problem line.
 - Causes are what the agent chose; check one against the problem text before counting it.
 - Do not edit the ledger. Do not rerun `bin/harness-import` without `--dry-run` first: it appends.
 - A retro writes proposals and the files they name; the owner accepts them.

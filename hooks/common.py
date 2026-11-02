@@ -26,12 +26,6 @@ RETRO_MARK = f"{FEEDBACK_FOLDER}/retro-mark"
 OPEN_PROBLEMS = f"{FEEDBACK_FOLDER}/open.md"
 # The characters a file named in the handled file may carry around it, such as a closing period or backticks.
 FILE_EDGES = "`'\".,;:()"
-# The plugin's roles, by the report form each owes.
-FULL_ROLES = {"worker", "reviewer", "auditor"}
-SHORT_ROLES = {"scout", "runner", "cold-reader", "analyst", "planner", "researcher"}
-ROLES = FULL_ROLES | SHORT_ROLES
-
-
 def find_project(cwd: str, /) -> tuple[Path | None, dict]:  # keys are data: the dict holds keys of the user's config, not names in code
     """The folder holding `.harness.json` and its contents, or (None, {}) when there is none.
 
@@ -56,23 +50,6 @@ def get_scratch(root: Path, config: dict, /) -> str:  # config keys
     scratch = config.get("guard", {}).get("scratch")
 
     return os.path.realpath(root / scratch) if scratch else ""
-
-
-def get_report_form(agent_type: str, settings: dict, /) -> str:  # config keys
-    """The report an agent type owes under `.harness.json`'s `report` settings: "full" or "short".
-
-    Every sub-agent owes one, so a forgotten brief or a wrong agent type cannot skip it: the three writing roles and
-    `report.full` owe the full form, every other type the short form. The name is compared with the plugin prefix
-    stripped, for the roles and for `report.short` and `report.full`: list a role without the prefix.
-    """
-
-    role = agent_type.removeprefix(PLUGIN_PREFIX)
-    if role in SHORT_ROLES or role in settings.get("short", ()):
-        return "short"
-    if role in FULL_ROLES or role in settings.get("full", ()):
-        return "full"
-
-    return "short"
 
 
 def get_unfenced_lines(text: str, /) -> list[str]:

@@ -19,6 +19,7 @@ uv run python tests/run_cases.py [--only SUBSTRING] [--hooks FOLDER]
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -56,32 +57,49 @@ STRICT = {
 BUSY_CALLS = ["Agent", "Edit", "Edit"]
 FULL_STATUS = "\n".join(f"## {heading}\nnothing" for heading in ("Verdict", "Done", "Needs you", "Next", "Lessons"))
 PROGRESS = "Progress: two files are written, the third agent is still running."
-CARD = (
+# The report form of the old plugin versions, which the importer still reads.
+OLD_CARD = (
     "| Score | Value | Why |\n| --- | --- | --- |\n| Task | 5/5 | done |\n| Brief | 4/5 | clear |\n| Ease | 5 | easy |\n\n"
     "**What would have helped:** nothing\n\n**How I would do it again:** the same"
 )
+OLD_REPORT = f"## Answer\nDone.\n## REPORT CARD\n{OLD_CARD}"
 REPORT_SECTIONS = (
-    ("Answer", "Done."),
-    ("Work", "- one file changed"),
-    ("NOT CHECKED", "none"),
-    ("OUTSIDE", "none"),
-    ("DECIDE", "none"),
-    ("PROBLEMS MET", "no problem met: the gates ran clean"),
-    ("COMPLIANCE", "Gates: the style gate exit 0"),
-    ("LEARNED", "- a fact"),
-    ("REPORT CARD", CARD),
-    ("FEEDBACK FOR THE ORCHESTRATOR", "none"),
+    ("Answer", "Changed one file."),
+    ("Not proven", "- nothing was left unrun, every check ran"),
+    ("Problems", "no problem met: the work ran as planned"),
+    ("Next time", "The same order of work."),
+    ("Open", "none"),
+    ("Feedback", "none"),
+    ("Verdict", "done: the unit is complete"),
 )
-SHORT_HEADINGS = ("Answer", "Work", "NOT CHECKED", "PROBLEMS MET", "REPORT CARD")
+REQUIRED_HEADINGS = ("Answer", "Not proven", "Verdict")
+OPTIONAL_HEADINGS = ("Problems", "Next time", "Open", "Feedback")
+# Every kind of agent owes the one form.
+AGENT_TYPES = ("harness:worker", "harness:scout", "harness:cold-reader", "harness:reviewer", "harness:auditor", "runner", "Explore", "custom")
+HELPED = "A clearer brief would have helped."
 
 
-def make_report(*, skip: str = "", headings: tuple[str, ...] = (), replace: tuple[str, str] = ("", "")) -> str:
-    """A report in the skill's form: `skip` leaves a heading out, `headings` keeps only those, `replace` swaps a body."""
+def build_report(sections: list[tuple[str, str]], /) -> str:
+    return "\n".join(f"## {heading}\n{body}" for heading, body in sections)
 
-    sections = [(heading, replace[1] if heading == replace[0] else body) for heading, body in REPORT_SECTIONS]
-    kept = [(heading, body) for heading, body in sections if heading != skip and (not headings or heading in headings)]
 
-    return "\n".join(f"## {heading}\n{body}" for heading, body in kept)
+def make_report(
+    *, skip: str = "", headings: tuple[str, ...] = (), replace: tuple[str, str] = ("", ""), fill: dict[str, str] | None = None
+) -> str:
+    """A report in the skill's form: `skip` leaves a heading out, `headings` keeps only those, `replace` and `fill` swap bodies."""
+
+    bodies = {replace[0]: replace[1], **(fill or {})}
+    sections = [(heading, bodies.get(heading, body)) for heading, body in REPORT_SECTIONS]
+
+    return build_report([(heading, body) for heading, body in sections if heading != skip and (not headings or heading in headings)])
+
+
+def reorder_report(*headings: str) -> str:
+    """The form's bodies under these headings, in this order."""
+
+    bodies = dict(REPORT_SECTIONS)
+
+    return build_report([(heading, bodies[heading]) for heading in headings])
 
 
 class Case(NamedTuple):
@@ -399,10 +417,16 @@ def edit(tool_id: str, path: str, /) -> dict:  # keys are data
     return assistant({"type": "tool_use", "id": tool_id, "name": "Edit", "input": {"file_path": path}})
 
 
-def work_report(work: str, /) -> str:
-    """A complete report with a Work of this text and no exit code."""
+def answer_report(answer: str, /) -> str:
+    """A complete report whose Answer is this text."""
 
-    return make_report(replace=("Work", work)).replace("Gates: the style gate exit 0", "no gate applied")
+    return make_report(replace=("Answer", answer))
+
+
+def exit_report(*codes: int) -> str:
+    """A complete report whose Answer claims one command per exit code."""
+
+    return answer_report("Changed one file. " + " ".join(f"Command {number} exit {code}." for number, code in enumerate(codes, 1)))
 
 
 def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
@@ -414,7 +438,6 @@ def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: obj
 INBOX_NAME = "harness-feedback/inbox.md"
 MARK_NAME = "harness-feedback/retro-mark"
 OPEN_NAME = "harness-feedback/open.md"
-AUTO = "[auto] "
 NUMBERED = "\n".join(f"line {word}" for word in ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"))
 
 
@@ -429,13 +452,16 @@ def bash_failed(tool_id: str, code: int, /) -> dict:  # keys are data
 
     return {"type": "user", "message": {"content": [block]}}
 HANDLED_NAME = "harness-feedback/handled.md"
-CLEAN_REPORT = work_report("- nothing changed")
-FEEDBACK_REPORT = make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", "- add a rule to the report skill"))
-BAD_REPORT = make_report(skip="OUTSIDE", replace=("FEEDBACK FOR THE ORCHESTRATOR", "- add a rule"))
+CLEAN_REPORT = answer_report("Nothing changed.")
+EXIT_REPORT = exit_report(0)
+FEEDBACK_ITEM = "skills/report/SKILL.md: add a rule to the report skill"
+FEEDBACK_ID = hashlib.sha1(FEEDBACK_ITEM.encode()).hexdigest()[:8]
+FEEDBACK_REPORT = make_report(replace=("Feedback", f"- {FEEDBACK_ITEM}"))
+BAD_REPORT = make_report(skip="Not proven", replace=("Feedback", f"- {FEEDBACK_ITEM}"))
 GATE_CASES = [
-    gate("a Read is no Bash call for an exit code", transcript_event(make_report()), True, "holds no Bash call", transcript=(assistant({"type": "tool_use", "id": "r", "name": "Read", "input": {}}),)),
-    gate("a broken transcript line is skipped", {**transcript_event(make_report()), "agent_transcript_path": f"{ROOT}/project/broken.jsonl"}, False, files=(("broken.jsonl", "not json\n" + json.dumps(bash_call("t1")) + "\n"),)),
-    gate("a block that is no object is skipped", transcript_event(make_report()), False, transcript=(assistant("text"), bash_call("t1"))),
+    gate("a Read is no Bash call for an exit code", transcript_event(EXIT_REPORT), True, "holds no Bash call", transcript=(assistant({"type": "tool_use", "id": "r", "name": "Read", "input": {}}),)),
+    gate("a broken transcript line is skipped", {**transcript_event(EXIT_REPORT), "agent_transcript_path": f"{ROOT}/project/broken.jsonl"}, False, files=(("broken.jsonl", "not json\n" + json.dumps(bash_call("t1")) + "\n"),)),
+    gate("a block that is no object is skipped", transcript_event(EXIT_REPORT), False, transcript=(assistant("text"), bash_call("t1"))),
     gate(
         "a message to another agent is no report",
         transcript_event("done"),
@@ -445,76 +471,19 @@ GATE_CASES = [
     ),
     gate(
         "an exit code in a list result counts",
-        transcript_event(make_report(replace=("COMPLIANCE", "Gates: the style gate exit 1"))),
+        transcript_event(exit_report(1)),
         False,
         transcript=(bash_call("t1"), {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": [{"type": "text", "text": "Exit code 1\noutput"}]}]}}),
     ),
-    gate("a what line above the table is refused", stop_event(make_report(replace=("REPORT CARD", "**What would have helped:** nothing\n\n" + CARD.split("\n\n")[0] + "\n\n**How I would do it again:** the same"))), True, "must follow the table", lacks='has no "What'),
-    gate("an indented line joins its feedback item", stop_event(make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", "first item\n  more of it\nsecond item"))), False, wrote=(INBOX_NAME, "first item more of it")),
-    gate("an unindented line is its own feedback item", stop_event(make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", "first item\nsecond item"))), False, wrote=(INBOX_NAME, "agent=worker second item")),
-    gate("a complete full report is accepted", stop_event(make_report()), False),
-    gate("a report with a heading missing goes back", stop_event(make_report(skip="OUTSIDE")), True, "missing: OUTSIDE"),
+    gate("a complete report is accepted", stop_event(make_report()), False),
     gate("a repeated heading goes back", stop_event(make_report() + "\n## Answer\nagain"), True, "duplicated: Answer"),
     gate("a heading in a fence does not count", stop_event(make_report() + "\n```\n## Answer\n```"), False),
-    gate(
-        "a problem with no cause goes back",
-        stop_event(make_report(replace=("PROBLEMS MET", "- it broke"))),
-        True,
-        "names no cause",
-    ),
-    gate(
-        "a problem with a cause is accepted",
-        stop_event(make_report(replace=("PROBLEMS MET", "- it broke (cause: brief); resolved: no"))),
-        False,
-    ),
-    gate(
-        "the form's cause list copied whole goes back",
-        stop_event(make_report(replace=("PROBLEMS MET", "- it broke (cause: brief | tool)"))),
-        True,
-        "names no cause",
-    ),
-    gate(
-        "a project's extra cause is accepted",
-        stop_event(make_report(replace=("PROBLEMS MET", "- it broke (cause: GPU)"))),
-        False,
-        config={"report": {"causes": ["GPU"]}},
-    ),
-    gate("none in Work goes back", stop_event(make_report(replace=("Work", "none"))), True, "Work says none"),
     gate("TBD in Answer goes back", stop_event(make_report(replace=("Answer", "TBD"))), True, "placeholder"),
     gate(
-        "a compliance with no exit code goes back",
-        stop_event(make_report(replace=("COMPLIANCE", "all fine"))),
-        True,
-        "COMPLIANCE names no gate",
-    ),
-    gate(
-        "a score out of range goes back",
-        stop_event(make_report(replace=("REPORT CARD", CARD.replace("5/5", "9/5")))),
-        True,
-        "not an integer 1 to 5",
-    ),
-    gate(
-        "a card with no labelled line goes back",
-        stop_event(make_report(replace=("REPORT CARD", CARD.split("**What")[0]))),
-        True,
-        "What would have helped",
-    ),
-    gate(
-        "the short form is enough for a scout",
-        stop_event(make_report(headings=SHORT_HEADINGS), agent_type="harness:scout"),
-        False,
-    ),
-    gate(
-        "the short form is not enough for a worker",
-        stop_event(make_report(headings=SHORT_HEADINGS)),
-        True,
-        "missing: COMPLIANCE",
-    ),
-    gate(
         "an unprefixed project role is judged",
-        stop_event(make_report(skip="OUTSIDE"), agent_type="worker"),
+        stop_event(make_report(skip="Not proven"), agent_type="worker"),
         True,
-        "missing: OUTSIDE",
+        "missing: Not proven",
     ),
     gate("a built-in helper owes a report", stop_event("no headings", agent_type="Explore"), True),
     gate("another plugin's agent owes a report", stop_event("no headings", agent_type="other:worker"), True),
@@ -522,45 +491,15 @@ GATE_CASES = [
     gate("a fork owes a report", stop_event("Done.", agent_type="fork"), True),
     gate("general-purpose owes a report by default", stop_event("Done.", agent_type="general-purpose"), True),
     gate("an unknown type owes a report", stop_event("no headings", agent_type="custom"), True),
-    gate("an unknown type owes only the short form", stop_event(make_report(headings=SHORT_HEADINGS), agent_type="custom"), False),
-    gate("report.short moves a full role to the short form", stop_event(make_report(headings=SHORT_HEADINGS), agent_type="worker"), False, config={"report": {"short": ["worker"]}}),
-    gate(
-        "report.short adds a role",
-        stop_event(make_report(skip="Work"), agent_type="general-purpose"),
-        True,
-        "missing: Work",
-        config={"report": {"short": ["general-purpose"]}},
-    ),
-    gate(
-        "report.short asks only the short form",
-        stop_event(make_report(headings=SHORT_HEADINGS), agent_type="general-purpose"),
-        False,
-        config={"report": {"short": ["general-purpose"]}},
-    ),
-    gate(
-        "report.full adds a role",
-        stop_event(make_report(headings=SHORT_HEADINGS), agent_type="custom"),
-        True,
-        "missing: COMPLIANCE",
-        config={"report": {"full": ["custom"]}},
-    ),
-    gate("a bare cold-reader owes the short form", stop_event(make_report(headings=SHORT_HEADINGS), agent_type="cold-reader"), False),
-    gate("a bare reviewer owes the full form", stop_event(make_report(headings=SHORT_HEADINGS), agent_type="reviewer"), True, "missing: COMPLIANCE"),
-    gate(
-        "out-of-order headings go back",
-        stop_event(make_report().replace("## NOT CHECKED\nnone\n", "") .replace("## OUTSIDE\nnone\n", "## OUTSIDE\nnone\n## NOT CHECKED\nnone\n")),
-        True,
-        "out of order: OUTSIDE",
-    ),
     gate(
         "an unterminated fence does not hide later headings",
-        stop_event(make_report(replace=("Work", "- output:\n```\nunterminated"))),
+        stop_event(make_report(replace=("Answer", "- output:\n```\nunterminated"))),
         False,
     ),
     *(
         gate(
             f"feedback of {text!r} files nothing",
-            stop_event(make_report(replace=("FEEDBACK FOR THE ORCHESTRATOR", text))),
+            stop_event(make_report(replace=("Feedback", text))),
             False,
             not_wrote=(INBOX_NAME, "id="),
         )
@@ -571,21 +510,21 @@ GATE_CASES = [
         "a feedback item reaches the inbox",
         stop_event(FEEDBACK_REPORT),
         False,
-        wrote=(INBOX_NAME, f"session={SESSION} agent=worker add a rule to the report skill"),
+        wrote=(INBOX_NAME, f"session={SESSION} agent=worker {FEEDBACK_ITEM}"),
     ),
     gate(
         "a known feedback item is not filed twice",
         stop_event(FEEDBACK_REPORT),
         False,
-        files=((INBOX_NAME, f"- id=7ca9ba8e session={SESSION} agent=worker add a rule to the report skill\n"),),
+        files=((INBOX_NAME, f"- id={FEEDBACK_ID} session={SESSION} agent=worker {FEEDBACK_ITEM}\n"),),
         not_wrote=(INBOX_NAME, "skill\n- id="),
     ),
     gate(
         "another session's item is filed for this one",
         stop_event(FEEDBACK_REPORT),
         False,
-        files=((INBOX_NAME, "- id=7ca9ba8e session=other agent=worker add a rule to the report skill\n"),),
-        wrote=(INBOX_NAME, f"id=7ca9ba8e session={SESSION} "),
+        files=((INBOX_NAME, f"- id={FEEDBACK_ID} session=other agent=worker {FEEDBACK_ITEM}\n"),),
+        wrote=(INBOX_NAME, f"id={FEEDBACK_ID} session={SESSION} "),
     ),
     gate(
         "the feedback goes to the project a cd left",
@@ -599,12 +538,12 @@ GATE_CASES = [
         "a feedback item of a report sent back stays out of the inbox",
         stop_event(BAD_REPORT),
         True,
-        "missing: OUTSIDE",
+        "missing: Not proven",
         not_wrote=(INBOX_NAME, "add a rule"),
     ),
     gate(
         "an accepted report reaches the ledger",
-        stop_event(make_report(replace=("PROBLEMS MET", "- it broke (cause: brief)"))),
+        stop_event(make_report(replace=("Problems", f"- it broke (cause: brief). {HELPED}"))),
         False,
         wrote=("data/ledger.jsonl", '"causes": ["brief"]'),
     ),
@@ -612,7 +551,7 @@ GATE_CASES = [
         "a second send-back still blocks",
         stop_event(BAD_REPORT),
         True,
-        "missing: OUTSIDE",
+        "missing: Not proven",
         files=(("data/send-backs/a1.count", "1"),),
         wrote=("data/send-backs/a1.count", "2"),
     ),
@@ -658,8 +597,8 @@ GATE_CASES = [
         "the last report in the transcript is the report",
         transcript_event("Done."),
         True,
-        "missing: OUTSIDE",
-        transcript=(assistant({"type": "text", "text": CLEAN_REPORT}), assistant({"type": "text", "text": make_report(skip="OUTSIDE")})),
+        "missing: Not proven",
+        transcript=(assistant({"type": "text", "text": CLEAN_REPORT}), assistant({"type": "text", "text": make_report(skip="Not proven")})),
     ),
     gate(
         "a user line holding a filled form does not count",
@@ -685,31 +624,31 @@ GATE_CASES = [
     ),
     gate(
         "a changed file named by its project path is accepted",
-        transcript_event(work_report("- src/a.py: changed")),
+        transcript_event(answer_report("- src/a.py: changed")),
         False,
         transcript=(edit("t1", "src/a.py"),),
     ),
     gate(
         "a changed file named by its absolute path is accepted",
-        transcript_event(work_report(f"- {ROOT}/project/src/a.py: changed")),
+        transcript_event(answer_report(f"- {ROOT}/project/src/a.py: changed")),
         False,
         transcript=(edit("t1", f"{ROOT}/project/src/a.py"),),
     ),
     gate(
         "an absolute call path is named by its project path",
-        transcript_event(work_report("- src/a.py: changed")),
+        transcript_event(answer_report("- src/a.py: changed")),
         False,
         transcript=(edit("t1", f"{ROOT}/project/src/a.py"),),
     ),
     gate(
         "a changed file named with ./ is accepted",
-        transcript_event(work_report("- ./src/a.py: changed")),
+        transcript_event(answer_report("- ./src/a.py: changed")),
         False,
         transcript=(edit("t1", "src/a.py"),),
     ),
     gate(
         "another file with the same ending does not name it",
-        transcript_event(work_report("- lib/src/a.py and src/a.pyc")),
+        transcript_event(answer_report("- lib/src/a.py and src/a.pyc")),
         True,
         "does not name a file",
         transcript=(edit("t1", "src/a.py"),),
@@ -736,99 +675,70 @@ GATE_CASES = [
     ),
     gate(
         "an exit code with no Bash call goes back",
-        transcript_event(make_report()),
+        transcript_event(EXIT_REPORT),
         True,
         "no Bash call",
         transcript=(assistant({"type": "text", "text": "thinking"}),),
     ),
     gate(
         "an exit code with a Bash call is accepted",
-        transcript_event(make_report()),
+        transcript_event(EXIT_REPORT),
         False,
         transcript=(assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "true"}}),),
     ),
-    gate("a READ past the end goes back", stop_event(work_report("READ `AGENTS.md:2`")), True, "past the end"),
-    gate("a READ of the last line is accepted", stop_event(work_report("READ `AGENTS.md:1`")), False),
-    gate("a READ range checks its end", stop_event(work_report("READ `AGENTS.md:1-2`")), True, "past the end"),
-    gate("a READ of a missing file goes back", stop_event(work_report("READ `gone.md:1`")), True, "does not exist"),
-    gate("a READ without the backticks is not a claim", stop_event(work_report("READ gone.md:1")), False),
+    gate("a READ past the end goes back", stop_event(answer_report("READ `AGENTS.md:2`")), True, "past the end"),
+    gate("a READ of the last line is accepted", stop_event(answer_report("READ `AGENTS.md:1`")), False),
+    gate("a READ range checks its end", stop_event(answer_report("READ `AGENTS.md:1-2`")), True, "past the end"),
+    gate("a READ of a missing file goes back", stop_event(answer_report("READ `gone.md:1`")), True, "does not exist"),
+    gate("a READ without the backticks is not a claim", stop_event(answer_report("READ gone.md:1")), False),
     # report gate: hardening
     gate(
         "an exit code no Bash call ended with goes back",
-        transcript_event(make_report()),
+        transcript_event(EXIT_REPORT),
         True,
         "no Bash call of the transcript ended with that code",
         transcript=(bash_call("t1"), bash_failed("t1", 1)),
     ),
     gate(
         "an exit code a failed Bash call printed is accepted",
-        transcript_event(make_report(replace=("COMPLIANCE", "Gates: the gate exit 1"))),
+        transcript_event(exit_report(1)),
         False,
         transcript=(bash_call("t1"), bash_failed("t1", 1)),
     ),
     gate(
         "exit 0 is backed by a Bash call that did not fail",
-        transcript_event(make_report(replace=("COMPLIANCE", "Gates: a exit 0; b exit 2"))),
+        transcript_event(exit_report(0, 2)),
         False,
         transcript=(bash_call("t1"), bash_call("t2"), bash_failed("t2", 2)),
     ),
     gate(
         "a READ quote far from the line goes back",
-        stop_event(work_report('READ `doc.md:1` "line nine"')),
+        stop_event(answer_report('READ `doc.md:1` "line nine"')),
         True,
         "quotes text that is not on that line",
         files=(("doc.md", NUMBERED),),
     ),
     gate(
         "a READ quote within 3 lines is accepted",
-        stop_event(work_report('READ `doc.md:1` "line four"')),
+        stop_event(answer_report('READ `doc.md:1` "line four"')),
         False,
         files=(("doc.md", NUMBERED),),
     ),
     gate(
         "a READ backtick quote on the line is accepted",
-        stop_event(work_report("READ `doc.md:5-6`: `line eight`")),
+        stop_event(answer_report("READ `doc.md:5-6`: `line eight`")),
         False,
         files=(("doc.md", NUMBERED),),
     ),
     gate(
         "a READ with no quote is unchanged",
-        stop_event(work_report("READ `doc.md:1`, then more")),
+        stop_event(answer_report("READ `doc.md:1`, then more")),
         False,
         files=(("doc.md", NUMBERED),),
     ),
-    gate("a DECIDE bullet is not filed", stop_event(make_report(replace=("DECIDE", "- pick a or b: a, cheap; b, slow"))), False, not_wrote=(INBOX_NAME, "pick a or b")),
-    gate("an OUTSIDE bullet is not filed", stop_event(make_report(replace=("OUTSIDE", "- change hooks/x.py"))), False, not_wrote=(INBOX_NAME, "hooks/x.py")),
-    gate(
-        "a problem caused by the brief is filed as an auto item",
-        stop_event(make_report(replace=("PROBLEMS MET", "- the brief named a stale line (cause: brief); resolved: asked"))),
-        False,
-        wrote=(INBOX_NAME, f"agent=worker {AUTO}PROBLEM brief: the brief named a stale line"),
-    ),
-    gate(
-        "a problem caused by the environment is not filed",
-        stop_event(make_report(replace=("PROBLEMS MET", "- the disk was full (cause: environment); resolved: no"))),
-        False,
-        not_wrote=(INBOX_NAME, "disk was full"),
-    ),
-    gate(
-        "a Task score of 3 is filed with its title and reason",
-        stop_event("# Report: worker, fix the thing\n" + make_report(replace=("REPORT CARD", CARD.replace("5/5 | done", "3/5 | half done")))),
-        False,
-        wrote=(INBOX_NAME, f"{AUTO}Task score 3 for fix the thing: half done"),
-    ),
-    gate("a Task score of 4 is not filed", stop_event(make_report(replace=("REPORT CARD", CARD.replace("5/5", "4/5")))), False, not_wrote=(INBOX_NAME, AUTO)),
-    gate("none in DECIDE and OUTSIDE files nothing", stop_event(make_report()), False, not_wrote=(INBOX_NAME, AUTO)),
-    gate(
-        "auto items stop at 5 a report",
-        stop_event(make_report(replace=("PROBLEMS MET", "\n".join(f"- problem number {n} (cause: tool); resolved: no" for n in range(7))))),
-        False,
-        wrote=(INBOX_NAME, f"{AUTO}PROBLEM tool: problem number 4"),
-        not_wrote=(INBOX_NAME, "problem number 5"),
-    ),
     gate(
         "the ledger row holds the new fields",
-        transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
+        transcript_event("# Report: worker, fix the thing\n" + answer_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
         False,
         wrote=("data/ledger.jsonl", '"lines_added": 3'),
         transcript=(
@@ -858,7 +768,7 @@ GATE_CASES = [
     ),
     gate(
         "an edit beside a Bash call does not hide the Bash call",
-        transcript_event(work_report("- src/a.py: changed")),
+        transcript_event(answer_report("- src/a.py: changed")),
         False,
         transcript=(edit("t1", "src/a.py"), bash_call("b1")),
     ),
@@ -891,7 +801,7 @@ GATE_CASES = [
     ),
     gate(
         "a scratch folder exempts only itself from naming changed files",
-        transcript_event(work_report("- nothing named")),
+        transcript_event(answer_report("- nothing named")),
         True,
         "does not name a file",
         transcript=(edit("t1", "src/a.py"),),
@@ -899,7 +809,7 @@ GATE_CASES = [
     ),
     gate(
         "a relative edit path is read from the event's folder",
-        {**transcript_event(work_report("- sub/a.py: changed")), "cwd": "@ROOT@/project/sub"},
+        {**transcript_event(answer_report("- sub/a.py: changed")), "cwd": "@ROOT@/project/sub"},
         False,
         wrote=("data/ledger.jsonl", '"path": "sub/a.py"'),
         transcript=(edit("t1", "a.py"),),
@@ -907,7 +817,7 @@ GATE_CASES = [
     ),
     gate(
         "the ledger row counts the tool turns",
-        transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
+        transcript_event("# Report: worker, fix the thing\n" + answer_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
         False,
         wrote=("data/ledger.jsonl", '"tool_turns": {"turns": 1, "calls": 1, "one_call_turns": 1, "longest_small_run": 0, "small_reads": 0, "repeats": 0}'),
         transcript=(
@@ -916,12 +826,81 @@ GATE_CASES = [
     ),
     gate(
         "the ledger row holds the model, budget and claim marks",
-        transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
+        transcript_event("# Report: worker, fix the thing\n" + answer_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
         False,
         wrote=("data/ledger.jsonl", '"model": "claude-x", "budget_turns": 70, "files_changed": [{"path": "src/a.py", "lines_added": 3}], "claim_marks": {"READ": 1, "DERIVED": 1, "PROBED": 1}, "brief_hash": "5acca603"'),
         transcript=(
             {"type": "assistant", "message": {"model": "claude-x", "content": [{"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": "src/a.py", "new_string": "a\nb\nc"}}]}},
         ),
+    ),
+    # The form's rules.
+    *(gate(f"a report missing {heading} goes back", stop_event(make_report(skip=heading)), True, f"missing: {heading}") for heading in REQUIRED_HEADINGS),
+    gate("a report with only the required sections is accepted", stop_event(make_report(headings=REQUIRED_HEADINGS)), False),
+    *(
+        gate(f"{heading} of none is accepted", stop_event(make_report(replace=(heading, "none"))), False)
+        for heading in OPTIONAL_HEADINGS
+    ),
+    gate("an empty optional section goes back", stop_event(make_report(replace=("Next time", ""))), True, "Next time is empty"),
+    gate("none in Answer goes back", stop_event(make_report(replace=("Answer", "none"))), True, "Answer says none"),
+    gate("an unknown heading goes back", stop_event(make_report().replace("## Open", "## Work\n- x\n## Open")), True, "not a section of the form: Work"),
+    gate("an old heading goes back", stop_event(make_report() + "\n## REPORT CARD\nx"), True, "not a section of the form: REPORT CARD"),
+    gate("a Verdict that is not last goes back", stop_event(make_report() + "\n## Next time\nlater"), True, "Verdict must be the last section"),
+    gate("a section out of order goes back", stop_event(reorder_report("Not proven", "Answer", "Verdict")), True, "out of order: Answer"),
+    gate("an optional section out of order goes back", stop_event(reorder_report("Answer", "Not proven", "Open", "Problems", "Verdict")), True, "out of order: Open"),
+    gate("a Verdict opening with another word goes back", stop_event(make_report(replace=("Verdict", "great: it went well"))), True, "Verdict must open with"),
+    gate("a Verdict with no sentence goes back", stop_event(make_report(replace=("Verdict", "done"))), True, "Verdict must open with"),
+    *(
+        gate(f"a Verdict of {word} is accepted", stop_event(make_report(replace=("Verdict", f"{word}: one sentence that fits."))), False)
+        for word in ("partial", "blocked", "Done")
+    ),
+    gate("a bare Not proven goes back", stop_event(make_report(replace=("Not proven", "nothing"))), True, "Not proven is bare"),
+    gate("a two-word Not proven goes back", stop_event(make_report(replace=("Not proven", "- nothing left"))), True, "Not proven is bare"),
+    gate("a three-word Not proven is accepted", stop_event(make_report(replace=("Not proven", "- nothing was left"))), False),
+    gate("a Problems item with no cause goes back", stop_event(make_report(replace=("Problems", f"- it broke. {HELPED}"))), True, "names no cause", lacks="does not say what would have helped"),
+    gate("a Problems item that says no helped goes back", stop_event(make_report(replace=("Problems", "- it broke (cause: brief)."))), True, "does not say what would have helped", lacks="names no cause"),
+    gate("a Problems item with a cause and a helped is accepted", stop_event(make_report(replace=("Problems", f"- it broke (cause: brief). {HELPED}"))), False),
+    gate("the form's cause list copied whole goes back", stop_event(make_report(replace=("Problems", f"- it broke (cause: brief | tool). {HELPED}"))), True, "names no cause"),
+    gate("a project's extra cause is accepted", stop_event(make_report(replace=("Problems", f"- it broke (cause: GPU). {HELPED}"))), False, config={"report": {"causes": ["GPU"]}}),
+    gate("every Problems item is judged", stop_event(make_report(replace=("Problems", f"- one (cause: tool). {HELPED}\n- two (cause: tool)."))), True, "does not say what would have helped"),
+    gate("a Feedback item with no file goes back", stop_event(make_report(replace=("Feedback", "- add a rule"))), True, "names no file to change", not_wrote=(INBOX_NAME, "id=")),
+    gate("a Feedback item names its file on a continuation line", stop_event(make_report(replace=("Feedback", "change the rule\n  in report.md"))), False, wrote=(INBOX_NAME, "change the rule in report.md")),
+    gate("an unindented line is its own Feedback item", stop_event(make_report(replace=("Feedback", "first item in a.md\nsecond item in b.md"))), False, wrote=(INBOX_NAME, "agent=worker second item in b.md")),
+    gate(
+        "only Feedback reaches the inbox",
+        stop_event(make_report(fill={"Open": "- pick a or b: a, cheap; b, slow", "Problems": f"- the brief was stale (cause: brief). {HELPED}", "Next time": "ask first"})),
+        False,
+        not_wrote=(INBOX_NAME, "id="),
+    ),
+    # A claim that a check passed needs a Bash call.
+    *(
+        gate(
+            f"{claim!r} with no Bash call goes back",
+            transcript_event(answer_report(f"Changed one file; {claim}.")),
+            True,
+            "says a check passed",
+            transcript=(assistant({"type": "text", "text": "thinking"}),),
+        )
+        for claim in ("the tests passed", "lint is clean", "the build is green", "the gate passes")
+    ),
+    gate("a pass claim with a Bash call is accepted", transcript_event(answer_report("Changed one file; the tests passed.")), False, transcript=(bash_call("t1"),)),
+    gate("a report that claims no pass needs no Bash call", transcript_event(answer_report("The tests failed; nothing else changed.")), False, transcript=(assistant({"type": "text", "text": "thinking"}),)),
+    # The ledger row.
+    gate("the ledger row holds the verdict", stop_event(make_report()), False, wrote=("data/ledger.jsonl", '"verdict": "done"')),
+    gate("the verdict in the ledger is lower case", stop_event(make_report(replace=("Verdict", "Partial: one check was not run"))), False, wrote=("data/ledger.jsonl", '"verdict": "partial"')),
+    gate(
+        "a bad verdict is null in the ledger",
+        stop_event(make_report(replace=("Verdict", "great: it went well"))),
+        False,
+        files=(("data/send-backs/a1.count", "3"),),
+        wrote=("data/ledger.jsonl", '"verdict": null'),
+    ),
+    *(
+        gate(f"{agent} owes the one form", stop_event(make_report(headings=REQUIRED_HEADINGS), agent_type=agent), False)
+        for agent in AGENT_TYPES
+    ),
+    *(
+        gate(f"{agent} owes a Verdict", stop_event(make_report(skip="Verdict"), agent_type=agent), True, "missing: Verdict")
+        for agent in AGENT_TYPES
     ),
 ]
 
@@ -1557,13 +1536,13 @@ IMPORT_SOURCE = "../.claude/projects/p/s/subagents/agent-a1.jsonl"
 IMPORT_LINES = (
     {"type": "assistant", "timestamp": NEW, "cwd": "/w", "sessionId": "s", "message": {"id": "m1", "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "a"}}]}},
     {"type": "assistant", "timestamp": NEW, "cwd": "/w", "sessionId": "s", "message": {"id": "m2", "content": [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "b"}}]}},
-    {"type": "assistant", "timestamp": NEW, "message": {"id": "m3", "content": [{"type": "text", "text": make_report()}]}},
+    {"type": "assistant", "timestamp": NEW, "message": {"id": "m3", "content": [{"type": "text", "text": OLD_REPORT}]}},
 )
 IMPORT_TEXT = "".join(json.dumps(line) + "\n" for line in IMPORT_LINES)
 TOOL_CASES = [
-    Case("a handback's message is the report", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "h", "name": "SubagentHandback", "input": {"message": make_report()}}]}})),)),
-    Case("another tool's message is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "s", "name": "SendMessage", "input": {"message": make_report()}}]}})),)),
-    Case("a report in a user line is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "user", "timestamp": NEW, "message": {"content": [{"type": "text", "text": make_report()}]}})),)),
+    Case("a handback's message is the report", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "h", "name": "SubagentHandback", "input": {"message": OLD_REPORT}}]}})),)),
+    Case("another tool's message is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "s", "name": "SendMessage", "input": {"message": OLD_REPORT}}]}})),)),
+    Case("a report in a user line is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "user", "timestamp": NEW, "message": {"content": [{"type": "text", "text": OLD_REPORT}]}})),)),
     Case("a line with no content does not hide the report", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT + json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m4", "content": None}})),)),
     Case("an imported report becomes a row", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"imported": true')),
     Case("an imported row counts its tool turns", ("import_reports.py",), {}, False, files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"tool_turns": {"turns": 2, "calls": 2, "one_call_turns": 2, "longest_small_run": 2, "small_reads": 2, "repeats": 0}')),
@@ -1585,6 +1564,8 @@ def context(name: str, event: dict, text: str = "", /, **options: object) -> Cas
     return Case(name, ("context.py",), event, False, text, **options)
 
 
+# A part of the one report form the hook tells every agent.
+FORM_FRAGMENT = "Answer, Not proven, then only if they have something to say Problems, Next time, Open and Feedback, then Verdict"
 CONTEXT_CASES = [
     context("a sub-agent is told no clock limits it", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "No clock limits you"),
     context("a sub-agent is told what stands in for Grep", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "use `rg` and `find`"),
@@ -1597,18 +1578,11 @@ CONTEXT_CASES = [
     context("no temporary folder rule, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="/tmp"),
     context("a session start names the orchestrator", {"hook_event_name": "SessionStart"}, "harness:orchestrator"),
     context("a session start's output is hook-specific", {"hook_event_name": "SessionStart"}, '"hookEventName": "SessionStart"'),
-    context("a worker is told the full form", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "full form"),
-    context("a scout is told the short form", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "short form"),
-    context("a bare runner is told the short form", {"hook_event_name": "SubagentStart", "agent_type": "runner"}, "short form"),
-    context(
-        "report.short tells a project's role",
-        {"hook_event_name": "SubagentStart", "agent_type": "custom"},
-        "short form",
-        config={"report": {"short": ["custom"]}},
+    *(
+        context(f"{agent} is told the report form", {"hook_event_name": "SubagentStart", "agent_type": agent}, FORM_FRAGMENT)
+        for agent in AGENT_TYPES
     ),
-    context("a helper is told the short form", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "short form"),
-    context("a custom full type gets no short headings", {"hook_event_name": "SubagentStart", "agent_type": "custom"}, "full form", lacks="Whatever the task", config={"report": {"full": ["custom"]}}),
-    context("a helper is given the headings itself", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "Whatever the task"),
+    context("a session start is not told the report form", {"hook_event_name": "SessionStart"}, lacks="Not proven"),
     context("a role is not given the headings twice", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, lacks="you owe a report"),
     context("a session start states the tool-turn rule", {"hook_event_name": "SessionStart"}, "few tool turns"),
     context("a session start carries the tool-habits skill", {"hook_event_name": "SessionStart"}, "## When a call is refused"),
@@ -1618,6 +1592,58 @@ CONTEXT_CASES = [
     context("a helper is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "few tool turns"),
     context("no project means no context", {"hook_event_name": "SessionStart"}, lacks="orchestrator", config=None),
     context("the project variable finds the project", {"hook_event_name": "SessionStart"}, "orchestrator", cwd="elsewhere", project_dir="project"),
+]
+
+
+# The commit rule
+def commit(name: str, command: str, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
+    options.setdefault("config", {})
+
+    return Case(name, ("commit_gate.py",), {"tool_name": "Bash", "tool_input": {"command": command}}, blocks, text, **options)
+
+
+GOOD_MESSAGE = "feat(x): add y\n\n* did it\n* because z"
+COMMIT_CASES = [
+    commit("a good message passes", f"git commit -m '{GOOD_MESSAGE}'", False),
+    commit("a subject with no scope passes", "git commit -m 'fix: keep it\n\n* did it'", False),
+    commit("a breaking mark passes", "git commit -m 'feat(x)!: drop it\n\n* did it'", False),
+    commit("a heredoc message is read", "git commit -m \"$(cat <<'EOF'\nfeat: add y\n\n* did it\nEOF\n)\"", False),
+    commit("a bad heredoc message is refused", "git commit -m \"$(cat <<'EOF'\nadd y\n\n* did it\nEOF\n)\"", True, "not `type(scope)"),
+    commit("two -m values join", "git commit -m 'feat: add y' -m '* did it'", False),
+    commit("a cluster holds the message option", "git commit -qam 'add y'", True, "not `type(scope)"),
+    commit("the long option is read", "git commit --message='add y'", True, "not `type(scope)"),
+    commit("a free subject is refused", "git commit -m 'update stuff\n\n* did it'", True, "not `type(scope)"),
+    commit("an unknown type is refused", "git commit -m 'wip: thing\n\n* did it'", True, "not `type(scope)"),
+    commit("a period is refused", "git commit -m 'feat: add y.\n\n* did it'", True, "ends in a period"),
+    commit("no body is refused", "git commit -m 'feat: add y'", True, "needs `* ` bullets"),
+    commit("no blank line is refused", "git commit -m 'feat: add y\n* did it'", True, "blank line"),
+    commit("a paragraph body is refused", "git commit -m 'feat: add y\n\nI did it.'", True, "needs `* ` bullets"),
+    commit("a stray line among bullets is refused", "git commit -m 'feat: add y\n\n* did it\nand more'", True, "no bullet"),
+    commit("an indented line continues a bullet", "git commit -m 'feat: add y\n\n* did it\n  and more'", False),
+    commit("a footer passes", "git commit -m 'feat: add y\n\n* did it\n\nRefs: #12'", False),
+    commit("a Claude trailer is refused", f"git commit -m '{GOOD_MESSAGE}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'", True, "AI attribution"),
+    commit("a generated line is refused", f"git commit -m '{GOOD_MESSAGE}\n\nGenerated with Claude Code'", True, "AI attribution"),
+    commit("a robot is refused", f"git commit -m '{GOOD_MESSAGE}\n\n\U0001f916 done'", True, "AI attribution"),
+    commit("a person as co-author passes", f"git commit -m '{GOOD_MESSAGE}\n\nCo-Authored-By: A Person'", False),
+    commit("a body may name a product", "git commit -m 'docs: explain\n\n* how Claude Code loads hooks'", False),
+    commit("a message file is read", "git commit -F msg.txt", True, "not `type(scope)", files=(("msg.txt", "add y\n"),)),
+    commit("a good message file passes", "git commit -F msg.txt", False, files=(("msg.txt", f"{GOOD_MESSAGE}\n"),)),
+    commit("a missing message file passes", "git commit -F nope.txt", False),
+    commit("the editor cannot be read", "git commit", False),
+    commit("no new message passes", "git commit --amend --no-edit", False),
+    commit("a merge subject passes", "git commit -m 'Merge branch x'", False),
+    commit("a fixup passes", "git commit -m 'fixup! feat: add y'", False),
+    commit("a commit inside a chain is read", "git add a && git commit -m 'add y'", True, "not `type(scope)"),
+    commit("git options before commit are skipped", "git -C /x commit -m 'add y'", True, "not `type(scope)"),
+    commit("another git command passes", "git log -m 'add y'", False),
+    commit("a pull request with attribution is refused", "gh pr create --title t --body 'x\n\nGenerated with Claude Code'", True, "AI attribution"),
+    commit("a plain pull request passes", "gh pr create --title t --body 'free text'", False),
+    commit("a pull request heredoc is read", "gh pr create -b \"$(cat <<'EOF'\nCo-Authored-By: Claude\nEOF\n)\"", True, "AI attribution"),
+    commit("a trailer in a variable is refused", "T='Co-Authored-By: Claude <noreply@anthropic.com>' && git commit -m \"feat: add y $T\"", True, "AI attribution"),
+    commit("an earlier heredoc is not the message", "python3 - <<'EOF'\nprint(1)\nEOF\ngit commit -m \"$(cat <<'EOF'\nfeat: add y\n\n* did it\nEOF\n)\"", False),
+    commit("the rule can be turned off", "git commit -m 'add y'", False, config={"guard": {"commit_style": False}}),
+    commit("no project means no rule", "git commit -m 'add y'", False, config=None),
+    commit("a broken config lets the call run", "git commit -m 'add y'", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
 ]
 
 
@@ -1694,20 +1720,20 @@ LOOP_CASES = [
     context("loop: a worker is told the role's handled lessons", SUB_WORKER, "- (rule in AGENTS.md) check the unit twice", files=LESSON_FILES),
     context("loop: the lessons carry the already-acted header", SUB_WORKER, "do not redo the request:\\n- (rule in AGENTS.md)", files=LESSON_FILES),
     context("loop: a lesson whose rule file is gone is skipped", SUB_WORKER, lacks="check the unit twice", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rule written in gone.md\n"))),
-    context("loop: an auto lesson is skipped", SUB_WORKER, "full form", lacks="pick one", files=auto_lesson_files()),
+    context("loop: an auto lesson is skipped", SUB_WORKER, FORM_FRAGMENT, lacks="pick one", files=auto_lesson_files()),
     context("loop: a lesson text is cut to 140 characters", SUB_WORKER, "entry6 " + "x" * 133, lacks="x" * 134, files=lessons(300)),
     context("loop: another role's lesson is not told", SUB_WORKER, lacks="scout only", files=LESSON_FILES),
     context("loop: a rejected lesson is not told", SUB_WORKER, lacks="Past feedback", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rejected: not a rule\n"))),
     context("loop: only the last five lessons are told", SUB_WORKER, "entry6", lacks="entry1", files=lessons(5)),
     context("loop: the lessons stay within 600 characters", SUB_WORKER, "entry6", lacks="entry2", files=lessons(100)),
-    context("loop: an inbox with no handled file is no crash", SUB_WORKER, "full form", lacks="Past feedback", files=(LESSON_FILES[0],)),
-    context("loop: a handled file with no inbox is no crash", SUB_WORKER, "full form", lacks="Past feedback", files=(LESSON_FILES[1],)),
+    context("loop: an inbox with no handled file is no crash", SUB_WORKER, FORM_FRAGMENT, lacks="Past feedback", files=(LESSON_FILES[0],)),
+    context("loop: a handled file with no inbox is no crash", SUB_WORKER, FORM_FRAGMENT, lacks="Past feedback", files=(LESSON_FILES[1],)),
     context("loop: an open problem is told to its role", SUB_WORKER, "stale line number", files=PROBLEM_FILES),
     context("loop: the problems carry their heading", SUB_WORKER, "no rule fixes yet", files=PROBLEM_FILES),
     context("loop: a problem for all is told", SUB_WORKER, "quote every glob", files=PROBLEM_FILES),
     context("loop: only two problems are told", SUB_WORKER, "quote every glob", lacks="a third problem", files=PROBLEM_FILES),
     context("loop: another role's problem is not told", SUB_WORKER, lacks="scout only text", files=PROBLEM_FILES),
-    context("loop: no open file is no crash", SUB_WORKER, "full form", lacks="no rule fixes yet"),
+    context("loop: no open file is no crash", SUB_WORKER, FORM_FRAGMENT, lacks="no rule fixes yet"),
     context("loop: ten new reports ask for a retro", {"hook_event_name": "SessionStart"}, "10 reports since the last retro: run harness:retro.", files=(ledger(10, OLD_TIME),)),
     context("loop: nine reports ask for nothing", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(9, OLD_TIME),)),
     context("loop: another project's reports do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME, project="/elsewhere"),)),
@@ -1879,7 +1905,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of this hook first")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     cases.sort(key=lambda case: arguments.first not in case.script)
     failures = 0

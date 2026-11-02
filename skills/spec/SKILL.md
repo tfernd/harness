@@ -16,7 +16,7 @@ The orchestrator decides what goes in and briefs a worker to write the file. Siz
 3. **Decisions:** one line per choice, already made: names, signatures, formats, file locations, defaults, error
    behaviour. Every "or", "maybe", "TBD", "probably" and "should" is settled here or moved to Open questions.
 4. **Write sets:** one per unit: the files it may create or change, as paths or globs. Sets are disjoint. A file two
-   units need is assigned to one of them, and the other gets the change under OUTSIDE.
+   units need is assigned to one of them, and the other gets the change under Open.
 5. **Judges:** per unit, the commands that decide done, with the expected result; for an "unchanged" result, the value measured before the change.
    Every decision that can break has a judge (`harness:testing`).
 6. **Contract:** only for a public interface: its exact shape, so two units written apart still fit.

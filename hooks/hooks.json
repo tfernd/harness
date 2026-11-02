@@ -66,6 +66,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/commit_gate.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [

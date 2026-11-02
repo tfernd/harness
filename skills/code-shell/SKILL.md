@@ -72,7 +72,7 @@ script, and the other way round. Check the shebang before trusting a line.
 
 - `shellcheck <file>` exits 0 with no finding, and `shfmt -d <file>` prints no diff (its flags, such as `-i 2`, are
   the project's). Run both on each changed script; `bash -n <file>` checks syntax only.
-- A missing `shellcheck` or `shfmt` is reported as NOT CHECKED with the command that was tried, never as a pass.
+- A missing `shellcheck` or `shfmt` is reported as Not proven with the command that was tried, never as a pass.
 
 ## What no tool checks
 

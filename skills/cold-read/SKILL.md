@@ -23,8 +23,8 @@ text so the worker does not have to guess. It never does the job and edits nothi
 4. **Verdict:** `ready` (no GUESS, every name found) or `needs_work`, with the gaps ranked: a gap that would make two
    workers diverge first.
 
-Report in the short form of `harness:report`: Answer holds the verdict, the four-part read-back, the GUESS list and
-the ranked gaps; Work holds one line per name with its quote.
+Report by `harness:report`: Answer holds the four-part read-back, the GUESS list, the ranked gaps
+and one line per name with its quote; Verdict is `done` for ready and `partial` for needs_work.
 
 ## Rules for the reader
 
