@@ -233,6 +233,7 @@ uv run python tests/check_leaks.py
 
 - `tests/run_cases.py`: each case feeds a hook the JSON Claude Code sends and checks the answer.
 - `tests/mutants.py`: a deliberate bug per rule, which a case must catch. A rule that cannot fail is not a rule.
+- `tests/plant_bugs.py`: random bugs in copies of the hooks, scored by how many the cases catch. Findings and the score are in `docs/findings.md`.
 - `hooks/replay.py` (run it with `uv run --script`): runs the always-on guard rules over your past Bash commands to find false refusals.
 - `tests/check_leaks.py`: fails when a file names a person, an email, a home path or a private word. The private word list
   is read from `$HARNESS_PRIVATE_WORDS` or `~/.config/harness/private-words` and never stored here.
