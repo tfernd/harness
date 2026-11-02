@@ -1656,6 +1656,8 @@ COMMIT_CASES = [
     commit("a trailer option is refused", "git commit -m 'feat: add y' -m '* did it' --trailer 'Co-Authored-By: Claude'", True, "AI attribution"),
     commit("a trailer in an earlier script is no attribution", "python3 - <<'EOF'\nprint('Co-Authored-By: Claude')\nEOF\ngit commit -m 'feat: add y' -m '* did it'", False),
     commit("an edited pull request is checked", "gh pr edit 1 --body 'Generated with Claude Code'", True, "AI attribution"),
+    commit("a later command naming a tool is no attribution", "git commit -m 'feat: add y' -m '* did it'; rg 'generated with' a; claude plugin list", False),
+    commit("a pull request body held in a variable is refused", "T='Generated with Claude Code'; gh pr create --body \"$T\"", True, "AI attribution"),
     commit("the rule can be turned off", "git commit -m 'add y'", False, config={"guard": {"commit_style": False}}),
     commit("no project means no rule", "git commit -m 'add y'", False, config=None),
     commit("a broken config lets the call run", "git commit -m 'add y'", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),

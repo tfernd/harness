@@ -35,13 +35,13 @@ CALL = re.compile(r"\b(git\b[^\n]*?\bcommit|gh\s+pr\s+(create|edit))\b")
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n\s*\1\b", re.S)
 
 
-def get_option_value(words: list[str], long_name: str, letter: str, /) -> list[str]:
+def get_option_value(words: list[str], long_name: str, letter: str = "", /) -> list[str]:
     """Every value of an option in its long form, its short form, or the end of a short cluster such as `-am`."""
 
     values: list[str] = []
     for index, word in enumerate(words):
         following = words[index + 1] if index + 1 < len(words) else ""
-        if word == long_name or (word.startswith("-") and not word.startswith("--") and word.endswith(letter)):
+        if word == long_name or (letter and word.startswith("-") and not word.startswith("--") and word.endswith(letter)):
             values.append(following)
         elif word.startswith(f"{long_name}="):
             values.append(word.split("=", 1)[1])
@@ -130,11 +130,12 @@ def find_problems(command: str, cwd: str, /) -> list[str]:
             message = get_commit_message(words, command, cwd)
             # An unreadable message may hold a variable set earlier in the command.
             problems += check_message(message) if message is not None else check_attribution(command)
-            problems += check_attribution(command[get_tail_start(command) :])
+            problems += check_attribution("\n".join(get_option_value(words, "--trailer")))
         elif name == "gh" and words[1:2] == ["pr"] and words[2:3] in (["create"], ["edit"]):
-            problems += check_attribution(command[get_tail_start(command) :])
+            body = read_message(get_option_value(words, "--body", "b"), command)
+            problems += check_attribution(body if body is not None else command)
 
-    return problems
+    return list(dict.fromkeys(problems))
 
 
 def main() -> int:
