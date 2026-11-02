@@ -1,246 +1,146 @@
 # harness
 
-A Claude Code plugin for spec-driven work, alone or with several agents. The main session does the work itself by
-default, uses a script for anything repetitive, and spawns agents only where parallel work pays. Its reports, gates and
-safety rules are hooks, not advice.
+A Claude Code plugin that makes an AI coding session safer and cheaper to trust. It adds three things: **hooks** that
+refuse risky or wasteful actions, **skills** that give the model short rule sheets, and **agents** that do narrow jobs
+(find a fact, review a diff, run a check) and must report in a fixed, checked form.
 
-This repo is both the plugin and its own marketplace. Rules for people who work on the repo are in
-[AGENTS.md](AGENTS.md).
+Install, update and project setup are written for agents in [AGENTS.md](AGENTS.md). This page says what the plugin does,
+how the parts fit, what it stops and what it does not.
 
-## The idea
+## What it is for
 
-The main session ("the orchestrator") loads the `orchestrator` skill and works in this order:
+- **Stop damage.** No `rm`, no force push, no `git reset --hard`, in any project.
+- **Stop wasted turns** (in a project with `.harness.json`). Every agent starts knowing how to make cheap tool calls. Under zsh, globs that match nothing are refused in any project, as is `sleep`
+  polling, and an agent that reads one small thing at a time is nudged.
+- **Make agent work checkable.** A sub-agent cannot end with "done": its report has fixed sections, and its claims (files
+  changed, exit codes, `path:line` evidence) are checked against what it really did.
+- **Turn problems into rules.** What agents report piles up in an inbox, and a due retro turns it into changes.
+- **Keep the cost down.** The main session works directly, scripts repetitive work, and uses agents only where parallel
+  work pays.
 
-1. **Spec** a large job in a file with goals, settled decisions, write sets and judges (`spec`, `cold-read`), and state
-   a budget for the round.
-2. **Script** the mechanical part, then **implement** directly; a `worker` takes only a large, independent unit.
-3. **Run** the product before any review: a smoke test, then the gates.
-4. **Review** once, at the end: one `reviewer` reads the whole diff and reports high-severity bugs.
-5. **Fix** each finding in the main session and **test** the whole.
+## How you use it
 
-Example: to add a retry flag to a command-line tool, the main session edits two files, runs the tool and the test, and
-accepts the change. To move hundreds of files, it writes one codemod. To migrate five independent features, it writes the
-plumbing, then briefs five workers with `Goal:`, `Write set:` and `Judge:` lines.
+Install it once (see [AGENTS.md](AGENTS.md)) and run `/harness:init` in a project. Then work as usual: you ask, and the
+main session follows the `orchestrator` skill. `/harness:init` writes `.harness.json` and an `AGENTS.md`. You see a refusal
+only when a hook stops something (the agent is told what to change, so usually you do nothing), a question when a package
+change needs your yes, and a closing status after a big job. In this repo, `make help` lists the checks.
 
-## Install and update
+## How the pieces work together
 
-### What you get
+```
+you ── ask ──> main session (follows the orchestrator skill)
+                 │  works itself; scripts the repetitive part
+                 │  briefs agents only for parallel or large units
+                 ▼
+        agents: scout · runner · cold-reader · worker · reviewer · auditor · analyst · planner · researcher
+                 │  each ends with a REPORT
 
-Install once per machine. The plugin gives every project its skills (invoked as `harness:<name>`, for example
-`harness:orchestrator`), the six agents (`harness:worker` and others) and the hooks. The install copies nothing into a
-project.
-
-### Requirements
-
-- Claude Code.
-- `uv` on `PATH`, because the hooks run as `uv run --script`. To install it: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
-- `git` access to this repo. For a private repo, store a credential once with `gh auth setup-git`.
-
-### Install
-
-```bash
-claude plugin marketplace add tfernd/harness
-claude plugin install harness@harness --scope user
+ at every start     context: orchestrator pointer, tool-habits, report form, open problems
+ before each call   guard · delegate · skill_gate · brief_lint · budget
+ after a read       nudge
+ when an agent ends report_gate: checks the report, files problems in the inbox and the ledger
+ when a turn ends   turn: status, lessons, and a retro when 20 items wait
+                 ▼
+ inbox ──> analyst ──> a new rule in a hook, skill or brief template, or a line in open.md
 ```
 
-Then restart Claude Code, or run `/reload-plugins` in a session.
+Skills are text the model reads. Hooks run outside the model, so it cannot talk its way past them. Reports are where the
+two meet: a skill says what to write, a hook checks it.
 
-### Check it worked
+## Two modes
 
-- `claude plugin list` shows `harness@harness` enabled.
-- In a session, typing `/harness:init` autocompletes.
-- The line "This project runs under the harness plugin" shows at session start only in projects that have a `.harness.json`.
-
-### Set up each project
-
-Run `/harness:init` in the project, once. It looks at the project's languages, asks only what the files do not settle,
-and shows a diff before it touches an existing file. It writes `.harness.json`, `AGENTS.md` and the matching files
-under `.claude/rules/`.
-
-- **Without `.harness.json`** only the always-on safety guard runs: no `rm` or other deletes, no force push, no
-  `git reset --hard`, no unquoted globs, no `sleep` in a polling loop. Nothing else is on.
-- **With `.harness.json`** (strict mode) the hooks also track the turn, check sub-agent reports and budgets, and each
-  key you set turns on its rule: package bans, a scratch folder, no `/tmp`, a Python lock, delegation, brief checks, skills loaded before edits.
-  See the [keys table](#harnessjson-keys).
-
-### Update
-
-```bash
-claude plugin marketplace update harness
-claude plugin update harness@harness
-```
-
-Restart Claude Code to apply it. Each pushed commit is a new version (`plugin.json` has no `version`). Auto-update is
-switched on under `/plugin`, Marketplaces; a private repo needs a stored git credential, since the background check
-cannot ask for a password.
-
-### Share with a team
-
-Commit `.harness.json`, `AGENTS.md` and `.claude/rules/`. Teammates still install the plugin themselves. To prompt them,
-list the marketplace and plugin in the project's `.claude/settings.json` (`extraKnownMarketplaces`, `enabledPlugins`;
-see Claude Code's plugin docs for the shape).
-
-### Uninstall
-
-Run `claude plugin uninstall harness@harness`.
-
-### Troubleshooting
-
-- Hooks do nothing: `uv` is missing from `PATH`, or the project has no `.harness.json` (only the safety guard runs).
-- A message starting "harness guard blocked" says which rule fired and what to change; follow it.
-- To develop the plugin without touching the installed copy, run `claude --plugin-dir .` in a checkout.
-
-## Repo map
-
-| Path | Holds | Read by |
+| Mode | When | What runs |
 |---|---|---|
-| `.claude-plugin/` | `plugin.json` and `marketplace.json`, without a version | Claude Code, at install |
-| `skills/` | one folder per skill, a `SKILL.md` and optional `references/` | the plugin, at runtime |
-| `agents/` | the six role definitions | the plugin, at runtime |
-| `hooks/` | `hooks.json` and the hook scripts, plus helpers `common.py` and `shell.py`, `replay.py` and `import_reports.py` | the plugin, at runtime |
-| `templates/` | files that `/harness:init` copies into a project | the project, after init |
-| `bin/` | command-line tools | maintainers and project owners |
-| `tests/` | hook cases, mutants and the leak check | this repo's maintainers |
-| `.githooks/` | the pre-push hook | this repo's maintainers |
-| `.github/` | CI workflow definitions | this repo's maintainers |
-| `AGENTS.md` | how to work on this repo | this repo's maintainers |
-| `scratch/` | throwaway files, git-ignored (see below) | this repo's maintainers |
+| **Safety only** | The project has no `.harness.json` | The always-on guard, nothing else |
+| **Strict** | The project has a `.harness.json` | The guard, plus start-up context, turn tracking, report and budget checks, and each rule you switch on |
 
-## Skills
+## The hooks and what they stop
 
-A skill is a short guide an agent loads when its description says so. Each fact lives in one skill; others point to it
-as `harness:<name>`.
+| Hook | When | What it does |
+|---|---|---|
+| `context.py` | Session or agent starts | Adds text agents would otherwise forget: load the orchestrator, the whole `tool-habits` skill, the report form owed, past lessons, open problems. Refuses nothing |
+| `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early, and `sleep` inside a `while` or `until` loop |
+| `guard.py`, configured | Before a command or edit | Asks you before package changes. Refuses writes under `/tmp`, shell writes outside the scratch folder, and Python run outside its lock wrapper |
+| `delegate.py` | Before a command or edit | With the `delegate` key, refuses edits and unlisted commands from the main session, so agents do the work |
+| `skill_gate.py` | Before an Edit or Write | With the `skill_gate` key, refuses an edit until the skill for that kind of file is loaded |
+| `brief_lint.py` | Before an agent starts | With the `brief` key, refuses a brief with no `Goal:`, a worker brief with no `Write set:` and `Judge:`, and a budget in anything but turns |
+| `budget.py` | Before every call | Refuses every call but the handback from an agent past its turns, so it sends a partial report. Any agent type has a default |
+| `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent. Refuses nothing |
+| `report_gate.py` | An agent stops | Any agent type must end with a report: the full form for `worker`, `reviewer` and `auditor`, the short form for the rest. Sends back a malformed one, or one its transcript does not back, up to 3 times. Files problems and writes the ledger |
+| `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, a lesson with no rule changed, a bare "no lessons" after a refused call, or a due retro |
 
-| Group | Skills |
-|---|---|
-| Process | `orchestrator`, `workflows`, `accept`, `init`, `report` |
-| Quality | `spec`, `cold-read`, `review`, `audit`, `evidence`, `testing` |
-| Coding languages | `code-python`, `code-js`, `code-html-css`, `code-terraform` |
-| Writing | `comments` |
-| Learning | `models`, `retro` |
+A refusal says which rule fired and what to change.
 
-`orchestrator` is for the main session only; sub-agents never load it. `report` is preloaded by every role.
+Four more files in `hooks/` are not hooks. `common.py` holds what the hooks share. `shell.py` reads a command the way a
+shell does, so the guard judges real commands and a quoted `rm` is no delete. `replay.py` runs the guard over your past
+commands to find false refusals. `import_reports.py` backs `bin/harness-import`, which brings old report cards into the
+ledger.
+
+## What it does not prevent
+
+- **It is not a sandbox.** The guard reads command text. A script that deletes files from inside Python, or a command
+  built from variables it cannot see, gets through.
+- **It fails open.** A bug in a hook, or a broken `.harness.json`, lets the call run. A hook never blocks on its own error.
+- **Read-only agents still have Bash.** `scout`, `reviewer` and the others have no Edit or Write tool, but a shell command
+  can write; only the guard applies to it.
+- **Skills are mostly advice.** `skill_gate` forces a load only before the Edit and Write tools, so a script that edits a
+  file gets past it. `tool-habits` is injected, but nothing checks that it is followed.
+- **Reports are checked for form and for claims it can verify** (files, exit codes, quoted lines). Whether the conclusion
+  is right is not checked; an `auditor` or you must do that.
+- **It does not judge the code.** Style rules live in skills and tests, not in hooks.
+- **Budgets count model turns, not time or tokens.**
+- **A retro can be answered badly.** The Stop hook checks that a rule file changed or that a rejection has its own reason,
+  not that the decision was good.
+- **Nothing runs without `uv`**, and a project with no `.harness.json` gets the safety guard only.
 
 ## Agents
-
-Each agent file sets `tools`, `model` and the skills it preloads.
 
 | Agent | Model | Edits files | Job |
 |---|---|---|---|
 | `scout` | haiku | no | Settles one fact with `path:line` evidence |
-| `cold-reader` | sonnet | no | Reads a brief with no history and lists gaps |
+| `runner` | haiku | no | Runs the commands in its brief and sorts failures by cause |
+| `cold-reader` | sonnet | no | Reads a brief with no history and lists what is unclear |
 | `worker` | sonnet | yes | Makes one change inside a write set, with its tests |
-| `reviewer` | sonnet | no | Reviews a unit against its spec |
-| `auditor` | sonnet | no | Re-runs judges, marks report claims true or false, grades the author |
-| `runner` | haiku | no | Runs the commands its brief lists and reports |
+| `reviewer` | sonnet | no | Reviews a unit against its spec, once, at the end |
+| `auditor` | sonnet | no | Re-runs an agent's checks and marks each claim true or false |
+| `analyst` | sonnet | no | Groups feedback by meaning and proposes up to three rule changes |
+| `planner` | sonnet | no | Turns a request into options, one recommendation, an order and judges |
+| `researcher` | sonnet | no | Answers one question from outside sources, each claim with its URL |
 
-"No" means no Edit or Write tool. These roles still have Bash, so they can run commands; the guard hooks apply to them.
-A brief may step a role up to a stronger model (`models` skill).
+## Skills
 
-## Hooks
-
-`hooks/hooks.json` wires them. "Strict" means the project has a `.harness.json`; without one, only the always-on part of
-`guard.py` runs.
-
-| Hook | Event | What it does |
+| Group | Skills | Use |
 |---|---|---|
-| `context.py` | SessionStart, SubagentStart | Strict. Tells the main session to load `harness:orchestrator`, tells a role which report form it owes, and states the rule on tool turns to both |
-| `budget.py` | PreToolUse, every tool | Strict. Refuses every tool call but the handback of a sub-agent that is past its budget of model turns, so it must send a partial report |
-| `guard.py` | PreToolUse: Bash, Write, Edit, NotebookEdit | Always: blocks `rm` and other deletes, force push, `git reset --hard`, unquoted globs, sleep polling. Strict and configured: blocks package changes, writes under `/tmp`, shell writes outside scratch, Python run outside a lock |
-| `delegate.py` | PreToolUse: same tools | The `delegate` key. Refuses edits and unlisted Bash from the main session |
-| `skill_gate.py` | PreToolUse: Edit, Write, NotebookEdit | The `skill_gate` key. Refuses an edit of a file until the calling agent has loaded the skill for that kind of file; scratch, unmatched files and paths outside the project pass |
-| `brief_lint.py` | PreToolUse: Agent, Task | The `brief` key. A brief for a role must hold its required lines, such as `Goal:`, and a budget in turns |
-| `turn.py` | PostToolUse, UserPromptSubmit, Stop | Strict. Tracks the turn; blocks a stop while the job status, lessons or feedback are left open |
-| `nudge.py` | PostToolUse: Read, Grep, Glob, Bash | Strict. Adds one line of context on a repeated read or a long run of single small reads, at most twice per agent. Never refuses |
-| `report_gate.py` | SubagentStop | Strict. Sends a bad report back up to 3 times, checks its claims against the transcript, writes the ledger |
-
-The always-on guard rules are best effort, not a security boundary: they read the command text. A bug in a hook lets the
-call run; a hook never fails closed on an exception.
-
-## Templates and rules
-
-A plugin cannot ship `.claude/rules/`, so the rules are templates. `/harness:init` copies them into the project:
-
-| Template | Goes to | When |
-|---|---|---|
-| `templates/harness.json` | `.harness.json` | always |
-| `templates/AGENTS.md` | `AGENTS.md` | always; placeholders in angle brackets are filled in |
-| `templates/rules/tests.md` | `.claude/rules/tests.md` | the project has tests |
-| `templates/rules/python.md` | `.claude/rules/python.md` | Python |
-| `templates/rules/typescript.md` | `.claude/rules/typescript.md` | JavaScript or TypeScript |
-| `templates/rules/web.md` | `.claude/rules/web.md` | HTML or CSS |
-| `templates/rules/terraform.md` | `.claude/rules/terraform.md` | Terraform |
-
-A rule file has `paths` globs and a line such as "before writing a `.py` file, load `harness:code-python`". Claude Code
-loads it when a matching file is touched.
-
-### `.harness.json` keys
-
-Every key is optional; `{}` turns on the report and turn gates alone.
-
-| Key | Effect |
-|---|---|
-| `guard.scratch`, `guard.no_tmp` | Name the scratch folder; refuse writes under `/tmp` |
-| `guard.deny_packages` | Refuse install, remove and resolve commands for packages |
-| `guard.lock` | Python must run through the listed wrapper commands, with free scripts and prefixes exempt |
-| `delegate` | Turns on the main-session rule; `write_allow` globs it may edit, `bash_allow` extra command prefixes |
-| `brief` | Turns on brief checks; `required` maps a role (or `*`) to the line labels it needs |
-| `report` | `short` and `full` add agent types that owe a report; `causes` adds problem causes |
-| `skill_gate` | Maps a glob (a name pattern, or a root-relative path when it holds `/`) to the skills an agent must have loaded before editing a matching file; `/harness:init` writes defaults |
-| `budget` | Maps a role to model turns |
-| `stop` | `min_calls`, the status `headings` a long turn must end with, and `rule_paths` that back a lesson |
-
-## bin/
-
-| Tool | Does |
-|---|---|
-| `bin/harness-import` | Imports past report cards from Claude Code transcripts into the ledger. Safe to rerun; `--dry-run` writes nothing |
-
-## Files in your project
-
-- `.harness.json`: the configuration above. Commit it.
-- `harness-feedback/inbox.md` and `handled.md`: feedback that agents file at the end of a report, and the main session's
-  verdict on each. The folder is not a dot-folder because Claude Code refuses to write those. Commit both files.
-- **The ledger**, `ledger.jsonl`: one row per sub-agent with its whole report, scores and causes. It lives in the plugin's
-  data folder (`$CLAUDE_PLUGIN_DATA`, else `~/.cache/harness`), not in the project.
-- **Budgets:** a brief may hold a line `Budget: 30 turns`. A turn is one model message, however many tools it calls, so a slow
-  machine costs nothing. With a fifth of them left the agent gets a note; past it, `budget.py` refuses the agent's tool calls and
-  the agent reports what it has. Without the line, the `budget` key gives a default per role.
-- **`scratch/`:** the project's throwaway folder for probes, proposals and one-off output. It is git-ignored and agents
-  use it instead of `/tmp`; the guard refuses `/tmp` when `guard.no_tmp` is set. This repo has its own git-ignored
-  `scratch/` for the same purpose, and it is unrelated to any project's.
+| Always on | `tool-habits` | Cheap tool calls: batched reads, edits that assert, the whole check chain in one call |
+| Process | `orchestrator`, `workflows`, `accept`, `init`, `report` | How the main session works, picks a job shape, accepts a unit, sets a project up, and how agents report |
+| Quality | `spec`, `cold-read`, `review`, `audit`, `evidence`, `testing`, `debug`, `refactor` | Writing a spec, checking a brief, reviewing, auditing, settling facts, writing tests that can fail, finding a bug's cause, changing structure safely |
+| Languages | `code-python`, `code-js`, `code-html-css`, `code-terraform`, `code-shell` | Style rules, loaded before touching those files |
+| Writing | `comments` | When a comment stays and how it reads |
+| Learning | `models`, `retro` | Which model suits each role; turning past problems into rules |
 
 ## The learning loop
 
-1. Every sub-agent ends with a report that has a REPORT CARD: Task, Brief and Ease scores and a list of problems with
-   their causes.
-2. `report_gate.py` checks the form and writes one ledger row.
-3. An auditor's grade can be compared with the author's own score.
-4. The `retro` skill groups the ledger by cause, role and brief, and proposes a rule change when a problem appears twice.
-5. The change goes to a hook, gate, skill or brief template. A lesson that does not end in a rule change does not close
-   the turn.
+1. Each report's feedback, problems with a cause of brief, rule or tool, and low scores land in
+   `harness-feedback/inbox.md`. Questions about the task (DECIDE, OUTSIDE) stay in the report for you.
+2. When 20 items wait, the Stop hook holds a session that filed one until a retro is done. Separately, ten new reports
+   add a one-line reminder at session start.
+3. One `analyst` groups the items by meaning, checks them against the code and proposes up to three changes.
+4. The main session applies or rejects each one and names the result in `harness-feedback/handled.md`.
+5. Problems no rule fixes yet go in `harness-feedback/open.md`, and each agent of that role is told at its start.
 
-Example: three workers lose time because a brief names a stale line number. The retro proposes a line in the brief
-template, and the lesson is closed by that edit.
+## Configuration: `.harness.json`
 
-## Testing this repo
+Every key is optional; `{}` turns on the report and turn checks alone.
 
-Run both before pushing; every pushed commit reaches every project through auto-update.
+| Key | Effect |
+|---|---|
+| `guard` | `scratch` names the scratch folder, `no_tmp` refuses `/tmp`, `ask_packages` asks before package changes, `lock` forces Python through a wrapper |
+| `delegate` | The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
+| `brief` | Briefs must hold the lines each role needs. `required` replaces the defaults |
+| `skill_gate` | Maps a file pattern to the skills to load before editing it |
+| `budget` | Model turns per role, with `*` for the rest. It replaces the default table, so an unlisted role has none. A brief overrides it with `Budget: 30 turns` |
+| `report` | Agent types that owe the full form, extra problem causes |
+| `stop` | Minimum calls before a status is due, its headings, and which files count as rules |
 
-```bash
-uv run python tests/run_cases.py
-uv run python tests/check_leaks.py
-```
-
-- `tests/run_cases.py`: each case feeds a hook the JSON Claude Code sends and checks the answer.
-- `tests/mutants.py`: a deliberate bug per rule, which a case must catch. A rule that cannot fail is not a rule.
-- `tests/plant_bugs.py`: random bugs in copies of the hooks, scored by how many the cases catch. Findings and the score are in `docs/findings.md`.
-- `hooks/replay.py` (run it with `uv run --script`): runs the always-on guard rules over your past Bash commands to find false refusals.
-- `tests/check_leaks.py`: fails when a file names a person, an email, a home path or a private word. The private word list
-  is read from `$HARNESS_PRIVATE_WORDS` or `~/.config/harness/private-words` and never stored here.
-
-Once per clone, enable the pre-push hook, which runs both commands above and stops the push if either fails:
-
-```bash
-git config core.hooksPath .githooks
-```
+Files the plugin writes in a project: `harness-feedback/` (inbox, handled lines, open problems, the retro mark). Throwaway
+files go in the scratch folder. The ledger lives in the plugin's data folder, not in the project.
