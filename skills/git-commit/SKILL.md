@@ -55,6 +55,7 @@ that is what the change is about.
 - Commit only when the owner asks. A sub-agent never runs a git command that writes.
 - Never `--no-verify`. A failing hook is a problem to fix, and a commit it stops did not happen, so never `--amend` after it.
 - Amend or rebase only commits not yet pushed. Never force a push unless the owner says so in words.
+- A history rewrite the owner asked for runs in a mirror clone first, and each branch's trees are compared before and after; the working repo moves only once the push is done.
 - Commit on a branch when the project uses them; don't commit to the default branch unasked.
 - Pass a long message with `-F` from a file in the scratch folder, or with a quoted heredoc.
 - After the commit, `git show --stat HEAD` must list the expected paths.
