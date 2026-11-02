@@ -15,8 +15,8 @@ stopped agent, written by `hooks/report_gate.py`; past reports come in through `
 `"imported": true`, `accepted` true and `send_backs` 0, so they say nothing about the gate).
 
 Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_backs`, `open_problems`, `scores`
-(`Task`, `Brief`, `Ease`, each `"N/5"` or a bare digit, null when unreadable), `causes`, `feedback_ids`, `report` (full
-text). Read rows with `uv run python`; `references/queries.md` holds the queries.
+(`Task`, `Brief`, `Ease`, each `"N/5"` or a bare digit, null when unreadable), `causes`, `feedback_ids`, `tool_turns` (`turns`, `calls`,
+`one_call_turns`, `longest_small_run`, `small_reads`, `repeats`), `report` (full text). Read rows with `uv run python`; `references/queries.md` holds the queries.
 
 ## Steps
 
@@ -34,8 +34,11 @@ text). Read rows with `uv run python`; `references/queries.md` holds the queries
 5. **Check the send-backs.** `open_problems` is filled only when the gate stops sending back (the cap), so read it only
    on rows with `accepted` false; a row with `send_backs` above 0 and `accepted` true names no rule. A
    report rule failed twice is a rule agents cannot read: rewrite it in `harness:report` or give the gate a clearer message.
-6. **Propose changes.** One per pattern, in the form below.
-7. **Model evidence.** Update `harness:models` measured facts only from the same query output, with sample sizes.
+6. **Check the tool turns.** Per role, from `tool_turns`: calls per turn, repeats per agent and the share of calls that are
+   small reads, each beside the last retro's value. One-call turns alone prove nothing, since many need the previous
+   result. A figure that got worse is a pattern; read two of its transcripts.
+7. **Propose changes.** One per pattern, in the form below.
+8. **Model evidence.** Update `harness:models` measured facts only from the same query output, with sample sizes.
 
 ## Proposal form
 
@@ -48,7 +51,8 @@ Check: <how the same problem is caught next time, and how to show the check fail
 
 ## Which kind of change
 
-- A problem seen twice gets a hook or a gate: something that refuses, not a sentence an agent may skip. A hook
+- A problem seen twice gets a hook or a gate: something that refuses, not a sentence an agent may skip. Waste that is
+  sometimes right, such as tool turns, gets a nudge and a figure in the ledger, not a refusal (`hooks/nudge.py`). A hook
   needs cases in `tests/run_cases.py` (in the plugin repo, not the project), shown to fail under a deliberate bug.
 - A rule is for what a tool cannot check; it must be checkable by a reviewer against code or a report.
 - A brief-caused problem changes the brief template or `harness:cold-read`, not the agent.

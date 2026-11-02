@@ -35,9 +35,7 @@ Every sub-agent ends with the `harness:report` report, claims marked READ, DERIV
 - An exit code after a pipe is the last command's: read `${PIPESTATUS[@]}` (bash) or `$pipestatus` (zsh).
 
 ## 8. Working efficiently
-- Read in bulk: one Python call reads every file, line range and match you need and prints them together. Never one
-  Read per file in a row, and one `rg` or script over all paths, not one search per path.
-- Edit in bulk: one Python script makes every edit of a unit, an assert on each exact string, not one Edit per change.
+- Tool turns: the harness states the rule to every session and sub-agent at its start.
 - Test once per unit, when it is done, not after each edit. When moving or migrating files, change first and test at the
   end. Run the smallest check that can fail, never the whole suite twice, and never a check to confirm what a tool
   already confirmed (a write that succeeded, a file just read).

@@ -11,7 +11,9 @@ Why: a case that cannot fail proves nothing. A mutant that stays green is a rule
 is gone from its hook is an error, so the list cannot rot. A row prints per mutant as it finishes; the exit code is 1 when
 any mutant survives. Copies go under `scratch/hook-mutants`. Stdlib only.
 
-uv run python tests/mutants.py [--only SUBSTRING] [--jobs N]
+uv run python tests/mutants.py [--only SUBSTRING] [--jobs N] [--check]
+
+`--check` runs nothing and only finds the mutants whose text is gone, in a second, so the pre-push hook and CI can run it.
 """
 
 from __future__ import annotations
@@ -56,7 +58,7 @@ MUTANTS = (
     ("unquoted-heredoc-body-not-read", "shell.py", "if not heredoc.is_quoted:", "if False:"),
     ("quoted-heredoc-body-read", "shell.py", "if not heredoc.is_quoted:", "if True:"),
     ("closing-paren-ignores-case", "shell.py", 'self.depth == 0 and self.case_depth == 0:', "self.depth == 0:"),
-    ("one-pipe-marks-the-whole-command", "shell.py", "elif has_command or operator != \"\\n\":\n            self.in_pipeline = False", "elif False:\n            pass"),
+    ("one-pipe-marks-the-whole-command", "shell.py", 'elif has_command or operator != "\\n":', "elif False:"),
     ("pipeline-first-command-not-grouped", "shell.py", "self.segments[-1] = self.segments[-1]._replace(in_group=True)", "pass"),
     ("background-not-grouped", "shell.py", 'if operator == "&":', "if False:"),
     # The guard.
@@ -101,7 +103,7 @@ MUTANTS = (
     ("user-lines-count", "report_gate.py", 'if entry.get("type") == "assistant":\n                    blocks.append(block)', "if True:\n                    blocks.append(block)"),
     ("any-heading-is-the-report", "report_gate.py", "if ANSWER_HEADING.search(last):", 'if "## " in last:'),
     ("first-report-wins", "report_gate.py", "if isinstance(text, str) and ANSWER_HEADING.search(text):\n            report = text", "if isinstance(text, str) and ANSWER_HEADING.search(text) and not report:\n            report = text"),
-    ("handback-not-read", "report_gate.py", 'is_handback = block.get("type") == "tool_use" and block.get("name") == "SubagentHandback"', "is_handback = False"),
+    ("handback-not-read", "report_gate.py", 'is_handback = block.get("type") == "tool_use" and block.get("name") == HANDBACK_TOOL', "is_handback = False"),
     ("changed-files-not-checked", "report_gate.py", "if not is_exempt and not is_named(path, report, folders):", "if False:"),
     ("scratch-not-exempt", "report_gate.py", "is_exempt = scratch and (path == scratch or path.startswith(scratch + os.sep))", "is_exempt = False"),
     ("failed-edit-counts", "report_gate.py", 'and block.get("id") not in failed:', ":"),
@@ -140,7 +142,7 @@ MUTANTS = (
     ("delegate-outside-allowed", "delegate.py", "if root not in resolved.parents:\n        return False\n", "if root not in resolved.parents:\n        return True\n"),
     ("delegate-write-allow-ignored", "delegate.py", 'return any(fnmatch.fnmatch(relative, pattern) for pattern in settings.get("write_allow", ()))', "return False"),
     # The budget rule.
-    ("budget-judges-the-main-session", "budget.py", 'if not event.get("agent_id"):\n        return 0\n', ""),
+    ("budget-judges-the-main-session", "budget.py", 'if not event.get("agent_id") or event.get("tool_name") == HANDBACK_TOOL:', 'if event.get("tool_name") == HANDBACK_TOOL:'),
     ("budget-never-refuses", "budget.py", "if spent <= minutes:", "if True:"),
     ("budget-always-refuses", "budget.py", "if spent <= minutes:", "if False:"),
     ("budget-line-ignored", "budget.py", "minutes = get_minutes(get_brief(first))", "minutes = None"),
@@ -148,7 +150,14 @@ MUTANTS = (
     ("budget-defaults-ignore-config", "budget.py", 'config.get("budget", DEFAULT_BUDGET).get(role)', "DEFAULT_BUDGET.get(role)"),
     ("budget-unknown-role-gets-a-budget", "budget.py", 'config.get("budget", DEFAULT_BUDGET).get(role)', 'config.get("budget", DEFAULT_BUDGET).get(role, 1)'),
     ("budget-fence-read", "budget.py", "for line in get_unfenced_lines(brief):", "for line in brief.splitlines():"),
-    ("budget-minutes-word-refused", "budget.py", "\\s*(?:minutes?|min)?\\W*", "\\s*"),
+    ("budget-minutes-word-refused", "budget.py", "(?:(minutes?|mins?|m|hours?|hrs?|h)\\b|(?=\\W*$))", "(?=\\W*$)"),
+    ("budget-any-number-counts", "budget.py", "|(?=\\W*$))", "|)"),
+    ("budget-line-must-fill-the-line", "budget.py", "BUDGET_LINE.search(", "BUDGET_LINE.fullmatch("),
+    ("budget-quote-counts", "budget.py", 'QUOTED.sub("", line)', "line"),
+    ("budget-prose-counts", "budget.py", "(?:^|[.;]\\s+)[\\s\\-*#]*(?:time\\s+)?", ""),
+    ("budget-time-word-refused", "budget.py", "(?:time\\s+)?", ""),
+    ("budget-hours-read-as-minutes", "budget.py", "(60 if is_hours else 1)", "1"),
+    ("budget-refuses-the-handback", "budget.py", ' or event.get("tool_name") == HANDBACK_TOOL', ""),
     ("budget-list-brief-ignored", "budget.py", "if isinstance(content, list):", "if False:"),
     ("budget-message-silent", "budget.py", "Send your report now as a partial report: done, not done, what is on disk.", "Stop."),
     ("budget-prefix-kept", "budget.py", 'event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)', 'event.get("agent_type") or "")'),
@@ -164,10 +173,29 @@ MUTANTS = (
     ("brief-worker-needs-no-judge", "brief_lint.py", '"worker": ["Goal:", "Write set:", "Judge:"]', '"worker": ["Goal:", "Write set:"]'),
     ("brief-label-anywhere", "brief_lint.py", "any(line.startswith(label) for line in lines)", "any(label in line for line in lines)"),
     ("brief-bold-label-refused", "brief_lint.py", 'LINE_MARKS = " \\t-*#"', 'LINE_MARKS = " \\t"'),
+    # The tool-turn nudge.
+    ("nudge-without-a-project", "nudge.py", "if root is None:\n        return 0\n", ""),
+    ("nudge-run-short", "nudge.py", "RUN_LENGTH = 6", "RUN_LENGTH = 5"),
+    ("nudge-run-never", "nudge.py", "if run and run % RUN_LENGTH == 0:", "if False:"),
+    ("nudge-two-calls-count-as-one", "nudge.py", "is_small_turn = len(turn) == 1 and is_small_read(turn[0])", "is_small_turn = is_small_read(turn[0])"),
+    ("nudge-repeat-never", "nudge.py", "if key in seen:", "if False:"),
+    ("nudge-edit-keeps-reads", "nudge.py", "seen.clear()", "pass"),
+    ("nudge-sed-i-reads", "nudge.py", "^sed\\s(.*\\s)?-i|", ""),
+    ("nudge-batch-reads", "nudge.py", 'r";|&&|', 'r"'),
+    ("nudge-cd-hides-a-read", "nudge.py", 'LEADING_CD.sub("", str(', '"".join(str('),
+    ("nudge-long-transcript-read", "nudge.py", " or path.stat().st_size > MAX_BYTES", ""),
+    ("nudge-no-cap", "nudge.py", "waste.nudges[:MAX_NUDGES]", "waste.nudges"),
+    ("nudge-any-call-hears", "nudge.py", "dict(waste.nudges[:MAX_NUDGES]).get(call_id)", "next((text for _, text in waste.nudges[:MAX_NUDGES]), None)"),
+    ("nudge-reads-the-session", "nudge.py", 'get_agent_path(event) if event.get("agent_id") else ', ""),
+    ("nudge-silent", "nudge.py", "    if text:\n", "    if False:\n"),
+    ("nudge-bug-blocks", "nudge.py", "sys.exit(1)", "sys.exit(2)"),
+    ("ledger-tool-turns-lost", "report_gate.py", "get_turn_stats(read_events(path)) if path else None", "None"),
     # The context hook.
-    ("context-session-silent", "context.py", "text = SESSION_TEXT", 'text = ""'),
-    ("context-forms-swapped", "context.py", 'text = FORM_TEXTS.get(form, "")', 'text = FORM_TEXTS.get("full" if form == "short" else "short", "") if form else ""'),
-    ("context-tells-every-agent", "context.py", 'text = FORM_TEXTS.get(form, "")', 'text = FORM_TEXTS.get(form, FORM_TEXTS["full"])'),
+    ("context-session-silent", "context.py", "(SESSION_TEXT, TOOL_TURNS_TEXT,", '("", TOOL_TURNS_TEXT,'),
+    ("context-forms-swapped", "context.py", 'FORM_TEXTS.get(form, "")', 'FORM_TEXTS.get("full" if form == "short" else "short", "") if form else ""'),
+    ("context-tells-every-agent", "context.py", 'FORM_TEXTS.get(form, "")', 'FORM_TEXTS.get(form, FORM_TEXTS["full"])'),
+    ("context-tool-turns-not-for-session", "context.py", "(SESSION_TEXT, TOOL_TURNS_TEXT,", "(SESSION_TEXT,"),
+    ("context-tool-turns-not-for-agents", "context.py", 'FORM_TEXTS.get(form, ""), TOOL_TURNS_TEXT,', 'FORM_TEXTS.get(form, ""),'),
     ("context-without-a-project", "context.py", "if root is None:\n        return 0\n", ""),
     # The report gate's claim and auto-item rules.
     ("exit-claim-matches-any-code", "report_gate.py", "        if code not in seen\n", "        if False\n"),
@@ -204,10 +232,7 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> tuple[str, int,
         shutil.rmtree(folder)
     shutil.copytree(HOOKS, folder, ignore=shutil.ignore_patterns("__pycache__"))
     path = folder / script
-    text = path.read_text()
-    if old not in text:
-        raise ValueError(f"{name}: the text to break is gone from {script}: {old[:60]!r}")
-    path.write_text(text.replace(old, new))
+    path.write_text(path.read_text().replace(old, new))
     command = ["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder)]
     run = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT)
     failed = [line[5:].split(":")[0] for line in run.stdout.splitlines() if line.startswith("FAIL")]
@@ -216,11 +241,22 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> tuple[str, int,
     return name, run.returncode, failed
 
 
+def get_rotted_names() -> list[str]:
+    """The mutants whose text to break is gone from their hook, which would prove nothing."""
+
+    return [name for name, script, old, _ in MUTANTS if old not in (HOOKS / script).read_text()]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--only", default="", help="run the mutants whose name holds this text")
     parser.add_argument("--jobs", type=int, default=6, help="mutants at once; each runs its cases on eight threads")
+    parser.add_argument("--check", action="store_true", help="only find the mutants whose text is gone")
     arguments = parser.parse_args()
+    rotted = get_rotted_names()
+    if rotted or arguments.check:
+        print(f"{len(MUTANTS)} mutants, {len(rotted)} with their text gone: {rotted}")
+        return 1 if rotted else 0
     chosen = [mutant for mutant in MUTANTS if arguments.only in mutant[0]]
     survivors = 0
     with ThreadPoolExecutor(arguments.jobs) as pool:

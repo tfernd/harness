@@ -6,13 +6,13 @@
 # exclude-newer = "7 days"
 # ///
 """PreToolUse hook on every tool: in a project with `.harness.json`, a sub-agent past its time budget is refused every
-tool call and told to send its report now, as a partial one. A call without `agent_id` came from the main session and
+tool call but the handback and told to send its report now, as a partial one. A call without `agent_id` came from the main session and
 passes.
 
-The budget is the line `Budget: N` of the agent's brief (its transcript's first line), N in minutes; `N minutes` and
-`N min` also count. Without one the role's default stands: `.harness.json`'s `budget` maps a role to minutes and REPLACES the whole DEFAULT_BUDGET
-table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The clock starts at the first line's timestamp. Ending needs
-no tool, so the agent is never trapped. Only that first line is read, since this runs on every call.
+The budget is the first `Budget: N` outside a fence and a backtick quote in the agent's brief (its transcript's first line), opening a line or a
+sentence, so prose such as `over budget: 20` does not count; N is minutes, or hours with `hours` or `h`. A number followed by another word (`Budget: 5 files`) does not count. Without one the role's default stands: `.harness.json`'s `budget` maps a role to minutes and REPLACES the whole DEFAULT_BUDGET
+table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The clock starts at the first line's timestamp. The handback
+always passes, so the agent is never trapped. Only that first line is read, since this runs on every call.
 """
 
 from __future__ import annotations
@@ -25,10 +25,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import PLUGIN_PREFIX, find_project, get_unfenced_lines
+from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_unfenced_lines
 
 DEFAULT_BUDGET = {"scout": 5, "cold-reader": 5, "runner": 10, "reviewer": 10, "auditor": 10, "worker": 15}
-BUDGET_LINE = re.compile(r"[\s\-*#]*Budget:?\**\s*([0-9]+(?:\.[0-9]+)?)\s*(?:minutes?|min)?\W*", re.I)
+BUDGET_LINE = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*(?:time\s+)?budget\b[:*\s~]*([0-9]+(?:\.[0-9]+)?)\s*(?:(minutes?|mins?|m|hours?|hrs?|h)\b|(?=\W*$))", re.I)
+QUOTED = re.compile(r"`[^`]*`")
 TAIL_BYTES = 262144
 
 
@@ -74,9 +75,10 @@ def get_minutes(brief: str, /) -> float | None:
     """The minutes of the brief's `Budget:` line, None when it has none."""
 
     for line in get_unfenced_lines(brief):
-        match = BUDGET_LINE.fullmatch(line)
+        match = BUDGET_LINE.search(QUOTED.sub("", line))
         if match:
-            return float(match.group(1))
+            is_hours = (match.group(2) or "").lower().startswith("h")
+            return float(match.group(1)) * (60 if is_hours else 1)
 
     return None
 
@@ -112,7 +114,7 @@ def get_duration(path: Path | None, /) -> float | None:
 
 def main() -> int:
     event = json.load(sys.stdin)
-    if not event.get("agent_id"):
+    if not event.get("agent_id") or event.get("tool_name") == HANDBACK_TOOL:
         return 0
     root, config = find_project(event.get("cwd") or os.getcwd())
     path = get_agent_path(event)
@@ -132,7 +134,7 @@ def main() -> int:
         return 0
     print(
         f"Blocked by the harness budget rule: your budget of {minutes:g} minutes is spent ({spent:.0f} minutes since you "
-        "started). Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. Ending needs no tool.",
+        "started). Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass.",
         file=sys.stderr,
     )
 

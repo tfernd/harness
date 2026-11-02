@@ -30,6 +30,16 @@ grades = {(role, unit.strip()): int(g) for r in live if r["role"] == "auditor"
 # (brief, audit grade, self Task) for each audited unit
 pairs = [(brief(r), grades[brief(r)], task(r)) for r in live if brief(r) in grades]
 
+# tool turns per role: calls per turn, repeats per agent, share of calls that are small reads; rows before the field have none
+waste = collections.defaultdict(list)
+for r in live:
+    if r.get("tool_turns"):
+        waste[r["role"]].append(r["tool_turns"])
+for role, items in waste.items():
+    calls = sum(t["calls"] for t in items)
+    print(role, len(items), round(calls / max(1, sum(t["turns"] for t in items)), 2),
+          round(sum(t["repeats"] for t in items) / len(items), 1), round(sum(t["small_reads"] for t in items) / max(1, calls), 2))
+
 # send-backs that stopped at the cap: only rows not accepted carry open_problems
 capped = [r for r in live if not r["accepted"]]
 ```

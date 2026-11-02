@@ -1,0 +1,153 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
+"""PostToolUse hook on Read, Grep, Glob and Bash: in a project with `.harness.json`, adds one line of context at the moment an
+agent wastes tool turns, and never refuses. It fires on an exact repeat of a small read with nothing else run since, and on
+every RUN_LENGTH single small reads in a row, at most MAX_NUDGES times per agent, and stays silent past MAX_BYTES of transcript. A call in the agent's own transcript counts,
+so no state is kept. `report_gate.py` and `import_reports.py` write the same counts to the ledger for `harness:retro`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+from typing import NamedTuple
+
+from budget import get_agent_path
+from common import find_project, read_events
+
+READ_TOOLS = frozenset({"Read", "Grep", "Glob"})
+SMALL_COMMANDS = frozenset({"cat", "bat", "sed", "head", "tail", "grep", "rg", "ls", "wc", "find"})
+LEADING_CD = re.compile(r"^cd\s+\S+\s*&&\s*")
+# A command that batches several steps, or that writes, is not a small read.
+BATCHED_OR_WRITING = re.compile(r";|&&|\|\||\n|>|^sed\s(.*\s)?-i|\s-delete\b|\s-exec")
+RUN_LENGTH = 6
+MAX_NUDGES = 2
+# A longer transcript gets no nudge: this runs on every read, and only a whole transcript can count the cap.
+MAX_BYTES = 1048576
+REPEAT_TEXT = "Harness note, not a refusal: you already made this same read and ran nothing since. Use what you have."
+RUN_TEXT = (
+    f"Harness note, not a refusal: your last {RUN_LENGTH} turns were one small read each. "
+    "Get what you still need at once: one script, or parallel calls in one message."
+)
+
+
+class Waste(NamedTuple):
+    """What a run of turns wasted; `nudges` holds (call id, text) in the order they fell due."""
+
+    nudges: list[tuple[str, str]]
+    longest_run: int
+    small_reads: int
+    repeats: int
+
+
+def get_turns(events: list[dict], /) -> list[list[dict]]:  # keys are data
+    """The tool calls of each model turn; a transcript line holds one block, and the lines of a turn share a message id."""
+
+    turns: list[list[dict]] = []
+    last_id = None
+    for event in events:
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        calls = [block for block in content if isinstance(block, dict) and block.get("type") == "tool_use"] if isinstance(content, list) else []
+        if event.get("type") != "assistant" or not calls:
+            continue
+        message_id = message.get("id")
+        if message_id and message_id == last_id:
+            turns[-1].extend(calls)
+        else:
+            turns.append(calls)
+        last_id = message_id
+
+    return turns
+
+
+def is_small_read(call: dict, /) -> bool:  # keys are data
+    """Whether a call only reads, and reads one thing: a read tool, or one shell command that a script could have joined."""
+
+    name = call.get("name")
+    if name in READ_TOOLS:
+        return True
+    if name != "Bash":
+        return False
+    command = LEADING_CD.sub("", str((call.get("input") or {}).get("command") or "").strip())
+    words = command.split()
+
+    return bool(words) and words[0] in SMALL_COMMANDS and not BATCHED_OR_WRITING.search(command)
+
+
+def get_waste(turns: list[list[dict]], /) -> Waste:  # keys are data
+    """Walks the turns in order. A call that is not a small read may change a file, so it forgets the reads before it."""
+
+    nudges: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    run = longest_run = small_reads = repeats = 0
+    for turn in turns:
+        is_small_turn = len(turn) == 1 and is_small_read(turn[0])
+        run = run + 1 if is_small_turn else 0
+        longest_run = max(longest_run, run)
+        if run and run % RUN_LENGTH == 0:
+            nudges.append((str(turn[0].get("id")), RUN_TEXT))
+        for call in turn:
+            if not is_small_read(call):
+                seen.clear()
+                continue
+            small_reads += 1
+            key = json.dumps([call.get("name"), call.get("input")], sort_keys=True)
+            if key in seen:
+                repeats += 1
+                nudges.append((str(call.get("id")), REPEAT_TEXT))
+            seen.add(key)
+
+    return Waste(nudges, longest_run, small_reads, repeats)
+
+
+def get_turn_stats(events: list[dict], /) -> dict:  # keys are data
+    """The ledger's `tool_turns` field for one agent's transcript."""
+
+    turns = get_turns(events)
+    waste = get_waste(turns)
+
+    return {
+        "turns": len(turns),
+        "calls": sum(len(turn) for turn in turns),
+        "one_call_turns": sum(len(turn) == 1 for turn in turns),
+        "longest_small_run": waste.longest_run,
+        "small_reads": waste.small_reads,
+        "repeats": waste.repeats,
+    }
+
+
+def main() -> int:
+    event = json.load(sys.stdin)
+    root, _ = find_project(event.get("cwd") or os.getcwd())
+    if root is None:
+        return 0
+    path = get_agent_path(event) if event.get("agent_id") else Path(event.get("transcript_path") or "")
+    if path is None or not path.is_file() or path.stat().st_size > MAX_BYTES:
+        return 0
+    turns = get_turns(read_events(path))
+    if not turns:
+        return 0
+    call_id = str(event.get("tool_use_id") or turns[-1][-1].get("id"))
+    waste = get_waste(turns)
+    text = dict(waste.nudges[:MAX_NUDGES]).get(call_id)
+    if text:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as error:  # a bug in a nudge must not touch the call
+        print(f"the harness nudge hook failed: {error!r}", file=sys.stderr)
+        sys.exit(1)

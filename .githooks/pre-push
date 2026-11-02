@@ -2,4 +2,5 @@
 # Every pushed commit reaches every project through auto-update, so a push must pass the hook cases.
 root=$(git rev-parse --show-toplevel)
 uv run python "$root/tests/run_cases.py" || exit 1
+uv run python "$root/tests/mutants.py" --check || exit 1
 exec uv run python "$root/tests/check_leaks.py"

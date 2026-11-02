@@ -14,6 +14,7 @@ from pathlib import Path
 
 CONFIG_NAME = ".harness.json"
 PLUGIN_PREFIX = "harness:"
+HANDBACK_TOOL = "SubagentHandback"
 FEEDBACK_FOLDER = "harness-feedback"
 INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
 # The path of the handled file; `turn.py` imports it as HANDLED_NAME, since it names its own line pattern HANDLED.
@@ -83,6 +84,21 @@ def get_unfenced_lines(text: str, /) -> list[str]:
                 opened = -1
 
     return [line for index, line in enumerate(lines) if index not in fenced]
+
+
+def read_events(path: Path, /) -> list[dict]:  # keys are data
+    """A transcript's lines that parse to an object; a torn line or any other JSON value is skipped."""
+
+    events: list[dict] = []
+    for line in path.read_bytes().decode(errors="replace").split("\n"):
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+
+    return events
 
 
 def data_folder() -> Path:

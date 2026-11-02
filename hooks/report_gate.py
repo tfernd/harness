@@ -40,7 +40,8 @@ import time
 from pathlib import Path
 
 from budget import get_agent_path, get_brief, get_default, get_duration, get_minutes
-from common import INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines
+from common import HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines, read_events
+from nudge import get_turn_stats
 
 FULL = (
     "Answer",
@@ -292,7 +293,7 @@ def get_report(event: dict, blocks: list[dict], /) -> str:  # keys are data
         return last
     report = ""
     for block in blocks:
-        is_handback = block.get("type") == "tool_use" and block.get("name") == "SubagentHandback"
+        is_handback = block.get("type") == "tool_use" and block.get("name") == HANDBACK_TOOL
         text = (block.get("input") or {}).get("message") if is_handback else block.get("text")
         if isinstance(text, str) and ANSWER_HEADING.search(text):
             report = text
@@ -498,9 +499,11 @@ def write_ledger(
     scores = get_scores(sections.get("REPORT CARD", []))
     causes = re.findall(rf"cause:\s*({'|'.join(CAUSES)}|[^;)|]+)", "\n".join(sections.get("PROBLEMS MET", [])), re.I)
     try:
-        duration = get_duration(get_agent_path(event))
+        path = get_agent_path(event)
+        duration = get_duration(path)
+        tool_turns = get_turn_stats(read_events(path)) if path else None
     except (OSError, ValueError, AttributeError):
-        duration = None
+        duration = tool_turns = None
     row = {
         "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "project": root,
@@ -519,6 +522,7 @@ def write_ledger(
         "files_changed": extra.get("files_changed", []),
         "claim_marks": {mark: len(re.findall(rf"\b{mark}\b", report)) for mark in ("READ", "DERIVED", "PROBED")},
         "brief_hash": hashlib.sha1(get_task_title(report).encode()).hexdigest()[:8] if get_task_title(report) else None,
+        "tool_turns": tool_turns,
         "report": report,
     }
     with open(data_folder() / "ledger.jsonl", "a") as file:

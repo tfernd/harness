@@ -97,6 +97,5 @@ Use when units are independent.
 - Give the slowest unit its own write set and start it first, so it does not gate the rest.
 - A stronger model buys judgment, not speed: step up for a hard decision, not for a large job (`harness:models`).
 - Tell the owner the expected time and tokens at launch, and say so as soon as a unit runs over.
-- Brief every agent to read and edit in bulk with one Python call per step, and to test once when its unit is done.
 
 The shape of a dynamic workflow script: `references/dynamic.md`.

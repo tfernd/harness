@@ -7,7 +7,7 @@
 # ///
 """SessionStart and SubagentStart hook: in a project with `.harness.json`, tells a session what it owes.
 
-SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells a role the report gate judges
+Both get the rule on tool turns. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells a role the report gate judges
 which report form it owes, and the last lessons handled for its role. Any other agent type gets nothing. SessionStart also
 says when ten or more reports of the project are newer than the plugin data folder's `retro-marker` file (the `retro` skill
 writes it). The text reaches the model as `additionalContext`.
@@ -25,6 +25,12 @@ from pathlib import Path
 from common import FILE_EDGES, HANDLED, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
+TOOL_TURNS_TEXT = (
+    "Use few tool turns; each one costs the owner time. Send independent calls together in one message (several Reads, a Bash "
+    "beside a Read) and wait only when a call needs the previous result. Read or edit several files with one script that "
+    "prints only what you need and asserts each edit, not a run of cat, sed, grep and ls. Do not read an unchanged file again "
+    "or rerun an unchanged command. Test once, when the unit is done."
+)
 FORM_TEXTS = {
     "full": "End with the full form of the `harness:report` skill: the ten sections, from Answer to FEEDBACK FOR THE "
     "ORCHESTRATOR. A hook sends back a report that breaks the form.",
@@ -105,11 +111,11 @@ def main() -> int:
     name = event.get("hook_event_name")
     text = ""
     if name == "SessionStart":
-        text = "\n".join(part for part in (SESSION_TEXT, get_retro_line(root)) if part)
+        text = "\n".join(part for part in (SESSION_TEXT, TOOL_TURNS_TEXT, get_retro_line(root)) if part)
     elif name == "SubagentStart":
         agent_type = event.get("agent_type") or ""
         form = get_report_form(agent_type, config.get("report", {}))
-        text = "\n\n".join(part for part in (FORM_TEXTS.get(form, ""), get_lessons(root, agent_type)) if part)
+        text = "\n\n".join(part for part in (FORM_TEXTS.get(form, ""), TOOL_TURNS_TEXT, get_lessons(root, agent_type)) if part)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 

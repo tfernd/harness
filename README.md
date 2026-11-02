@@ -144,13 +144,14 @@ A brief may step a role up to a stronger model (`models` skill).
 
 | Hook | Event | What it does |
 |---|---|---|
-| `context.py` | SessionStart, SubagentStart | Strict. Tells the main session to load `harness:orchestrator`, and tells a role which report form it owes |
-| `budget.py` | PreToolUse, every tool | Strict. Refuses every tool call of a sub-agent that is past its time budget, so it must send a partial report |
+| `context.py` | SessionStart, SubagentStart | Strict. Tells the main session to load `harness:orchestrator`, tells a role which report form it owes, and states the rule on tool turns to both |
+| `budget.py` | PreToolUse, every tool | Strict. Refuses every tool call but the handback of a sub-agent that is past its time budget, so it must send a partial report |
 | `guard.py` | PreToolUse: Bash, Write, Edit, NotebookEdit | Always: blocks `rm` and other deletes, force push, `git reset --hard`, unquoted globs, sleep polling. Strict and configured: blocks package changes, writes under `/tmp`, shell writes outside scratch, Python run outside a lock |
 | `delegate.py` | PreToolUse: same tools | The `delegate` key. Refuses edits and unlisted Bash from the main session |
 | `skill_gate.py` | PreToolUse: Edit, Write, NotebookEdit | The `skill_gate` key. Refuses an edit of a file until the calling agent has loaded the skill for that kind of file; scratch, unmatched files and paths outside the project pass |
 | `brief_lint.py` | PreToolUse: Agent, Task | The `brief` key. A brief for a role must hold its required lines, such as `Goal:` |
 | `turn.py` | PostToolUse, UserPromptSubmit, Stop | Strict. Tracks the turn; blocks a stop while the job status, lessons or feedback are left open |
+| `nudge.py` | PostToolUse: Read, Grep, Glob, Bash | Strict. Adds one line of context on a repeated read or a long run of single small reads, at most twice per agent. Never refuses |
 | `report_gate.py` | SubagentStop | Strict. Sends a bad report back up to 3 times, checks its claims against the transcript, writes the ledger |
 
 The always-on guard rules are best effort, not a security boundary: they read the command text. A bug in a hook lets the

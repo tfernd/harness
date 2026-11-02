@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
@@ -31,8 +32,9 @@ from typing import NamedTuple
 HOOKS = Path(__file__).resolve().parent.parent / "hooks"
 HOOK_TIMEOUT = 10
 JOBS = 8
-# The temporary projects: outside /tmp, which a strict project refuses.
-WORK = Path(__file__).resolve().parent.parent / "scratch" / "cases"
+# The temporary projects: outside /tmp, which a strict project refuses, and outside this repo, whose own `.harness.json`
+# a case with no config would find.
+WORK = Path.home() / ".cache" / "harness-cases"
 SESSION = "case-session"
 # Stands for the case's temporary folder in an event or a transcript line.
 ROOT = "@ROOT@"
@@ -756,6 +758,15 @@ GATE_CASES = [
         ),
     ),
     gate(
+        "the ledger row counts the tool turns",
+        transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
+        False,
+        wrote=("data/ledger.jsonl", '"tool_turns": {"turns": 1, "calls": 1, "one_call_turns": 1, "longest_small_run": 0, "small_reads": 0, "repeats": 0}'),
+        transcript=(
+            {"type": "assistant", "message": {"model": "claude-x", "content": [{"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": "src/a.py", "new_string": "a"}}]}},
+        ),
+    ),
+    gate(
         "the ledger row holds the model, budget and claim marks",
         transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
         False,
@@ -1189,12 +1200,22 @@ BUDGET_CASES = [
     budget("Budget: N minutes counts", "Goal: x\nBudget: 99999999 minutes", False),
     budget("Budget: N min counts", "Goal: x\n- **Budget:** 99999999 min", False),
     budget("a Budget line in a fence does not count", "Goal: x\n```\nBudget: 99999999\n```", True),
+    budget("the budget ends its own sentence", "Goal: x\nBudget: 99999999 minutes. Throwaway folder: `scratch/a/`.", False),
+    budget("the budget sits inside a line", "Runs: smallest first. Budget: 99999999 minutes. Folder: a", False),
+    budget("a budget in hours counts", "Goal: x\nBudget: 1 hour", False, started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 1800))),
+    budget("a number of something else is no budget", "Goal: x\nBudget: 99999999 files", True),
+    budget("a quoted budget is no budget", "Goal: x, the line read is `Budget: 99999999`", True),
+    budget("a budget quoted after other text is no budget", "Goal: x\nPut `Do this. Budget: 99999999 minutes` in it.", True),
+    budget("a budget at the end of prose is no budget", "Goal: x, we are over budget: 99999999", True),
+    budget("a budget inside a sentence is no budget", "Spend no budget 99999999 min on it", True),
+    budget("a time budget counts", "Goal: x\nTime budget: 99999999 minutes", False),
+    budget("a handback past the budget passes", "Goal: x", False, event={"tool_name": "SubagentHandback"}),
     budget("a scout is refused past 5 minutes", "Goal: x", True, role="scout"),
     budget("the project's budget replaces the defaults", "Goal: x", False, config={"budget": {"worker": 99999999}}),
     budget("a role with no budget entry passes", "Goal: x", False, config={"budget": {"scout": 1}}),
     budget("another agent type with no line passes", "Goal: x", False, role="Explore"),
     budget("another agent type with a line is refused", "Goal: x\nBudget: 1", True, role="Explore"),
-    budget("the main session passes", "Goal: x", False, event={"agent_id": None}),
+    budget("the main session passes", "Goal: x", False, event={"agent_id": None, "agent_transcript_path": "project/s/subagents/agent-a1.jsonl"}),
     budget("no project means no rule", "Goal: x", False, config=None),
     budget("an unknown start time passes", "Goal: x", False, started="not a time"),
     budget("a missing transcript passes", "Goal: x", False, files=()),
@@ -1227,6 +1248,64 @@ BUDGET_CASES = [
 
 
 # ===========================================================================
+# The tool-turn nudge
+# ===========================================================================
+
+
+def read_call(call_id: str, path: str = "", /) -> dict:  # keys are data
+    return {"type": "tool_use", "id": call_id, "name": "Read", "input": {"file_path": path or f"{call_id}.py"}}
+
+
+def bash_call(call_id: str, command: str, /) -> dict:  # keys are data
+    return {"type": "tool_use", "id": call_id, "name": "Bash", "input": {"command": command}}
+
+
+def make_reads(count: int, /) -> list[list[dict]]:  # keys are data
+    return [[read_call(f"r{index}")] for index in range(count)]
+
+
+def nudge(name: str, turns: list[list[dict]], text: str = "", /, *, path: str = "s/subagents/agent-a1.jsonl", **options: object) -> Case:  # keys are data
+    """A PostToolUse event for a sub-agent whose transcript at `path` holds `turns`, each the calls of one message; it names the last call."""
+
+    lines = [json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": [call]}}) for index, turn in enumerate(turns) for call in turn]
+    options.setdefault("config", {})
+    options.setdefault("files", ((path, "\n".join(lines) + "\n"),))
+    event = {"hook_event_name": "PostToolUse", "tool_name": "Read", "agent_id": "a1", "agent_type": "harness:worker", "transcript_path": "project/s.jsonl", "tool_use_id": turns[-1][-1]["id"]}
+
+    return Case(name, ("nudge.py",), {**event, **options.pop("event", {})}, False, text, **options)
+
+
+REPEATED = [[read_call("r0", "a.py")], [read_call("r1", "a.py")], [read_call("r2", "a.py")], [read_call("r3", "a.py")]]
+NUDGE_CASES = [
+    nudge("six single reads in a row are nudged", make_reads(6), "one small read each"),
+    nudge("the nudge is hook context", make_reads(6), '"hookEventName": "PostToolUse"'),
+    nudge("five single reads are not", make_reads(5), lacks="additionalContext"),
+    nudge("two reads in one message break the run", [*make_reads(3), [read_call("x1"), read_call("x2")], [read_call("x3")], [read_call("x4")]], lacks="additionalContext"),
+    nudge("a batched command breaks the run", [*make_reads(3), [bash_call("b1", "cat a; cat b")], [read_call("x1")], [read_call("x2")]], lacks="additionalContext"),
+    nudge("a sed -i is no read", [[bash_call(f"b{index}", f"sed -i s/a/b/ f{index}.py")] for index in range(6)], lacks="additionalContext"),
+    nudge("single shell reads count", [[bash_call(f"b{index}", f"cd /repo && cat f{index}.py")] for index in range(6)], "one small read each"),
+    nudge("a repeated read is nudged", REPEATED[:2], "same read"),
+    nudge("the same read after an edit is not", [REPEATED[0], [{"type": "tool_use", "id": "e1", "name": "Edit", "input": {}}], REPEATED[1]], lacks="additionalContext"),
+    nudge("another range of the file is not a repeat", [[read_call("r0", "a.py")], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"file_path": "a.py", "offset": 9}}]], lacks="additionalContext"),
+    nudge("the second nudge still speaks", REPEATED[:3], "same read"),
+    nudge("the third nudge is silent", REPEATED, lacks="additionalContext"),
+    nudge("a call that is not the wasteful one hears nothing", REPEATED[:2], lacks="additionalContext", event={"tool_use_id": "r0"}),
+    nudge("the main session is nudged from its transcript", REPEATED[:2], "same read", path="s.jsonl", event={"agent_id": None}),
+    nudge("a sub-agent is not judged by the session's transcript", REPEATED[:2], lacks="additionalContext", path="s.jsonl"),
+    nudge("no project means no nudge", REPEATED[:2], lacks="additionalContext", config=None),
+    nudge(
+        "a transcript past the size limit gets no nudge",
+        REPEATED[:2],
+        lacks="additionalContext",
+        files=(("s/subagents/agent-a1.jsonl", json.dumps({"type": "user", "message": {"content": "x" * 1048576}}) + "\n" + "".join(json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": turn}}) + "\n" for index, turn in enumerate(REPEATED[:2]))),),
+    ),
+    nudge("a missing transcript passes", REPEATED[:2], lacks="additionalContext", files=()),
+    nudge("a torn transcript line is skipped", REPEATED[:2], lacks="additionalContext", files=(("s/subagents/agent-a1.jsonl", "{not json\n"),)),
+    nudge("a broken config lets the call run", REPEATED[:2], lacks="additionalContext", config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
+]
+
+
+# ===========================================================================
 # The context hook
 # ===========================================================================
 
@@ -1249,7 +1328,10 @@ CONTEXT_CASES = [
         "short form",
         config={"report": {"short": ["custom"]}},
     ),
-    context("a helper is told nothing", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, lacks="form"),
+    context("a helper owes no report form", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, lacks="form"),
+    context("a session start states the tool-turn rule", {"hook_event_name": "SessionStart"}, "few tool turns"),
+    context("a worker is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "few tool turns"),
+    context("a helper is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "few tool turns"),
     context("no project means no context", {"hook_event_name": "SessionStart"}, lacks="orchestrator", config=None),
     context("the project variable finds the project", {"hook_event_name": "SessionStart"}, "orchestrator", cwd="elsewhere", project_dir="project"),
 ]
@@ -1493,7 +1575,7 @@ def main() -> int:
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     arguments = parser.parse_args()
-    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(JOBS) as pool:

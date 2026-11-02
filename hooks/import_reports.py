@@ -29,26 +29,12 @@ import re
 import sys
 from pathlib import Path
 
+from common import HANDBACK_TOOL, read_events
+from nudge import get_turn_stats
 from report_gate import CAUSES, SCORES, get_scores, read_sections
 
 CAUSE = re.compile(rf"cause:\s*({'|'.join(CAUSES)})", re.I)
 TASK = re.compile(r"[1-5](/5)?")
-
-
-def read_events(path: Path, /) -> list[dict]:  # keys are data
-    """The transcript's lines that parse to an object; a torn line or any other JSON value is skipped."""
-
-    events: list[dict] = []
-    with open(path, errors="replace") as file:
-        for line in file:
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
-
-    return events
 
 
 def find_report(events: list[dict], /) -> tuple[str, dict]:  # keys are data
@@ -63,7 +49,7 @@ def find_report(events: list[dict], /) -> tuple[str, dict]:  # keys are data
             continue
         blocks = [block for block in content if isinstance(block, dict)]
         for block in reversed(blocks):
-            if block.get("type") == "tool_use" and block.get("name") == "SubagentHandback":
+            if block.get("type") == "tool_use" and block.get("name") == HANDBACK_TOOL:
                 handback = block.get("input")
                 return str(handback.get("message", "") if isinstance(handback, dict) else ""), event
         text = "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
@@ -107,6 +93,7 @@ def make_row(path: Path, /) -> dict | None:  # keys are data
         "scores": {name: scores.get(name) for name in SCORES} if scores else None,
         "causes": [cause.strip().lower() for cause in causes],
         "feedback_ids": [],
+        "tool_turns": get_turn_stats(events),
         "report": report,
         "imported": True,
     }
