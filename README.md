@@ -76,6 +76,7 @@ Four more files in `hooks/` are not hooks. `common.py` holds what the hooks shar
 shell does, so the guard judges real commands and a quoted `rm` is no delete. `replay.py` runs the guard over your past
 commands to find false refusals. `import_reports.py` backs `bin/harness-import`, which brings old report cards into the
 ledger.
+`bin/compaction-report` measures what auto-compaction costs in your Claude Code logs and replays each session at other thresholds; `make compaction` writes `compaction-report/report.html`.
 
 ## What it does not prevent
 

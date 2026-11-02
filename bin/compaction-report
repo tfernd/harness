@@ -1,0 +1,1781 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "7 days"
+# ///
+"""Measure what auto-compaction costs in Claude Code session logs and replay each session at other thresholds.
+
+Reads the logs line by line (nothing leaves the machine) and writes data.json and report.html.
+Run: bin/compaction-report [--root FOLDER] [--out FOLDER] [--prices FILE]
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import math
+import multiprocessing
+import os
+import random
+import statistics
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import NamedTuple
+
+BASE_THRESHOLDS: tuple[int, ...] = (25_000, 75_000, *range(50_000, 1_000_001, 50_000))
+FINE_THRESHOLDS: tuple[int, ...] = (80_000, 90_000, 95_000, 105_000, 110_000, 120_000)
+THRESHOLDS: tuple[int, ...] = tuple(sorted(set(BASE_THRESHOLDS) | set(FINE_THRESHOLDS)))
+DISPLAY: tuple[int, ...] = (25_000, 50_000, 75_000, *range(100_000, 1_000_001, 100_000))
+CORE: tuple[int, ...] = (50_000, 100_000, 200_000, 500_000, 1_000_000)
+FLAT_PERCENT = 2.0
+REWORK_TOKENS: tuple[int, ...] = (20_000, 50_000)
+TOLERANCE_PERCENT = 5.0
+NUM_BOOTSTRAP = 200
+FALLBACK_SUMMARY_TOKENS = 20_000
+SHORT_SESSION_PEAK = 200_000
+CHANGED_PERCENT = 0.5
+LABELS = {"main": "main sessions", "sub": "sub-agents"}
+
+
+# ===========================================================================
+# Prices
+# ===========================================================================
+
+
+class ToolError(Exception):
+    """A problem the user can fix, reported without a traceback."""
+
+
+class Rates(NamedTuple):
+    """Dollars per million tokens."""
+
+    inp: float
+    out: float
+    read: float
+    write5m: float
+    write1h: float
+
+
+class Price(NamedTuple):
+    """Rates of one model; `long` applies to a call whose prompt is above `long_above` tokens."""
+
+    base: Rates
+    long: Rates | None
+    long_above: int
+
+
+def make_rates(inp: float, out: float, read: float) -> Rates:
+    """Build rates with the published cache write multipliers: 1.25x input for 5 minutes, 2x for 1 hour."""
+    return Rates(inp, out, read, inp * 1.25, inp * 2.0)
+
+
+# PRICE TABLE. Dollars per million tokens, Anthropic list prices from its published model documentation
+# (input, output, cache read per model). Prices go stale: check them against the current pricing page and
+# override with --prices FILE. The Haiku cache read rates (0.1x of the tier's input price) are an assumption:
+# the documentation consulted states none. A model missing here is excluded from the report, never guessed.
+DEFAULT_PRICES: dict[str, Price] = {
+    "claude-sonnet-5-5": Price(make_rates(2.0, 10.0, 0.20), None, 0),
+    "claude-opus-5-5": Price(make_rates(4.0, 20.0, 0.20), None, 0),
+    "claude-haiku-5-5": Price(make_rates(0.10, 0.50, 0.01), make_rates(0.50, 2.50, 0.05), 100_000),
+}
+ASSUMED_READ_MODELS = ("claude-haiku-5-5",)
+
+
+def make_price(model: str, entry: object) -> Price:
+    """Price of one model from a --prices entry: input, output, cache_read, and optionally long_above plus long_*."""
+    if not isinstance(entry, dict):
+        raise ToolError(f"price entry for {model} must be an object")
+    try:
+        base = make_rates(float(entry["input"]), float(entry["output"]), float(entry["cache_read"]))
+        long_above = int(entry.get("long_above", 0))
+        long = (
+            make_rates(float(entry["long_input"]), float(entry["long_output"]), float(entry["long_cache_read"]))
+            if long_above
+            else None
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ToolError(f"bad price entry for {model}: {error!r}") from error
+    return Price(base, long, long_above)
+
+
+def load_prices(path: Path | None) -> dict[str, Price]:
+    """The built-in table, with models from the --prices JSON file added or replaced."""
+    prices = dict(DEFAULT_PRICES)
+    if path is None:
+        return prices
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ToolError(f"cannot read the prices file: {error}") from error
+    if not isinstance(loaded, dict):
+        raise ToolError("the prices file must be a JSON object keyed by model id")
+    prices.update({model: make_price(model, entry) for model, entry in loaded.items()})
+    return prices
+
+
+def get_rates(price: Price, context: int) -> Rates:
+    """Rates for a call with the given prompt size."""
+    if price.long is not None and context > price.long_above:
+        return price.long
+    return price.base
+
+
+# ===========================================================================
+# Extraction
+# ===========================================================================
+
+
+class Call(NamedTuple):
+    """One API call, deduplicated by message id."""
+
+    ts: str
+    model: str
+    inp: int
+    read: int
+    write: int
+    write1h: int
+    out: int
+
+
+class Boundary(NamedTuple):
+    """One compaction marker from the log."""
+
+    ts: str
+    pre: int | None
+    post: int | None
+    trigger: str
+
+
+@dataclass
+class Session:
+    """The calls and compactions of one log file."""
+
+    kind: str
+    calls: list[Call]
+    boundaries: list[Boundary]
+
+
+def get_int(value: object) -> int:
+    """Integer token count from a log field, 0 when absent or not a number."""
+    return value if isinstance(value, int) else 0
+
+
+def is_in_window(timestamp: str, since: str, until: str) -> bool:
+    """True when the day of an ISO timestamp lies inside the window; an empty bound is open."""
+    day = timestamp[:10]
+    return (not since or day >= since) and (not until or day <= until)
+
+
+def read_session(args: tuple[str, str, str, str]) -> Session:
+    """Stream one log file and return its deduplicated calls and compaction boundaries."""
+    path, kind, since, until = args
+    merged: dict[str, list] = {}
+    order: list[str] = []
+    boundaries: list[Boundary] = []
+
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            is_call = '"type":"assistant"' in line
+            if not is_call and '"subtype":"compact_boundary"' not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if record.get("subtype") == "compact_boundary":
+                meta = record.get("compactMetadata") or {}
+                pre, post = meta.get("preTokens"), meta.get("postTokens")
+                boundaries.append(
+                    Boundary(
+                        record.get("timestamp", ""),
+                        pre if isinstance(pre, int) else None,
+                        post if isinstance(post, int) else None,
+                        str(meta.get("trigger")),
+                    )
+                )
+                continue
+            message = record.get("message")
+            if record.get("type") != "assistant" or not isinstance(message, dict):
+                continue
+            usage = message.get("usage")
+            model = message.get("model")
+            if not isinstance(usage, dict) or not isinstance(model, str):
+                continue
+            creation = usage.get("cache_creation") or {}
+            values = [
+                get_int(usage.get("input_tokens")),
+                get_int(usage.get("cache_read_input_tokens")),
+                get_int(usage.get("cache_creation_input_tokens")),
+                get_int(creation.get("ephemeral_1h_input_tokens")) if isinstance(creation, dict) else 0,
+                get_int(usage.get("output_tokens")),
+            ]
+            key = str(message.get("id") or record.get("uuid"))
+            if key not in merged:
+                merged[key] = [record.get("timestamp", ""), model, *values]
+                order.append(key)
+            else:
+                old = merged[key]
+                merged[key] = [old[0], old[1], *(max(a, b) for a, b in zip(old[2:], values, strict=False))]
+
+    calls = [Call(*merged[key]) for key in order]
+    calls = [
+        call
+        for call in calls
+        if call.model != "<synthetic>"
+        and is_in_window(call.ts, since, until)
+        and call.inp + call.read + call.write + call.out > 0
+    ]
+    calls.sort(key=lambda call: call.ts)
+    boundaries = sorted((b for b in boundaries if is_in_window(b.ts, since, until)), key=lambda boundary: boundary.ts)
+    return Session(kind, calls, boundaries)
+
+
+def get_root(root: Path | None) -> Path:
+    """The folder holding the session logs: --root, else $CLAUDE_CONFIG_DIR/projects, else ~/.claude/projects."""
+    config = os.environ.get("CLAUDE_CONFIG_DIR")
+    found = root or (Path(config) / "projects" if config else Path.home() / ".claude" / "projects")
+    if not found.is_dir():
+        shown = str(found).replace(str(Path.home()), "~")
+        raise ToolError(f"no session logs folder at {shown}; pass --root FOLDER")
+    return found
+
+
+def list_files(root: Path) -> list[tuple[str, str]]:
+    """Log files as (path, kind): main sessions and sub-agent runs under every project folder."""
+    files: list[tuple[str, str]] = []
+    for folder in sorted(path for path in root.iterdir() if path.is_dir()):
+        files.extend((str(path), "main") for path in sorted(folder.glob("*.jsonl")))
+        files.extend((str(path), "sub") for path in sorted(folder.glob("*/subagents/agent-*.jsonl")))
+    return files
+
+
+def load_sessions(root: Path, since: str, until: str) -> list[Session]:
+    """Extract every session under the root; a file with no usable call in the window is dropped."""
+    files = [(path, kind, since, until) for path, kind in list_files(root)]
+    if not files:
+        raise ToolError("no session log files (*.jsonl) found under the logs folder")
+    with multiprocessing.Pool(min(4, len(files))) as pool:
+        sessions = list(pool.imap(read_session, files, chunksize=4))
+    return [session for session in sessions if session.calls]
+
+
+# ===========================================================================
+# Replay
+# ===========================================================================
+
+
+@dataclass(frozen=True)
+class Step:
+    """One call of a session with what the replay needs: growth, cache-miss share, real compaction before it."""
+
+    price: Price
+    grow: int
+    miss: float
+    share1h: float
+    inp: int
+    out: int
+    read: int
+    write: int
+    boundary: bool
+    pre: int | None
+    post: int | None
+    reset: bool = False
+    prefix: int = 0
+
+
+class Cost(NamedTuple):
+    """Dollars by kind and number of compactions."""
+
+    read: float
+    write: float
+    inp: float
+    out: float
+    comp: float
+    num_compactions: int
+
+    @property
+    def total(self) -> float:
+        """All dollars."""
+        return self.read + self.write + self.inp + self.out + self.comp
+
+
+def get_context(call: Call) -> int:
+    """Context of one call: uncached input plus cache read plus cache write."""
+    return call.inp + call.read + call.write
+
+
+def get_call_cost(call: Call, rates: Rates) -> Cost:
+    """Dollars of one call at the given rates."""
+    write1h = min(call.write1h, call.write)
+    write = (call.write - write1h) * rates.write5m + write1h * rates.write1h
+    return Cost(call.read * rates.read / 1e6, write / 1e6, call.inp * rates.inp / 1e6, call.out * rates.out / 1e6, 0.0, 0)
+
+
+def get_observed_cost(call: Call, prices: dict[str, Price]) -> Cost:
+    """Dollars of one call exactly as logged, at the rates of its own prompt size."""
+    return get_call_cost(call, get_rates(prices[call.model], get_context(call)))
+
+
+def add_costs(costs: list[Cost]) -> Cost:
+    """Sum of costs."""
+    return Cost(*(sum(getattr(cost, name) for cost in costs) for name in Cost._fields))
+
+
+def get_median_growth(calls: list[Call]) -> int:
+    """Median positive context growth between consecutive calls of a session."""
+    growths = [get_context(b) - get_context(a) for a, b in zip(calls, calls[1:], strict=False)]
+    positive = [growth for growth in growths if growth > 0]
+    return int(statistics.median(positive)) if positive else 0
+
+
+def make_steps(session: Session, prices: dict[str, Price]) -> list[Step]:
+    """Turn a session into replay steps; real compaction jumps are removed from the growth."""
+    calls, boundaries = session.calls, list(session.boundaries)
+    median_growth = get_median_growth(calls)
+    positive_reads = [call.read for call in calls if call.read > 0]
+    prefix = min(positive_reads) if positive_reads else 0
+    total_write = sum(call.write for call in calls)
+    session_share = sum(min(call.write1h, call.write) for call in calls) / total_write if total_write else 0.0
+    steps: list[Step] = []
+
+    for index, call in enumerate(calls):
+        context = get_context(call)
+        price = prices[call.model]
+        share1h = min(call.write1h, call.write) / call.write if call.write else session_share
+        crossed = [b for b in boundaries if index > 0 and calls[index - 1].ts < b.ts <= call.ts]
+        if index == 0:
+            steps.append(
+                Step(price, context, 0.0, share1h, call.inp, call.out, call.read, call.write, False, None, None, False, prefix)
+            )
+            continue
+        before = get_context(calls[index - 1])
+        if crossed:
+            last = crossed[-1]
+            grow = max(0, context - prefix - last.post) if last.post else median_growth
+            steps.append(
+                Step(
+                    price, grow, 0.0, share1h, call.inp, call.out, call.read, call.write, True, last.pre, last.post, False, prefix
+                )
+            )
+            continue
+        grow = context - before
+        miss = min(1.0, max(0.0, 1.0 - call.read / before)) if before else 0.0
+        is_other_thread = grow < 0 or call.read > before * 1.1 + 2000
+        steps.append(
+            Step(
+                price,
+                max(grow, 0),
+                miss,
+                share1h,
+                call.inp,
+                call.out,
+                call.read,
+                call.write,
+                False,
+                None,
+                None,
+                is_other_thread,
+                prefix,
+            )
+        )
+    return steps
+
+
+def simulate(steps: list[Step], threshold: int | None, summary: int, *, use_real: bool, rework: int = 0) -> Cost:
+    """Replay a session. With `use_real`, compact where the log did; else compact when context reaches `threshold`."""
+    read = write = inp = out = comp = 0.0
+    count = 0
+    context = 0
+    fresh = False
+
+    for index, step in enumerate(steps):
+        if index == 0 or step.reset:
+            new_read, new_write, context = step.read, step.write, step.read + step.write + step.inp
+            fresh = False
+        else:
+            if use_real and step.boundary:
+                rates = get_rates(step.price, context)
+                pre = step.pre or context
+                comp += pre * rates.read / 1e6 + summary_out(rates, step.post or summary)
+                count += 1
+                context = step.prefix + (step.post or summary) + rework
+                fresh = True
+            new_cached = max(0, min(step.grow - step.inp, step.write))
+            if fresh:
+                new_read, new_write = float(step.prefix), context - step.prefix + new_cached
+            else:
+                new_read, new_write = context * (1.0 - step.miss), context * step.miss + new_cached
+            context += step.grow
+            fresh = False
+
+        rates = get_rates(step.price, context)
+        write_rate = rates.write5m * (1.0 - step.share1h) + rates.write1h * step.share1h
+        read += new_read * rates.read / 1e6
+        write += new_write * write_rate / 1e6
+        inp += step.inp * rates.inp / 1e6
+        out += step.out * rates.out / 1e6
+
+        if not use_real and threshold and context >= threshold and index < len(steps) - 1:
+            comp += context * rates.read / 1e6 + summary_out(rates, summary)
+            count += 1
+            context = step.prefix + summary + rework
+            fresh = True
+    return Cost(read, write, inp, out, comp, count)
+
+
+def summary_out(rates: Rates, summary: int) -> float:
+    """Dollars of writing a summary of the given size as output."""
+    return summary * rates.out / 1e6
+
+
+# ===========================================================================
+# Statistics
+# ===========================================================================
+
+
+def get_percentile(values: list[float], fraction: float) -> float:
+    """Linear-interpolated percentile of a list; 0 for an empty list."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = fraction * (len(ordered) - 1)
+    low = int(position)
+    high = min(low + 1, len(ordered) - 1)
+    return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
+
+
+def get_percent(new: float, old: float) -> float:
+    """Signed percent change from old to new, 0 when old is zero."""
+    return (new - old) / old * 100.0 if old else 0.0
+
+
+def get_distribution(values: list[float]) -> dict[str, float]:
+    """Count, mean and key percentiles."""
+    return {
+        "n": len(values),
+        "mean": statistics.fmean(values) if values else 0.0,
+        "p10": get_percentile(values, 0.1),
+        "p50": get_percentile(values, 0.5),
+        "p90": get_percentile(values, 0.9),
+        "p99": get_percentile(values, 0.99),
+        "max": max(values) if values else 0.0,
+    }
+
+
+def get_bootstrap(base: list[float], new: list[float], seed: int) -> list[float]:
+    """95% interval of the signed percent change of the total, resampling sessions."""
+    generator = random.Random(seed)
+    size = len(base)
+    if size == 0:
+        return [0.0, 0.0]
+    changes = []
+    for _ in range(NUM_BOOTSTRAP):
+        picks = [generator.randrange(size) for _ in range(size)]
+        changes.append(get_percent(sum(new[i] for i in picks), sum(base[i] for i in picks)))
+    return [get_percentile(changes, 0.025), get_percentile(changes, 0.975)]
+
+
+def cost_to_dict(cost: Cost) -> dict[str, float]:
+    """Cost as a plain dict with its total."""
+    data = cost._asdict()
+    data["total"] = cost.total
+    return data
+
+
+def summarise_curve(block: dict) -> dict:
+    """Minimum of the cost curve, its signed percent against actual, and the flat range within FLAT_PERCENT of it."""
+    points = [(t, block["thresholds"][str(t)]["cost"]["total"]) for t in THRESHOLDS]
+    best = min(range(len(points)), key=lambda i: points[i][1])
+    limit = points[best][1] * (1.0 + FLAT_PERCENT / 100.0)
+    low = high = best
+    while low > 0 and points[low - 1][1] <= limit:
+        low -= 1
+    while high < len(points) - 1 and points[high + 1][1] <= limit:
+        high += 1
+    actual = block["actual"]["total"]
+    return {
+        "min_threshold": points[best][0],
+        "min_total": points[best][1],
+        "min_percent": get_percent(points[best][1], actual),
+        "flat_low": points[low][0],
+        "flat_high": points[high][0],
+        "flat_percent": FLAT_PERCENT,
+        "actual": actual,
+        "never": block["thresholds"]["none"]["cost"]["total"],
+    }
+
+
+def analyse_set(sessions: list[Session], summary: int, seed: int, prices: dict[str, Price], *, with_ci: bool = True) -> dict:
+    """Measurements and the threshold replay for one group of sessions."""
+    prepared = [(session, make_steps(session, prices)) for session in sessions if session.calls]
+    observed = [add_costs([get_observed_cost(call, prices) for call in session.calls]) for session, _ in prepared]
+    real = [simulate(steps, None, summary, use_real=True) for _, steps in prepared]
+    baseline = [Cost(o.read, o.write, o.inp, o.out, r.comp, r.num_compactions) for o, r in zip(observed, real, strict=False)]
+    replay_no_comp = [r.total - r.comp for r in real]
+    errors = [abs(get_percent(r, o.total)) for r, o in zip(replay_no_comp, observed, strict=False) if o.total > 0.01]
+    peaks = [max(get_context(call) for call in session.calls) for session, _ in prepared]
+    base_totals = [cost.total for cost in baseline]
+
+    result: dict = {
+        "num_sessions": len(prepared),
+        "num_calls": sum(len(session.calls) for session, _ in prepared),
+        "observed": cost_to_dict(add_costs(observed)),
+        "actual": cost_to_dict(add_costs(baseline)),
+        "check": {
+            "replay_total": sum(replay_no_comp),
+            "observed_total": sum(cost.total for cost in observed),
+            "percent_error": get_percent(sum(replay_no_comp), sum(cost.total for cost in observed)),
+            "session_error_median": get_percentile(errors, 0.5),
+            "session_error_p90": get_percentile(errors, 0.9),
+            "tolerance": TOLERANCE_PERCENT,
+        },
+        "peak": get_distribution(peaks),
+        "prefix_tokens": get_distribution([float(steps[0].prefix) for _, steps in prepared]),
+        "calls_per_session": get_distribution([len(session.calls) for session, _ in prepared]),
+        "hours_per_session": get_distribution([get_hours(session) for session, _ in prepared]),
+        "peaks": peaks,
+        "thresholds": {},
+    }
+
+    for threshold in (*THRESHOLDS, None):
+        costs = [simulate(steps, threshold, summary, use_real=False) for _, steps in prepared]
+        totals = [cost.total for cost in costs]
+        changed = sum(
+            1 for new, old in zip(totals, base_totals, strict=False) if old > 0 and abs(get_percent(new, old)) > CHANGED_PERCENT
+        )
+        cheaper = sum(
+            1 for new, old in zip(totals, base_totals, strict=False) if old > 0 and get_percent(new, old) < -CHANGED_PERCENT
+        )
+        groups = {}
+        for name, selector in (("short", lambda p: p <= SHORT_SESSION_PEAK), ("long", lambda p: p > SHORT_SESSION_PEAK)):
+            idx = [i for i, peak in enumerate(peaks) if selector(peak)]
+            groups[name] = {
+                "num_sessions": len(idx),
+                "actual": sum(base_totals[i] for i in idx),
+                "replay": sum(totals[i] for i in idx),
+                "percent": get_percent(sum(totals[i] for i in idx), sum(base_totals[i] for i in idx)),
+            }
+        result["thresholds"]["none" if threshold is None else str(threshold)] = {
+            "cost": cost_to_dict(add_costs(costs)),
+            "percent": get_percent(sum(totals), sum(base_totals)),
+            "ci": get_bootstrap(base_totals, totals, seed) if with_ci and (threshold is None or threshold in DISPLAY) else None,
+            "session_median": get_percentile(totals, 0.5),
+            "session_p90": get_percentile(totals, 0.9),
+            "session_median_delta_percent": get_percentile(
+                [get_percent(n, o) for n, o in zip(totals, base_totals, strict=False) if o > 0], 0.5
+            ),
+            "sessions_changed": changed,
+            "sessions_cheaper": cheaper,
+            "sessions_costlier": changed - cheaper,
+            "groups": groups,
+        }
+    result["actual_session_median"] = get_percentile(base_totals, 0.5)
+    result["actual_session_p90"] = get_percentile(base_totals, 0.9)
+    result["curve"] = summarise_curve(result)
+    return result
+
+
+def get_sensitivity(sessions: list[Session], summary: int, prices: dict[str, Price]) -> dict:
+    """Main-session cost curve when the summary is halved or each compaction forces re-reading of extra tokens."""
+    steps_list = [make_steps(session, prices) for session in sessions if session.calls]
+    variants = [("observed summary", summary, 0), ("half summary", summary // 2, 0)] + [
+        (f"rework {fmt_tokens(x)}", summary, x) for x in REWORK_TOKENS
+    ]
+    out = []
+    for label, size, rework in variants:
+        actual = sum(simulate(steps, None, size, use_real=True, rework=rework).total for steps in steps_list)
+        totals = {
+            t: sum(simulate(steps, t, size, use_real=False, rework=rework).total for steps in steps_list) for t in THRESHOLDS
+        }
+        best = min(totals, key=lambda t: totals[t])
+        limit = totals[best] * (1.0 + FLAT_PERCENT / 100.0)
+        flat = [t for t in THRESHOLDS if totals[t] <= limit]
+        out.append(
+            {
+                "label": label,
+                "summary_tokens": size,
+                "rework_tokens": rework,
+                "actual": actual,
+                "points": [{"threshold": t, "total": totals[t], "percent": get_percent(totals[t], actual)} for t in THRESHOLDS],
+                "min_threshold": best,
+                "min_percent": get_percent(totals[best], actual),
+                "flat_low": min(flat),
+                "flat_high": max(flat),
+            }
+        )
+    regrets = {}
+    for t in THRESHOLDS:
+        regrets[t] = max(
+            get_percent(next(p["total"] for p in v["points"] if p["threshold"] == t), min(p["total"] for p in v["points"]))
+            for v in out
+        )
+    robust = min(regrets, key=lambda t: regrets[t])
+    return {"variants": out, "robust_threshold": robust, "robust_worst_regret_percent": regrets[robust]}
+
+
+def get_long_tier_stats(sessions: list[Session], overall: float, prices: dict[str, Price]) -> dict[str, dict[str, float]]:
+    """For each model with a long-prompt rate: what its calls cost as logged and how much is above the threshold."""
+    stats: dict[str, dict[str, float]] = {}
+    for model, price in prices.items():
+        if price.long is None:
+            continue
+        total = above = at_base = 0.0
+        calls = num_above = 0
+        for call in (call for session in sessions for call in session.calls if call.model == model):
+            cost = get_observed_cost(call, prices).total
+            calls += 1
+            total += cost
+            if get_context(call) > price.long_above:
+                num_above += 1
+                above += cost
+                at_base += get_call_cost(call, price.base).total
+        stats[model] = {
+            "calls": calls,
+            "calls_above": num_above,
+            "total": total,
+            "above": above,
+            "above_at_base_rate": at_base,
+            "share_of_all_spend": total / overall * 100.0 if overall else 0.0,
+            "above_share_of_all_spend": above / overall * 100.0 if overall else 0.0,
+        }
+    return stats
+
+
+def split_by_model(sessions: list[Session], model: str) -> list[Session]:
+    """Sessions reduced to one model's calls; each compaction goes to the model of the call before it."""
+    result = []
+    for session in sessions:
+        calls = [call for call in session.calls if call.model == model]
+        if not calls:
+            continue
+        owned = []
+        for boundary in session.boundaries:
+            before = [call for call in session.calls if call.ts <= boundary.ts]
+            if before and before[-1].model == model:
+                owned.append(boundary)
+        result.append(Session(session.kind, calls, owned))
+    return result
+
+
+def get_hours(session: Session) -> float:
+    """Wall-clock hours between the first and last call of a session."""
+    try:
+        start = datetime.fromisoformat(session.calls[0].ts.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(session.calls[-1].ts.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return (end - start).total_seconds() / 3600.0
+
+
+def describe_compactions(sessions: list[Session], summary: int, prices: dict[str, Price]) -> dict:
+    """What real compactions looked like: count, size before and after, and the modelled cost of the calls."""
+    bounds = [(session, b) for session in sessions for b in session.boundaries]
+    pres = [b.pre for _, b in bounds if b.pre]
+    posts = [b.post for _, b in bounds if b.post]
+    cost = 0.0
+    for session, boundary in bounds:
+        if session.calls and boundary.pre:
+            rates = get_rates(prices[session.calls[-1].model], boundary.pre)
+            cost += boundary.pre * rates.read / 1e6 + summary_out(rates, boundary.post or summary)
+    return {
+        "count": len(bounds),
+        "sessions_with_compaction": sum(1 for session in sessions if session.boundaries),
+        "triggers": {name: sum(1 for _, b in bounds if b.trigger == name) for name in sorted({b.trigger for _, b in bounds})},
+        "pre_tokens": get_distribution([float(v) for v in pres]),
+        "post_tokens": get_distribution([float(v) for v in posts]),
+        "total_pre_tokens": sum(pres),
+        "total_post_tokens": sum(posts),
+        "modelled_cost": cost,
+    }
+
+
+def get_real_costs(sessions: list[Session], prices: dict[str, Price]) -> dict:
+    """Logged cost per call and per long session by model, and each session's compaction count, to compare two windows."""
+    rows = []
+    by_model: dict[str, dict[str, float]] = {}
+    for session in sessions:
+        peak = max(get_context(call) for call in session.calls)
+        is_long = peak > SHORT_SESSION_PEAK
+        rows.append(
+            {
+                "kind": session.kind,
+                "calls": len(session.calls),
+                "peak": peak,
+                "cost": sum(get_observed_cost(call, prices).total for call in session.calls),
+                "compactions": len(session.boundaries),
+            }
+        )
+        for model in {call.model for call in session.calls}:
+            entry = by_model.setdefault(model, {"calls": 0, "cost": 0.0, "sessions": 0, "long_sessions": 0, "long_cost": 0.0})
+            cost = sum(get_observed_cost(call, prices).total for call in session.calls if call.model == model)
+            entry["calls"] += sum(1 for call in session.calls if call.model == model)
+            entry["cost"] += cost
+            entry["sessions"] += 1
+            entry["long_sessions"] += int(is_long)
+            entry["long_cost"] += cost if is_long else 0.0
+    for entry in by_model.values():
+        entry["cost_per_call"] = entry["cost"] / entry["calls"]
+        entry["cost_per_long_session"] = entry["long_cost"] / entry["long_sessions"] if entry["long_sessions"] else 0.0
+    return {"by_model": by_model, "sessions": rows}
+
+
+def build_data(sessions: list[Session], prices: dict[str, Price], *, builtin_prices: bool, window: tuple[str, str]) -> dict:
+    """All measurements and replays: main sessions, sub-agents, each model, and the sensitivity of the main curve."""
+    supported = [s for s in sessions if all(call.model in prices for call in s.calls)]
+    excluded = [s for s in sessions if s not in supported]
+    unknown = sorted({call.model for s in excluded for call in s.calls if call.model not in prices})
+    posts = [b.post for s in supported for b in s.boundaries if b.post]
+    summary = int(statistics.median(posts)) if posts else FALLBACK_SUMMARY_TOKENS
+    sets = {}
+    for seed, kind in enumerate(("main", "sub")):
+        group = [s for s in supported if s.kind == kind]
+        sets[kind] = analyse_set(group, summary, seed, prices)
+        sets[kind]["compactions"] = describe_compactions(group, summary, prices)
+    models = {model: analyse_set(split_by_model(supported, model), summary, 7, prices, with_ci=False) for model in prices}
+    overall = sets["main"]["observed"]["total"] + sets["sub"]["observed"]["total"]
+    primary = "main" if sets["main"]["num_sessions"] else "sub"
+    return {
+        "generated": datetime.now(UTC).date().isoformat(),
+        "window": {"since": window[0], "until": window[1]},
+        "prices_source": "the built-in price table"
+        if builtin_prices
+        else "the built-in price table with the --prices file applied",
+        "pricing": {
+            model: {"base": p.base._asdict(), "long": p.long._asdict() if p.long else None, "long_above": p.long_above}
+            for model, p in prices.items()
+        },
+        "summary_tokens": summary,
+        "files": {"main": sum(1 for s in sessions if s.kind == "main"), "sub": sum(1 for s in sessions if s.kind == "sub")},
+        "excluded_sessions": len(excluded),
+        "excluded_models": unknown,
+        "thresholds": list(THRESHOLDS),
+        "display_thresholds": list(DISPLAY),
+        "primary": primary,
+        "sets": sets,
+        "models": models,
+        "real_costs": get_real_costs(supported, prices),
+        "long_tier": get_long_tier_stats(supported, overall, prices),
+        "sensitivity": get_sensitivity([s for s in supported if s.kind == primary], summary, prices),
+    }
+
+
+# ===========================================================================
+# Report page
+# ===========================================================================
+
+COLORS = ("var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)", "var(--c5)")
+WIDTH, HEIGHT = 760, 340
+LEFT, RIGHT, TOP, BOTTOM = 64, 16, 28, 48
+
+
+def fmt_money(value: float) -> str:
+    """Dollars with thousands separators."""
+    return f"${value:,.0f}" if abs(value) >= 100 else f"${value:,.2f}"
+
+
+def fmt_tokens(value: float) -> str:
+    """Token count as k or M."""
+    return f"{value / 1e6:.4g}M" if value >= 1e6 else f"{value / 1e3:.0f}k"
+
+
+def fmt_percent(value: float) -> str:
+    """Signed percent."""
+    return f"{value:+.1f}%"
+
+
+def make_ticks(low: float, high: float) -> list[float]:
+    """About five round axis ticks covering low to high."""
+    span = max(high - low, 1e-9)
+    raw = span / 5
+    magnitude = 10 ** math.floor(math.log10(raw)) if raw > 0 else 1
+    step = next((m * magnitude for m in (1, 2, 5, 10) if m * magnitude >= raw), raw)
+    start = int(low // step) * step
+    ticks = []
+    tick = start
+    while tick <= high + step * 0.01:
+        ticks.append(tick)
+        tick += step
+    return ticks
+
+
+class Line(NamedTuple):
+    """One line of a curve chart: points are (threshold, y); never is the y of the no-compaction run."""
+
+    name: str
+    color: int
+    points: list[tuple[float, float]]
+    never: float | None = None
+
+
+@dataclass(frozen=True)
+class Frame:
+    """Plot area of one chart: pixel size and the value range of both axes."""
+
+    low: float
+    high: float
+    x_low: float = 0.0
+    x_high: float = 1.0
+    width: int = WIDTH
+    height: int = HEIGHT
+    left: int = LEFT
+    right: int = RIGHT
+    top: int = TOP
+    bottom: int = BOTTOM
+
+    @property
+    def plot_w(self) -> float:
+        """Width of the plot area in pixels."""
+        return self.width - self.left - self.right
+
+    @property
+    def plot_h(self) -> float:
+        """Height of the plot area in pixels."""
+        return self.height - self.top - self.bottom
+
+    def y_of(self, value: float) -> float:
+        """Pixel row of a value, clamped to the axis range."""
+        clamped = min(max(value, self.low), self.high)
+        return self.top + (self.high - clamped) / ((self.high - self.low) or 1.0) * self.plot_h
+
+    def x_of(self, value: float) -> float:
+        """Pixel column of an x value."""
+        return self.left + (value - self.x_low) / (self.x_high - self.x_low) * self.plot_w
+
+
+def svg_open(frame: Frame, label: str) -> str:
+    """Opening tag of a chart."""
+    return f'<svg viewBox="0 0 {frame.width} {frame.height}" role="img" aria-label="{html.escape(label)}" class="chart">'
+
+
+def draw_grid(frame: Frame, ticks: list[float], fmt: Callable[[float], str]) -> list[str]:
+    """Horizontal grid lines with y labels."""
+    parts: list[str] = []
+    for tick in ticks:
+        y = frame.y_of(tick)
+        parts.append(f'<line x1="{frame.left}" x2="{frame.width - frame.right}" y1="{y:.1f}" y2="{y:.1f}" class="grid"/>')
+        parts.append(f'<text x="{frame.left - 6}" y="{y + 4:.1f}" text-anchor="end" class="axis">{html.escape(fmt(tick))}</text>')
+    return parts
+
+
+def get_value_range(
+    values: list[list[float]], *, stacked: bool, whiskers: list[tuple[float, float]] | None
+) -> tuple[float, float]:
+    """Lowest and highest value a bar chart must show, zero included."""
+    columns = list(zip(*values, strict=True))
+    if stacked:
+        highs = [sum(max(0.0, v) for v in column) for column in columns]
+        lows = [sum(min(0.0, v) for v in column) for column in columns]
+    else:
+        highs = [max(column) for column in columns]
+        lows = [min(column) for column in columns]
+    if whiskers:
+        highs = [max(h, w[1]) for h, w in zip(highs, whiskers, strict=True)]
+        lows = [min(low, w[0]) for low, w in zip(lows, whiskers, strict=True)]
+    return min(*lows, 0.0), max(*highs, 0.0)
+
+
+def draw_whisker(frame: Frame, center: float, whisker: tuple[float, float]) -> list[str]:
+    """An interval bar with end caps."""
+    low, high = whisker
+    parts = [
+        f'<line x1="{center:.1f}" x2="{center:.1f}" y1="{frame.y_of(low):.1f}" y2="{frame.y_of(high):.1f}" class="whisker"/>'
+    ]
+    for edge in (low, high):
+        parts.append(
+            f'<line x1="{center - 5:.1f}" x2="{center + 5:.1f}" y1="{frame.y_of(edge):.1f}" y2="{frame.y_of(edge):.1f}" class="whisker"/>'
+        )
+    return parts
+
+
+def draw_category(
+    frame: Frame,
+    x_start: float,
+    slot: float,
+    name: str,
+    series: list[str],
+    column: list[float],
+    *,
+    stacked: bool,
+    fmt: Callable[[float], str],
+    whisker: tuple[float, float] | None,
+    show_values: bool,
+) -> list[str]:
+    """The bars, whisker and label of one category."""
+    group = slot * 0.72
+    x0 = x_start + (slot - group) / 2
+    bar_w = group if stacked else group / len(series)
+    parts: list[str] = []
+    positive = negative = 0.0
+    for index, (series_name, value) in enumerate(zip(series, column, strict=True)):
+        if stacked:
+            start, x = (positive if value >= 0 else negative), x0
+            positive += max(value, 0.0)
+            negative += min(value, 0.0)
+        else:
+            start, x = 0.0, x0 + bar_w * index
+        top, bottom = frame.y_of(max(start, start + value)), frame.y_of(min(start, start + value))
+        tip = html.escape(f"{name} - {series_name}: {fmt(value)}")
+        parts.append(
+            f'<rect x="{x:.1f}" y="{top:.1f}" width="{max(bar_w - 2, 1):.1f}" height="{max(bottom - top, 0.5):.1f}" rx="3" fill="{COLORS[index % 5]}" class="mark"><title>{tip}</title></rect>'
+        )
+        if show_values:
+            y = top - 4 if value >= 0 else bottom + 12
+            parts.append(
+                f'<text x="{x + bar_w / 2 - 1:.1f}" y="{y:.1f}" text-anchor="middle" class="value">{html.escape(fmt(value))}</text>'
+            )
+    if whisker:
+        parts.extend(draw_whisker(frame, x0 + group / 2, whisker))
+    parts.append(
+        f'<text x="{x0 + group / 2:.1f}" y="{frame.height - frame.bottom + 18}" text-anchor="middle" class="axis">{html.escape(name)}</text>'
+    )
+    return parts
+
+
+def bar_chart(
+    categories: list[str],
+    series: list[str],
+    values: list[list[float]],
+    *,
+    stacked: bool,
+    fmt: Callable[[float], str],
+    whiskers: list[tuple[float, float]] | None = None,
+    label: str,
+) -> str:
+    """Inline SVG bar chart; values[s][c] for series s at category c. Stacked or grouped, negatives allowed."""
+    low, high = get_value_range(values, stacked=stacked, whiskers=whiskers)
+    ticks = make_ticks(low, high)
+    frame = Frame(min(low, ticks[0]), max(high, ticks[-1]))
+    slot = frame.plot_w / len(categories)
+    show_values = not stacked and len(series) <= 2 and len(categories) <= 8
+    parts = [svg_open(frame, label), *draw_grid(frame, ticks, fmt)]
+    parts.append(
+        f'<line x1="{frame.left}" x2="{frame.width - frame.right}" y1="{frame.y_of(0):.1f}" y2="{frame.y_of(0):.1f}" class="zero"/>'
+    )
+    for index, name in enumerate(categories):
+        column = [row[index] for row in values]
+        whisker = whiskers[index] if whiskers else None
+        parts.extend(
+            draw_category(
+                frame,
+                frame.left + slot * index,
+                slot,
+                name,
+                series,
+                column,
+                stacked=stacked,
+                fmt=fmt,
+                whisker=whisker,
+                show_values=show_values,
+            )
+        )
+    parts.append("</svg>")
+    return "".join(parts) + legend(series)
+
+
+def legend(series: list[str]) -> str:
+    """HTML legend for two or more series."""
+    if len(series) < 2:
+        return ""
+    items = "".join(
+        f'<span><i style="background:{COLORS[i % 5]}"></i>{html.escape(name)}</span>' for i, name in enumerate(series)
+    )
+    return f'<div class="legend">{items}</div>'
+
+
+def histogram(peaks: list[float], thresholds: list[int], label: str) -> str:
+    """Inline SVG histogram of peak context with the thresholds marked at bin edges."""
+    edges = [0, 25_000, 50_000, 75_000, 100_000, 150_000, 200_000, 300_000, 500_000, 750_000, 1_000_000, float("inf")]
+    counts = [sum(1 for p in peaks if low < p <= high) for low, high in zip(edges, edges[1:], strict=False)]
+    counts[0] += sum(1 for p in peaks if p <= 0)
+    top_value = max(max(counts), 1)
+    ticks = make_ticks(0, top_value)
+    top_value = ticks[-1]
+    plot_w, plot_h = WIDTH - LEFT - RIGHT, HEIGHT - TOP - BOTTOM
+    slot = plot_w / len(counts)
+    parts = [f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-label="{html.escape(label)}" class="chart">']
+    for tick in ticks:
+        y = TOP + (top_value - tick) / top_value * plot_h
+        parts.append(f'<line x1="{LEFT}" x2="{WIDTH - RIGHT}" y1="{y:.1f}" y2="{y:.1f}" class="grid"/>')
+        parts.append(f'<text x="{LEFT - 6}" y="{y + 4:.1f}" text-anchor="end" class="axis">{tick:g}</text>')
+    for i, count in enumerate(counts):
+        high = edges[i + 1]
+        name = f"{fmt_tokens(edges[i])}-{fmt_tokens(high)}" if high != float("inf") else f">{fmt_tokens(edges[i])}"
+        height = count / top_value * plot_h
+        parts.append(
+            f'<rect x="{LEFT + slot * i + 1:.1f}" y="{TOP + plot_h - height:.1f}" width="{slot - 2:.1f}" height="{max(height, 0.5):.1f}" rx="3" fill="var(--c1)" class="mark"><title>{html.escape(name)} peak context: {count} sessions</title></rect>'
+        )
+        parts.append(
+            f'<text x="{LEFT + slot * (i + 0.5):.1f}" y="{HEIGHT - BOTTOM + 14}" text-anchor="middle" class="axis small">{html.escape(name)}</text>'
+        )
+    for threshold in thresholds:
+        index = edges.index(threshold)
+        x = LEFT + slot * index
+        parts.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{TOP}" y2="{TOP + plot_h}" class="thr"/>')
+        parts.append(f'<text x="{x:.1f}" y="{TOP - 8}" text-anchor="middle" class="axis">T={fmt_tokens(threshold)}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def draw_flats(frame: Frame, flats: list[tuple[float, float, int]]) -> list[str]:
+    """Shaded bands for the flat ranges."""
+    parts = []
+    for low, high, color in flats:
+        a, b = frame.x_of(max(low, frame.x_low)), frame.x_of(min(high, frame.x_high))
+        title = f"within {FLAT_PERCENT:g}% of the minimum: {fmt_tokens(low)} to {fmt_tokens(high)}"
+        parts.append(
+            f'<rect x="{a - 2:.1f}" y="{frame.top}" width="{max(b - a, 0) + 4:.1f}" height="{frame.plot_h}" fill="{COLORS[color]}" opacity="0.16"><title>{title}</title></rect>'
+        )
+    return parts
+
+
+def draw_references(
+    frame: Frame, hlines: list[tuple[str, float, int]], vlines: list[tuple[float, str]], fmt: Callable[[float], str]
+) -> list[str]:
+    """Vertical marker lines and dashed horizontal reference lines."""
+    parts = []
+    for value, text in vlines:
+        x = frame.x_of(value)
+        parts.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{frame.top}" y2="{frame.top + frame.plot_h}" class="thr"/>')
+        parts.append(f'<text x="{x + 4:.1f}" y="{frame.top + 12}" class="axis">{html.escape(text)}</text>')
+    for name, value, color in hlines:
+        y = frame.y_of(value)
+        parts.append(
+            f'<line x1="{frame.left}" x2="{frame.width - frame.right}" y1="{y:.1f}" y2="{y:.1f}" stroke="{COLORS[color]}" stroke-width="1.5" stroke-dasharray="6 4"><title>{html.escape(name)}: {html.escape(fmt(value))}</title></line>'
+        )
+    return parts
+
+
+def draw_line(frame: Frame, line: Line, fmt: Callable[[float], str], never_x: float | None) -> list[str]:
+    """One polyline with its points and, when asked, the no-compaction dot."""
+    color = COLORS[line.color]
+    points = [(x, y) for x, y in line.points if frame.x_low <= x <= frame.x_high]
+    path = " ".join(f"{frame.x_of(x):.1f},{frame.y_of(y):.1f}" for x, y in points)
+    parts = [f'<polyline points="{path}" fill="none" stroke="{color}" stroke-width="2"/>']
+    for x, y in points:
+        off = y > frame.high
+        fill = "var(--bg)" if off else color
+        tip = html.escape(f"{line.name} at {fmt_tokens(x)}: {fmt(y)}" + (" (off the scale)" if off else ""))
+        parts.append(
+            f'<circle cx="{frame.x_of(x):.1f}" cy="{frame.y_of(y):.1f}" r="3" fill="{fill}" stroke="{color}" stroke-width="1.5"><title>{tip}</title></circle>'
+        )
+    if never_x is not None and line.never is not None:
+        tip = html.escape(f"{line.name}, never compact: {fmt(line.never)}")
+        parts.append(
+            f'<circle cx="{never_x}" cy="{frame.y_of(line.never):.1f}" r="4" fill="{color}"><title>{tip}</title></circle>'
+        )
+    return parts
+
+
+def draw_marks(frame: Frame, marks: list[tuple[float, float, str, int]]) -> list[str]:
+    """Marked points (minima) with a text label under each."""
+    parts = []
+    for row, (x, y, text, color) in enumerate(marks):
+        px = frame.x_of(x)
+        anchor = "end" if px > frame.width - 230 else "start" if px < 230 else "middle"
+        parts.append(
+            f'<circle cx="{px:.1f}" cy="{frame.y_of(y):.1f}" r="6" fill="{COLORS[color]}" stroke="var(--bg)" stroke-width="2"/>'
+        )
+        parts.append(
+            f'<text x="{px:.1f}" y="{frame.y_of(y) + 24 + 14 * row:.1f}" text-anchor="{anchor}" class="value">{html.escape(text)}</text>'
+        )
+    return parts
+
+
+def draw_x_axis(frame: Frame, *, show_never: bool) -> list[str]:
+    """Threshold tick labels, the axis title and the label of the no-compaction column."""
+    span = frame.x_high - frame.x_low
+    step = 100_000 if span > 500_000 else 50_000 if span > 250_000 else 10_000
+    y = frame.height - frame.bottom + 16
+    parts = []
+    tick = (int(frame.x_low // step) + 1) * step
+    while tick <= frame.x_high:
+        parts.append(
+            f'<text x="{frame.x_of(tick):.1f}" y="{y}" text-anchor="middle" class="axis small">{fmt_tokens(tick)}</text>'
+        )
+        tick += step
+    parts.append(
+        f'<text x="{frame.left + frame.plot_w / 2:.1f}" y="{frame.height - 8}" text-anchor="middle" class="axis">auto-compaction threshold (tokens)</text>'
+    )
+    if show_never:
+        parts.append(f'<text x="{frame.width - frame.right + 38}" y="{y}" text-anchor="middle" class="axis small">never</text>')
+    return parts
+
+
+def line_chart(
+    lines: list[Line],
+    *,
+    label: str,
+    fmt: Callable[[float], str],
+    hlines: list[tuple[str, float, int]],
+    flats: list[tuple[float, float, int]],
+    marks: list[tuple[float, float, str, int]],
+    vlines: list[tuple[float, str]],
+    y_cap: float,
+    x_range: tuple[float, float] = (25_000, 1_000_000),
+    show_never: bool = True,
+) -> str:
+    """Inline SVG curve chart: threshold on x, lines, horizontal reference lines, shaded flat ranges, minima marked."""
+    ticks = make_ticks(0.0, y_cap)
+    frame = Frame(0.0, ticks[-1], x_range[0], x_range[1], height=380, right=76 if show_never else 20, top=30, bottom=50)
+    never_x = frame.width - frame.right + 38 if show_never else None
+    parts = [svg_open(frame, label), *draw_grid(frame, ticks, fmt), *draw_x_axis(frame, show_never=show_never)]
+    parts += [*draw_flats(frame, flats), *draw_references(frame, hlines, vlines, fmt)]
+    for line in lines:
+        parts += draw_line(frame, line, fmt, never_x)
+    parts += draw_marks(frame, marks)
+    parts.append("</svg>")
+    names = [line.name for line in lines] + [name for name, _, _ in hlines]
+    return "".join(parts) + (legend(names) if len(names) > 1 else "")
+
+
+def describe_curve(curve: dict) -> str:
+    """Words for the minimum and the flat range of one curve."""
+    return (
+        f"minimum at {fmt_tokens(curve['min_threshold'])} ({fmt_money(curve['min_total'])}, {fmt_percent(curve['min_percent'])} against actual); "
+        + (
+            f"no other tested threshold is within {curve['flat_percent']:g}% of it"
+            if curve["flat_low"] == curve["flat_high"]
+            else f"within {curve['flat_percent']:g}% of it from {fmt_tokens(curve['flat_low'])} to {fmt_tokens(curve['flat_high'])}"
+        )
+    )
+
+
+def curve_line(name: str, block: dict, color: int) -> Line:
+    """The cost curve of one group as a chart line."""
+    return Line(
+        name,
+        color,
+        [(t, block["thresholds"][str(t)]["cost"]["total"]) for t in THRESHOLDS],
+        block["thresholds"]["none"]["cost"]["total"],
+    )
+
+
+def curve_chart(
+    entries: list[tuple[str, dict, int]],
+    label: str,
+    *,
+    vline: int | None = None,
+    x_range: tuple[float, float] = (25_000, 1_000_000),
+) -> str:
+    """Curve chart for one or more groups against their actual cost; `vline` marks a threshold such as a price step."""
+    curves = [(name, block, color, block["curve"]) for name, block, color in entries]
+    marks = [
+        (
+            c["min_threshold"],
+            c["min_total"],
+            f"{name}: min {fmt_tokens(c['min_threshold'])}, {fmt_percent(c['min_percent'])}",
+            color,
+        )
+        for name, _, color, c in curves
+    ]
+    flats = [(c["flat_low"], c["flat_high"], color) for _, _, color, c in curves]
+    hlines = [(f"{name} actual", c["actual"], color) for name, _, color, c in curves]
+    return line_chart(
+        [curve_line(name, block, color) for name, block, color, _ in curves],
+        label=label,
+        fmt=fmt_money,
+        hlines=hlines,
+        flats=flats,
+        marks=marks,
+        vlines=[(vline, fmt_tokens(vline))] if vline else [],
+        y_cap=2.0 * max(c["actual"] for *_, c in curves),
+        x_range=x_range,
+        show_never=x_range[1] >= 1_000_000,
+    )
+
+
+def render_long_tier(data: dict, model: str) -> str:
+    """The long-prompt rate of one model: rates, today's spend above the step, and the replay either side of it."""
+    price, block, stats = data["pricing"][model], data["models"][model], data["long_tier"][model]
+    above, base, long = price["long_above"], price["base"], price["long"]
+    out = [f"<h3>{html.escape(model)} and its long-prompt rate</h3>"]
+    out.append(
+        f"<p>Rates per million tokens. Up to {fmt_tokens(above)} prompt tokens: input ${base['inp']:g}, output ${base['out']:g}, cache read ${base['read']:g}, "
+        f"cache write ${base['write5m']:g} (5 min) / ${base['write1h']:g} (1 hour). Above: input ${long['inp']:g}, output ${long['out']:g}, cache read ${long['read']:g}, "
+        f"cache write ${long['write5m']:g} / ${long['write1h']:g}. Source: {html.escape(data['prices_source'])}. "
+        + (
+            "<b>Assumption:</b> the cache read rates of this model are 0.1x of the tier's input price, because no published rate was found. "
+            if model in ASSUMED_READ_MODELS
+            else ""
+        )
+        + "</p><p>The tier is chosen for every call by that call's own prompt size (uncached input plus cache read plus cache write): a call above the step pays read, write, input and output at the higher rates, "
+        "a call at or below it pays none of them. The replay applies the same rule to the simulated context of each call and to each compaction call.</p>"
+    )
+    out.append(
+        f"<p>Today, as logged: {stats['calls']:,.0f} calls cost {fmt_money(stats['total'])} ({stats['share_of_all_spend']:.1f}% of all spend). "
+        f"{stats['calls_above']:,.0f} of them are above {fmt_tokens(above)} and cost {fmt_money(stats['above'])} ({stats['above_share_of_all_spend']:.1f}% of all spend); "
+        f"at the lower rates the same calls would cost {fmt_money(stats['above_at_base_rate'])}.</p>"
+    )
+    out.append(
+        curve_chart(
+            [(model, block, 1)],
+            f"{model}: total cost by threshold, zoomed",
+            vline=above,
+            x_range=(max(25_000, above - 50_000), above + 50_000),
+        )
+    )
+    near = [t for t in THRESHOLDS if abs(t - above) <= above * 0.25]
+    rows = [
+        [
+            fmt_tokens(t),
+            fmt_money(block["thresholds"][str(t)]["cost"]["total"]),
+            fmt_percent(block["thresholds"][str(t)]["percent"]),
+            f"{block['thresholds'][str(t)]['cost']['num_compactions']:,}",
+        ]
+        for t in near
+    ]
+    out.append(table(["threshold", "total", "change vs actual", "compactions"], rows))
+    lower, upper = [t for t in THRESHOLDS if t < above], [t for t in THRESHOLDS if t > above]
+    if lower and upper:
+        below_cost, above_cost = (block["thresholds"][str(t)]["cost"]["total"] for t in (lower[-1], upper[0]))
+        jump = get_percent(above_cost, below_cost)
+        out.append(
+            f"<p>Just below the step ({fmt_tokens(lower[-1])}) the replay costs {fmt_money(below_cost)}; just above ({fmt_tokens(upper[0])}) {fmt_money(above_cost)}, a change of {fmt_percent(jump)}. "
+            + ("A step is visible in the replay." if abs(jump) >= 2.0 else "The step is small in the replay.")
+            + "</p>"
+        )
+    return "".join(out)
+
+
+def render_curves(data: dict) -> str:
+    """The full cost curves: groups, each model, long-prompt rates, and the sensitivity."""
+    groups = [
+        (LABELS[kind], data["sets"][kind], color)
+        for kind, color in (("main", 1), ("sub", 2))
+        if data["sets"][kind]["num_sessions"]
+    ]
+    out = ['<h2 id="curve">Cost against the threshold</h2>']
+    out.append(
+        "<p>Every point is a full replay at that threshold. Dashed horizontal lines are the actual cost of each group; the shaded band is the flat range within "
+        f"{FLAT_PERCENT:g}% of the minimum; the filled dot at the right is the replay with no compaction. Points above the scale are drawn hollow at the top (the tooltip has the value).</p>"
+    )
+    out.append(curve_chart(groups, "Total cost by threshold"))
+    out.append(
+        table(
+            ["group", "actual", "never compact", "curve"],
+            [
+                [n, fmt_money(b["curve"]["actual"]), fmt_money(b["curve"]["never"]), describe_curve(b["curve"])]
+                for n, b, _ in groups
+            ],
+        )
+    )
+    out.append("<h3>The same curve for each model (that model's calls only, main sessions and sub-agents together)</h3>")
+    rows = []
+    for model, block in ((m, b) for m, b in data["models"].items() if b["num_calls"]):
+        out.append(f"<h4>{html.escape(model)}</h4>")
+        out.append(curve_chart([(model, block, 1)], f"{model}: total cost by threshold"))
+        rows.append(
+            [
+                model,
+                f"{block['num_calls']:,}",
+                fmt_money(block["curve"]["actual"]),
+                fmt_money(block["curve"]["never"]),
+                describe_curve(block["curve"]),
+            ]
+        )
+    out.append(table(["model", "calls", "actual", "never compact", "curve"], rows))
+    out.extend(render_long_tier(data, model) for model in data["long_tier"] if data["models"][model]["num_calls"])
+    sens = data["sensitivity"]
+    out.append("<h3>Sensitivity of the curve</h3>")
+    out.append(sensitivity_chart(sens))
+    sens_rows = [
+        [
+            v["label"],
+            f"{v['summary_tokens']:,}",
+            f"{v['rework_tokens']:,}",
+            fmt_tokens(v["min_threshold"]),
+            fmt_percent(v["min_percent"]),
+            f"{fmt_tokens(v['flat_low'])} to {fmt_tokens(v['flat_high'])}",
+        ]
+        for v in sens["variants"]
+    ]
+    out.append(
+        table(
+            [
+                "assumption",
+                "summary tokens",
+                "extra tokens re-read per compaction",
+                "minimum",
+                "change vs actual",
+                "flat range (within 2%)",
+            ],
+            sens_rows,
+        )
+    )
+    out.append(
+        "<p>The rework rows are an <b>assumption</b>, not a measurement: after each compaction the next call has to write that many extra tokens to the cache (files read again, steps repeated), also for the real compactions in the actual baseline. "
+        f"The threshold that stays closest to each scenario's own minimum is {fmt_tokens(sens['robust_threshold'])}; its worst shortfall against the best threshold of a scenario is {sens['robust_worst_regret_percent']:.1f}%.</p>"
+    )
+    return "".join(out)
+
+
+def sensitivity_chart(sens: dict) -> str:
+    """Curve chart of signed percent against actual for each sensitivity variant."""
+    colors = [1, 2, 3, 4]
+    variants = sens["variants"]
+    lines = [
+        Line(v["label"], colors[i], [(p["threshold"], p["percent"] + 100.0) for p in v["points"]]) for i, v in enumerate(variants)
+    ]
+    marks = [
+        (
+            v["min_threshold"],
+            v["min_percent"] + 100.0,
+            f"{v['label']}: {fmt_tokens(v['min_threshold'])}, {fmt_percent(v['min_percent'])}",
+            colors[i],
+        )
+        for i, v in enumerate(variants)
+    ]
+    return line_chart(
+        lines,
+        label="Main sessions: cost against actual by threshold, for different summary sizes and rework assumptions",
+        fmt=lambda v: f"{v - 100.0:+.0f}%",
+        hlines=[("actual (0%)", 100.0, 0)],
+        flats=[],
+        marks=marks,
+        vlines=[],
+        y_cap=250.0,
+        show_never=False,
+    )
+
+
+def table(headers: list[str], rows: list[list[str]]) -> str:
+    """HTML table."""
+    head = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
+    body = "".join("<tr>" + "".join(f"<td>{html.escape(c)}</td>" for c in row) + "</tr>" for row in rows)
+    return f'<div class="scroll"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+
+
+def pick_recommendation(data: dict) -> str:
+    """Plain-language recommendation from the replay results."""
+    primary = data["primary"]
+    block, label, sens = data["sets"][primary], LABELS[data["primary"]], data["sensitivity"]
+    row = block["thresholds"][str(sens["robust_threshold"])]
+    long_row, short_row = row["groups"]["long"], row["groups"]["short"]
+    interval = f" (95% interval {fmt_percent(row['ci'][0])} to {fmt_percent(row['ci'][1])})" if row["ci"] else ""
+    pre = block["compactions"]["pre_tokens"]["p50"]
+    text = (
+        f"For {label} the cost curve has its {describe_curve(block['curve'])}. "
+        + (
+            f"Today's sessions compact at a median of {fmt_tokens(pre)}. "
+            if block["compactions"]["count"]
+            else "No real compaction was logged. "
+        )
+        + f"Set the threshold at <b>{fmt_tokens(sens['robust_threshold'])} tokens</b>: it is the threshold that stays closest to the best one when the summary is halved or when each compaction forces up to "
+        f"{fmt_tokens(REWORK_TOKENS[-1])} of re-reading (never more than {sens['robust_worst_regret_percent']:.1f}% above the best threshold of those scenarios), and in the plain replay it changes cost by "
+        f"<b>{fmt_percent(row['percent'])}</b>{interval} against actual, {fmt_percent(long_row['percent'])} for long sessions (peak above {fmt_tokens(SHORT_SESSION_PEAK)}, "
+        f"{long_row['num_sessions']} sessions) and {fmt_percent(short_row['percent'])} for short ones ({short_row['num_sessions']} sessions), which rarely reach it."
+    )
+    text += (
+        " Optimum by assumption: " + "; ".join(f"{v['label']}: {fmt_tokens(v['min_threshold'])}" for v in sens["variants"]) + "."
+    )
+    models = [f"{m}: {describe_curve(b['curve'])}" for m, b in data["models"].items() if b["num_calls"]]
+    text += f" By model, {'; '.join(models)}."
+    for model, stats in data["long_tier"].items():
+        if stats["calls"]:
+            price = data["pricing"][model]
+            ratio = price["long"]["inp"] / price["base"]["inp"]
+            text += f" {model} pays {ratio:g} times the price above {fmt_tokens(price['long_above'])} prompt tokens; {stats['above_share_of_all_spend']:.1f}% of all spend is {model} above it."
+    floor = block["prefix_tokens"]["p50"] + data["summary_tokens"]
+    text += f" Thresholds near or below {fmt_tokens(floor)} (the fixed prompt prefix of about {fmt_tokens(block['prefix_tokens']['p50'])} plus the summary) compact on almost every call and cost far more."
+    return text
+
+
+def render_section(data: dict, kind: str, title: str) -> str:
+    """The five charts, a table view and the numbers for one group of sessions."""
+    block = data["sets"][kind]
+    keys = [str(t) for t in DISPLAY]
+    rows = block["thresholds"]
+    names = [fmt_tokens(t) for t in DISPLAY]
+    out = [f'<section id="{kind}"><h2>{title}</h2>']
+    out.append(
+        f"<p>{block['num_sessions']:,} sessions, {block['num_calls']:,} API calls. Actual cost {fmt_money(block['actual']['total'])} "
+        f"(logged calls {fmt_money(block['observed']['total'])} plus {fmt_money(block['actual']['comp'])} modelled for {block['compactions']['count']:,} real compactions).</p>"
+    )
+
+    out.append("<h3>1. Total cost against the actual cost</h3>")
+    out.append(
+        bar_chart(
+            names,
+            ["change vs actual"],
+            [[rows[k]["percent"] for k in keys]],
+            stacked=False,
+            fmt=lambda v: f"{v:+.1f}%",
+            whiskers=[tuple(rows[k]["ci"]) for k in keys],
+            label=f"{title}: signed percent change of total cost by threshold",
+        )
+    )
+    out.append('<p class="note">Whiskers: 95% interval from resampling sessions. Below zero is cheaper than what happened.</p>')
+
+    out.append("<h3>2. Where the money goes</h3>")
+    labels = ["cache read", "cache write", "uncached input", "output", "compaction calls"]
+    fields = ["read", "write", "inp", "out", "comp"]
+    out.append(
+        bar_chart(
+            ["actual", *names, "never"],
+            labels,
+            [[block["actual"][f]] + [rows[k]["cost"][f] for k in keys] + [rows["none"]["cost"][f]] for f in fields],
+            stacked=True,
+            fmt=fmt_money,
+            label=f"{title}: cost split by kind per threshold",
+        )
+    )
+
+    out.append("<h3>3. Cost per session, and how many sessions change</h3>")
+    out.append(
+        bar_chart(
+            ["actual", *names],
+            ["median session", "p90 session"],
+            [
+                [block["actual_session_median"]] + [rows[k]["session_median"] for k in keys],
+                [block["actual_session_p90"]] + [rows[k]["session_p90"] for k in keys],
+            ],
+            stacked=False,
+            fmt=fmt_money,
+            label=f"{title}: median and p90 cost per session",
+        )
+    )
+    out.append(
+        bar_chart(
+            names,
+            ["cheaper", "costlier"],
+            [[rows[k]["sessions_cheaper"] for k in keys], [rows[k]["sessions_costlier"] for k in keys]],
+            stacked=False,
+            fmt=lambda v: f"{v:,.0f}",
+            label=f"{title}: sessions whose cost changes by more than {CHANGED_PERCENT}%",
+        )
+    )
+    out.append(f'<p class="note">A session counts as changed when its cost moves by more than {CHANGED_PERCENT}%.</p>')
+
+    out.append("<h3>4. Peak context per session, with the thresholds</h3>")
+    out.append(histogram(block["peaks"], list(CORE), f"{title}: peak context distribution"))
+
+    out.append("<h3>5. Compactions per threshold</h3>")
+    out.append(
+        bar_chart(
+            ["actual", *names],
+            ["compactions"],
+            [[block["compactions"]["count"]] + [rows[k]["cost"]["num_compactions"] for k in keys]],
+            stacked=False,
+            fmt=lambda v: f"{v:,.0f}",
+            label=f"{title}: number of compactions per threshold",
+        )
+    )
+
+    table_rows = [
+        [
+            "actual",
+            fmt_money(block["actual"]["total"]),
+            "-",
+            str(block["compactions"]["count"]),
+            fmt_money(block["actual_session_median"]),
+            fmt_money(block["actual_session_p90"]),
+            "-",
+        ]
+    ]
+    for k in [*keys, "none"]:
+        row = rows[k]
+        table_rows.append(
+            [
+                "never" if k == "none" else fmt_tokens(int(k)),
+                fmt_money(row["cost"]["total"]),
+                fmt_percent(row["percent"]) + f" ({fmt_percent(row['ci'][0])} to {fmt_percent(row['ci'][1])})",
+                f"{row['cost']['num_compactions']:,}",
+                fmt_money(row["session_median"]),
+                fmt_money(row["session_p90"]),
+                f"{row['sessions_changed']:,} ({row['sessions_cheaper']:,} cheaper)",
+            ]
+        )
+    out.append("<h3>Table view</h3>")
+    out.append(
+        table(
+            ["threshold", "total", "change vs actual (95%)", "compactions", "median session", "p90 session", "sessions changed"],
+            table_rows,
+        )
+    )
+
+    check = block["check"]
+    verdict = "within" if abs(check["percent_error"]) <= check["tolerance"] else "OUTSIDE"
+    out.append(
+        f"<p>Replay check with the real compaction points: replay {fmt_money(check['replay_total'])} against logged {fmt_money(check['observed_total'])}, "
+        f"{fmt_percent(check['percent_error'])} ({verdict} the stated {check['tolerance']:g}%). Per session the absolute error is {check['session_error_median']:.1f}% at the median and {check['session_error_p90']:.1f}% at p90.</p>"
+    )
+    out.append("</section>")
+    return "".join(out)
+
+
+def render_measurements(data: dict) -> str:
+    """Real compactions, session lengths and peaks for both groups."""
+    rows = []
+    for kind, title in (("main", "main sessions"), ("sub", "sub-agents")):
+        block = data["sets"][kind]
+        comp = block["compactions"]
+        rows.append(
+            [
+                title,
+                f"{block['num_sessions']:,}",
+                f"{block['num_calls']:,}",
+                f"{comp['count']:,} in {comp['sessions_with_compaction']:,} sessions",
+                f"{fmt_tokens(comp['pre_tokens']['p50'])} (p10 {fmt_tokens(comp['pre_tokens']['p10'])}, p90 {fmt_tokens(comp['pre_tokens']['p90'])})",
+                f"{fmt_tokens(comp['post_tokens']['p50'])} (p90 {fmt_tokens(comp['post_tokens']['p90'])})",
+                f"{fmt_money(comp['modelled_cost'])} ({fmt_percent(get_percent(comp['modelled_cost'], block['actual']['total']))} of cost)",
+            ]
+        )
+    first = table(
+        [
+            "group",
+            "sessions",
+            "calls",
+            "real compactions",
+            "context before (median)",
+            "context after (median)",
+            "modelled cost of compaction calls",
+        ],
+        rows,
+    )
+    split = []
+    for kind, title in (("main", "main sessions"), ("sub", "sub-agents")):
+        block = data["sets"][kind]
+        actual = block["actual"]
+        split.append(
+            [
+                title,
+                *[
+                    f"{fmt_money(actual[f])} ({actual[f] / actual['total'] * 100:.0f}%)" if actual["total"] else "-"
+                    for f in ("read", "write", "inp", "out", "comp")
+                ],
+                fmt_money(actual["total"]),
+            ]
+        )
+    second = table(["group", "cache read", "cache write", "uncached input", "output", "compaction calls", "total"], split)
+    shape = []
+    for kind, title in (("main", "main sessions"), ("sub", "sub-agents")):
+        block = data["sets"][kind]
+        shape.append(
+            [
+                title,
+                f"{block['peak']['p50']:,.0f} / {block['peak']['p90']:,.0f} / {block['peak']['max']:,.0f}",
+                f"{block['calls_per_session']['p50']:,.0f} / {block['calls_per_session']['p90']:,.0f} / {block['calls_per_session']['max']:,.0f}",
+                f"{block['hours_per_session']['p50']:.1f} / {block['hours_per_session']['p90']:.1f} / {block['hours_per_session']['max']:.1f}",
+            ]
+        )
+    third = table(
+        [
+            "group",
+            "peak context tokens (median / p90 / max)",
+            "calls per session (median / p90 / max)",
+            "wall-clock hours (median / p90 / max)",
+        ],
+        shape,
+    )
+    return f"<h3>Real compactions</h3>{first}<h3>Actual cost by kind</h3>{second}<h3>How long sessions get</h3>{third}"
+
+
+CSS = """
+:root{color-scheme:light dark;--bg:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--grid:#e3e2de;--c1:#2a78d6;--c2:#eb6834;--c3:#1baf7a;--c4:#eda100;--c5:#e87ba4}
+@media (prefers-color-scheme:dark){:root{--bg:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--grid:#363633;--c1:#3987e5;--c2:#d95926;--c3:#199e70;--c4:#c98500;--c5:#d55181}}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:1.6rem}h2{margin-top:2.5rem;border-top:1px solid var(--grid);padding-top:1rem}h3{margin:1.6rem 0 .3rem;font-size:1.05rem}
+.rec{border-left:4px solid var(--c1);padding:.2rem 1rem;background:color-mix(in srgb,var(--c1) 8%,var(--bg))}
+.chart{width:100%;height:auto}.grid{stroke:var(--grid);stroke-width:1}.zero{stroke:var(--ink2);stroke-width:1}
+.axis{fill:var(--ink2);font-size:12px}.axis.small{font-size:9.5px}.value{fill:var(--ink);font-size:11px}
+.whisker{stroke:var(--ink);stroke-width:1.5}.thr{stroke:var(--ink2);stroke-width:1.5;stroke-dasharray:5 4}
+.mark{stroke:var(--bg);stroke-width:1}.legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.85rem;color:var(--ink2)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:.3rem;vertical-align:-1px}
+.note,small{color:var(--ink2);font-size:.85rem}.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:.85rem;width:100%}th,td{border-bottom:1px solid var(--grid);padding:.3rem .5rem;text-align:right}th:first-child,td:first-child{text-align:left}
+"""
+
+
+def render_real_costs(data: dict) -> str:
+    """Logged cost per call and per long session by model, and compactions per session, for comparing two windows."""
+    real = data["real_costs"]
+    rows = [
+        [
+            model,
+            f"{e['calls']:,.0f}",
+            fmt_money(e["cost"]),
+            f"${e['cost_per_call']:.4f}",
+            f"{e['sessions']:,.0f}",
+            f"{e['long_sessions']:,.0f}",
+            fmt_money(e["cost_per_long_session"]),
+        ]
+        for model, e in sorted(real["by_model"].items())
+    ]
+    out = [
+        "<h2>Real cost in this window</h2>",
+        "<p>As logged, no replay. Compare two runs with different --since and --until to see the effect of a changed setting.</p>",
+    ]
+    out.append(table(["model", "calls", "cost", "cost per call", "sessions", "long sessions", "cost per long session"], rows))
+    kinds = []
+    for kind, label in LABELS.items():
+        group = [row for row in real["sessions"] if row["kind"] == kind]
+        if group:
+            counts = [row["compactions"] for row in group]
+            kinds.append(
+                [
+                    label,
+                    f"{len(group):,}",
+                    f"{sum(counts):,}",
+                    f"{sum(1 for c in counts if c):,}",
+                    f"{statistics.fmean(counts):.2f}",
+                    f"{max(counts):,}",
+                ]
+            )
+    out.append(
+        table(
+            ["group", "sessions", "compactions", "sessions with a compaction", "mean per session", "most in one session"], kinds
+        )
+    )
+    return "".join(out)
+
+
+def render_page(data: dict) -> str:
+    """The whole self-contained report page."""
+    window = data["window"]
+    span = f"from {window['since'] or 'the first call'} to {window['until'] or 'the last call'}"
+    prices = []
+    for model, p in data["pricing"].items():
+        b, tier = p["base"], p["long"]
+        extra = (
+            f"; above {fmt_tokens(p['long_above'])} prompt tokens: input ${tier['inp']:g}, output ${tier['out']:g}, cache read ${tier['read']:g}"
+            if tier
+            else ""
+        )
+        prices.append(
+            f"<li><code>{html.escape(model)}</code>: input ${b['inp']:g}, output ${b['out']:g}, cache read ${b['read']:g}, cache write ${b['write5m']:g} (5 min) / ${b['write1h']:g} (1 hour){extra}</li>"
+        )
+    excluded = (
+        f"{data['excluded_sessions']:,} sessions use models without a price ({', '.join(html.escape(m) for m in data['excluded_models'])}) and are excluded."
+        if data["excluded_sessions"]
+        else "Every session's model has a price; none was excluded."
+    )
+    limits = [
+        "Compaction loses information. Work redone after a compaction (re-reading files, repeated steps) is not priced, so lower thresholds look cheaper than they are.",
+        "Cache misses from expired cache are kept only as observed: each call keeps the share of its previous context that was not read from cache, applied to the simulated context.",
+        "The log has no line for the compaction call itself, so its cost is modelled: it reads the context before and writes a summary of the median size as output.",
+        "Context growth per call is taken from the observed sequence. The jump of a real compaction is replaced by the new tokens of that call; an unmarked context drop uses the logged values of that call.",
+        "The replay check is close to circular: in the real-compaction mode the growth, cache-miss share and post-compaction size all come from the same log, so a small error shows the bookkeeping is consistent, not that the threshold model predicts anything.",
+        "Prices are list prices and go stale. On a subscription this shows relative cost, not a bill.",
+        "Sub-agent runs are replayed with their own contexts and reported apart; their numbers are not added to the main sessions.",
+        "A replayed session keeps its observed calls; a lower threshold does not change how many calls the work needed.",
+    ]
+    sections = "".join(
+        render_section(data, kind, title)
+        for kind, title in (("main", "Main sessions"), ("sub", "Sub-agents (own contexts, reported apart)"))
+        if data["sets"][kind]["num_sessions"]
+    )
+    main, sub = data["sets"]["main"], data["sets"]["sub"]
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auto-compaction threshold: what it costs</title><style>{CSS}</style></head><body>
+<h1>Auto-compaction threshold: what it costs</h1>
+<p class="note">Generated {data["generated"]}. Window: {span} (calls filtered by timestamp). The plan for the settings change is in the compaction settings plan, <a href="compaction-settings.md">compaction-settings.md</a>.</p>
+<div class="rec"><h2 style="border:0;margin:.5rem 0 0">Recommendation</h2><p>{pick_recommendation(data)}</p>
+<p><small>Uncertainty: the interval comes from resampling sessions, not from rework or cache behaviour the replay cannot see (see the limits below). The replay check is
+{fmt_percent(data["sets"][data["primary"]]["check"]["percent_error"])} off the logged cost.</small></p></div>
+{render_curves(data)}
+{render_real_costs(data)}
+<h2>What was measured</h2>
+<p>Real compactions seen: {main["compactions"]["count"]:,} in main sessions and {sub["compactions"]["count"]:,} in sub-agents. The replay summary size is the observed median context after a compaction, {data["summary_tokens"]:,} tokens.</p>
+{render_measurements(data)}
+<h2>How the replay works</h2>
+<p>For each session, context per call is uncached input plus cache read plus cache write. Each call adds the new tokens seen in the observed sequence. When the replayed context reaches the threshold T, one compaction call is charged
+(cache read of the context, output of the summary) and the context restarts from the summary; the next call writes it to the cache. Between compactions a call pays cache read on the existing context, cache write on its new tokens, and the logged output.
+"actual" is the logged calls plus the modelled cost of the real compactions, so every column contains the same kind of compaction charge. "never" is the same replay with no compaction at all.</p>
+<h3>Prices</h3><p>Source: {html.escape(data["prices_source"])}; list prices per million tokens, which go stale. {excluded}</p><ul>{"".join(prices)}</ul>
+<h3>What the model leaves out</h3><ul>{"".join(f"<li>{html.escape(item)}</li>" for item in limits)}</ul>
+{sections}
+</body></html>
+"""
+
+
+# ===========================================================================
+# Main
+# ===========================================================================
+
+
+def check_monotonic(data: dict) -> bool:
+    """True when the number of compactions never rises as the threshold rises, in every group."""
+    ok = True
+    groups = {**data["sets"], **{f"model {name}": block for name, block in data["models"].items() if block["num_calls"]}}
+    for kind, block in groups.items():
+        counts = [block["thresholds"][str(t)]["cost"]["num_compactions"] for t in THRESHOLDS]
+        rising = [(THRESHOLDS[i], THRESHOLDS[i + 1]) for i in range(len(counts) - 1) if counts[i] < counts[i + 1]]
+        shown = {t: c for t, c in zip(THRESHOLDS, counts, strict=False) if t in CORE}
+        print(f"{kind}: compactions {shown} none={block['thresholds']['none']['cost']['num_compactions']} rising_pairs={rising}")
+        ok = ok and not rising
+    return ok
+
+
+def parse_day(text: str) -> str:
+    """A YYYY-MM-DD day, validated; an empty text means no bound."""
+    if not text:
+        return text
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a YYYY-MM-DD day") from error
+    return text
+
+
+def run(args: argparse.Namespace) -> int:
+    """Extract, replay and write the files; raises ToolError for a problem the user can fix."""
+    prices = load_prices(args.prices)
+    root = get_root(args.root)
+    sessions = load_sessions(root, args.since, args.until)
+    if not any(all(call.model in prices for call in session.calls) for session in sessions):
+        raise ToolError("no session with a priced model and usable calls was found in the window")
+    data = build_data(sessions, prices, builtin_prices=args.prices is None, window=(args.since, args.until))
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "data.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+    (args.out / "report.html").write_text(render_page(data), encoding="utf-8")
+    for kind, block in data["sets"].items():
+        if not block["num_sessions"]:
+            continue
+        check = block["check"]
+        state = "OK" if abs(check["percent_error"]) <= check["tolerance"] else "OUTSIDE TOLERANCE"
+        print(
+            f"replay check {kind}: sessions={block['num_sessions']} calls={block['num_calls']} replay={check['replay_total']:.2f} "
+            f"logged={check['observed_total']:.2f} error={check['percent_error']:+.2f}% (tolerance {check['tolerance']}%) {state}"
+        )
+    print("compactions fall as T rises:", check_monotonic(data))
+    primary = data["sets"][data["primary"]]["curve"]
+    print(
+        f"minimum {primary['min_threshold']} ({primary['min_percent']:+.1f}%), robust {data['sensitivity']['robust_threshold']}"
+    )
+    print(f"wrote {args.out / 'report.html'} and {args.out / 'data.json'}")
+    return 0
+
+
+def main() -> int:
+    """Parse the command line and run; a ToolError prints one line and exits 1."""
+    parser = argparse.ArgumentParser(
+        description="Cost of auto-compaction in Claude Code session logs, replayed at other thresholds."
+    )
+    parser.add_argument(
+        "--root", type=Path, help="folder with the session logs (default: $CLAUDE_CONFIG_DIR/projects, else ~/.claude/projects)"
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("compaction-report"),
+        help="folder for data.json and report.html (default: ./compaction-report)",
+    )
+    parser.add_argument("--prices", type=Path, help="JSON file of prices that overrides the built-in table")
+    parser.add_argument("--since", type=parse_day, default="", help="first day to include, YYYY-MM-DD")
+    parser.add_argument("--until", type=parse_day, default="", help="last day to include, YYYY-MM-DD")
+    try:
+        return run(parser.parse_args())
+    except ToolError as error:
+        print(f"compaction-report: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

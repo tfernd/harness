@@ -21,6 +21,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Hooks do nothing: `uv` is missing, or the project has no `.harness.json` (only the safety guard runs). A "harness guard
   blocked" message names the rule and the change to make.
 - `bin/harness-import` imports past report cards from transcripts into the ledger (`--dry-run` writes nothing).
+- `bin/compaction-report` measures what auto-compaction costs in your Claude Code logs and replays each session at other thresholds (`make compaction`; `--since`/`--until` take a window).
 
 ## Skills
 - No project domain in a skill; a reference is a general starter, never one repo's taste.

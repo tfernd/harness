@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks skills mutants check replay clean
+.PHONY: help setup init validate test leaks skills compaction-test compaction mutants check replay clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -27,6 +27,12 @@ leaks: ## Fail when a file names a person, machine, home path or private word
 skills: ## Fail when a skill or agent leaves the form AGENTS.md demands
 	uv run python tests/check_skills.py
 
+compaction-test: ## Check bin/compaction-report on a synthetic log folder
+	uv run python tests/check_compaction.py
+
+compaction: ## Measure auto-compaction cost in your Claude Code logs: report in compaction-report/ (SINCE=, UNTIL= as YYYY-MM-DD)
+	uv run --script bin/compaction-report $(if $(SINCE),--since $(SINCE),) $(if $(UNTIL),--until $(UNTIL),)
+
 mutants: ## Deliberate-bug audit of every rule; slow, run it once (MUTANT=text narrows it)
 	uv run python tests/mutants.py $(if $(MUTANT),--only $(MUTANT),)
 
@@ -35,6 +41,7 @@ check: ## What the pre-push hook runs: cases, mutant check, skill form, leaks
 	uv run python tests/mutants.py --check
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
+	uv run python tests/check_compaction.py
 
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py
