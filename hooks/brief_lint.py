@@ -55,7 +55,7 @@ def main() -> int:
     required = (config["brief"] or {}).get("required", DEFAULT_REQUIRED)
     missing = get_missing(tool_input.get("prompt") or "", required.get(role, required.get("*", [])))
     if has_unreadable_budget(tool_input.get("prompt") or ""):
-        print("Blocked by the harness brief rule: a budget counts model turns. Write `Budget: 30 turns`.", file=sys.stderr)
+        print("Blocked by the harness brief rule: a budget counts model turns. Write `Budget: 30 turns`, or reword the line if it means something else.", file=sys.stderr)
         return 2
     if not missing:
         return 0

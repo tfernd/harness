@@ -1896,14 +1896,19 @@ def run_hook(hooks: Path, script: tuple[str, ...], event: dict, environment: dic
 
     paths = {key: str(root / event[key]) for key in ("transcript_path", "agent_transcript_path") if key in event}
 
-    return subprocess.run(
-        ["uv", "run", "--script", str(hooks / script[0]), *script[1:]],
-        input=json.dumps({**event, **paths}).replace(ROOT, str(root)),
-        capture_output=True,
-        text=True,
-        env=environment,
-        timeout=HOOK_TIMEOUT,
-    )
+    command = ["uv", "run", "--script", str(hooks / script[0]), *script[1:]]
+    try:
+        return subprocess.run(
+            command,
+            input=json.dumps({**event, **paths}).replace(ROOT, str(root)),
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=HOOK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        # A hung hook fails its own case instead of stopping the whole run.
+        return subprocess.CompletedProcess(command, 124, "", f"the hook hung past {HOOK_TIMEOUT} s")
 
 
 def run_case(case: Case, hooks: Path, /) -> str:
