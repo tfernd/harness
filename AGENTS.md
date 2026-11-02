@@ -27,6 +27,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
   catches. A rule that cannot fail is not a rule.
 - A case can pass for the wrong reason: run the mutants of the hook you changed before trusting it (`tests/mutants.py --only`).
   Three new cases here did, hidden by the nudge cap, by a path check and by a regex anchor.
+- `tests/plant_bugs.py` and `tests/mutants.py` copy `hooks/` as they go: never edit a hook during a run, or its score means nothing.
 - A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.
 - The feedback folder is `harness-feedback/`, not a dot-folder, which Claude Code refuses to write.
 
