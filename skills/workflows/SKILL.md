@@ -91,7 +91,7 @@ Use when units are independent.
 
 - Split by time, not by topic: a unit an agent cannot finish in 10 minutes is split before it goes out (this sizes work; the 10 minutes of
   `harness:orchestrator` are a stall check on a running agent). Many fixes in one file, a rewrite and a measurement are three units.
-- Every brief states a budget in minutes, and asks for a partial report when it runs out: done, not done, what is on disk. A stopped agent with no report leaves the main session guessing.
+- Every brief states a budget in model turns, and asks for a partial report when it runs out: done, not done, what is on disk. A stopped agent with no report leaves the main session guessing.
 - At the budget, check the tree (run the judges) instead of waiting; work on disk counts.
 - Never hold fast units for a slow one. Start each stage's units as soon as what they need exists; audit finished units while others still build.
 - Give the slowest unit its own write set and start it first, so it does not gate the rest.

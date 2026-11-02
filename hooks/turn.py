@@ -9,7 +9,7 @@
 
 `turn.py reset` (UserPromptSubmit) empties the call count and saves a hash of each rule file. A task notification also
 fires UserPromptSubmit (probed in a headless run); while a status is still due (a `deferred` mark exists), `reset` keeps the
-count and the saved hashes. `turn.py add`
+count and the saved hashes, and so it does for any notification or sub-agent's message, which are not the owner's new turn. `turn.py add`
 (PostToolUse on Agent, Task, Edit, Write) counts a call of the main session; a call that carries `agent_id` came from a
 sub-agent. `turn.py stop` (Stop) holds the turn, up to MAX_BLOCKS times, on three checks:
   - a turn with `min_calls` calls or more ends with the headings, unless a background agent of the session still runs:
@@ -56,6 +56,9 @@ SECTION_END = re.compile(r"^(#+[ \t]|\s*\*\*[^*]+\*\*)")
 # Words that put the lessons off to a later turn; a "unit" is one accepted piece of work, such as a worker's change.
 DEFERS = re.compile(r"next unit|next turn|next session|will add|to be written|will be written", re.I)
 # A tool id and the first status after it, which is its own notification's.
+# A prompt the app sends, not the owner; the head alone is read, so a pasted one further down does not count.
+APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
+APP_PROMPT_HEAD = 600
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
 FINISHED_STATUSES = {"completed", "failed", "killed"}
 HANDLED = re.compile(r"^([0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
@@ -322,7 +325,8 @@ def main() -> int:
             with open(calls_path, "a") as file:
                 file.write(f"{event.get('tool_name') or 'tool'}\n")
     elif mode == "reset":
-        if not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
+        is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
+        if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
             calls_path.write_text("")
             rules_path.write_text(json.dumps(get_rule_state(root, config)))
         blocks_path.write_text("0")

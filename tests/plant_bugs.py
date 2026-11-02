@@ -9,7 +9,7 @@
 
 Why: `tests/mutants.py` holds the bugs someone thought of, so it cannot show what nobody thought of. This one changes a token
 at a random site (a comparison, a boolean, a branch) and runs the cases on the copy. A survivor is either a rule no case guards
-or a change that alters nothing; read it to tell which. The same seed plants the same bugs, so two scores compare. Nothing
+or a change that alters nothing; read it to tell which. The same seed on the same code plants the same bugs; after a code change the sites move, so two scores compare only roughly. Nothing
 outside `scratch/hook-mutants` changes. A row prints per bug as it finishes; the last lines hold the score per hook. Always
 exits 0, since a survivor is a lead, not a failure.
 
@@ -55,8 +55,8 @@ SWAPS = {
     "any": "all",
     "all": "any",
 }
-# Tools and readers the cases do not run at all; `replay.py` is run by hand and `import_reports.py` by `bin/harness-import`.
-SKIPPED = {"replay.py", "import_reports.py"}
+# A hand-run tool whose one case reads its summary alone.
+SKIPPED = {"replay.py"}
 
 
 class Site(NamedTuple):

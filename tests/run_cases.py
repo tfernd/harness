@@ -24,7 +24,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
@@ -112,6 +111,7 @@ class Case(NamedTuple):
     project_dir: str = ""
     links: tuple[tuple[str, str], ...] = ()
     before: tuple[tuple[tuple[str, ...], dict], ...] = ()
+    shell: str = "/usr/bin/zsh"
 
 
 # ===========================================================================
@@ -144,6 +144,31 @@ GUARD_CASES = [
     bash("rm is refused", "rm x", True, "nothing is deleted"),
     bash("git clean is refused", "git clean -fd", True, "nothing is deleted"),
     bash("a plain git push is allowed", "git push -u origin topic", False),
+    bash("a failing glob is refused in zsh", "ls *.nothing", True, "matches no file"),
+    bash("a failing glob passes when the shell is not zsh", "ls *.nothing", False, shell="/bin/bash"),
+    bash("an option glob passes when the shell is not zsh", "grep -rn x --include=*.py .", False, shell="/bin/bash"),
+    bash("no shell at all judges no glob", "ls *.nothing", False, shell=""),
+    bash("a glob after a step that may write passes", "make && ls out/*.nothing", False),
+    bash("a glob after a redirect passes", "echo hi > scratch/t/o.txt; cat scratch/t/o.*", False),
+    bash("a glob after find -exec passes", "find . -name x -exec touch q1 \\; ; cat q*", False, config=None),
+    bash("a glob after a read still fails", "echo hi; ls *.nothing", True, "matches no file"),
+    bash("an option glob after a step that may write still fails", "make && grep -rn x --include=*.py .", True, "matches no file"),
+    bash("a glob in bash -c passes", "bash -c 'ls *.nothing'", False),
+    bash("an option glob in sh -c passes", "sh -c 'grep -rn x --include=*.py .'", False),
+    bash("a glob in zsh -c is refused", "zsh -c 'ls *.nothing'", True, "matches no file"),
+    bash("a loop with no sleep passes", "while read line; do echo hi; done", False),
+    bash("a sleep in an inner polling loop is refused", "for x in a; do while true; do sleep 1; done; done", True),
+    bash("curl writing into the repo is refused", "curl -o AGENTS.md http://x", True),
+    bash("curl with no output file passes", "curl http://x", False),
+    bash("a copy into the repo is refused", "cp a AGENTS.md", True),
+    bash("a venv python without the lock is refused", ".venv/bin/python x.py", True, LOCK_MESSAGE),
+    bash("a plain sed passes", "sed -n 1p AGENTS.md", False),
+    bash("a sed -i in the repo is refused", "sed -i s/a/b/ AGENTS.md", True),
+    bash("an allowed uv command passes", "uv tree", False),
+    bash("the free variable named by another command frees nothing", "echo NO_QUEUE=; uv run python x.py", True, LOCK_MESSAGE),
+    bash("listing a tar writes nothing", "tar -tf a.tar", False),
+    bash("cd past an option still knows its folder", "cd -P scratch/t && echo x > a.txt", False),
+    bash("a <<- heredoc body is no command", "cat <<-EOF\nrm x\nEOF", False),
     bash("a forced git push is refused", "git push --force origin topic", True, "owner's to run"),
     bash("a +ref git push is refused", "git push origin +topic", True, "owner's to run"),
     bash("a delete git push is refused", "git push origin --delete topic", True, "owner's to run"),
@@ -758,6 +783,76 @@ GATE_CASES = [
         ),
     ),
     gate(
+        "text with no report is sent back after the wait",
+        {**stop_event("I am done"), "agent_transcript_path": "transcript.jsonl"},
+        True,
+        "breaks the report",
+        transcript=(assistant({"type": "text", "text": "I am done"}),),
+    ),
+    gate(
+        "a good report by handback is accepted",
+        {**stop_event(""), "agent_transcript_path": "transcript.jsonl", "last_assistant_message": ""},
+        False,
+        wrote=("data/ledger.jsonl", '"accepted": true'),
+        transcript=(assistant({"type": "tool_use", "id": "h1", "name": "SubagentHandback", "input": {"message": CLEAN_REPORT}}),),
+    ),
+    gate(
+        "a heading that is no report does not hide the handback",
+        {**stop_event(""), "agent_transcript_path": "transcript.jsonl", "last_assistant_message": "## Notes\nwaiting"},
+        False,
+        wrote=("data/ledger.jsonl", '"accepted": true'),
+        transcript=(assistant({"type": "tool_use", "id": "h1", "name": "SubagentHandback", "input": {"message": CLEAN_REPORT}}),),
+    ),
+    gate(
+        "an edit beside a Bash call does not hide the Bash call",
+        transcript_event(work_report("- src/a.py: changed")),
+        False,
+        transcript=(edit("t1", "src/a.py"), bash_call("b1")),
+    ),
+    gate(
+        "a bad report by handback is not sent back, since the agent has ended",
+        {**stop_event(""), "agent_transcript_path": "transcript.jsonl", "last_assistant_message": ""},
+        False,
+        "it has already ended",
+        transcript=(assistant({"type": "tool_use", "id": "h1", "name": "SubagentHandback", "input": {"message": "## Answer\nno"}}),),
+    ),
+    gate(
+        "a bad report by handback still gets its ledger row",
+        {**stop_event(""), "agent_transcript_path": "transcript.jsonl", "last_assistant_message": ""},
+        False,
+        wrote=("data/ledger.jsonl", '"accepted": false'),
+        transcript=(assistant({"type": "tool_use", "id": "h1", "name": "SubagentHandback", "input": {"message": "## Answer\nno"}}),),
+    ),
+    gate(
+        "a bad report by text is still sent back",
+        {**stop_event("## Answer\nno"), "agent_transcript_path": "transcript.jsonl"},
+        True,
+        "breaks the report",
+        transcript=(assistant({"type": "text", "text": "## Answer\nno"}),),
+    ),
+    gate(
+        "no report in the transcript in time still gets a row",
+        {**stop_event(""), "agent_transcript_path": "transcript.jsonl", "last_assistant_message": ""},
+        False,
+        wrote=("data/ledger.jsonl", '"accepted": false'),
+    ),
+    gate(
+        "a scratch folder exempts only itself from naming changed files",
+        transcript_event(work_report("- nothing named")),
+        True,
+        "does not name a file",
+        transcript=(edit("t1", "src/a.py"),),
+        config={"guard": {"scratch": "scratch"}},
+    ),
+    gate(
+        "a relative edit path is read from the event's folder",
+        {**transcript_event(work_report("- sub/a.py: changed")), "cwd": "@ROOT@/project/sub"},
+        False,
+        wrote=("data/ledger.jsonl", '"path": "sub/a.py"'),
+        transcript=(edit("t1", "a.py"),),
+        cwd="project/sub",
+    ),
+    gate(
         "the ledger row counts the tool turns",
         transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
         False,
@@ -770,7 +865,7 @@ GATE_CASES = [
         "the ledger row holds the model, budget and claim marks",
         transcript_event("# Report: worker, fix the thing\n" + work_report("- src/a.py: changed (DERIVED) READ `AGENTS.md:1` and PROBED")),
         False,
-        wrote=("data/ledger.jsonl", '"model": "claude-x", "budget_min": 15.0, "files_changed": [{"path": "src/a.py", "lines_added": 3}], "claim_marks": {"READ": 1, "DERIVED": 1, "PROBED": 1}, "brief_hash": "5acca603"'),
+        wrote=("data/ledger.jsonl", '"model": "claude-x", "budget_turns": 70, "files_changed": [{"path": "src/a.py", "lines_added": 3}], "claim_marks": {"READ": 1, "DERIVED": 1, "PROBED": 1}, "brief_hash": "5acca603"'),
         transcript=(
             {"type": "assistant", "message": {"model": "claude-x", "content": [{"type": "tool_use", "id": "t1", "name": "Edit", "input": {"file_path": "src/a.py", "new_string": "a\nb\nc"}}]}},
         ),
@@ -917,6 +1012,40 @@ TURN_CASES = [
     turn("an old line with no session never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef agent=worker add a rule\n"),)),
     turn("another session's line never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef session=other agent=worker a\n"),)),
     turn("a pass resets the blocks", PROGRESS, False, files=((BLOCKS_FILE, "2"),), wrote=(BLOCKS_FILE, "0")),
+    turn("a background Agent with no result yet is running", PROGRESS, False, calls=BUSY_CALLS, transcript=(launch("t1")[0],)),
+    turn(
+        "a background Bash is no running agent",
+        PROGRESS,
+        True,
+        calls=BUSY_CALLS,
+        transcript=(assistant({"type": "tool_use", "id": "b1", "name": "Bash", "input": {"run_in_background": True}}),),
+    ),
+    turn(
+        "a user line is no closing message",
+        "",
+        True,
+        calls=BUSY_CALLS,
+        transcript=(assistant({"type": "text", "text": PROGRESS}), {"type": "user", "message": {"content": [{"type": "text", "text": FULL_STATUS}]}}),
+    ),
+    turn(
+        "a sub-agent's message keeps the rule baseline",
+        "## Verdict\nx\n## Lessons\n- a lesson written down",
+        False,
+        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": "AGENTS.md", "text": "a new rule\n"}), (("turn.py", "reset"), {"session_id": SESSION, "prompt": 'Another Claude session sent a message:\n<agent-message from="a1">'})),
+    ),
+    turn(
+        "a notification keeps the rule baseline",
+        "## Verdict\nx\n## Lessons\n- a lesson written down",
+        False,
+        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": "AGENTS.md", "text": "a new rule\n"}), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "<task-notification>\n<status>completed</status>"})),
+    ),
+    turn(
+        "the owner's new prompt moves the rule baseline",
+        "## Verdict\nx\n## Lessons\n- a lesson written down",
+        True,
+        "no change to show",
+        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": "AGENTS.md", "text": "a new rule\n"}), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "go on"})),
+    ),
     turn("a progress note keeps the count", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1"), wrote=(CALLS_FILE, "Agent"), config={}),
     turn("a progress note marks the status as due", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1"), wrote=(DEFERRED_FILE, "1")),
     turn("the status empties the count", FULL_STATUS + "\nLessons: none", False, calls=BUSY_CALLS, files=(RULES_KEPT,), not_wrote=(CALLS_FILE, "Agent")),
@@ -1141,6 +1270,14 @@ def brief(name: str, role: str, prompt: str, blocks: bool, text: str = "", /, **
 GOOD_BRIEF = "Do it.\nGoal: x\nWrite set: y\nJudge: z\n"
 BRIEF_CASES = [
     brief("a whole worker brief passes", "worker", GOOD_BRIEF, False),
+    brief("a budget in minutes is refused", "scout", "Goal: x\nBudget: 5 minutes", True, "counts model turns"),
+    brief("a budget in a sentence in minutes is refused", "scout", "Goal: x. Budget: 40 minutes. Folder: a", True, "counts model turns"),
+    brief("a budget in turns passes", "scout", "Goal: x\nBudget: 5 turns", False),
+    brief("a bare budget passes", "scout", "Goal: x\nBudget: 5", False),
+    brief("a sentence opening with the word passes", "scout", "Goal: x\nBudget is 30 turns, roughly", False),
+    brief("prose about a budget passes", "scout", "Goal: x\nWe are over budget: three things", False),
+    brief("a quoted budget passes", "scout", "Goal: x\nThe old form was `Do x. Budget: 5 minutes` here", False),
+    brief("a budget in a fence passes", "scout", "Goal: x\n```\nBudget: 5 minutes\n```", False),
     brief("a prefixed worker is the worker", "harness:worker", "Goal: x", True, "Write set:"),
     brief("a worker brief without Judge is refused", "worker", "Goal: x\nWrite set: y", True, "Judge:"),
     brief("a worker brief without Write set is refused", "worker", "Goal: x\nJudge: y", True, "Write set:"),
@@ -1180,50 +1317,55 @@ BRIEF_CASES = [
 OLD, NEW = "2020-01-01T00:00:00.000Z", "2999-01-01T00:00:00.000Z"
 
 
-def budget(name: str, brief_text: str, blocks: bool, text: str = "", /, *, started: str = OLD, role: str = "harness:worker", **options: object) -> Case:  # keys are data
-    """A sub-agent's call; its transcript is `s/subagents/agent-a1.jsonl` beside the session's `s.jsonl`."""
+def budget(name: str, brief_text: str, blocks: bool, text: str = "", /, *, turns: int = 100, role: str = "harness:worker", **options: object) -> Case:  # keys are data
+    """A sub-agent's call after `turns` model turns; its transcript is `s/subagents/agent-a1.jsonl` beside the session's `s.jsonl`."""
 
-    first = {"type": "user", "timestamp": started, "message": {"role": "user", "content": brief_text}}
+    first = {"type": "user", "timestamp": OLD, "message": {"role": "user", "content": brief_text}}
+    lines = [json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": f"m{index}", "content": [{"type": "tool_use", "id": f"t{index}", "name": "Bash", "input": {}}]}}) for index in range(turns)]
     options.setdefault("config", {})
-    options.setdefault("files", ((("s/subagents/agent-a1.jsonl"), json.dumps(first) + "\n" + json.dumps({"type": "assistant", "timestamp": NEW}) + "\n"),))
-    event = {"tool_name": "Bash", "agent_id": "a1", "agent_type": role, "transcript_path": "project/s.jsonl"}
+    options.setdefault("files", (("s/subagents/agent-a1.jsonl", json.dumps(first) + "\n" + "\n".join(lines) + "\n"),))
+    event = {"tool_name": "Bash", "agent_id": "a1", "agent_type": role, "transcript_path": "project/s.jsonl", "tool_use_id": f"t{turns - 1}"}
 
     return Case(name, ("budget.py",), {**event, **options.pop("event", {})}, blocks, text, **options)
 
 
 BUDGET_CASES = [
     budget("a worker past its default budget is refused", "Goal: x", True, "Send your report now"),
+    budget("the refusal counts the turns", "Goal: x", True, "budget of 70 turns is spent (100 turns so far)"),
     budget("the refusal asks for a partial report", "Goal: x", True, "done, not done, what is on disk"),
-    budget("a worker within its default budget passes", "Goal: x", False, started=NEW),
+    budget("a worker at its default budget passes", "Goal: x", False, turns=70),
+    budget("a worker one turn past it is refused", "Goal: x", True, turns=71),
+    budget("calls of one message are one turn", "Budget: 1", False, files=(("s/subagents/agent-a1.jsonl", json.dumps({"timestamp": OLD, "message": {"content": "Budget: 1"}}) + "\n" + "".join(json.dumps({"type": "assistant", "message": {"id": "m1", "content": [{"type": "tool_use", "id": call, "name": "Read"}]}}) + "\n" for call in ("a", "b", "c"))),), event={"tool_use_id": "c"}),
+    budget("a call not yet in the transcript counts as a turn", "Goal: x", True, "71 turns so far", turns=70, event={"tool_use_id": "new"}),
+    budget("an event with no call id counts what is written", "Goal: x", False, turns=70, event={"tool_use_id": None}),
     budget("the brief's Budget line replaces the default", "Goal: x\nBudget: 99999999", False),
-    budget("a short Budget line refuses a fresh agent", "Goal: x\nBudget: 1", True, "1 minutes", started="2000-01-01T00:00:00Z", config={"budget": {"worker": 99999999}}),
-    budget("Budget: N minutes counts", "Goal: x\nBudget: 99999999 minutes", False),
-    budget("Budget: N min counts", "Goal: x\n- **Budget:** 99999999 min", False),
+    budget("a short Budget line refuses early", "Goal: x\nBudget: 1", True, "1 turns", turns=2, config={"budget": {"worker": 99999999}}),
+    budget("Budget: N turns counts", "Goal: x\nBudget: 99999999 turns", False),
+    budget("Budget: 1 turn counts", "Goal: x\n- **Budget:** 1 turn", True, turns=2, config={"budget": {"worker": 99999999}}),
     budget("a Budget line in a fence does not count", "Goal: x\n```\nBudget: 99999999\n```", True),
-    budget("the budget ends its own sentence", "Goal: x\nBudget: 99999999 minutes. Throwaway folder: `scratch/a/`.", False),
-    budget("the budget sits inside a line", "Runs: smallest first. Budget: 99999999 minutes. Folder: a", False),
-    budget("a budget in hours counts", "Goal: x\nBudget: 1 hour", False, started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 1800))),
+    budget("the budget ends its own sentence", "Goal: x\nBudget: 99999999 turns. Throwaway folder: `scratch/a/`.", False),
+    budget("the budget sits inside a line", "Runs: smallest first. Budget: 99999999 turns. Folder: a", False),
+    budget("a budget in minutes is no budget", "Goal: x\nBudget: 99999999 minutes", True),
     budget("a number of something else is no budget", "Goal: x\nBudget: 99999999 files", True),
     budget("a quoted budget is no budget", "Goal: x, the line read is `Budget: 99999999`", True),
-    budget("a budget quoted after other text is no budget", "Goal: x\nPut `Do this. Budget: 99999999 minutes` in it.", True),
+    budget("a budget quoted after other text is no budget", "Goal: x\nPut `Do this. Budget: 99999999 turns` in it.", True),
     budget("a budget at the end of prose is no budget", "Goal: x, we are over budget: 99999999", True),
-    budget("a budget inside a sentence is no budget", "Spend no budget 99999999 min on it", True),
-    budget("a time budget counts", "Goal: x\nTime budget: 99999999 minutes", False),
+    budget("a budget inside a sentence is no budget", "Spend no budget 99999999 turns on it", True),
     budget("a handback past the budget passes", "Goal: x", False, event={"tool_name": "SubagentHandback"}),
-    budget("a scout is refused past 5 minutes", "Goal: x", True, role="scout"),
+    budget("a scout at 35 turns passes", "Goal: x", False, role="scout", turns=35),
+    budget("a scout is refused past 35 turns", "Goal: x", True, role="scout", turns=36),
     budget("the project's budget replaces the defaults", "Goal: x", False, config={"budget": {"worker": 99999999}}),
     budget("a role with no budget entry passes", "Goal: x", False, config={"budget": {"scout": 1}}),
     budget("another agent type with no line passes", "Goal: x", False, role="Explore"),
     budget("another agent type with a line is refused", "Goal: x\nBudget: 1", True, role="Explore"),
     budget("the main session passes", "Goal: x", False, event={"agent_id": None, "agent_transcript_path": "project/s/subagents/agent-a1.jsonl"}),
     budget("no project means no rule", "Goal: x", False, config=None),
-    budget("an unknown start time passes", "Goal: x", False, started="not a time"),
     budget("a missing transcript passes", "Goal: x", False, files=()),
     budget(
         "a list brief is read",
         "",
         True,
-        files=(("s/subagents/agent-a1.jsonl", json.dumps({"timestamp": OLD, "message": {"content": [{"type": "text", "text": "Budget: 1"}]}}) + "\n"),),
+        files=(("s/subagents/agent-a1.jsonl", json.dumps({"timestamp": OLD, "message": {"content": [{"type": "text", "text": "Budget: 0"}]}}) + "\n" + json.dumps({"type": "assistant", "message": {"id": "m", "content": [{"type": "tool_use", "id": "t", "name": "Read"}]}}) + "\n"),),
         config={"budget": {"worker": 99999999}},
     ),
     budget("a broken transcript lets the call run", "", False, files=(("s/subagents/agent-a1.jsonl", "{not json\n"),), is_exit_one=True),
@@ -1256,7 +1398,7 @@ def read_call(call_id: str, path: str = "", /) -> dict:  # keys are data
     return {"type": "tool_use", "id": call_id, "name": "Read", "input": {"file_path": path or f"{call_id}.py"}}
 
 
-def bash_call(call_id: str, command: str, /) -> dict:  # keys are data
+def shell_call(call_id: str, command: str, /) -> dict:  # keys are data
     return {"type": "tool_use", "id": call_id, "name": "Bash", "input": {"command": command}}
 
 
@@ -1277,14 +1419,22 @@ def nudge(name: str, turns: list[list[dict]], text: str = "", /, *, path: str = 
 
 REPEATED = [[read_call("r0", "a.py")], [read_call("r1", "a.py")], [read_call("r2", "a.py")], [read_call("r3", "a.py")]]
 NUDGE_CASES = [
-    nudge("six single reads in a row are nudged", make_reads(6), "one small read each"),
-    nudge("the nudge is hook context", make_reads(6), '"hookEventName": "PostToolUse"'),
-    nudge("five single reads are not", make_reads(5), lacks="additionalContext"),
-    nudge("two reads in one message break the run", [*make_reads(3), [read_call("x1"), read_call("x2")], [read_call("x3")], [read_call("x4")]], lacks="additionalContext"),
-    nudge("a batched command breaks the run", [*make_reads(3), [bash_call("b1", "cat a; cat b")], [read_call("x1")], [read_call("x2")]], lacks="additionalContext"),
-    nudge("a sed -i is no read", [[bash_call(f"b{index}", f"sed -i s/a/b/ f{index}.py")] for index in range(6)], lacks="additionalContext"),
-    nudge("single shell reads count", [[bash_call(f"b{index}", f"cd /repo && cat f{index}.py")] for index in range(6)], "one small read each"),
+    nudge("four single reads in a row are nudged", make_reads(4), "one small read each"),
+    nudge("the nudge is hook context", make_reads(4), '"hookEventName": "PostToolUse"'),
+    nudge("three single reads are not", make_reads(3), lacks="additionalContext"),
+    nudge("two reads in one message break the run", [*make_reads(3), [read_call("x1"), read_call("x2")]], lacks="additionalContext", event={"tool_use_id": "x1"}),
+    nudge("a batched command breaks the run", [*make_reads(3), [shell_call("b1", "cat a; cat b")]], lacks="additionalContext"),
+    nudge("a sed -i is no read", [[shell_call(f"b{index}", f"sed -i s/a/b/ f{index}.py")] for index in range(4)], lacks="additionalContext"),
+    nudge("single shell reads count", [[shell_call(f"b{index}", f"cd /repo && cat f{index}.py")] for index in range(4)], "one small read each"),
+    nudge("a read after cd and a semicolon counts", [[shell_call(f"b{index}", f"cd /repo; cat f{index}.py")] for index in range(4)], "one small read each"),
+    nudge(
+        "a line with no call does not break the run",
+        make_reads(4),
+        "one small read each",
+        files=(("s/subagents/agent-a1.jsonl", "".join(json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": [call]}}) + "\n" + json.dumps({"type": "assistant", "message": {"id": f"t{index}", "content": [{"type": "text", "text": "x"}]}}) + "\n" for index, [call] in enumerate(make_reads(4)))),),
+    ),
     nudge("a repeated read is nudged", REPEATED[:2], "same read"),
+    nudge("the same read after a command is a repeat", [REPEATED[0], [shell_call("c1", "python3 x.py")], REPEATED[1]], "same read"),
     nudge("the same read after an edit is not", [REPEATED[0], [{"type": "tool_use", "id": "e1", "name": "Edit", "input": {}}], REPEATED[1]], lacks="additionalContext"),
     nudge("another range of the file is not a repeat", [[read_call("r0", "a.py")], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"file_path": "a.py", "offset": 9}}]], lacks="additionalContext"),
     nudge("the second nudge still speaks", REPEATED[:3], "same read"),
@@ -1302,6 +1452,28 @@ NUDGE_CASES = [
     nudge("a missing transcript passes", REPEATED[:2], lacks="additionalContext", files=()),
     nudge("a torn transcript line is skipped", REPEATED[:2], lacks="additionalContext", files=(("s/subagents/agent-a1.jsonl", "{not json\n"),)),
     nudge("a broken config lets the call run", REPEATED[:2], lacks="additionalContext", config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
+]
+
+
+# ===========================================================================
+# The import and replay tools
+# ===========================================================================
+
+
+IMPORT_SOURCE = "../.claude/projects/p/s/subagents/agent-a1.jsonl"
+IMPORT_LINES = (
+    {"type": "assistant", "timestamp": NEW, "cwd": "/w", "sessionId": "s", "message": {"id": "m1", "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "a"}}]}},
+    {"type": "assistant", "timestamp": NEW, "cwd": "/w", "sessionId": "s", "message": {"id": "m2", "content": [{"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "b"}}]}},
+    {"type": "assistant", "timestamp": NEW, "message": {"id": "m3", "content": [{"type": "text", "text": make_report()}]}},
+)
+IMPORT_TEXT = "".join(json.dumps(line) + "\n" for line in IMPORT_LINES)
+TOOL_CASES = [
+    Case("an imported report becomes a row", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"imported": true')),
+    Case("an imported row counts its tool turns", ("import_reports.py",), {}, False, files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"tool_turns": {"turns": 2, "calls": 2, "one_call_turns": 2, "longest_small_run": 2, "small_reads": 2, "repeats": 0}')),
+    Case("a transcript with no report card is no row", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps(IMPORT_LINES[0]) + "\n"),), not_wrote=("data/ledger.jsonl", "imported")),
+    Case("a dry run writes nothing", ("import_reports.py", "--dry-run"), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT),), not_wrote=("data/ledger.jsonl", "imported")),
+    Case("a second import adds nothing", ("import_reports.py",), {}, False, "to add: 0", files=((IMPORT_SOURCE, IMPORT_TEXT),), before=((("import_reports.py",), {}),)),
+    Case("the replay counts a refused command", ("replay.py",), {}, False, "refused: 1 distinct", files=(("../.claude/projects/p/s.jsonl", json.dumps({"type": "assistant", "cwd": "/", "message": {"content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "rm x"}}]}}, separators=(",", ":")) + "\n"),)),
 ]
 
 
@@ -1456,6 +1628,12 @@ SKILL_GATE_CASES = [
     skill_gate("skill gate: a prefixed Skill call allows", "app.py", False, main=("harness:code-python",)),
     skill_gate("skill gate: a bare Skill call allows", "app.py", False, main=("code-python",)),
     skill_gate("skill gate: another skill does not allow", "app.py", True, main=("code-js",)),
+    skill_gate(
+        "skill gate: another tool naming a skill does not allow",
+        "app.py",
+        True,
+        transcript=(assistant({"type": "text", "text": "Skill"}, {"type": "tool_use", "id": "b1", "name": "Bash", "input": {"skill": "harness:code-python"}}),),
+    ),
     skill_gate("skill gate: no key means no rule", "app.py", False, config={}),
     skill_gate("skill gate: no project means no rule", "app.py", False, config=None),
     skill_gate("skill gate: scratch is exempt", "scratch/t/x.py", False),
@@ -1546,6 +1724,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
         (root / "transcript.jsonl").write_text("".join(f"{json.dumps(line)}\n" for line in case.transcript).replace(ROOT, str(root)))
         environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "HOME": str(root), "UV_CACHE_DIR": UV_CACHE}
         environment.pop("CLAUDE_PROJECT_DIR", None)
+        environment["SHELL"] = case.shell
         if case.project_dir:
             environment["CLAUDE_PROJECT_DIR"] = str(root / case.project_dir)
         for script, event in case.before:
@@ -1575,7 +1754,7 @@ def main() -> int:
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     arguments = parser.parse_args()
-    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(JOBS) as pool:

@@ -145,11 +145,11 @@ A brief may step a role up to a stronger model (`models` skill).
 | Hook | Event | What it does |
 |---|---|---|
 | `context.py` | SessionStart, SubagentStart | Strict. Tells the main session to load `harness:orchestrator`, tells a role which report form it owes, and states the rule on tool turns to both |
-| `budget.py` | PreToolUse, every tool | Strict. Refuses every tool call but the handback of a sub-agent that is past its time budget, so it must send a partial report |
+| `budget.py` | PreToolUse, every tool | Strict. Refuses every tool call but the handback of a sub-agent that is past its budget of model turns, so it must send a partial report |
 | `guard.py` | PreToolUse: Bash, Write, Edit, NotebookEdit | Always: blocks `rm` and other deletes, force push, `git reset --hard`, unquoted globs, sleep polling. Strict and configured: blocks package changes, writes under `/tmp`, shell writes outside scratch, Python run outside a lock |
 | `delegate.py` | PreToolUse: same tools | The `delegate` key. Refuses edits and unlisted Bash from the main session |
 | `skill_gate.py` | PreToolUse: Edit, Write, NotebookEdit | The `skill_gate` key. Refuses an edit of a file until the calling agent has loaded the skill for that kind of file; scratch, unmatched files and paths outside the project pass |
-| `brief_lint.py` | PreToolUse: Agent, Task | The `brief` key. A brief for a role must hold its required lines, such as `Goal:` |
+| `brief_lint.py` | PreToolUse: Agent, Task | The `brief` key. A brief for a role must hold its required lines, such as `Goal:`, and a budget in turns |
 | `turn.py` | PostToolUse, UserPromptSubmit, Stop | Strict. Tracks the turn; blocks a stop while the job status, lessons or feedback are left open |
 | `nudge.py` | PostToolUse: Read, Grep, Glob, Bash | Strict. Adds one line of context on a repeated read or a long run of single small reads, at most twice per agent. Never refuses |
 | `report_gate.py` | SubagentStop | Strict. Sends a bad report back up to 3 times, checks its claims against the transcript, writes the ledger |
@@ -187,7 +187,7 @@ Every key is optional; `{}` turns on the report and turn gates alone.
 | `brief` | Turns on brief checks; `required` maps a role (or `*`) to the line labels it needs |
 | `report` | `short` and `full` add agent types that owe a report; `causes` adds problem causes |
 | `skill_gate` | Maps a glob (a name pattern, or a root-relative path when it holds `/`) to the skills an agent must have loaded before editing a matching file; `/harness:init` writes defaults |
-| `budget` | Maps a role to minutes of working time |
+| `budget` | Maps a role to model turns |
 | `stop` | `min_calls`, the status `headings` a long turn must end with, and `rule_paths` that back a lesson |
 
 ## bin/
@@ -203,7 +203,8 @@ Every key is optional; `{}` turns on the report and turn gates alone.
   verdict on each. The folder is not a dot-folder because Claude Code refuses to write those. Commit both files.
 - **The ledger**, `ledger.jsonl`: one row per sub-agent with its whole report, scores and causes. It lives in the plugin's
   data folder (`$CLAUDE_PLUGIN_DATA`, else `~/.cache/harness`), not in the project.
-- **Budgets:** a brief may hold a line `Budget: 15` (minutes). Past it, `budget.py` refuses the agent's tool calls and
+- **Budgets:** a brief may hold a line `Budget: 30 turns`. A turn is one model message, however many tools it calls, so a slow
+  machine costs nothing. Past it, `budget.py` refuses the agent's tool calls and
   the agent reports what it has. Without the line, the `budget` key gives a default per role.
 - **`scratch/`:** the project's throwaway folder for probes, proposals and one-off output. It is git-ignored and agents
   use it instead of `/tmp`; the guard refuses `/tmp` when `guard.no_tmp` is set. This repo has its own git-ignored

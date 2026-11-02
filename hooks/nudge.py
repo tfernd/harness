@@ -6,7 +6,7 @@
 # exclude-newer = "7 days"
 # ///
 """PostToolUse hook on Read, Grep, Glob and Bash: in a project with `.harness.json`, adds one line of context at the moment an
-agent wastes tool turns, and never refuses. It fires on an exact repeat of a small read with nothing else run since, and on
+agent wastes tool turns, and never refuses. It fires on an exact repeat of a small read with no edit since, and on
 every RUN_LENGTH single small reads in a row, at most MAX_NUDGES times per agent, and stays silent past MAX_BYTES of transcript. A call in the agent's own transcript counts,
 so no state is kept. `report_gate.py` and `import_reports.py` write the same counts to the ledger for `harness:retro`.
 """
@@ -21,18 +21,19 @@ from pathlib import Path
 from typing import NamedTuple
 
 from budget import get_agent_path
-from common import find_project, read_events
+from common import EDIT_TOOLS, find_project, get_turns, read_events
 
 READ_TOOLS = frozenset({"Read", "Grep", "Glob"})
 SMALL_COMMANDS = frozenset({"cat", "bat", "sed", "head", "tail", "grep", "rg", "ls", "wc", "find"})
-LEADING_CD = re.compile(r"^cd\s+\S+\s*&&\s*")
+LEADING_CD = re.compile(r"^cd\s+\S+\s*(?:&&|;)\s*")
 # A command that batches several steps, or that writes, is not a small read.
 BATCHED_OR_WRITING = re.compile(r";|&&|\|\||\n|>|^sed\s(.*\s)?-i|\s-delete\b|\s-exec")
-RUN_LENGTH = 6
+# Past runs of 4 or more are about 1% of agents; shorter runs are common enough that a note would turn into noise.
+RUN_LENGTH = 4
 MAX_NUDGES = 2
 # A longer transcript gets no nudge: this runs on every read, and only a whole transcript can count the cap.
 MAX_BYTES = 1048576
-REPEAT_TEXT = "Harness note, not a refusal: you already made this same read and ran nothing since. Use what you have."
+REPEAT_TEXT = "Harness note, not a refusal: you already made this same read and edited nothing since. Use what you have, unless a command changed it."
 RUN_TEXT = (
     f"Harness note, not a refusal: your last {RUN_LENGTH} turns were one small read each. "
     "Get what you still need at once: one script, or parallel calls in one message."
@@ -46,27 +47,6 @@ class Waste(NamedTuple):
     longest_run: int
     small_reads: int
     repeats: int
-
-
-def get_turns(events: list[dict], /) -> list[list[dict]]:  # keys are data
-    """The tool calls of each model turn; a transcript line holds one block, and the lines of a turn share a message id."""
-
-    turns: list[list[dict]] = []
-    last_id = None
-    for event in events:
-        message = event.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        calls = [block for block in content if isinstance(block, dict) and block.get("type") == "tool_use"] if isinstance(content, list) else []
-        if event.get("type") != "assistant" or not calls:
-            continue
-        message_id = message.get("id")
-        if message_id and message_id == last_id:
-            turns[-1].extend(calls)
-        else:
-            turns.append(calls)
-        last_id = message_id
-
-    return turns
 
 
 def is_small_read(call: dict, /) -> bool:  # keys are data
@@ -84,7 +64,7 @@ def is_small_read(call: dict, /) -> bool:  # keys are data
 
 
 def get_waste(turns: list[list[dict]], /) -> Waste:  # keys are data
-    """Walks the turns in order. A call that is not a small read may change a file, so it forgets the reads before it."""
+    """Walks the turns in order. An edit forgets the reads before it; a command may change a file too, which the nudge's text allows for."""
 
     nudges: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -97,7 +77,8 @@ def get_waste(turns: list[list[dict]], /) -> Waste:  # keys are data
             nudges.append((str(turn[0].get("id")), RUN_TEXT))
         for call in turn:
             if not is_small_read(call):
-                seen.clear()
+                if call.get("name") in EDIT_TOOLS:
+                    seen.clear()
                 continue
             small_reads += 1
             key = json.dumps([call.get("name"), call.get("input")], sort_keys=True)

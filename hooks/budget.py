@@ -5,13 +5,14 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on every tool: in a project with `.harness.json`, a sub-agent past its time budget is refused every
+"""PreToolUse hook on every tool: in a project with `.harness.json`, a sub-agent past its budget of model turns is refused every
 tool call but the handback and told to send its report now, as a partial one. A call without `agent_id` came from the main session and
 passes.
 
-The budget is the first `Budget: N` outside a fence and a backtick quote in the agent's brief (its transcript's first line), opening a line or a
-sentence, so prose such as `over budget: 20` does not count; N is minutes, or hours with `hours` or `h`. A number followed by another word (`Budget: 5 files`) does not count. Without one the role's default stands: `.harness.json`'s `budget` maps a role to minutes and REPLACES the whole DEFAULT_BUDGET
-table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The clock starts at the first line's timestamp. The handback
+A turn is one model message, however many tools it calls, so a slow machine or a long test costs nothing. The budget is the first
+`Budget: N` or `Budget: N turns` outside a fence and a backtick quote in the agent's brief (its transcript's first line), opening a line or a
+sentence, so prose such as `over budget: 20` does not count. Any other unit (`Budget: 5 files`, `Budget: 5 minutes`) does not count; the brief rule refuses it. Without one the role's default stands: `.harness.json`'s `budget` maps a role to turns and REPLACES the whole DEFAULT_BUDGET
+table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The handback
 always passes, so the agent is never trapped. Only that first line is read, since this runs on every call.
 """
 
@@ -21,14 +22,17 @@ import json
 import os
 import re
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_unfenced_lines
+from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, read_events
 
-DEFAULT_BUDGET = {"scout": 5, "cold-reader": 5, "runner": 10, "reviewer": 10, "auditor": 10, "worker": 15}
-BUDGET_LINE = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*(?:time\s+)?budget\b[:*\s~]*([0-9]+(?:\.[0-9]+)?)\s*(?:(minutes?|mins?|m|hours?|hrs?|h)\b|(?=\W*$))", re.I)
+# Turns, near the 99th percentile of past agents of each role, so a default stops a runaway agent and no ordinary one.
+DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70}
+BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
+# A line that labels a budget, as opposed to prose that opens with the word.
+LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + r"\**\s*:", re.I)
+BUDGET_LINE = re.compile(BUDGET_LABEL.pattern + r"[:*\s~]*([0-9]+)\s*(?:turns?\b|(?=\W*$))", re.I)
 QUOTED = re.compile(r"`[^`]*`")
 TAIL_BYTES = 262144
 
@@ -71,24 +75,23 @@ def get_brief(entry: dict, /) -> str:  # keys are data
     return content if isinstance(content, str) else ""
 
 
-def get_minutes(brief: str, /) -> float | None:
-    """The minutes of the brief's `Budget:` line, None when it has none."""
+def get_turn_limit(brief: str, /) -> int | None:
+    """The turns of the brief's `Budget:` line, None when it has none."""
 
     for line in get_unfenced_lines(brief):
         match = BUDGET_LINE.search(QUOTED.sub("", line))
         if match:
-            is_hours = (match.group(2) or "").lower().startswith("h")
-            return float(match.group(1)) * (60 if is_hours else 1)
+            return int(match.group(1))
 
     return None
 
 
-def get_default(config: dict, role: str, /) -> float | None:  # keys are data
-    """The minutes `.harness.json` (or DEFAULT_BUDGET) gives a role, None when it gives none."""
+def get_default(config: dict, role: str, /) -> int | None:  # keys are data
+    """The turns `.harness.json` (or DEFAULT_BUDGET) gives a role, None when it gives none."""
 
-    minutes = config.get("budget", DEFAULT_BUDGET).get(role)
+    turns = config.get("budget", DEFAULT_BUDGET).get(role)
 
-    return float(minutes) if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) else None
+    return int(turns) if isinstance(turns, (int, float)) and not isinstance(turns, bool) else None
 
 
 def get_duration(path: Path | None, /) -> float | None:
@@ -122,19 +125,22 @@ def main() -> int:
         return 0
     with open(path, errors="replace") as file:
         first = json.loads(file.readline())
-    started = parse_time(first.get("timestamp"))
     role = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
-    minutes = get_minutes(get_brief(first))
-    if minutes is None:
-        minutes = get_default(config, role)
-    if started is None or minutes is None:
+    limit = get_turn_limit(get_brief(first))
+    if limit is None:
+        limit = get_default(config, role)
+    if limit is None:
         return 0
-    spent = (time.time() - started) / 60
-    if spent <= minutes:
+    turns = get_turns(read_events(path))
+    # The message of this very call may not have reached the transcript yet, as a live run showed; it counts all the same.
+    call_id = event.get("tool_use_id")
+    is_written = not call_id or any(call.get("id") == call_id for call in (turns[-1] if turns else ()))
+    num_turns = len(turns) + (not is_written)
+    if num_turns <= limit:
         return 0
     print(
-        f"Blocked by the harness budget rule: your budget of {minutes:g} minutes is spent ({spent:.0f} minutes since you "
-        "started). Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass.",
+        f"Blocked by the harness budget rule: your budget of {limit} turns is spent ({num_turns} turns so far). "
+        "Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass.",
         file=sys.stderr,
     )
 

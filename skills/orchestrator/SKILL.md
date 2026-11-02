@@ -22,7 +22,7 @@ size tiers: `harness:workflows`.
 | **One round, one goal** | Never renames, contracts and clean-up together; small commits, each one usable |
 | **Run it first** | Start the product (a headless smoke test in the gate) before any review; polish waits until it runs |
 | **One reviewer at the end** | One read of the whole diff, high severity only (`harness:review`); the main session applies each fix |
-| **A budget per round** | State minutes and tokens up front; over it, stop, rethink and tell the owner |
+| **A budget per round** | State turns and tokens up front; over it, stop, rethink and tell the owner |
 
 - Never hand a list of findings to one fixer. After any fix, compare the test count and the deleted files with the
   baseline: a drop stops the round until it is explained.
@@ -67,7 +67,7 @@ Input:     the paths to read (about 8 files); never pasted code
 Write set: every file it may change, or an explicit glob, disjoint from every running agent's
 Judge:     the commands or tests that decide it is done, and the baseline of "unchanged"
 Runs:      what it may run, smallest case first; one result row per case as it finishes
-Budget:    minutes for the whole job
+Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them and refuses any other unit
 Report:    the report form it owes (`harness:report`), headings in order
 ```
 

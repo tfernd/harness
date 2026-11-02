@@ -19,8 +19,9 @@ Always on:
 3. Globs: an unquoted glob that fails or changes the command: one that matches no file from the folder the command runs
    in, which zsh refuses with "no matches found" (`ls *.nothing`), one in an option (`--include=*.py`), and the pattern of
    `find -name`, `rg -g` or `grep --include`, which the shell would expand first. A glob that matches a file is what the
-   author meant (`wc -l src/*.py`). Not judged, so allowed: a relative glob from an unknown folder, and a word with `$`, a
-   backtick or a brace, whose expansion is not read. No glob: `$?`, `$*`, `${...}`, `$((...))`, the arguments of `[`, `[[`,
+   author meant (`wc -l src/*.py`). Not judged, so allowed: everything when the user's shell is not zsh, and inside another
+   shell's `-c` string, where a glob with no match stays literal; a path glob after a step that may write its files
+   (`make && cat out/*`); a relative glob from an unknown folder; and a word with `$`, a backtick or a brace, whose expansion is not read. No glob: `$?`, `$*`, `${...}`, `$((...))`, the arguments of `[`, `[[`,
    `case` and `test`, and the value of `export NAME=...`.
 4. Polling: a `sleep` inside a `while` or `until` loop, also in a `$(...)` or a `bash -c` string inside one. A command
    that waits runs in the background. A `for` loop, a loop without a sleep and a sleep outside any loop are not refused.
@@ -95,6 +96,8 @@ OPTION_PREFIXES = {
 # The commands that delete, and the shells whose -c string is a command.
 DELETERS = {"rm", "rmdir", "unlink", "shred"}
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Commands that make no file unless they redirect, so a glob after them is judged by what exists now.
+READ_ONLY_COMMANDS = frozenset("cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [[".split())
 # The options of a shell that take a value in the next word, before its -c string.
 SHELL_VALUE_OPTIONS = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 # The options of find that run the words after them, up to a `;` or a `+`.
@@ -339,18 +342,21 @@ def is_denied(command: Command, /) -> bool:
     return POLICY.deny_packages and is_package_change(command)
 
 
-def is_failing_glob(text: str, directory: str | None, /) -> bool:
-    """Whether a glob word fails in zsh: an option, or a path that matches no file from `directory` (None: not known)."""
+def is_failing_glob(text: str, directory: str | None, may_have_written: bool, /) -> bool:
+    """Whether a glob word fails in zsh: an option, or a path that matches no file from `directory` (None: not known).
+
+    `may_have_written` says an earlier step of the command may make the file, so what exists now proves nothing.
+    """
 
     if text.startswith("-"):
         return True
-    if any(character in text for character in UNEXPANDED) or (directory is None and not is_absolute(text)):
+    if may_have_written or any(character in text for character in UNEXPANDED) or (directory is None and not is_absolute(text)):
         return False
 
     return next(glob.iglob(resolve_path(text, directory or ""), recursive=True), None) is None
 
 
-def has_failing_glob(command: Command, directory: str | None, /) -> bool:
+def has_failing_glob(command: Command, directory: str | None, may_have_written: bool, /) -> bool:
     """Whether an argument holds an unquoted glob that fails or is a pattern for the command, which then must be quoted."""
 
     name = os.path.basename(command.name)
@@ -361,7 +367,7 @@ def has_failing_glob(command: Command, directory: str | None, /) -> bool:
     for index, word in enumerate(command.arguments):
         is_judged = word.is_glob and not (is_declarer and ASSIGNMENT.match(word.text))
         is_pattern = index > 0 and command.arguments[index - 1].text in pattern_options
-        if is_judged and (is_pattern or is_failing_glob(word.text, directory)):
+        if is_judged and (is_pattern or is_failing_glob(word.text, directory, may_have_written)):
             return True
 
     return False
@@ -593,22 +599,28 @@ def get_directory_after(command: Command, is_grouped: bool, directory: str | Non
 # ===========================================================================
 
 
-def find_breaches(segments: list[Segment], cwd: str | None, is_locked: bool, is_free: bool, in_loop: bool, /) -> list[str]:
+def find_breaches(segments: list[Segment], cwd: str | None, is_locked: bool, is_free: bool, in_loop: bool, judges_globs: bool, /) -> list[str]:
     """The rules some simple commands break, each once, in rule order.
 
-    `in_loop` says they run in a loop; `cwd` is the folder they start in, None when that is not known.
+    `in_loop` says they run in a loop; `cwd` is the folder they start in, None when that is not known; `judges_globs` says
+    their shell is zsh, the one that fails on a glob with no match.
     """
 
     breaches: list[str] = []
     directory = cwd
+    may_have_written = False
     for segment in segments:
         command = resolve(segment)
         locked, free = is_locked or command.is_locked, is_free or command.is_free
         is_looping = in_loop or segment.in_loop
-        breaches.extend(get_command_breaches(segment, command, directory, locked or free, is_looping))
+        globs = (judges_globs, may_have_written)
+        breaches.extend(get_command_breaches(segment, command, directory, locked or free, is_looping, globs))
         if command.name == "export" and any(word.text == POLICY.free_env for word in command.arguments):
             is_free = True
-        breaches.extend(find_breaches(get_inner_segments(command), directory, locked, free, is_looping))
+        name = os.path.basename(command.name)
+        inner_judges = judges_globs and not (name in SHELLS and name != "zsh")
+        breaches.extend(find_breaches(get_inner_segments(command), directory, locked, free, is_looping, inner_judges))
+        may_have_written = may_have_written or name not in READ_ONLY_COMMANDS or bool(get_written_words(segment, command, directory))
         directory = get_directory_after(command, segment.in_group, directory)
 
     return [rule for rule in MESSAGES if rule in breaches]
@@ -617,15 +629,18 @@ def find_breaches(segments: list[Segment], cwd: str | None, is_locked: bool, is_
 def find_command_breaches(command: str, cwd: str | None, /) -> list[str]:
     """The rules a whole shell command breaks, from the folder it starts in."""
 
-    return find_breaches(get_segments(command), cwd, False, False, False)
+    is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
+
+    return find_breaches(get_segments(command), cwd, False, False, False, is_zsh)
 
 
 def get_command_breaches(
-    segment: Segment, command: Command, directory: str | None, is_lock_free: bool, is_looping: bool, /
+    segment: Segment, command: Command, directory: str | None, is_lock_free: bool, is_looping: bool, globs: tuple[bool, bool], /
 ) -> list[str]:
     """The rules one simple command breaks.
 
-    `is_lock_free` says the lock or its `free_env` covers it; `directory` is where it runs, None when unknown.
+    `is_lock_free` says the lock or its `free_env` covers it; `directory` is where it runs, None when unknown; `globs` says
+    whether globs are judged and whether an earlier step may have written.
     """
 
     words = get_written_words(segment, command, directory)
@@ -637,7 +652,7 @@ def get_command_breaches(
         ("delete", is_delete(command)),
         ("denied", is_denied(command)),
         ("lock", bool(POLICY.lock_commands) and is_python_run(command) and not is_lock_free),
-        ("glob", has_failing_glob(command, directory)),
+        ("glob", globs[0] and has_failing_glob(command, directory, globs[1])),
         ("temporary", any(is_temporary(path) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path) for path in [*written, *moved])),
         ("poll", os.path.basename(command.name) == "sleep" and is_looping),

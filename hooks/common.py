@@ -15,6 +15,7 @@ from pathlib import Path
 CONFIG_NAME = ".harness.json"
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
+EDIT_TOOLS = {"Edit", "Write", "NotebookEdit"}
 FEEDBACK_FOLDER = "harness-feedback"
 INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
 # The path of the handled file; `turn.py` imports it as HANDLED_NAME, since it names its own line pattern HANDLED.
@@ -99,6 +100,27 @@ def read_events(path: Path, /) -> list[dict]:  # keys are data
             events.append(event)
 
     return events
+
+
+def get_turns(events: list[dict], /) -> list[list[dict]]:  # keys are data
+    """The tool calls of each model turn; a transcript line holds one block, and the lines of a turn share a message id."""
+
+    turns: list[list[dict]] = []
+    last_id = None
+    for event in events:
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        calls = [block for block in content if isinstance(block, dict) and block.get("type") == "tool_use"] if isinstance(content, list) else []
+        if event.get("type") != "assistant" or not calls:
+            continue
+        message_id = message.get("id")
+        if message_id and message_id == last_id:
+            turns[-1].extend(calls)
+        else:
+            turns.append(calls)
+        last_id = message_id
+
+    return turns
 
 
 def data_folder() -> Path:

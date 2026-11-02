@@ -1,58 +1,52 @@
 # Findings
 
 What testing the harness against real use found, and what is still open. Measured over the owner's past sessions (about
-2,300 agent transcripts and 110 main sessions) unless marked read. A row leaves this file when it is fixed and has a case.
+2,300 agent transcripts and 110 main sessions) unless marked read. A row leaves "Open" when it is fixed and has a case.
 
 ## Open
 
-| # | Problem | Evidence | Fix |
+| # | Problem | Evidence | Next |
 |---|---|---|---|
-| 1 | The report gate sends back a handback report it cannot see. The agent has already ended, so the send-back is lost, and so are the ledger row and the feedback | 59 of 63 blocks after a handback were never resumed; 50 blocks said every heading was missing; the same report passes those heading checks on a later replay | Read `last_assistant_message` or the handback, wait for the transcript, and always write the row. Cause not proven: a live run used text, not a handback |
-| 2 | The glob rule refuses a glob whose files an earlier step of the same command makes | `touch scratch/a.py; ls scratch/a*` and `gen && cat out/*.txt` are refused | Do not judge a path glob after a step that may write |
-| 3 | The glob rule applies zsh's rule inside `bash -c`, where a glob with no match stays literal | `bash -c 'ls *.nothing'` is refused | Do not judge a glob inside a non-zsh shell's string |
-| 4 | The glob rule assumes zsh for everyone, in a public plugin | read: no check of `$SHELL` in `hooks/guard.py` | Judge failing globs only when the shell is zsh |
-| 5 | The nudge misses `cd x; cmd`, so its runs and repeats undercount | 7,394 of 19,874 one-call Bash calls start with `cd`; the rule unwraps only `cd x && cmd` | Unwrap both, then measure again |
-| 6 | The nudge almost never fires | due in 11 of 2,305 agents; runs of 6 single small reads are rare | Decide its triggers from the numbers after 5 |
-| 7 | A budget the hook cannot read is silently replaced by the default | 157 past briefs say `Budget: N turns` | Move to turn budgets, and have the brief check refuse an unreadable line |
-| 8 | A time budget punishes a slow machine or a long test | owner's report; read: the clock starts at the brief | Count model turns in `hooks/budget.py` |
-| 9 | `import_reports.py` and `replay.py` have no hook cases | no mention in `tests/run_cases.py` | Add cases for the import row |
-| 10 | The Stop hook's lesson check can misjudge a turn in which `.harness.json` first appears | seen once: `AGENTS.md` had changed, the check said no rule file had | Take the baseline when the file first appears |
+| 1 | The fix for lost handback reports is not proven live | headless runs report by text, so only the desktop app shows a handback; cases cover the logic, and no case can write a transcript late, so `REPORT_WAIT_S` is undefended | After a push, count ledger rows against agents in a real session |
+| 2 | Planted bugs still uncaught | see Score | Read each survivor; write a case or show it changes nothing |
 
 ## Score
 
-Planted bugs caught by the cases, `tests/plant_bugs.py --count 200 --seed 1`: **169 of 200, 84%**. By hook: `brief_lint` 4/4,
-`context` 5/5, `delegate` 3/3, `report_gate` 28/32, `shell` 33/38, `budget` 10/11, `common` 7/8, `skill_gate` 8/9, `turn` 24/28,
-`nudge` 10/13, `guard` 37/49. Finish line: 95% on the same seed, with each remaining survivor read and shown to change nothing.
-
-Uncaught bugs worth a case first, since a wrong guard rule costs every project:
-
-- `guard.py:643`, the poll rule: nothing checks that a loop without `sleep` passes.
-- `guard.py:528` and `:450`, in-place edits: nothing checks that a plain `sed` passes.
-- `guard.py:303`, denied `uv` commands, and `:609`, the lock's free variable.
-- `guard.py:514`, `tar` write modes, and `:567` and `:571`, reading a `cd` target.
-- `turn.py:141` to `:163`, which calls count as agents and background runs.
-- `skill_gate.py:78` and `report_gate.py:409`, the scratch exemption.
-
-Some survivors probably change nothing, such as `nudge.py:134` and `turn.py:318`. Read each before writing a case.
+Planted bugs caught by the cases, `tests/plant_bugs.py --count 200 --seed 1`: **172 of 200, 86%**. By hook: `brief_lint` 5/5,
+`budget` 13/13, `common` 7/7, `nudge` 5/5, `skill_gate` 9/9, `turn` 24/26, `guard` 45/51, `import_reports` 5/7, `report_gate` 25/32,
+`shell` 29/38, `context` 2/3, `delegate` 3/4. Measured before the last review's small fixes. The score after the first round
+was also 84%, on a sample that had moved with the code, so only same-code runs compare. Finish line: 95%, with each remaining survivor read
+and shown to change nothing. `shell` is the weakest, and many of its survivors only break on unterminated input, where the hook fails open.
 
 ## Not settled
 
-- **Glob refusals on old commands:** of 4,622 past commands the rule would refuse today, 2,075 really failed with "no matches
-  found", so the rule is right on those. Another 2,370 ran fine, and today's files differ, so that count mixes findings 2 and
-  3 with stale replays. Measure again after those fixes.
-- **Waste:** 76% of agent turns hold one call and 23% of calls are small reads, but exact repeats are rare. Many one-call turns
-  need the previous result, so the real saving is unknown. The ledger's `tool_turns` gives the baseline from now on.
+- **Glob refusals on old commands:** of 4,020 past commands the rule would still refuse, 2,013 really failed with "no matches
+  found", so 97% of the 2,075 true catches stayed after the fixes, and 512 of the 2,370 that ran fine are no longer refused.
+  The other 1,858 ran fine but their files have since changed, so a replay cannot tell if they are false refusals.
+- **Waste:** 76% of agent turns hold one call and 23% of calls are small reads, but runs of 4 or more single reads occur in
+  about 1% of agents, and repeats in about 1.5%. The nudge will stay rare. The ledger's `tool_turns` gives the baseline from now
+  on, so a retro can show whether the start rule moves it.
 
 ## Fixed, with the number that showed it
 
-- A handback past the budget was refused: 17 refusals across 10 agents.
-- A `Budget:` line with more text after it was ignored, so the default applied: 351 of 453 readable budgets.
-- Four mutants pointed at code that no longer existed; `tests/mutants.py --check` now runs in pre-push and CI.
-- The pre-push hook was not switched on in this clone, so one push ran no local checks.
+- **Lost reports:** a bad or unseen handback report was sent back to an agent that had already ended. 59 of 63 such blocks were
+  never answered, and the ledger row and feedback were lost. The row and feedback are now always written.
+- **Time budgets:** a clock punished slow machines and long tests. Budgets now count model turns, with defaults near each role's
+  99th percentile: on past agents they would stop 4 of 626 workers and 1 of 154 scouts.
+- **Unreadable budgets:** 157 past briefs said `Budget: N turns` and the hook ignored them. Turns are now the unit, and the brief
+  rule refuses any other.
+- **Handback past the budget:** refused 17 times across 10 agents.
+- **`Budget:` line with more text after it:** ignored, so the default applied, on 351 of 453 readable budgets.
+- **Glob rule:** it refused a glob an earlier step would create, a glob inside `bash -c`, and globs for people not on zsh.
+- **Stop hook baseline:** a notification or a sub-agent's message moved the rule baseline, so real lessons were called missing.
+- **Nudge:** it missed `cd x; cmd` and forgot reads after any command.
+- **No cases:** `import_reports.py` and `replay.py` now have cases.
+- **Stale mutants:** four pointed at code that no longer existed; `tests/mutants.py --check` now runs in pre-push and CI.
+- **Pre-push hook:** it was not switched on in this clone, so one push ran no local checks.
 
 ## How to rerun
 
 - `uv run python tests/plant_bugs.py --count 200 --seed 1`: plants random bugs in copies of the hooks and scores how many the
-  cases catch. The same seed plants the same bugs. No bug is ever left in the repo.
+  cases catch. The same seed on the same code plants the same bugs. No bug is ever left in the repo.
 - `uv run python tests/mutants.py`: the named bugs, which must all be caught.
 - `uv run --script hooks/replay.py`: the always-on guard over past commands.

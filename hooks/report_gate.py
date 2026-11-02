@@ -39,8 +39,8 @@ import sys
 import time
 from pathlib import Path
 
-from budget import get_agent_path, get_brief, get_default, get_duration, get_minutes
-from common import HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines, read_events
+from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
+from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form, get_scratch, get_unfenced_lines, read_events
 from nudge import get_turn_stats
 
 FULL = (
@@ -78,7 +78,6 @@ REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
 MAX_AUTO = 5
 AUTO_PREFIX = "[auto] "
 LOW_TASK = 3
-EDIT_TOOLS = {"Edit", "Write", "NotebookEdit"}
 # What a FEEDBACK item says when it holds no feedback.
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
 NO_GATE = re.compile(r"no gates? (was |were )?applied", re.I)
@@ -87,6 +86,9 @@ SCORES = ("Task", "Brief", "Ease")
 WHAT_LABEL = "What would have helped"
 HOW_LABEL = "How I would do it again"
 MAX_SEND_BACKS = 3
+# Seconds this hook waits for a report to reach the transcript, and between looks; well under the hook's timeout of 10.
+REPORT_WAIT_S = 3
+REPORT_POLL_S = 0.25
 
 
 def read_sections(report: str, /) -> list[tuple[str, list[str]]]:
@@ -472,19 +474,19 @@ def file_feedback(root: str, session: str, role: str, items: list[str], /) -> li
     return ids
 
 
-def get_budget_min(event: dict, config: dict, role: str, /) -> float | None:  # keys are data
-    """The minutes budget.py gives this agent: its brief's `Budget:` line, else the role's default; None if neither."""
+def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:  # keys are data
+    """The turns budget.py gives this agent: its brief's `Budget:` line, else the role's default; None if neither."""
 
     path = get_agent_path(event)
-    minutes = None
+    turns = None
     if path is not None:
         try:
             with open(path, errors="replace") as file:
-                minutes = get_minutes(get_brief(json.loads(file.readline())))
+                turns = get_turn_limit(get_brief(json.loads(file.readline())))
         except (OSError, ValueError, AttributeError):
             pass
 
-    return minutes if minutes is not None else get_default(config, role)
+    return turns if turns is not None else get_default(config, role)
 
 
 def write_ledger(
@@ -492,7 +494,7 @@ def write_ledger(
 ) -> None:  # keys are data
     """Appends one row for the stopped agent to the plugin's ledger, which the `retro` skill reads.
 
-    `extra` holds the fields read from the transcript and the config: model, budget_min, files_changed.
+    `extra` holds the fields read from the transcript and the config: model, budget_turns, files_changed.
     """
 
     sections = dict(reversed(read_sections(report)))
@@ -518,7 +520,7 @@ def write_ledger(
         "causes": [cause.strip().lower() for cause in causes],
         "feedback_ids": ids,
         "model": event.get("model") or extra.get("model"),
-        "budget_min": extra.get("budget_min"),
+        "budget_turns": extra.get("budget_turns"),
         "files_changed": extra.get("files_changed", []),
         "claim_marks": {mark: len(re.findall(rf"\b{mark}\b", report)) for mark in ("READ", "DERIVED", "PROBED")},
         "brief_hash": hashlib.sha1(get_task_title(report).encode()).hexdigest()[:8] if get_task_title(report) else None,
@@ -551,7 +553,7 @@ def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: st
     changes = get_file_changes(blocks, failed, cwd)
     files = [{"path": os.path.relpath(path, root) if path.startswith(root + os.sep) else path, "lines_added": added} for path, added in changes.items()]
 
-    return {"model": model, "budget_min": get_budget_min(event, config, role), "files_changed": files}
+    return {"model": model, "budget_turns": get_budget_turns(event, config, role), "files_changed": files}
 
 
 def finish(event: dict, root: str, role: str, report: str, problems: list[str], extra: dict, /) -> None:  # keys are data
@@ -564,6 +566,22 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
     session = event.get("session_id") or "unknown"
     items = [*get_feedback(report), *get_auto_items(report)]
     write_ledger(event, root, role, report, send_backs, problems, file_feedback(root, session, role, items), extra)
+
+
+def wait_for_report(event: dict, path: str, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
+    """The transcript's blocks, read again until a report holds its first heading: a handback can reach the file after this hook starts.
+
+    REPORT_WAIT_S is not defended by a case, since none can write the file late; past it the agent counts as ended with no report.
+    """
+
+    blocks, failed, model = read_assistant_blocks(path)
+    waited = 0.0
+    while not ANSWER_HEADING.search(get_report(event, blocks)) and waited < REPORT_WAIT_S:
+        time.sleep(REPORT_POLL_S)
+        waited += REPORT_POLL_S
+        blocks, failed, model = read_assistant_blocks(path)
+
+    return blocks, failed, model
 
 
 def main() -> int:
@@ -580,7 +598,7 @@ def main() -> int:
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
     cause_pattern = re.compile(rf"cause:\s*({causes})(?![a-z]|\s*\|)", re.I)
     path = event.get("agent_transcript_path") or ""
-    blocks, failed, model = read_assistant_blocks(path) if os.path.isfile(path) else ([], {}, None)
+    blocks, failed, model = wait_for_report(event, path) if os.path.isfile(path) else ([], {}, None)
     report = get_report(event, blocks)
     problems = check_report(report, required, cause_pattern)
     problems += check_claims(report, event, str(root), get_scratch(root, config), blocks, failed)
@@ -590,9 +608,12 @@ def main() -> int:
         return 0
     listed = "; ".join(problems)
     tries = get_send_backs(event)
-    if tries >= MAX_SEND_BACKS:
+    # An agent that handed back has ended, so a send-back would reach nobody and lose its row and feedback.
+    has_ended = bool(blocks) and blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not report)
+    if has_ended or tries >= MAX_SEND_BACKS:
         finish(event, str(root), name, report, problems, extra)
-        warning = f"Sub-agent {name} stopped with a bad report after {tries} send-backs: {listed}"
+        cause = "and it has already ended" if has_ended else f"after {tries} send-backs"
+        warning = f"Sub-agent {name} stopped with a bad report {cause}: {listed}"
         print(json.dumps({"systemMessage": warning}))
         return 0
     get_send_backs_path(event).write_text(str(tries + 1))

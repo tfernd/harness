@@ -9,7 +9,8 @@
 harness role holds the lines the role needs. A call that carries `agent_id` came from a sub-agent and passes.
 
 `brief.required` maps a role, or `*` for the rest, to the labels a line of the prompt must start with. A custom `required` REPLACES
-DEFAULT_REQUIRED: a role it does not list is unchecked unless a `*` entry covers it. DEFAULT_REQUIRED stands when it is not set. It applies only to the six roles, with or without the `harness:` prefix; every other
+DEFAULT_REQUIRED: a role it does not list is unchecked unless a `*` entry covers it. DEFAULT_REQUIRED stands when it is not set. A `Budget:` line that names no turns (`Budget: 5 minutes`) is refused too, since `budget.py` would
+silently use the default. It applies only to the six roles, with or without the `harness:` prefix; every other
 `subagent_type` passes.
 """
 
@@ -19,7 +20,8 @@ import json
 import os
 import sys
 
-from common import PLUGIN_PREFIX, ROLES, find_project
+from budget import LABELLED_BUDGET, QUOTED, get_turn_limit
+from common import PLUGIN_PREFIX, ROLES, find_project, get_unfenced_lines
 
 DEFAULT_REQUIRED = {"worker": ["Goal:", "Write set:", "Judge:"], "*": ["Goal:"]}
 # What may stand before a label on its line: a list bullet, a heading mark, bold markers.
@@ -32,6 +34,14 @@ def get_missing(prompt: str, labels: list[str], /) -> list[str]:
     lines = [line.lstrip(LINE_MARKS) for line in prompt.splitlines()]
 
     return [label for label in labels if not any(line.startswith(label) for line in lines)]
+
+
+def has_unreadable_budget(prompt: str, /) -> bool:
+    """Whether a line of the prompt labels a budget that `budget.py` cannot read."""
+
+    lines = [QUOTED.sub("", line) for line in get_unfenced_lines(prompt)]
+
+    return any(LABELLED_BUDGET.search(line) and get_turn_limit(line) is None for line in lines)
 
 
 def main() -> int:
@@ -47,6 +57,9 @@ def main() -> int:
         return 0
     required = (config["brief"] or {}).get("required", DEFAULT_REQUIRED)
     missing = get_missing(tool_input.get("prompt") or "", required.get(role, required.get("*", [])))
+    if has_unreadable_budget(tool_input.get("prompt") or ""):
+        print("Blocked by the harness brief rule: a budget counts model turns. Write `Budget: 30 turns`.", file=sys.stderr)
+        return 2
     if not missing:
         return 0
     print(f"Blocked by the harness brief rule: a brief for {role} needs the lines {', '.join(missing)}", file=sys.stderr)
