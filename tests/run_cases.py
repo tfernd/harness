@@ -1658,6 +1658,7 @@ COMMIT_CASES = [
     commit("an edited pull request is checked", "gh pr edit 1 --body 'Generated with Claude Code'", True, "AI attribution"),
     commit("a later command naming a tool is no attribution", "git commit -m 'feat: add y' -m '* did it'; rg 'generated with' a; claude plugin list", False),
     commit("a pull request body held in a variable is refused", "T='Generated with Claude Code'; gh pr create --body \"$T\"", True, "AI attribution"),
+    commit("an unreadable message does not read later steps", "git commit -m \"$M\"; rg 'generated with claude' a", False),
     commit("the rule can be turned off", "git commit -m 'add y'", False, config={"guard": {"commit_style": False}}),
     commit("no project means no rule", "git commit -m 'add y'", False, config=None),
     commit("a broken config lets the call run", "git commit -m 'add y'", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),

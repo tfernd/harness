@@ -32,6 +32,7 @@ AI_NAME = r"(claude|anthropic|copilot|chatgpt|gpt-|openai|gemini|cursor|codex|\b
 AI_ATTRIBUTION = re.compile(rf"co-authored-by:[^\n]*{AI_NAME}|generated (with|by)[^\n]*{AI_NAME}|\U0001f916", re.I)
 # A command's heredoc: its body, whichever quotes its delimiter has.
 CALL = re.compile(r"\b(git\b[^\n]*?\bcommit|gh\s+pr\s+(create|edit))\b")
+CALL_END = re.compile(r"\n|;|&&|\|\|")
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n\s*\1\b", re.S)
 
 
@@ -55,6 +56,15 @@ def get_tail_start(command: str, /) -> int:
     call = CALL.search(command)
 
     return call.start() if call else 0
+
+
+def get_text_up_to_call(command: str, /) -> str:
+    """The command up to the end of the commit or pull request call: a variable it uses is set before it, and later steps are no part of it."""
+
+    start = get_tail_start(command)
+    end = CALL_END.search(command, start)
+
+    return command[: end.start()] if end else command
 
 
 def read_message(values: list[str], command: str, /) -> str | None:
@@ -129,11 +139,11 @@ def find_problems(command: str, cwd: str, /) -> list[str]:
         if name == "git" and get_git_subcommand(words[1:]) == "commit":
             message = get_commit_message(words, command, cwd)
             # An unreadable message may hold a variable set earlier in the command.
-            problems += check_message(message) if message is not None else check_attribution(command)
+            problems += check_message(message) if message is not None else check_attribution(get_text_up_to_call(command))
             problems += check_attribution("\n".join(get_option_value(words, "--trailer")))
         elif name == "gh" and words[1:2] == ["pr"] and words[2:3] in (["create"], ["edit"]):
             body = read_message(get_option_value(words, "--body", "b"), command)
-            problems += check_attribution(body if body is not None else command)
+            problems += check_attribution(body if body is not None else get_text_up_to_call(command))
 
     return list(dict.fromkeys(problems))
 
