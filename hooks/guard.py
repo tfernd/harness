@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -27,7 +27,8 @@ Always on:
    that waits runs in the background. A `for` loop, a loop without a sleep and a sleep outside any loop are not refused.
 
 On when the project's `.harness.json` asks, under its `guard` key:
-5. `deny_packages`: package changes (`uv add|remove|lock|sync|pip`, `uv run pip`, `pip`, `pip3`, `python -m pip`).
+5. `ask_packages` (or its old name `deny_packages`): package changes (`uv add|remove|lock|sync|pip`, `uv run pip`, `pip`, `pip3`, `python -m pip`) ask the owner
+   instead of running at once. Any other rule the same command breaks still refuses it.
 6. `no_tmp`: throwaway files under `/tmp`: a path a command writes there, or a Write or Edit whose path lies there.
 7. `scratch`: a write by the writing commands below that lands inside the project but outside that folder is refused, and
    so is `mv` of a project file out of its place. A write outside the project is not this rule's.
@@ -45,7 +46,7 @@ folder is not known (a `cd` with no target, `cd -`, a variable, a substitution, 
 `( )` group, a substitution, a pipeline or the background, `eval`, `source`), a relative written path is refused for the
 rest of that command, until a `cd` to an absolute existing folder, when the `scratch` rule (7) is on; a shell variable in a path is not expanded.
 
-Exit 2 blocks the call and hands the message on stderr to the agent; exit 0 lets it run; exit 1 (a bug in this guard or
+Exit 2 blocks the call and hands the message on stderr to the agent; exit 0 lets it run, and asks the owner first when it prints `permissionDecision: ask`; exit 1 (a bug in this guard or
 a broken `.harness.json`) shows the error and lets the call run: the guard fails open, so a broken config drops every rule.
 """
 
@@ -106,7 +107,7 @@ FIND_RUNNER_ENDS = {";", "+"}
 PYTHONS = {"python", "python3", "pytest"}
 # The options of `uv run` that take a value in the next word.
 UV_VALUE_OPTIONS = {"--with", "--project", "--directory", "--python", "-p", "--group", "--extra", "--env-file"}
-# The `uv` subcommands that change packages; refused when `deny_packages` is on, wherever they stand in the command.
+# The `uv` subcommands that change packages; asked of the owner when `ask_packages` is on, wherever they stand in the command.
 UV_DENIED = {"add", "remove", "lock", "sync", "pip"}
 # The `git push` options that rewrite or delete history on the remote; a plain push of a branch is allowed.
 PUSH_DENIED = {"--force", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "--prune"}
@@ -142,10 +143,13 @@ DIRECTORY_CHANGERS = {"cd", "pushd", "popd"}
 # The commands that run their text in the current shell, so the folder they leave is not known statically.
 IN_SHELL_RUNNERS = {"eval", "source", "."}
 
+# The one rule that asks the owner instead of refusing.
+ASK_RULE = "packages"
 MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Write a new file name, or truncate a log with `: > file`. A "
     "tracked file that must go uses `git rm`; anything else goes to the owner.",
-    "denied": "this rewrites history or changes packages, which is the owner's to run.",
+    "denied": "this rewrites history, which is the owner's to run.",
+    ASK_RULE: "changing packages is the owner's to run, so they are asked first.",
     "lock": "this project's Python runs under its lock.",
     "glob": "this unquoted glob matches no file, so zsh fails with 'no matches found', or it is a pattern for the command "
     "that the shell would expand first. Quote it (`--include='*.py'`), or use the Grep tool or `rg -g '*.py'`.",
@@ -164,7 +168,7 @@ class Policy(NamedTuple):
     root: str = ""
     scratch: str = ""  # the absolute folder the shell may write to; empty: the rule is off
     no_tmp: bool = False
-    deny_packages: bool = False
+    ask_packages: bool = False
     lock_commands: frozenset[str] = frozenset()
     free_env: str = ""
     free_scripts: frozenset[str] = frozenset()
@@ -188,7 +192,7 @@ def get_policy(cwd: str, /) -> Policy:
         root=str(root),
         scratch=get_scratch(root, config),
         no_tmp=bool(guard.get("no_tmp")),
-        deny_packages=bool(guard.get("deny_packages")),
+        ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),
         lock_commands=frozenset(lock.get("commands", ())),
         free_env=lock.get("free_env", ""),
         free_scripts=frozenset(lock.get("free_scripts", ())),
@@ -339,7 +343,7 @@ def is_denied(command: Command, /) -> bool:
             return is_history_rewrite(arguments)
         return subcommand == "reset" and "--hard" in arguments
 
-    return POLICY.deny_packages and is_package_change(command)
+    return False
 
 
 def is_failing_glob(text: str, directory: str | None, may_have_written: bool, /) -> bool:
@@ -651,6 +655,7 @@ def get_command_breaches(
     checks = [
         ("delete", is_delete(command)),
         ("denied", is_denied(command)),
+        (ASK_RULE, POLICY.ask_packages and is_package_change(command)),
         ("lock", bool(POLICY.lock_commands) and is_python_run(command) and not is_lock_free),
         ("glob", globs[0] and has_failing_glob(command, directory, globs[1])),
         ("temporary", any(is_temporary(path) for path in written)),
@@ -725,7 +730,11 @@ def main() -> int:
     if not breaches:
         return 0
     messages = {**MESSAGES, "lock": POLICY.lock_message or MESSAGES["lock"]}
-    lines = [f"Blocked by the harness guard: {messages[rule]}" for rule in breaches]
+    lines = [f"Blocked by the harness guard: {messages[rule]}" for rule in breaches if rule != ASK_RULE]
+    if not lines:
+        decision = {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": f"The harness guard: {MESSAGES[ASK_RULE]}"}
+        print(json.dumps({"hookSpecificOutput": decision}))
+        return 0
     print("\n".join(lines), file=sys.stderr)
 
     return 2
