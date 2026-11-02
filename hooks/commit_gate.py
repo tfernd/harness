@@ -8,7 +8,7 @@
 """PreToolUse hook on Bash: in a project with `.harness.json`, a commit message follows `harness:git-commit`.
 
 The message comes from `-m`, `-F` or a heredoc in the same command. A subject is `type(scope): summary` with no trailing period,
-then a blank line and `* ` bullets, then an optional footer. A pull request's `--body` is checked for AI attribution only.
+then a blank line and `* ` bullets, then an optional footer. A pull request is checked for AI attribution only.
 Git's own subjects (merge, revert, fixup) pass. A commit that opens the editor or reuses a message cannot be read, so it passes.
 `guard.commit_style: false` in `.harness.json` turns the rule off.
 """
@@ -31,6 +31,7 @@ FOOTER = re.compile(r"(BREAKING CHANGE|[A-Z][A-Za-z-]+): \S")
 AI_NAME = r"(claude|anthropic|copilot|chatgpt|gpt-|openai|gemini|cursor|codex|\bAI\b)"
 AI_ATTRIBUTION = re.compile(rf"co-authored-by:[^\n]*{AI_NAME}|generated (with|by)[^\n]*{AI_NAME}|\U0001f916", re.I)
 # A command's heredoc: its body, whichever quotes its delimiter has.
+CALL = re.compile(r"\b(git\b[^\n]*?\bcommit|gh\s+pr\s+(create|edit))\b")
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n\s*\1\b", re.S)
 
 
@@ -48,13 +49,20 @@ def get_option_value(words: list[str], long_name: str, letter: str, /) -> list[s
     return values
 
 
+def get_tail_start(command: str, /) -> int:
+    """Where the commit or pull request call starts: an earlier heredoc, such as an edit script, is no part of it."""
+
+    call = CALL.search(command)
+
+    return call.start() if call else 0
+
+
 def read_message(values: list[str], command: str, /) -> str | None:
     """The text of option values, joined as git joins them; a substitution's text is read from the command's heredoc, else None."""
 
     # A variable or a substitution: the text is not in the words.
     if any("$" in value or value == "-" for value in values):
-        # An earlier heredoc in the same command, such as an edit script, is not the message.
-        heredoc = HEREDOC.search(command, max(command.rfind("commit"), command.rfind("create"), 0))
+        heredoc = HEREDOC.search(command, get_tail_start(command))
         return heredoc.group(2) if heredoc else None
 
     return "\n\n".join(values)
@@ -120,10 +128,11 @@ def find_problems(command: str, cwd: str, /) -> list[str]:
         name = os.path.basename(words[0]) if words else ""
         if name == "git" and get_git_subcommand(words[1:]) == "commit":
             message = get_commit_message(words, command, cwd)
+            # An unreadable message may hold a variable set earlier in the command.
             problems += check_message(message) if message is not None else check_attribution(command)
-        elif name == "gh" and words[1:3] == ["pr", "create"]:
-            body = read_message(get_option_value(words, "--body", "b"), command)
-            problems += check_attribution(body) if body else []
+            problems += check_attribution(command[get_tail_start(command) :])
+        elif name == "gh" and words[1:2] == ["pr"] and words[2:3] in (["create"], ["edit"]):
+            problems += check_attribution(command[get_tail_start(command) :])
 
     return problems
 

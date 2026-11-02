@@ -39,7 +39,9 @@ def find_project(cwd: str, /) -> tuple[Path | None, dict]:  # keys are data: the
     for candidate in (folder, *folder.parents):
         path = candidate / CONFIG_NAME
         if path.is_file():
-            return candidate, json.loads(path.read_text())
+            config = json.loads(path.read_text())
+            # A section of the wrong type counts as empty, so one bad key can't crash a hook and drop every rule.
+            return candidate, {key: value if isinstance(value, dict) else {} for key, value in config.items()}
 
     return None, {}
 

@@ -124,6 +124,7 @@ class Case(NamedTuple):
     not_wrote: tuple[str, str] | None = None
     transcript: tuple[dict, ...] = ()
     is_exit_one: bool = False
+    plugin_root: str = ""
     lacks: str = ""
     cwd: str = "project"
     project_dir: str = ""
@@ -230,6 +231,10 @@ GUARD_CASES = [
     bash("an unquoted glob is refused", "ls *.py", True, "unquoted glob"),
     bash("a quoted glob is allowed", "ls '*.py'", False),
     bash("an unquoted glob in an option is refused", "grep --include=*.py x .", True, "unquoted glob"),
+    bash("a git clean dry run is allowed", "git clean -n", False),
+    bash("a git clean long dry run is allowed", "git clean --dry-run -d", False),
+    bash("a real git clean is refused", "git clean -fd", True, "deleted"),
+    bash("a guard key that is null drops no rule", "git push --force origin main", True, "rewrites history", config={"guard": None}),
     bash("a glob that matches a file is allowed", "wc -l *.py", False, files=(("a.py", ""),)),
     bash("a loop over a glob that matches is allowed", "for name in *.py; do echo $name; done", False, files=(("a.py", ""),)),
     bash("a glob that matches beside one that does not is refused", "ls *.py *.nothing", True, GLOB, files=(("a.py", ""),)),
@@ -1068,6 +1073,9 @@ TURN_CASES = [
     turn("a refusal before the owner's prompt does not count", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED, OWNER_PROMPT)),
     turn("an old line with no session never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef agent=worker add a rule\n"),)),
     turn("another session's line never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef session=other agent=worker a\n"),)),
+    turn("a project's headings replace the status", "## Result\nall of it", False, calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
+    turn("a project's missing heading is named", PROGRESS, True, "Result", calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
+    turn("a stopped agent is finished", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=(*launch("t1"), notify("t1", "stopped"))),
     turn("a pass resets the blocks", PROGRESS, False, files=((BLOCKS_FILE, "2"),), wrote=(BLOCKS_FILE, "0")),
     turn("a background Agent with no result yet is running", PROGRESS, False, calls=BUSY_CALLS, transcript=(launch("t1")[0],)),
     turn(
@@ -1292,6 +1300,8 @@ DELEGATE_CASES = [
         "git log > out.txt",
         "> out.txt",
     )),
+    main_bash("git options before an allowed command pass", "git -C docs status", False),
+    main_bash("git options do not free a push", "git -C docs push", True),
     main_bash("a push is refused by default", "git push origin topic", True),
     main_bash("a push is refused after other defaults", "git add -A && git push", True),
     main_bash("a project may list a push", "git push origin topic", False, settings={"bash_allow": ["git push"]}),
@@ -1583,12 +1593,13 @@ CONTEXT_CASES = [
         for agent in AGENT_TYPES
     ),
     context("a session start is not told the report form", {"hook_event_name": "SessionStart"}, lacks="Not proven"),
-    context("a role is not given the headings twice", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, lacks="you owe a report"),
+    context("a role is not given the headings twice", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, lacks="only if they have nothing"),
     context("a session start states the tool-turn rule", {"hook_event_name": "SessionStart"}, "few tool turns"),
     context("a session start carries the tool-habits skill", {"hook_event_name": "SessionStart"}, "## When a call is refused"),
     context("a sub-agent start carries the tool-habits skill", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## When a call is refused"),
     context("the skill's front matter is not injected", {"hook_event_name": "SessionStart"}, lacks="description: How to make tool calls"),
     context("a worker is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "few tool turns"),
+    context("a missing skill falls back to a pointer", {"hook_event_name": "SessionStart"}, "Load the `harness:tool-habits` skill", plugin_root="nowhere"),
     context("a helper is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "few tool turns"),
     context("no project means no context", {"hook_event_name": "SessionStart"}, lacks="orchestrator", config=None),
     context("the project variable finds the project", {"hook_event_name": "SessionStart"}, "orchestrator", cwd="elsewhere", project_dir="project"),
@@ -1641,6 +1652,10 @@ COMMIT_CASES = [
     commit("a pull request heredoc is read", "gh pr create -b \"$(cat <<'EOF'\nCo-Authored-By: Claude\nEOF\n)\"", True, "AI attribution"),
     commit("a trailer in a variable is refused", "T='Co-Authored-By: Claude <noreply@anthropic.com>' && git commit -m \"feat: add y $T\"", True, "AI attribution"),
     commit("an earlier heredoc is not the message", "python3 - <<'EOF'\nprint(1)\nEOF\ngit commit -m \"$(cat <<'EOF'\nfeat: add y\n\n* did it\nEOF\n)\"", False),
+    commit("a body that says commit is still read", "git commit -m \"$(cat <<'EOF'\nFix stuff\n\n* split the commit in two\nEOF\n)\"", True, "not `type(scope)"),
+    commit("a trailer option is refused", "git commit -m 'feat: add y' -m '* did it' --trailer 'Co-Authored-By: Claude'", True, "AI attribution"),
+    commit("a trailer in an earlier script is no attribution", "python3 - <<'EOF'\nprint('Co-Authored-By: Claude')\nEOF\ngit commit -m 'feat: add y' -m '* did it'", False),
+    commit("an edited pull request is checked", "gh pr edit 1 --body 'Generated with Claude Code'", True, "AI attribution"),
     commit("the rule can be turned off", "git commit -m 'add y'", False, config={"guard": {"commit_style": False}}),
     commit("no project means no rule", "git commit -m 'add y'", False, config=None),
     commit("a broken config lets the call run", "git commit -m 'add y'", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
@@ -1812,7 +1827,8 @@ def is_blocked(run: subprocess.CompletedProcess[str], /) -> bool:
     """Whether a hook stopped the call: exit 2, or the JSON decision on its stdout, which may hand it to the owner."""
 
     if run.returncode == 2:
-        return True
+        # A hook that crashes on a syntax error or is missing also exits 2, and must not read as a refusal.
+        return bool(run.stderr.strip()) and "Traceback" not in run.stderr
     try:
         output = json.loads(run.stdout)
         return output.get("decision") == "block" or output.get("hookSpecificOutput", {}).get("permissionDecision") == "ask"
@@ -1872,6 +1888,8 @@ def run_case(case: Case, hooks: Path, /) -> str:
         (root / "transcript.jsonl").write_text("".join(f"{json.dumps(line)}\n" for line in case.transcript).replace(ROOT, str(root)))
         environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root), "UV_CACHE_DIR": UV_CACHE}
         environment.pop("CLAUDE_PROJECT_DIR", None)
+        if case.plugin_root:
+            environment["CLAUDE_PLUGIN_ROOT"] = str(root / case.plugin_root)
         environment["SHELL"] = case.shell
         if case.project_dir:
             environment["CLAUDE_PROJECT_DIR"] = str(root / case.project_dir)
@@ -1880,6 +1898,8 @@ def run_case(case: Case, hooks: Path, /) -> str:
                 (project / event["path"]).write_text(event["text"])
             else:
                 run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
+        if not (hooks / case.script[0]).is_file():
+            return f"the hook is missing: {case.script[0]}"
         run = run_hook(hooks, case.script, {"cwd": str(root / case.cwd), **case.event}, environment, root)
         message = run.stderr + run.stdout
         if case.is_exit_one:

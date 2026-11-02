@@ -60,7 +60,7 @@ DEFERS = re.compile(r"next unit|next turn|next session|will add|to be written|wi
 APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
 APP_PROMPT_HEAD = 600
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
-FINISHED_STATUSES = {"completed", "failed", "killed"}
+FINISHED_STATUSES = {"completed", "failed", "killed", "stopped"}
 HANDLED = re.compile(r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
 MIN_REASON_WORDS = 3
 # Inbox items waiting before a session that filed one owes a retro: often enough to act, rare enough to be read.

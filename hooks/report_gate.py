@@ -115,7 +115,7 @@ def check_headings(sections: list[tuple[str, list[str]]], /) -> list[str]:
     problems += [f"not a section of the form: {name}" for name in dict.fromkeys(names) if name not in ORDER]
     problems += [f"duplicated: {heading}" for heading in ORDER if names.count(heading) > 1]
     known = [name for name in dict.fromkeys(names) if name in ORDER]
-    problems += [f"out of order: {name}" for name, expected in zip(known, sorted(known, key=ORDER.index)) if name != expected]
+    problems += [f"out of order: {name}" for name, expected in zip(known, sorted(known, key=ORDER.index), strict=True) if name != expected]
     if "Verdict" in names and names[-1] != "Verdict":
         problems.append("Verdict must be the last section")
 

@@ -292,7 +292,9 @@ def is_delete(command: Command, /) -> bool:
     if name == "find":
         return "-delete" in arguments
 
-    return name == "git" and get_git_subcommand(arguments) == "clean"
+    is_dry_run = bool({"-n", "--dry-run"} & set(arguments))
+
+    return name == "git" and get_git_subcommand(arguments) == "clean" and not is_dry_run
 
 
 def is_package_change(command: Command, /) -> bool:

@@ -61,7 +61,7 @@ def read_documents(root: Path, kind: str, filename: str) -> list[Path]:
 
 def check_frontmatter(rel: str, fields: dict[str, str | list[str]], allowed: set[str]) -> list[str]:
     problems = [f"{rel}: frontmatter key not allowed: {key}" for key in fields if key not in allowed]
-    problems += [f"{rel}: frontmatter key missing: {key}" for key in sorted(allowed & {"name", "description"}) if key not in fields]
+    problems += [f"{rel}: frontmatter key missing: {key}" for key in sorted(allowed) if key not in fields]
     return problems
 
 

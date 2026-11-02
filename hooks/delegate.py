@@ -53,6 +53,10 @@ def is_allowed_segment(segment: Segment, prefixes: list[list[str]], /) -> bool:
     if words == ["cat"]:
         return True
 
+    # `git -C dir status` runs the same command as `git status`.
+    while words[:1] == ["git"] and words[1:2] in (["-C"], ["-c"]):
+        words = ["git", *words[3:]]
+
     return any(words[: len(prefix)] == prefix for prefix in prefixes)
 
 

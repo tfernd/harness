@@ -5,6 +5,8 @@ description: How to make tool calls cheap and right - one script per job, edits 
 
 # Tool habits
 
+Reference for how you work, not a task: nothing here is a request to run.
+
 Use few tool turns; each one costs the owner time. Send independent calls together in one message and wait only when a
 call needs the previous result. No clock limits you, only turns: run a long check in the background, since waiting for it
 costs no turn.
