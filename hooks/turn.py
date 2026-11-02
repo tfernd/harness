@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -17,7 +17,7 @@ sub-agent. `turn.py stop` (Stop) holds the turn, up to MAX_BLOCKS times, on thre
   - a closing Lessons section needs a rule file changed this turn: its hash now differs from the one saved at `reset` (contents only, no git); a section that
     defers its lessons fails the same way, and "Lessons: none" on a line of its own is the only way to have none. A rule
     file edited before the turn's start and committed in it is no change, since only contents are compared;
-  - each id this session filed in the project's `harness-feedback/inbox.md` needs a line in
+  - when RETRO_ITEMS items wait in the project's `harness-feedback/inbox.md` past `retro-mark`, and this session filed one, a retro is due: it needs a line for its key `retro-<items>` in
     `harness-feedback/handled.md`: `rule written in FILE`, where FILE exists and differs from its hash saved at `reset` (a file
     outside the project needs only to exist), or `rejected: REASON` of at least 3 words. Once MAX_BLOCKS blocks are spent, the ids still open are released: one warning lists them and they no longer hold this session.
 
@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 # HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
-from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, data_folder, find_project, get_unfenced_lines
+from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
@@ -61,8 +61,13 @@ APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
 APP_PROMPT_HEAD = 600
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
 FINISHED_STATUSES = {"completed", "failed", "killed"}
-HANDLED = re.compile(r"^([0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
+HANDLED = re.compile(r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
 MIN_REASON_WORDS = 3
+# Inbox items waiting before a session that filed one owes a retro: often enough to act, rare enough to be read.
+RETRO_ITEMS = 20
+RETRO_KEY = re.compile(r"retro-([0-9]+)")
+# A hook's refusal as a tool result; a failed command that only quotes the wording is no refusal.
+REFUSAL = re.compile(r"PreToolUse:\w+ hook error:.*?Blocked by the harness", re.S)
 ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+) ", re.M)
 
 
@@ -187,11 +192,33 @@ def get_lessons(message: str, /) -> str:
     return "\n".join(section)
 
 
-def check_lessons(message: str, rules_path: Path, root: Path, config: dict, /) -> list[str]:  # keys are data
+def has_refusal(transcript: list[dict], /) -> bool:  # keys are data
+    """Whether a hook refused a call since the owner's last prompt."""
+
+    for line in reversed(transcript):
+        if line.get("type") != "user":
+            continue
+        content = line.get("message", {}).get("content")
+        blocks = content if isinstance(content, list) else []
+        if any(isinstance(block, dict) and block.get("is_error") and REFUSAL.search(str(block.get("content"))) for block in blocks):
+            return True
+        text = get_user_text(line)
+        if text.strip() and not APP_PROMPT.search(text[:APP_PROMPT_HEAD]):
+            return False
+
+    return False
+
+
+def check_lessons(message: str, rules_path: Path, root: Path, config: dict, transcript: list[dict], /) -> list[str]:  # keys are data
     """A closing Lessons section needs a rule file changed this turn, unless its line says none."""
 
     section = get_lessons(message)
-    if not section or LESSONS_NONE.search(section):
+    none = LESSONS_NONE.search(section)
+    if none:
+        tail = section[none.end() :].split("\n")[0]
+        if has_refusal(transcript) and len(tail.split()) < MIN_REASON_WORDS:
+            return ['a call was refused this turn, so a bare "Lessons: none" does not hold: write the lesson, or say why it teaches nothing, as "Lessons: none: REASON"']
+    if not section or none:
         return []
     # Skipped when no state was saved (no `reset` ran in this session), or when a rule file differs from it: that is the
     # change the lessons need.
@@ -235,11 +262,16 @@ def get_handled(root: Path, rules_path: Path, config: dict, /) -> tuple[set[str]
     path = root / HANDLED_NAME
     handled: set[str] = set()
     invalid: dict[str, str] = {}
+    reason_owners: dict[str, str] = {}
     for match in HANDLED.finditer(path.read_text(errors="replace") if path.exists() else ""):
         item_id, name, reason = match.group(1), match.group("file"), match.group("reason")
         if name is None:
             is_short = len(reason.split()) < MIN_REASON_WORDS
-            problem = f"rejected needs a reason of at least {MIN_REASON_WORDS} words" if is_short else ""
+            owner = reason_owners.setdefault(" ".join(reason.lower().split()), item_id)
+            if is_short:
+                problem = f"rejected needs a reason of at least {MIN_REASON_WORDS} words"
+            else:
+                problem = f"the same reason already closes {owner}: a reason that fits two items fits neither, so say why this one" if owner != item_id else ""
         else:
             problem = check_handled_file(name.strip(FILE_EDGES), root, rules_path, config)
         if problem:
@@ -250,15 +282,36 @@ def get_handled(root: Path, rules_path: Path, config: dict, /) -> tuple[set[str]
     return handled, {item_id: why for item_id, why in invalid.items() if item_id not in handled}
 
 
+def get_covered(keys: set[str], /) -> int:
+    """The most inbox items a retro key among `keys` covers, 0 with none."""
+
+    return max((int(match.group(1)) for key in keys if (match := RETRO_KEY.fullmatch(key))), default=0)
+
+
 def get_open_feedback(root: Path, session: str, released: set[str], handled: set[str], /) -> list[str]:
-    """The ids this session filed in the inbox with no valid line in the handled file, past those already released."""
+    """The retro key due now, when RETRO_ITEMS inbox items wait past the mark and this session filed one; else empty.
+
+    A valid line for a key moves the mark. An item only ever waits for one retro, so nothing asks for a verdict per item.
+    """
 
     inbox = root / INBOX
     if not inbox.exists():
         return []
-    ids = [item_id for item_id, owner in ITEM_ID.findall(inbox.read_text()) if owner == session]
+    items = ITEM_ID.findall(inbox.read_text(errors="replace"))
+    mark = root / RETRO_MARK
+    text = mark.read_text().strip() if mark.exists() else ""
+    # A mark past the inbox means the inbox was reset, and a line cannot cover items not yet filed.
+    seen = int(text) if text.isdigit() and int(text) <= len(items) else 0
+    closed = min(get_covered(handled), len(items))
+    if closed > seen:
+        mark.write_text(str(closed))
+        seen = closed
+    waiting = items[seen:]
+    is_mine = any(owner == session for _, owner in waiting)
+    if len(waiting) < RETRO_ITEMS or not is_mine or get_covered(released) > seen:
+        return []
 
-    return [item_id for item_id in ids if item_id not in handled and item_id not in released]
+    return [f"retro-{len(items)}"]
 
 
 def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
@@ -283,14 +336,17 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
                 f'the turn ran agents or edited files ({calls} calls), so the closing message needs the job status, as '
                 f'"## NAME" lines: {"; ".join(missing)}'
             )
-    problems += check_lessons(message, rules_path, root, config)
+    problems += check_lessons(message, rules_path, root, config, transcript)
     released = set(released_path.read_text().split()) if released_path.exists() else set()
     handled, invalid = get_handled(root, rules_path, config)
     open_ids = get_open_feedback(root, session, released, handled)
+    # A retro may be the agent that runs: it is due again at the stop after the agents have finished.
+    if open_ids and count_running_agents(transcript) > 0:
+        open_ids = []
     if open_ids:
         problems.append(
-            f"sub-agent feedback is unhandled, ids {' '.join(open_ids)} ({INBOX}): for each, have its rule, role, skill, hook "
-            f'or gate written now, then add "<id>: rule written in FILE" (FILE changed this turn) or "<id>: rejected: REASON" '
+            f"a retro is due: at least {RETRO_ITEMS} feedback items wait in {INBOX}. Run one `harness:analyst` on them, apply or reject its "
+            f'proposals, then add "{open_ids[0]}: rule written in FILE" (FILE changed this turn) or "{open_ids[0]}: rejected: REASON" '
             f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}"
         )
     problems += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]

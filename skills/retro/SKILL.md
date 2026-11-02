@@ -8,6 +8,13 @@ description: Turns the ledger of past agent reports into rule changes - groups p
 A retro reads facts from the ledger and ends with changes to a rule, hook, gate, brief template or role. A lesson that
 stays a sentence is not a result.
 
+## The checkpoint
+
+When 20 items wait in `harness-feedback/inbox.md` past the count in `harness-feedback/retro-mark`, the Stop hook holds a
+session that filed one. Run one `harness:analyst`; apply or reject each proposal; keep its open problems in
+`harness-feedback/open.md`, one `- <role or all>: <problem>` per line, and delete a line once a rule fixes it. Then add the
+line the hook names to `harness-feedback/handled.md`; the hook moves the mark.
+
 ## The ledger
 
 `ledger.jsonl` in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`; `~/.cache/harness` when unset). One JSON row per

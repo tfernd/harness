@@ -51,9 +51,12 @@ starts.
 | `reviewer` | read-only; reads code against its spec (`harness:review`), never the author |
 | `auditor` | re-runs the judges and marks each claim of a report true or false (`harness:audit`) |
 | `runner` | runs the commands its brief lists, sorts failures, edits nothing |
+| `analyst` | read-only; groups feedback by meaning and proposes rule changes (`harness:retro`) |
+| `planner` | read-only; turns a request into options, one recommendation, an order and judges |
+| `researcher` | read-only; answers one question from outside sources, each claim with its URL |
 
-The model of each role, and its default, are in the table of `harness:models`. Spawn a role by name, never an unnamed
-or general-purpose agent: the report hook skips it. When a brief steps a role up or down, it says so and why.
+The model of each role, and its default, are in the table of `harness:models`. Spawn a role by name: an unnamed
+or general-purpose agent still owes a report but has no role's skills. When a brief steps a role up or down, it says so and why.
 
 ## The brief
 
@@ -67,7 +70,7 @@ Input:     the paths to read (about 8 files); never pasted code
 Write set: every file it may change, or an explicit glob, disjoint from every running agent's
 Judge:     the commands or tests that decide it is done, and the baseline of "unchanged"
 Runs:      what it may run, smallest case first; one result row per case as it finishes
-Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them and refuses any other unit
+Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them; the brief check refuses any other unit
 Report:    the report form it owes (`harness:report`), headings in order
 ```
 
@@ -121,11 +124,13 @@ loop below), give the owner the closing status (`harness:accept`), and go on onl
 3. Each lesson has one home: a trap for every agent, the project `AGENTS.md`; a role's craft, `agents/`; writing, tests or
    review, the skill that owns it; a decision or open question, the plan file. A line an accepted change made false is
    deleted in the same change.
-4. In a project with `.harness.json`, each FEEDBACK item is filed in `harness-feedback/inbox.md` with an id, and the turn
-   ends only when each id has a line in `harness-feedback/handled.md`: `<id>: rule written in FILE` or
-   `<id>: rejected: REASON`. The Stop hook verifies each line: for `rule written in FILE`, FILE must exist, be a rule file
-   under the project's `rule_paths` or outside the project, and differ from its hash at the turn's start; `rejected` needs
-   a REASON of 3 or more words. DECIDE, OUTSIDE and a Task score of 3 or lower arrive as `[auto]` inbox items, handled the same way.
+4. In a project with `.harness.json`, each FEEDBACK item, each problem with a cause of brief, rule or tool, and each Task
+   score of 3 or lower lands in `harness-feedback/inbox.md`. DECIDE and OUTSIDE stay in the report: put them to the owner.
+5. No item needs a verdict of its own. When 20 items wait, the Stop hook holds a session that filed one until a retro is
+   done: run one `harness:analyst`, apply or reject each proposal, keep its open problems in `harness-feedback/open.md`
+   (the hook tells them to agents at their start), and add the line the hook names to `harness-feedback/handled.md`:
+   `retro-<N>: rule written in FILE`, where FILE is a rule file changed this turn, or `retro-<N>: rejected: REASON` of 3 or
+   more words that no other line uses.
 
 ## Talking to the owner
 

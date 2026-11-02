@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -20,11 +20,15 @@ FEEDBACK_FOLDER = "harness-feedback"
 INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
 # The path of the handled file; `turn.py` imports it as HANDLED_NAME, since it names its own line pattern HANDLED.
 HANDLED = f"{FEEDBACK_FOLDER}/handled.md"
+# How many inbox items the last retro covered, which the Stop hook keeps.
+RETRO_MARK = f"{FEEDBACK_FOLDER}/retro-mark"
+# Lines `- <role or all>: <problem>` the main session keeps from a retro, told to agents at their start.
+OPEN_PROBLEMS = f"{FEEDBACK_FOLDER}/open.md"
 # The characters a file named in the handled file may carry around it, such as a closing period or backticks.
 FILE_EDGES = "`'\".,;:()"
 # The plugin's roles, by the report form each owes.
 FULL_ROLES = {"worker", "reviewer", "auditor"}
-SHORT_ROLES = {"scout", "runner", "cold-reader"}
+SHORT_ROLES = {"scout", "runner", "cold-reader", "analyst", "planner", "researcher"}
 ROLES = FULL_ROLES | SHORT_ROLES
 
 
@@ -55,10 +59,11 @@ def get_scratch(root: Path, config: dict, /) -> str:  # config keys
 
 
 def get_report_form(agent_type: str, settings: dict, /) -> str:  # config keys
-    """The report an agent type owes under `.harness.json`'s `report` settings: "full", "short", or "" for not judged.
+    """The report an agent type owes under `.harness.json`'s `report` settings: "full" or "short".
 
-    The name is compared with the plugin prefix stripped, for the six roles and for `report.short` and `report.full`:
-    list a role without the prefix. `other:worker` is another plugin's agent and is not judged.
+    Every sub-agent owes one, so a forgotten brief or a wrong agent type cannot skip it: the three writing roles and
+    `report.full` owe the full form, every other type the short form. The name is compared with the plugin prefix
+    stripped, for the roles and for `report.short` and `report.full`: list a role without the prefix.
     """
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)
@@ -67,7 +72,7 @@ def get_report_form(agent_type: str, settings: dict, /) -> str:  # config keys
     if role in FULL_ROLES or role in settings.get("full", ()):
         return "full"
 
-    return ""
+    return "short"
 
 
 def get_unfenced_lines(text: str, /) -> list[str]:

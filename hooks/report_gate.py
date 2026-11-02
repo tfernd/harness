@@ -1,16 +1,16 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""SubagentStop hook: in a project with `.harness.json`, a harness role stops only with a report in the `report` skill's
+"""SubagentStop hook: in a project with `.harness.json`, a sub-agent stops only with a report in the `report` skill's
 form, whose claims its own transcript backs.
 
 The headings come first, each once and in order; then each section has the body the skill gives it. `worker`, `reviewer`
 and `auditor` owe the full form; `scout`, `runner` and `cold-reader` the short form. They count with or without the
-`harness:` prefix; every other agent type is not judged. The report is the agent's last block, handback or text, holding
+`harness:` prefix; every other agent type owes the short form. The report is the agent's last block, handback or text, holding
 `## Answer`, else its last message.
 
 The claims come from the agent's transcript, never from git, since parallel agents share a tree: each file it changed
@@ -21,9 +21,8 @@ it must lie within 3 lines of that line.
 
 A bad report goes back to the agent, up to MAX_SEND_BACKS times; then the agent may stop and the orchestrator is warned.
 Once it stops, one row goes to `ledger.jsonl` in the plugin's data folder, and each item of FEEDBACK FOR THE ORCHESTRATOR
-goes to the project's `harness-feedback/inbox.md`, with one `[auto] ` item (at most 5) for each DECIDE and OUTSIDE bullet
-and for a Task score of 3 or lower, where the Stop hook (`turn.py`) holds its session's turn until each is
-handled.
+goes to the project's `harness-feedback/inbox.md`, with one `[auto] ` item (at most 5) for each problem met with a cause of brief, rule or tool
+and for a Task score of 3 or lower (DECIDE and OUTSIDE stay in the report), where they wait for a retro (`turn.py`).
 
 `.harness.json` may set, under `report`: `short` and `full` (more roles owing that form), `causes` (more causes a problem
 may name).
@@ -78,6 +77,8 @@ REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
 MAX_AUTO = 5
 AUTO_PREFIX = "[auto] "
 LOW_TASK = 3
+# A problem with one of these causes can be fixed by a rule, a brief or a tool; the others are the task's own.
+PROBLEM_CAUSE = re.compile(r"\(?cause:\s*(brief|rule|tool)\b", re.I)
 # What a FEEDBACK item says when it holds no feedback.
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
 NO_GATE = re.compile(r"no gates? (was |were )?applied", re.I)
@@ -439,13 +440,17 @@ def get_task_title(report: str, /) -> str:
 
 
 def get_auto_items(report: str, /) -> list[str]:
-    """Items the gate files itself: each DECIDE and OUTSIDE bullet that is not "none", and a Task score of 3 or lower."""
+    """Items the gate files itself: each problem met with a cause of brief, rule or tool, and a Task score of 3 or lower.
+
+    DECIDE and OUTSIDE bullets are the task's own questions: they stay in the report for the orchestrator.
+    """
 
     sections = dict(reversed(read_sections(report)))
     items: list[str] = []
-    for heading in ("DECIDE", "OUTSIDE"):
-        texts = [item_text(item) for item in get_items(sections.get(heading, []))]
-        items += [f"{AUTO_PREFIX}{heading}: {text}" for text in texts if text and not NO_FEEDBACK.fullmatch(text)]
+    for text in (item_text(item) for item in get_items(sections.get("PROBLEMS MET", []))):
+        cause = PROBLEM_CAUSE.search(text)
+        if cause:
+            items.append(f"{AUTO_PREFIX}PROBLEM {cause.group(1).lower()}: {text[: cause.start()].strip(' (')}")
     for line in sections.get("REPORT CARD", []):
         cells = [cell.strip() for cell in line.split("|")] if line.lstrip().startswith("|") else []
         score = re.match(r"([1-5])(/5)?$", cells[2]) if len(cells) > 3 and cells[1] == "Task" else None

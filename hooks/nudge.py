@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -28,8 +28,8 @@ SMALL_COMMANDS = frozenset({"cat", "bat", "sed", "head", "tail", "grep", "rg", "
 LEADING_CD = re.compile(r"^cd\s+\S+\s*(?:&&|;)\s*")
 # A command that batches several steps, or that writes, is not a small read.
 BATCHED_OR_WRITING = re.compile(r";|&&|\|\||\n|>|^sed\s(.*\s)?-i|\s-delete\b|\s-exec")
-# Past runs of 4 or more are about 1% of agents; shorter runs are common enough that a note would turn into noise.
-RUN_LENGTH = 4
+# Three single small reads in a row could have been one call; MAX_NUDGES keeps the note from turning into noise.
+RUN_LENGTH = 3
 MAX_NUDGES = 2
 # A longer transcript gets no nudge: this runs on every read, and only a whole transcript can count the cap.
 MAX_BYTES = 1048576

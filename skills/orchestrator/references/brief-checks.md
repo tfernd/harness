@@ -6,10 +6,13 @@ Checks the main session makes before a brief goes out, and when it accepts, in a
 ## Framing
 
 - Measure first: a method gets its result against a baseline before anything is built.
-- The tool's worktree isolation may start from an older commit: make the worktree from the base branch and name its path
-  in the brief.
 
 ## Briefs
+- A write set naming a scratch subfolder: create it before the agent starts, since a shell `cd` into a missing folder trips the guard.
+- A judge that runs tests also checks how many ran: a zero-test run exits 0 and passes for the wrong reason.
+- A brief fits its turn budget: more steps than the budget can hold ends as a partial result, so split it before sending.
+- An audit brief carries the author's report and Task score, so the grade can be compared.
+- In a shared tree, a repo-wide judge fails on other agents' live files: scope it to the write set (`git diff --stat -- <files>`).
 
 - The output file of a job is untracked, and no cache key hides the thing being varied.
 - No text outside the write set names a helper the job removes.
@@ -29,4 +32,3 @@ Checks the main session makes before a brief goes out, and when it accepts, in a
 - An outline pass looks for misplaced names.
 - A problem not resolved carries to the next status.
 - "Not verified" lists every check that could not run.
-- A judge that imports a plugin hook module by path (importlib) must say that hook scripts import their siblings (`common`, `budget`): load those first through importlib, or run the hook as a script with a JSON event on stdin.

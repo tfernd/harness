@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -28,10 +28,10 @@ from pathlib import Path
 
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, read_events
 
-# Turns, near the 99th percentile of past agents of each role, so a default stops a runaway agent and no ordinary one.
+# Turns meant to stop a runaway agent and no ordinary one. Defaults, not a measurement; a brief's `Budget:` line overrides them.
 # The fewest turns left when the note comes; a budget under this gets no note.
 MIN_TURNS_LEFT = 3
-DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70}
+DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70, "analyst": 30, "planner": 30, "researcher": 30, "*": 40}
 BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
 # A line that labels a budget, as opposed to prose that opens with the word.
 LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + r"\**\s*:", re.I)
@@ -58,7 +58,7 @@ def get_agent_path(event: dict, /) -> Path | None:  # keys are data
 def parse_time(text: object, /) -> float | None:
     """Epoch seconds of an ISO timestamp, None when it is not one."""
 
-    # Python 3.10 reads a fraction of exactly 3 or 6 digits only.
+    # Python 3.12 reads a fraction of exactly 3 or 6 digits only.
     clean = re.sub(r"\.([0-9]+)", lambda match: "." + match.group(1)[:6].ljust(6, "0"), str(text).replace("Z", "+00:00"))
     try:
         moment = datetime.fromisoformat(clean)
@@ -90,9 +90,10 @@ def get_turn_limit(brief: str, /) -> int | None:
 
 
 def get_default(config: dict, role: str, /) -> int | None:  # keys are data
-    """The turns `.harness.json` (or DEFAULT_BUDGET) gives a role, None when it gives none."""
+    """The turns `.harness.json` (or DEFAULT_BUDGET) gives a role, else its `*` entry, None when it gives none."""
 
-    turns = config.get("budget", DEFAULT_BUDGET).get(role)
+    table = config.get("budget", DEFAULT_BUDGET)
+    turns = table.get(role, table.get("*"))
 
     return int(turns) if isinstance(turns, (int, float)) and not isinstance(turns, bool) else None
 

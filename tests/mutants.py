@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -37,11 +37,17 @@ DEFAULT_JOBS = max(1, (os.cpu_count() or 8) // 8)
 LOW_PRIORITY = 10
 # Name, file, the text to break, what it becomes.
 MUTANTS = (
+    # A package change asks.
+    ("packages-refused", "guard.py", "    if not lines:\n        decision", "    if False:\n        decision"),
+    ("packages-pass-silently", "guard.py", '"permissionDecision": "ask"', '"permissionDecision": "allow"'),
+    ("packages-old-key-dropped", "guard.py", 'guard.get("ask_packages") or guard.get("deny_packages")', 'guard.get("ask_packages")'),
+    ("packages-new-key-dropped", "guard.py", 'guard.get("ask_packages") or guard.get("deny_packages")', 'guard.get("deny_packages")'),
+    ("packages-other-rule-asks", "guard.py", 'for rule in breaches if rule != ASK_RULE]', 'for rule in breaches if rule not in (ASK_RULE, "delete")]'),
     # What the sub-agents' feedback asked for.
     ("context-no-tools-text", "context.py", "lines = [TOOLS_TEXT]", "lines = []"),
     ("context-zsh-always", "context.py", 'if os.path.basename(os.environ.get("SHELL") or "") == "zsh":', "if True:"),
     ("context-no-setup-for-session", "context.py", "get_setup_text(config), get_retro_line(root))", "get_retro_line(root))"),
-    ("context-no-setup-for-agent", "context.py", "get_setup_text(config), get_lessons(root, agent_type))", "get_lessons(root, agent_type))"),
+    ("context-no-setup-for-agent", "context.py", "get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type))", "get_lessons(root, agent_type), get_open_problems(root, agent_type))"),
     ("context-scratch-unnamed", "context.py", 'if guard.get("scratch"):', "if False:"),
     ("context-tmp-always", "context.py", 'if guard.get("no_tmp"):', "if True:"),
     ("budget-note-never", "budget.py", "if num_turns != limit - left:", "if True:"),
@@ -52,7 +58,7 @@ MUTANTS = (
     ("herestring-word-kept-as-argument", "shell.py", 'if operator.startswith("<<<"):\n            self.target = "herestring"', 'if operator.startswith("<<<"):\n            self.target = ""'),
     ("heredoc-bodies-read-as-commands", "shell.py", 'if operator == "\\n" and self.heredocs:\n            self.skip_heredocs()', 'if operator == "\\n" and self.heredocs:\n            self.heredocs = []'),
     ("python-c-read-as-shell", "guard.py", 'SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}', 'SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "python3"}'),
-    ("lessons-none-ignored", "turn.py", "if not section or LESSONS_NONE.search(section):", "if not section:"),
+    ("lessons-none-ignored", "turn.py", "if not section or none:", "if not section:"),
     ("deferred-count-not-kept", "turn.py", "if calls >= min_calls and not is_deferred:", "if calls >= min_calls:"),
     ("count-never-emptied", "turn.py", 'if calls >= min_calls and not is_deferred:\n        calls_path.write_text("")', "if False:\n        pass"),
     ("out-of-order-not-checked", "report_gate.py", 'problems.append(f"out of order: {heading}")', "pass"),
@@ -110,8 +116,33 @@ MUTANTS = (
     ("project-follows-the-cwd", "common.py", 'Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()', "Path(cwd).resolve()"),
     ("project-ignores-the-cwd", "common.py", 'Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()', 'Path(os.environ.get("CLAUDE_PROJECT_DIR") or "/").resolve()'),
     # The roles.
-    ("every-role-judged", "common.py", '    return ""\n\n\ndef get_unfenced_lines', '    return "full"\n\n\ndef get_unfenced_lines'),
+    ("every-role-judged", "common.py", '    return "short"\n\n\ndef get_unfenced_lines', '    return "full"\n\n\ndef get_unfenced_lines'),
     ("report-short-ignored", "common.py", 'if role in SHORT_ROLES or role in settings.get("short", ()):', "if role in SHORT_ROLES:"),
+    ("report-default-form-dropped", "common.py", '    return "short"\n\n\ndef get_unfenced_lines', '    return ""\n\n\ndef get_unfenced_lines'),
+    ("report-inline-form-dropped", "context.py", 'inline = INLINE_FORM_TEXT if form == "short" and', 'inline = "" if form == "short" and'),
+    ("report-inline-for-a-full-type", "context.py", 'if form == "short" and agent_type', "if agent_type"),
+    ("retro-stale-mark-kept", "turn.py", "if text.isdigit() and int(text) <= len(items) else 0", "if text.isdigit() else 0"),
+    ("retro-line-past-the-inbox", "turn.py", "closed = min(get_covered(handled), len(items))", "closed = get_covered(handled)"),
+    ("lessons-quoted-refusal-counts", "turn.py", 'REFUSAL.search(str(block.get("content")))', '"Blocked by the harness" in str(block.get("content"))'),
+    ("brief-other-types-unchecked", "brief_lint.py", 'required.get(role, required.get("*", []))', "required.get(role, [])"),
+    ("budget-star-ignored", "budget.py", 'turns = table.get(role, table.get("*"))', "turns = table.get(role)"),
+    ("habits-front-matter-injected", "context.py", 'body = text.split("---", 2)[-1].strip()', "body = text.strip()"),
+    ("feedback-retro-every-item", "turn.py", "if len(waiting) < RETRO_ITEMS or not is_mine", "if not is_mine"),
+    ("feedback-of-every-session", "turn.py", "or not is_mine or", "or"),
+    ("released-ids-still-hold", "turn.py", " or get_covered(released) > seen:", ":"),
+    ("feedback-mark-ignored", "turn.py", "waiting = items[seen:]", "waiting = items"),
+    ("feedback-mark-not-written", "turn.py", "mark.write_text(str(closed))", "pass"),
+    ("feedback-item-line-closes-retro", "turn.py", "if (match := RETRO_KEY.fullmatch(key))", "if (match := re.fullmatch(r'\\w*?-?([0-9]+)', key))"),
+    ("feedback-running-agent-holds", "turn.py", "if open_ids and count_running_agents(transcript) > 0:", "if False:"),
+    ("feedback-problems-any-role", "context.py", "if owner in (role, \"all\")]", "]"),
+    ("feedback-problems-not-for-all", "context.py", "if owner in (role, \"all\")]", "if owner == role]"),
+    ("feedback-problems-no-cap", "context.py", "lines = problems[:MAX_PROBLEMS]", "lines = problems"),
+    ("lessons-refusal-ignored", "turn.py", "if has_refusal(transcript) and", "if False and"),
+    ("lessons-reason-ignored", "turn.py", "and len(tail.split()) < MIN_REASON_WORDS:", ":"),
+    ("lessons-old-refusal-counts", "turn.py", "if text.strip() and not APP_PROMPT.search(text[:APP_PROMPT_HEAD]):\n            return False", "if False:\n            return False"),
+    ("feedback-same-reason-allowed", "turn.py", 'if owner != item_id else ""', 'if False else ""'),
+    ("feedback-environment-problem-filed", "report_gate.py", "(brief|rule|tool)", "(brief|rule|tool|environment)"),
+    ("feedback-problems-not-told", "context.py", ", get_open_problems(root, agent_type))", ")"),
     ("report-full-ignored", "common.py", 'if role in FULL_ROLES or role in settings.get("full", ()):', "if role in FULL_ROLES:"),
     ("prefix-not-removed", "common.py", "role = agent_type.removeprefix(PLUGIN_PREFIX)", "role = agent_type"),
     ("unterminated-fence-hides", "common.py", 'return [line for index, line in enumerate(lines) if index not in fenced]', 'return [line for index, line in enumerate(lines) if index not in fenced and (opened < 0 or index < opened)]'),
@@ -133,8 +164,6 @@ MUTANTS = (
     ("inbox-line-without-session", "report_gate.py", 'f"- id={item_id} session={session} agent={role} {text}\\n"', 'f"- id={item_id} agent={role} {text}\\n"'),
     ("known-item-across-sessions", "report_gate.py", 'if f"id={item_id} session={session} " not in known:', 'if f"id={item_id} " not in known:'),
     # The turn.
-    ("feedback-of-every-session", "turn.py", "if owner == session]", "]"),
-    ("released-ids-still-hold", "turn.py", "and item_id not in released]", "]"),
     ("released-ids-not-saved", "turn.py", 'released_path.write_text(" ".join(sorted(released | set(open_ids))))', "pass"),
     ("worktree-counts-as-a-rule", "turn.py", "and not (is_claude and name == WORKTREES[1])", ""),
     ("any-status-after-the-id-finishes", "turn.py", "for tool_id, status in found if status in FINISHED_STATUSES", "for tool_id, status in found"),
@@ -167,8 +196,8 @@ MUTANTS = (
     ("budget-counts-calls", "budget.py", "num_turns = len(turns) + (not is_written)", "num_turns = sum(map(len, turns)) + (not is_written)"),
     ("budget-line-ignored", "budget.py", "limit = get_turn_limit(get_brief(first))", "limit = None"),
     ("budget-default-wins", "budget.py", "    if limit is None:\n        limit = get_default(config, role)", "    limit = get_default(config, role)"),
-    ("budget-defaults-ignore-config", "budget.py", 'config.get("budget", DEFAULT_BUDGET).get(role)', "DEFAULT_BUDGET.get(role)"),
-    ("budget-unknown-role-gets-a-budget", "budget.py", 'config.get("budget", DEFAULT_BUDGET).get(role)', 'config.get("budget", DEFAULT_BUDGET).get(role, 1)'),
+    ("budget-defaults-ignore-config", "budget.py", 'table = config.get("budget", DEFAULT_BUDGET)\n', "table = DEFAULT_BUDGET\n"),
+    ("budget-unknown-role-gets-a-budget", "budget.py", 'turns = table.get(role, table.get("*"))', "turns = table.get(role, 1)"),
     ("budget-fence-read", "budget.py", "for line in get_unfenced_lines(brief):", "for line in brief.splitlines():"),
     ("budget-turns-word-refused", "budget.py", "(?:turns?\\b|(?=\\W*$))", "(?=\\W*$)"),
     ("budget-any-number-counts", "budget.py", "|(?=\\W*$))", "|)"),
@@ -185,7 +214,6 @@ MUTANTS = (
     # The brief rule.
     ("brief-judges-sub-agents", "brief_lint.py", 'if event.get("agent_id"):\n        return 0\n', ""),
     ("brief-without-its-key", "brief_lint.py", 'if root is None or "brief" not in config:', "if root is None:"),
-    ("brief-judges-every-type", "brief_lint.py", "if role not in ROLES:\n        return 0\n", ""),
     ("brief-prefix-not-removed", "brief_lint.py", '.removeprefix(PLUGIN_PREFIX)', ""),
     ("brief-required-ignored", "brief_lint.py", '(config["brief"] or {}).get("required", DEFAULT_REQUIRED)', "DEFAULT_REQUIRED"),
     ("brief-worker-needs-no-judge", "brief_lint.py", '"worker": ["Goal:", "Write set:", "Judge:"]', '"worker": ["Goal:", "Write set:"]'),
@@ -213,7 +241,7 @@ MUTANTS = (
     ("import-tool-turns-lost", "import_reports.py", '"tool_turns": get_turn_stats(events),', '"tool_turns": None,'),
     # The tool-turn nudge.
     ("nudge-without-a-project", "nudge.py", "if root is None:\n        return 0\n", ""),
-    ("nudge-run-short", "nudge.py", "RUN_LENGTH = 4", "RUN_LENGTH = 3"),
+    ("nudge-run-long", "nudge.py", "RUN_LENGTH = 3", "RUN_LENGTH = 4"),
     ("nudge-run-never", "nudge.py", "if run and run % RUN_LENGTH == 0:", "if False:"),
     ("nudge-two-calls-count-as-one", "nudge.py", "is_small_turn = len(turn) == 1 and is_small_read(turn[0])", "is_small_turn = is_small_read(turn[0])"),
     ("nudge-repeat-never", "nudge.py", "if key in seen:", "if False:"),
@@ -229,20 +257,16 @@ MUTANTS = (
     ("nudge-bug-blocks", "nudge.py", "sys.exit(1)", "sys.exit(2)"),
     ("ledger-tool-turns-lost", "report_gate.py", "get_turn_stats(read_events(path)) if path else None", "None"),
     # The context hook.
-    ("context-session-silent", "context.py", "(SESSION_TEXT, TOOL_TURNS_TEXT,", '("", TOOL_TURNS_TEXT,'),
-    ("context-forms-swapped", "context.py", 'FORM_TEXTS.get(form, "")', 'FORM_TEXTS.get("full" if form == "short" else "short", "") if form else ""'),
-    ("context-tells-every-agent", "context.py", 'FORM_TEXTS.get(form, "")', 'FORM_TEXTS.get(form, FORM_TEXTS["full"])'),
-    ("context-tool-turns-not-for-session", "context.py", "(SESSION_TEXT, TOOL_TURNS_TEXT,", "(SESSION_TEXT,"),
-    ("context-tool-turns-not-for-agents", "context.py", 'FORM_TEXTS.get(form, ""), TOOL_TURNS_TEXT,', 'FORM_TEXTS.get(form, ""),'),
+    ("context-session-silent", "context.py", "(SESSION_TEXT, habits,", '("", habits,'),
+    ("context-forms-swapped", "context.py", 'FORM_TEXTS[form], inline', 'FORM_TEXTS["full" if form == "short" else "short"], inline'),
+    ("context-tool-turns-not-for-session", "context.py", "(SESSION_TEXT, habits,", "(SESSION_TEXT,"),
+    ("context-tool-turns-not-for-agents", "context.py", 'FORM_TEXTS[form], inline, habits,', 'FORM_TEXTS[form], inline,'),
     ("context-without-a-project", "context.py", "if root is None:\n        return 0\n", ""),
     # The report gate's claim and auto-item rules.
     ("exit-claim-matches-any-code", "report_gate.py", "        if code not in seen\n", "        if False\n"),
     ("failed-call-counts-as-exit-zero", "report_gate.py", "            if call_id not in failed:\n                seen.add(0)", "            if True:\n                seen.add(0)"),
     ("read-quote-not-checked", "report_gate.py", "if not all(part in window for part in parts if part):", "if False:"),
     ("read-quote-searches-the-whole-file", "report_gate.py", "lines[first_line : line + QUOTE_WINDOW]", "lines"),
-    ("auto-decide-not-filed", "report_gate.py", 'for heading in ("DECIDE", "OUTSIDE"):', 'for heading in ("OUTSIDE",):'),
-    ("auto-outside-not-filed", "report_gate.py", 'for heading in ("DECIDE", "OUTSIDE"):', 'for heading in ("DECIDE",):'),
-    ("auto-none-bullet-filed", "report_gate.py", 'for text in texts if text and not NO_FEEDBACK.fullmatch(text)]\n    for line in sections', 'for text in texts]\n    for line in sections'),
     ("auto-low-task-not-filed", "report_gate.py", "if score and int(score.group(1)) <= LOW_TASK:", "if False:"),
     ("auto-high-task-filed", "report_gate.py", "if score and int(score.group(1)) <= LOW_TASK:", "if score:"),
     # The turn's handled-line check.

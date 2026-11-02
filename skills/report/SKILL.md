@@ -11,9 +11,9 @@ CHECKED and FEEDBACK FOR THE ORCHESTRATOR; every other section says what it chec
 `hooks/report_gate.py` sends the report back when a heading is missing, repeated or out of order, or when a section
 lacks its shape. A report sent back is sent again whole, not only the fix.
 
-- **Short form:** scout, runner and cold-reader: Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD.
+- **Short form:** scout, runner, cold-reader, analyst, planner and researcher: Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD.
 - **Full form:** worker, reviewer and auditor.
-- A project adds roles under `report.short` and `report.full` in `.harness.json`. Other agent types are not judged.
+- A project adds roles under `report.short` and `report.full` in `.harness.json`. Every other agent type, built-in ones too, owes the short form.
 
 The hook also checks your report against your own transcript, and sends it back on a breach:
 
@@ -83,7 +83,6 @@ command run with its exit code; a longer list goes under Answer), `## NOT CHECKE
   broken.
 - **FEEDBACK FOR THE ORCHESTRATOR:** only changes to a rule, role, skill, hook, gate or brief template, each naming the
   file and the problem it would have prevented; status and results go in Answer or Work. Each item lands in the
-  project's `harness-feedback/inbox.md` and holds the main session's turn until it is handled. `none`, `N/A`, `No
-  feedback.` and `None needed.` file nothing.
-- **DECIDE, OUTSIDE and a low Task score:** each DECIDE bullet, each OUTSIDE bullet and a Task score of 3 or lower also
-  land in the inbox, marked `[auto]` (at most 5 a report), and the orchestrator must handle them before its turn ends.
+  project's `harness-feedback/inbox.md`, where a retro reads it. `none`, `N/A`, `No feedback.` and `None needed.` file nothing.
+- **What else is filed:** each problem with a cause of brief, rule or tool, and a Task score of 3 or lower, marked `[auto]`
+  (at most 5 a report). DECIDE and OUTSIDE stay in the report for the orchestrator.

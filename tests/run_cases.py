@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
@@ -141,6 +141,12 @@ HISTORY = "owner's to run"
 GLOB = "unquoted glob"
 REPO = "project files change"
 GUARD_CASES = [
+    bash("a package change asks the owner", "pip install x", True, '"permissionDecision": "ask"'),
+    bash("a package change exits clean, so the call can run once accepted", "uv add x", True, "they are asked first", lacks="Blocked"),
+    bash("the new key asks too", "pip install x", True, '"permissionDecision": "ask"', config={"guard": {"ask_packages": True}}),
+    bash("no key, no question", "pip install x", False, config={"guard": {}}),
+    bash("a package change beside a delete is refused outright", "pip install x; rm a", True, "Blocked by the harness guard", lacks="permissionDecision"),
+    bash("a history rewrite is refused, not asked", "git push --force", True, "Blocked by the harness guard", lacks="permissionDecision"),
     bash("a bare uv run does not crash", "uv run", False),
     bash("a bare tar does not crash", "tar", False),
     bash("a quote in a quoted parameter opens nothing", """echo "${X:-it's}"; uv pip install y""", True),
@@ -406,6 +412,8 @@ def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: obj
 
 
 INBOX_NAME = "harness-feedback/inbox.md"
+MARK_NAME = "harness-feedback/retro-mark"
+OPEN_NAME = "harness-feedback/open.md"
 AUTO = "[auto] "
 NUMBERED = "\n".join(f"line {word}" for word in ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"))
 
@@ -508,12 +516,14 @@ GATE_CASES = [
         True,
         "missing: OUTSIDE",
     ),
-    gate("a built-in helper is not judged", stop_event("no headings", agent_type="Explore"), False),
-    gate("another plugin's agent is not judged", stop_event("no headings", agent_type="other:worker"), False),
-    gate("web-fetch is not judged", stop_event("The page says X.", agent_type="web-fetch"), False),
-    gate("a fork is not judged", stop_event("Done.", agent_type="fork"), False),
-    gate("general-purpose is not judged by default", stop_event("Done.", agent_type="general-purpose"), False),
-    gate("an unknown role is not judged", stop_event("no headings", agent_type="custom"), False),
+    gate("a built-in helper owes a report", stop_event("no headings", agent_type="Explore"), True),
+    gate("another plugin's agent owes a report", stop_event("no headings", agent_type="other:worker"), True),
+    gate("web-fetch owes a report", stop_event("The page says X.", agent_type="web-fetch"), True),
+    gate("a fork owes a report", stop_event("Done.", agent_type="fork"), True),
+    gate("general-purpose owes a report by default", stop_event("Done.", agent_type="general-purpose"), True),
+    gate("an unknown type owes a report", stop_event("no headings", agent_type="custom"), True),
+    gate("an unknown type owes only the short form", stop_event(make_report(headings=SHORT_HEADINGS), agent_type="custom"), False),
+    gate("report.short moves a full role to the short form", stop_event(make_report(headings=SHORT_HEADINGS), agent_type="worker"), False, config={"report": {"short": ["worker"]}}),
     gate(
         "report.short adds a role",
         stop_event(make_report(skip="Work"), agent_type="general-purpose"),
@@ -787,17 +797,19 @@ GATE_CASES = [
         False,
         files=(("doc.md", NUMBERED),),
     ),
+    gate("a DECIDE bullet is not filed", stop_event(make_report(replace=("DECIDE", "- pick a or b: a, cheap; b, slow"))), False, not_wrote=(INBOX_NAME, "pick a or b")),
+    gate("an OUTSIDE bullet is not filed", stop_event(make_report(replace=("OUTSIDE", "- change hooks/x.py"))), False, not_wrote=(INBOX_NAME, "hooks/x.py")),
     gate(
-        "a DECIDE bullet is filed as an auto item",
-        stop_event(make_report(replace=("DECIDE", "- pick a or b: a, cheap; b, slow"))),
+        "a problem caused by the brief is filed as an auto item",
+        stop_event(make_report(replace=("PROBLEMS MET", "- the brief named a stale line (cause: brief); resolved: asked"))),
         False,
-        wrote=(INBOX_NAME, f"agent=worker {AUTO}DECIDE: pick a or b"),
+        wrote=(INBOX_NAME, f"agent=worker {AUTO}PROBLEM brief: the brief named a stale line"),
     ),
     gate(
-        "an OUTSIDE bullet is filed as an auto item",
-        stop_event(make_report(replace=("OUTSIDE", "- change hooks/x.py"))),
+        "a problem caused by the environment is not filed",
+        stop_event(make_report(replace=("PROBLEMS MET", "- the disk was full (cause: environment); resolved: no"))),
         False,
-        wrote=(INBOX_NAME, f"agent=worker {AUTO}OUTSIDE: change hooks/x.py"),
+        not_wrote=(INBOX_NAME, "disk was full"),
     ),
     gate(
         "a Task score of 3 is filed with its title and reason",
@@ -809,10 +821,10 @@ GATE_CASES = [
     gate("none in DECIDE and OUTSIDE files nothing", stop_event(make_report()), False, not_wrote=(INBOX_NAME, AUTO)),
     gate(
         "auto items stop at 5 a report",
-        stop_event(make_report(replace=("OUTSIDE", "\n".join(f"- change file{n}" for n in range(7))))),
+        stop_event(make_report(replace=("PROBLEMS MET", "\n".join(f"- problem number {n} (cause: tool); resolved: no" for n in range(7))))),
         False,
-        wrote=(INBOX_NAME, f"{AUTO}OUTSIDE: change file4"),
-        not_wrote=(INBOX_NAME, "change file5"),
+        wrote=(INBOX_NAME, f"{AUTO}PROBLEM tool: problem number 4"),
+        not_wrote=(INBOX_NAME, "problem number 5"),
     ),
     gate(
         "the ledger row holds the new fields",
@@ -969,14 +981,23 @@ def turn(
     return Case(name, ("turn.py", "stop"), event, blocks, text, files=(counted, *files), transcript=transcript, **options)
 
 
-INBOX = (INBOX_NAME, f"- id=deadbeef session={SESSION} agent=worker add a rule\n")
-HANDLED_RULE = (HANDLED_NAME, "deadbeef: rule written in AGENTS.md\n")
+def waiting(count: int, session: str = SESSION, /) -> str:
+    """Inbox lines of one session, each with its own id and text."""
+
+    return "".join(f"- id={index:08x} session={session} agent=worker item {index}\n" for index in range(count))
+
+
+INBOX = (INBOX_NAME, waiting(20))
+REFUSED = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "PreToolUse:Bash hook error: [guard.py]: Blocked by the harness guard: no"}]}}
+QUOTED_REFUSAL = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "FAIL expected Blocked by the harness guard"}]}}
+OWNER_PROMPT = {"type": "user", "message": {"content": "the next job"}}
+HANDLED_RULE = (HANDLED_NAME, "retro-20: rule written in AGENTS.md\n")
 BLOCKS_FILE = f"data/turns/{SESSION}.blocks"
 CALLS_FILE = f"data/turns/{SESSION}.calls"
 RULES_FILE = f"data/turns/{SESSION}.rules"
 DEFERRED_FILE = f"data/turns/{SESSION}.deferred"
 RELEASED_FILE = f"data/turns/{SESSION}.released"
-RELEASED_FILE_ITEM = (RELEASED_FILE, "deadbeef")
+RELEASED_FILE_ITEM = (RELEASED_FILE, "retro-20")
 RULE_FILE_BEFORE = ("AGENTS.md", "a rule\n")
 RULES_KEPT = (RULES_FILE, "{}")
 RULES_OTHER = (RULES_FILE, '{"AGENTS.md": "changed since"}')
@@ -1019,10 +1040,10 @@ TURN_CASES = [
     turn("a heading in a fence does not count", f"```\n{FULL_STATUS}\n```", True, "Verdict", calls=BUSY_CALLS),
     turn("a project's min_calls is read", PROGRESS, False, calls=BUSY_CALLS, config={"stop": {"min_calls": 5}}),
     turn("no project means no gate", PROGRESS, False, calls=BUSY_CALLS, config=None),
-    turn("an unhandled feedback id is refused", PROGRESS, True, "deadbeef", files=(INBOX,)),
+    turn("a due retro is refused", PROGRESS, True, "retro-20", files=(INBOX,)),
     turn("a handled feedback id is allowed", PROGRESS, False, files=(INBOX, HANDLED_RULE)),
-    turn("a rejected feedback id is allowed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "deadbeef: rejected: it does not apply\n"))),
-    turn("a handled line with no verdict does not count", PROGRESS, True, "deadbeef", files=(INBOX, (HANDLED_NAME, "deadbeef: looked\n"))),
+    turn("a rejected feedback id is allowed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n"))),
+    turn("a handled line with no verdict does not count", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, "retro-20: looked\n"))),
     turn("a missing inbox is no error", PROGRESS, False),
     turn("lessons with no rule change are refused", LESSONS, True, "no change to show", files=(RULES_KEPT,), config=NO_RULE_PATHS),
     turn("lessons that defer are refused", "**Lessons:** will add a rule next turn.\n", True, "defers", files=(RULES_KEPT,), config=NO_RULE_PATHS),
@@ -1032,7 +1053,7 @@ TURN_CASES = [
         "the third block is the last",
         PROGRESS,
         True,
-        "deadbeef",
+        "retro-20",
         files=(INBOX, (BLOCKS_FILE, "2")),
         wrote=(BLOCKS_FILE, "3"),
     ),
@@ -1042,17 +1063,30 @@ TURN_CASES = [
         False,
         "open checks",
         files=(INBOX, (BLOCKS_FILE, "3")),
-        wrote=(RELEASED_FILE, "deadbeef"),
+        wrote=(RELEASED_FILE, "retro-20"),
     ),
-    turn("a released id holds no more, with no warning", PROGRESS, False, files=(INBOX, (RELEASED_FILE, "deadbeef")), lacks="open checks"),
+    turn("a released id holds no more, with no warning", PROGRESS, False, files=(INBOX, RELEASED_FILE_ITEM), lacks="open checks"),
+    turn("nineteen waiting items hold nothing", PROGRESS, False, files=((INBOX_NAME, waiting(19)),), lacks="open checks"),
+    turn("another session's items never hold this one", PROGRESS, False, files=((INBOX_NAME, waiting(20, "other")),), lacks="open checks"),
+    turn("one item of this session among others holds it", PROGRESS, True, "retro-21", files=((INBOX_NAME, waiting(20, "other") + waiting(1)),)),
+    turn("a closing line moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), wrote=(MARK_NAME, "20")),
+    turn("the mark hides what it covers", PROGRESS, False, files=(INBOX, (MARK_NAME, "1")), lacks="open checks"),
+    turn("twenty past the mark are due", PROGRESS, True, "retro-40", files=((INBOX_NAME, waiting(40)), (MARK_NAME, "20"))),
+    turn("a line for an item id closes no retro", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply\n"))),
+    turn("a running agent puts the retro off", PROGRESS, False, files=(INBOX,), transcript=(launch("t1")[0],), lacks="a retro is due"),
     turn(
-        "a released id does not release a newer one",
+        "one reason cannot close two things",
         PROGRESS,
         True,
-        "cafef00d",
-        files=(RELEASED_FILE_ITEM, (INBOX_NAME, f"- id=deadbeef session={SESSION} agent=w a\n- id=cafef00d session={SESSION} agent=w b\n")),
-        lacks="ids deadbeef",
+        "the same reason already closes 00000001",
+        files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply here\nretro-20: rejected: it does not apply here\n")),
     ),
+    turn("a mark past the inbox is ignored", PROGRESS, True, "retro-20", files=(INBOX, (MARK_NAME, "80"))),
+    turn("a line cannot cover items not yet filed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-9999: rejected: it does not apply\n")), wrote=(MARK_NAME, "20")),
+    turn("a failed command quoting a refusal is no refusal", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(QUOTED_REFUSAL,)),
+    turn("a bare none after a refusal is refused", "Lessons: none\n", True, "refused this turn", files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,)),
+    turn("a none with its reason after a refusal is allowed", "Lessons: none: the guard worked as it should\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,)),
+    turn("a refusal before the owner's prompt does not count", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED, OWNER_PROMPT)),
     turn("an old line with no session never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef agent=worker add a rule\n"),)),
     turn("another session's line never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef session=other agent=worker a\n"),)),
     turn("a pass resets the blocks", PROGRESS, False, files=((BLOCKS_FILE, "2"),), wrote=(BLOCKS_FILE, "0")),
@@ -1331,9 +1365,12 @@ BRIEF_CASES = [
     brief("a scout needs Goal", "scout", "Look at x", True, "Goal:"),
     brief("a prefixed reviewer needs Goal", "harness:reviewer", "Look at x", True, "Goal:"),
     brief("a scout with Goal passes", "scout", "Goal: x", False),
-    brief("another agent type passes", "Explore", "Look at x", False),
-    brief("another plugin's worker passes", "other:worker", "Look at x", False),
-    brief("no subagent type passes", "", "Look at x", False),
+    brief("another agent type needs a Goal line", "Explore", "Look at x", True, "Goal:"),
+    brief("another plugin's worker needs a Goal line", "other:worker", "Look at x", True, "Goal:"),
+    brief("another agent type with a Goal passes", "Explore", "Goal: look at x", False),
+    brief("a brief with no agent type needs a Goal line", "", "Look at x", True, "Goal:"),
+    brief("the refusal reads without an agent type", "", "Look at x", True, "a brief for this agent needs"),
+    brief("no agent type with a Goal passes", "", "Goal: x", False),
     brief("no brief key means no rule", "worker", "Look at x", False, config={}),
     brief("no project means no rule", "worker", "Look at x", False, config=None),
     brief(
@@ -1406,7 +1443,8 @@ BUDGET_CASES = [
     budget("a scout is refused past 35 turns", "Goal: x", True, role="scout", turns=36),
     budget("the project's budget replaces the defaults", "Goal: x", False, config={"budget": {"worker": 99999999}}),
     budget("a role with no budget entry passes", "Goal: x", False, config={"budget": {"scout": 1}}),
-    budget("another agent type with no line passes", "Goal: x", False, role="Explore"),
+    budget("another agent type has the default budget", "Goal: x", True, "budget of 40 turns", role="Explore", turns=41),
+    budget("another agent type inside the default passes", "Goal: x", False, role="Explore", turns=40),
     budget("another agent type with a line is refused", "Goal: x\nBudget: 1", True, role="Explore"),
     budget("the main session passes", "Goal: x", False, event={"agent_id": None, "agent_transcript_path": "project/s/subagents/agent-a1.jsonl"}),
     budget("no project means no rule", "Goal: x", False, config=None),
@@ -1474,25 +1512,25 @@ NUDGE_CASES = [
         [[{"type": "tool_use", "id": "r0", "name": "Read", "input": {"file_path": "a.py", "limit": 1}}], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"limit": 1, "file_path": "a.py"}}]],
         "already made this same read",
     ),
-    nudge("four single reads in a row are nudged", make_reads(4), "one small read each"),
-    nudge("the nudge is hook context", make_reads(4), '"hookEventName": "PostToolUse"'),
-    nudge("three single reads are not", make_reads(3), lacks="additionalContext"),
-    nudge("two reads in one message break the run", [*make_reads(3), [read_call("x1"), read_call("x2")]], lacks="additionalContext", event={"tool_use_id": "x1"}),
-    nudge("a batched command breaks the run", [*make_reads(3), [shell_call("b1", "cat a; cat b")]], lacks="additionalContext"),
-    nudge("a sed -i is no read", [[shell_call(f"b{index}", f"sed -i s/a/b/ f{index}.py")] for index in range(4)], lacks="additionalContext"),
-    nudge("single shell reads count", [[shell_call(f"b{index}", f"cd /repo && cat f{index}.py")] for index in range(4)], "one small read each"),
-    nudge("a read after cd and a semicolon counts", [[shell_call(f"b{index}", f"cd /repo; cat f{index}.py")] for index in range(4)], "one small read each"),
+    nudge("three single reads in a row are nudged", make_reads(3), "one small read each"),
+    nudge("the nudge is hook context", make_reads(3), '"hookEventName": "PostToolUse"'),
+    nudge("two single reads are not", make_reads(2), lacks="additionalContext"),
+    nudge("two reads in one message break the run", [*make_reads(2), [read_call("x1"), read_call("x2")]], lacks="additionalContext", event={"tool_use_id": "x1"}),
+    nudge("a batched command breaks the run", [*make_reads(2), [shell_call("b1", "cat a; cat b")]], lacks="additionalContext"),
+    nudge("a sed -i is no read", [[shell_call(f"b{index}", f"sed -i s/a/b/ f{index}.py")] for index in range(3)], lacks="additionalContext"),
+    nudge("single shell reads count", [[shell_call(f"b{index}", f"cd /repo && cat f{index}.py")] for index in range(3)], "one small read each"),
+    nudge("a read after cd and a semicolon counts", [[shell_call(f"b{index}", f"cd /repo; cat f{index}.py")] for index in range(3)], "one small read each"),
     nudge(
         "a line with no call does not break the run",
-        make_reads(4),
+        make_reads(3),
         "one small read each",
-        files=(("s/subagents/agent-a1.jsonl", "".join(json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": [call]}}) + "\n" + json.dumps({"type": "assistant", "message": {"id": f"t{index}", "content": [{"type": "text", "text": "x"}]}}) + "\n" for index, [call] in enumerate(make_reads(4)))),),
+        files=(("s/subagents/agent-a1.jsonl", "".join(json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": [call]}}) + "\n" + json.dumps({"type": "assistant", "message": {"id": f"t{index}", "content": [{"type": "text", "text": "x"}]}}) + "\n" for index, [call] in enumerate(make_reads(3)))),),
     ),
     nudge("a repeated read is nudged", REPEATED[:2], "same read"),
     nudge("the same read after a command is a repeat", [REPEATED[0], [shell_call("c1", "python3 x.py")], REPEATED[1]], "same read"),
     nudge("the same read after an edit is not", [REPEATED[0], [{"type": "tool_use", "id": "e1", "name": "Edit", "input": {}}], REPEATED[1]], lacks="additionalContext"),
     nudge("another range of the file is not a repeat", [[read_call("r0", "a.py")], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"file_path": "a.py", "offset": 9}}]], lacks="additionalContext"),
-    nudge("the second nudge still speaks", REPEATED[:3], "same read"),
+    nudge("the second nudge still speaks", REPEATED[:3], "one small read each"),
     nudge("the third nudge is silent", REPEATED, lacks="additionalContext"),
     nudge("a call that is not the wasteful one hears nothing", REPEATED[:2], lacks="additionalContext", event={"tool_use_id": "r0"}),
     nudge("the main session is nudged from its transcript", REPEATED[:2], "same read", path="s.jsonl", event={"agent_id": None}),
@@ -1568,8 +1606,14 @@ CONTEXT_CASES = [
         "short form",
         config={"report": {"short": ["custom"]}},
     ),
-    context("a helper owes no report form", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, lacks="form"),
+    context("a helper is told the short form", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "short form"),
+    context("a custom full type gets no short headings", {"hook_event_name": "SubagentStart", "agent_type": "custom"}, "full form", lacks="Whatever the task", config={"report": {"full": ["custom"]}}),
+    context("a helper is given the headings itself", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "Whatever the task"),
+    context("a role is not given the headings twice", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, lacks="you owe a report"),
     context("a session start states the tool-turn rule", {"hook_event_name": "SessionStart"}, "few tool turns"),
+    context("a session start carries the tool-habits skill", {"hook_event_name": "SessionStart"}, "## When a call is refused"),
+    context("a sub-agent start carries the tool-habits skill", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## When a call is refused"),
+    context("the skill's front matter is not injected", {"hook_event_name": "SessionStart"}, lacks="description: How to make tool calls"),
     context("a worker is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "few tool turns"),
     context("a helper is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "few tool turns"),
     context("no project means no context", {"hook_event_name": "SessionStart"}, lacks="orchestrator", config=None),
@@ -1584,7 +1628,7 @@ CONTEXT_CASES = [
 
 # learning loop
 RESET = (("turn.py", "reset"), {"session_id": SESSION})
-HANDLED_AGENTS = (HANDLED_NAME, "deadbeef: rule written in AGENTS.md\n")
+HANDLED_AGENTS = (HANDLED_NAME, "retro-20: rule written in AGENTS.md\n")
 
 
 def handled_turn(name: str, handled: str, blocks: bool, text: str = "", /, *, rewrite: str = "", files: tuple[tuple[str, str], ...] = ()) -> Case:
@@ -1633,17 +1677,20 @@ def auto_lesson_files() -> tuple[tuple[str, str], tuple[str, str], tuple[str, st
     )
 
 
+PROBLEM_FILES = ((OPEN_NAME, "- worker: stale line number in the brief\n- scout: scout only text\n- all: quote every glob\n- worker: a third problem\n"),)
+
+
 LOOP_CASES = [
     handled_turn("loop: a rule line with an unchanged file is refused", HANDLED_AGENTS[1], True, "was not changed"),
     handled_turn("loop: a rule line with a changed file is allowed", HANDLED_AGENTS[1], False, rewrite="a new rule\n"),
-    handled_turn("loop: a rule line with a missing file is refused", "deadbeef: rule written in nope.md\n", True, "does not exist"),
-    handled_turn("loop: a rule line naming no file is refused", "deadbeef: rule written in\n", True, "names no file"),
-    handled_turn("loop: a file outside the rule paths is refused", "deadbeef: rule written in notes.md\n", True, "no rule file", files=(("notes.md", "n\n"),)),
-    handled_turn("loop: a file outside the project needs only to exist", f"deadbeef: rule written in {ROOT}/outside.md\n", False, files=(("data/../outside.md", "o\n"),)),
-    handled_turn("loop: a closing period after the file is ignored", "deadbeef: rule written in AGENTS.md.\n", False, rewrite="a new rule\n"),
-    handled_turn("loop: a one-word rejection is refused", "deadbeef: rejected: no\n", True, "at least 3 words"),
-    handled_turn("loop: an empty rejection is refused", "deadbeef: rejected:\n", True, "at least 3 words"),
-    handled_turn("loop: a three-word rejection is allowed", "deadbeef: rejected: not a rule\n", False),
+    handled_turn("loop: a rule line with a missing file is refused", "retro-20: rule written in nope.md\n", True, "does not exist"),
+    handled_turn("loop: a rule line naming no file is refused", "retro-20: rule written in\n", True, "names no file"),
+    handled_turn("loop: a file outside the rule paths is refused", "retro-20: rule written in notes.md\n", True, "no rule file", files=(("notes.md", "n\n"),)),
+    handled_turn("loop: a file outside the project needs only to exist", f"retro-20: rule written in {ROOT}/outside.md\n", False, files=(("data/../outside.md", "o\n"),)),
+    handled_turn("loop: a closing period after the file is ignored", "retro-20: rule written in AGENTS.md.\n", False, rewrite="a new rule\n"),
+    handled_turn("loop: a one-word rejection is refused", "retro-20: rejected: no\n", True, "at least 3 words"),
+    handled_turn("loop: an empty rejection is refused", "retro-20: rejected:\n", True, "at least 3 words"),
+    handled_turn("loop: a three-word rejection is allowed", "retro-20: rejected: not a rule\n", False),
     context("loop: a worker is told the role's handled lessons", SUB_WORKER, "- (rule in AGENTS.md) check the unit twice", files=LESSON_FILES),
     context("loop: the lessons carry the already-acted header", SUB_WORKER, "do not redo the request:\\n- (rule in AGENTS.md)", files=LESSON_FILES),
     context("loop: a lesson whose rule file is gone is skipped", SUB_WORKER, lacks="check the unit twice", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rule written in gone.md\n"))),
@@ -1655,6 +1702,12 @@ LOOP_CASES = [
     context("loop: the lessons stay within 600 characters", SUB_WORKER, "entry6", lacks="entry2", files=lessons(100)),
     context("loop: an inbox with no handled file is no crash", SUB_WORKER, "full form", lacks="Past feedback", files=(LESSON_FILES[0],)),
     context("loop: a handled file with no inbox is no crash", SUB_WORKER, "full form", lacks="Past feedback", files=(LESSON_FILES[1],)),
+    context("loop: an open problem is told to its role", SUB_WORKER, "stale line number", files=PROBLEM_FILES),
+    context("loop: the problems carry their heading", SUB_WORKER, "no rule fixes yet", files=PROBLEM_FILES),
+    context("loop: a problem for all is told", SUB_WORKER, "quote every glob", files=PROBLEM_FILES),
+    context("loop: only two problems are told", SUB_WORKER, "quote every glob", lacks="a third problem", files=PROBLEM_FILES),
+    context("loop: another role's problem is not told", SUB_WORKER, lacks="scout only text", files=PROBLEM_FILES),
+    context("loop: no open file is no crash", SUB_WORKER, "full form", lacks="no rule fixes yet"),
     context("loop: ten new reports ask for a retro", {"hook_event_name": "SessionStart"}, "10 reports since the last retro: run harness:retro.", files=(ledger(10, OLD_TIME),)),
     context("loop: nine reports ask for nothing", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(9, OLD_TIME),)),
     context("loop: another project's reports do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME, project="/elsewhere"),)),
@@ -1730,12 +1783,13 @@ def resolve(root: Path, name: str, /) -> Path:
 
 
 def is_blocked(run: subprocess.CompletedProcess[str], /) -> bool:
-    """Whether a hook blocked: exit 2, or the JSON decision on its stdout."""
+    """Whether a hook stopped the call: exit 2, or the JSON decision on its stdout, which may hand it to the owner."""
 
     if run.returncode == 2:
         return True
     try:
-        return json.loads(run.stdout).get("decision") == "block"
+        output = json.loads(run.stdout)
+        return output.get("decision") == "block" or output.get("hookSpecificOutput", {}).get("permissionDecision") == "ask"
     except ValueError:
         return False
 
@@ -1790,7 +1844,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
             if name:
                 (root / name).mkdir(parents=True, exist_ok=True)
         (root / "transcript.jsonl").write_text("".join(f"{json.dumps(line)}\n" for line in case.transcript).replace(ROOT, str(root)))
-        environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "HOME": str(root), "UV_CACHE_DIR": UV_CACHE}
+        environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root), "UV_CACHE_DIR": UV_CACHE}
         environment.pop("CLAUDE_PROJECT_DIR", None)
         environment["SHELL"] = case.shell
         if case.project_dir:

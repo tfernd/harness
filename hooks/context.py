@@ -1,14 +1,14 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = []
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
 """SessionStart and SubagentStart hook: in a project with `.harness.json`, tells a session what it owes.
 
-Both get the rule on tool turns and the setup facts that cost past agents a refused call: which tools may be missing, the shell, and the scratch folder. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells a role the report gate judges
-which report form it owes, and the last lessons handled for its role. Any other agent type gets nothing. SessionStart also
+Both get the `tool-habits` skill and the setup facts that cost past agents a refused call: which tools may be missing, the shell, and the scratch folder. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells any agent
+which report form it owes, the last lessons handled for its role and the open problems a retro kept. SessionStart also
 says when ten or more reports of the project are newer than the plugin data folder's `retro-marker` file (the `retro` skill
 writes it). The text reaches the model as `additionalContext`.
 """
@@ -22,16 +22,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from common import FILE_EDGES, HANDLED, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_report_form
+from common import FILE_EDGES, HANDLED, INBOX, OPEN_PROBLEMS, PLUGIN_PREFIX, ROLES, data_folder, find_project, get_report_form
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
-TOOL_TURNS_TEXT = (
-    "Use few tool turns; each one costs the owner time. Send independent calls together in one message (several Reads, a Bash "
-    "beside a Read) and wait only when a call needs the previous result. Read or edit several files with one script that "
-    "prints only what you need and asserts each edit, not a run of cat, sed, grep and ls. Do not read an unchanged file again "
-    "or rerun an unchanged command. Test once, when the unit is done. No clock limits you, only turns: run a long check in the "
-    "background, since waiting for it costs no turn."
-)
+HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
+HABITS_FALLBACK = "Use few tool turns; each one costs the owner time. Load the `harness:tool-habits` skill before shell work."
 TOOLS_TEXT = "If Grep or Glob is not among your tools, use `rg` and `find` through Bash."
 ZSH_TEXT = "The shell is zsh: quote every glob, and read exit codes from `$pipestatus`, not `$PIPESTATUS`."
 FORM_TEXTS = {
@@ -40,10 +35,20 @@ FORM_TEXTS = {
     "short": "End with the short form of the `harness:report` skill: Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD. "
     "A hook sends back a report that breaks the form.",
 }
+# An agent type that is not a harness role may lack the Skill tool, so the headings come in the text itself.
+INLINE_FORM_TEXT = (
+    "Whatever the task, you owe a report. End with these sections, each under its exact ## heading, once, in this order: "
+    "Answer, Work, NOT CHECKED, PROBLEMS MET, REPORT CARD. A hook sends the report back and says what is missing."
+)
 LESSONS_HEADING = (
     "Past feedback to this role. Each item was already acted on; its rule now lives in the file named. "
     "Read that file if it touches your task; do not redo the request:"
 )
+PROBLEMS_HEADING = (
+    "Problems a retro found for your role that no rule fixes yet. Avoid them, "
+    "or name one under PROBLEMS MET if you hit it:"
+)
+MAX_PROBLEMS = 2
 # Characters of an inbox text kept in a lesson line.
 MAX_LESSON_TEXT = 140
 AUTO_PREFIX = "[auto]"
@@ -53,6 +58,7 @@ MAX_LESSONS_CHARS = 600
 RETRO_ROWS = 10
 RETRO_MARKER = "retro-marker"
 INBOX_LINE = re.compile(r"^- id=([0-9a-f]{8}) session=\S+ agent=(\S+) (.+)$", re.M)
+OPEN_LINE = re.compile(r"^- ([\w-]+): (.+)$", re.M)
 RULE_LINE = re.compile(r"^([0-9a-f]{8}): rule written in[ \t]*(\S+)", re.M)
 LEDGER_TIME = "%Y-%m-%dT%H:%M:%S%z"
 
@@ -70,6 +76,19 @@ def get_setup_text(config: dict, /) -> str:  # config keys
         lines.append("A write under `/tmp` is refused, even where the environment names a scratchpad there.")
 
     return " ".join(lines)
+
+
+def get_habits_text() -> str:
+    """The body of the `tool-habits` skill, so every session and sub-agent starts with it; a short pointer when it cannot be read."""
+
+    plugin = Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
+    try:
+        text = (plugin / HABITS_SKILL).read_text()
+    except OSError:
+        return HABITS_FALLBACK
+    body = text.split("---", 2)[-1].strip()
+
+    return body or HABITS_FALLBACK
 
 
 def get_lessons(root: Path, agent_type: str, /) -> str:
@@ -94,6 +113,20 @@ def get_lessons(root: Path, agent_type: str, /) -> str:
         return ""
 
     return (LESSONS_HEADING + "".join(f"\n{line}" for line in lines))[:MAX_LESSONS_CHARS]
+
+
+def get_open_problems(root: Path, agent_type: str, /) -> str:
+    """The first problems a retro kept for this role or for all, at most MAX_PROBLEMS; empty when there are none."""
+
+    role = agent_type.removeprefix(PLUGIN_PREFIX)
+    try:
+        text = (root / OPEN_PROBLEMS).read_text(errors="replace")
+    except OSError:
+        return ""
+    problems = [problem.strip()[:MAX_LESSON_TEXT] for owner, problem in OPEN_LINE.findall(text) if owner in (role, "all")]
+    lines = problems[:MAX_PROBLEMS]
+
+    return PROBLEMS_HEADING + "".join(f"\n- {line}" for line in lines) if lines else ""
 
 
 def get_retro_line(root: Path, /) -> str:
@@ -128,12 +161,14 @@ def main() -> int:
         return 0
     name = event.get("hook_event_name")
     text = ""
+    habits = get_habits_text()
     if name == "SessionStart":
-        text = "\n".join(part for part in (SESSION_TEXT, TOOL_TURNS_TEXT, get_setup_text(config), get_retro_line(root)) if part)
+        text = "\n".join(part for part in (SESSION_TEXT, habits, get_setup_text(config), get_retro_line(root)) if part)
     elif name == "SubagentStart":
         agent_type = event.get("agent_type") or ""
         form = get_report_form(agent_type, config.get("report", {}))
-        text = "\n\n".join(part for part in (FORM_TEXTS.get(form, ""), TOOL_TURNS_TEXT, get_setup_text(config), get_lessons(root, agent_type)) if part)
+        inline = INLINE_FORM_TEXT if form == "short" and agent_type.removeprefix(PLUGIN_PREFIX) not in ROLES else ""
+        text = "\n\n".join(part for part in (FORM_TEXTS[form], inline, habits, get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type)) if part)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 
