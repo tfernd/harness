@@ -138,7 +138,12 @@ def main() -> int:
     if root is None or path is None:
         return 0
     with open(path, errors="replace") as file:
-        first = json.loads(file.readline())
+        line = file.readline()
+    # An agent's transcript can be empty or torn at its first call; the role's default still stands.
+    try:
+        first = json.loads(line)
+    except ValueError:
+        first = {}
     role = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
     limit = get_turn_limit(get_brief(first))
     if limit is None:

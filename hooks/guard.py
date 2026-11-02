@@ -147,8 +147,8 @@ IN_SHELL_RUNNERS = {"eval", "source", "."}
 ASK_RULE = "packages"
 MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Write a new file name, or truncate a log with `: > file`. A "
-    "tracked file that must go uses `git rm`; anything else goes to the owner.",
-    "denied": "this rewrites history, which is the owner's to run.",
+    "tracked file that must go uses `git rm`; anything else, throwaway files included, stays for the owner.",
+    "denied": "this rewrites history or discards uncommitted work, which is the owner's to run.",
     ASK_RULE: "changing packages is the owner's to run, so they are asked first.",
     "lock": "this project's Python runs under its lock.",
     "glob": "this unquoted glob matches no file, so zsh fails with 'no matches found', or it is a pattern for the command "
@@ -157,7 +157,7 @@ MESSAGES = {
     "repo": "project files change through the Edit and Write tools or a Python script. A shell redirect, tee, sed -i, "
     "cp, mv, curl or tar may write only under the scratch folder. A relative path is taken from the working directory "
     "after any cd in the same command; use absolute paths when in doubt.",
-    "poll": "a `sleep` inside a `while` or `until` loop polls for a result. Run the command in the background and wait "
+    "poll": "a `sleep` inside a `while` or `until` loop polls for a result, even a loop that may never run. Run the command in the background and wait "
     "for its notification instead.",
 }
 

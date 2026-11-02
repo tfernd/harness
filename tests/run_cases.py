@@ -234,6 +234,7 @@ GUARD_CASES = [
     bash("a git clean dry run is allowed", "git clean -n", False),
     bash("a git clean long dry run is allowed", "git clean --dry-run -d", False),
     bash("a real git clean is refused", "git clean -fd", True, "deleted"),
+    bash("a config that is a list drops no rule", "git push --force origin main", True, "rewrites history", config=[]),
     bash("a guard key that is null drops no rule", "git push --force origin main", True, "rewrites history", config={"guard": None}),
     bash("a glob that matches a file is allowed", "wc -l *.py", False, files=(("a.py", ""),)),
     bash("a loop over a glob that matches is allowed", "for name in *.py; do echo $name; done", False, files=(("a.py", ""),)),
@@ -1076,6 +1077,8 @@ TURN_CASES = [
     turn("a project's headings replace the status", "## Result\nall of it", False, calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a project's missing heading is named", PROGRESS, True, "Result", calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a stopped agent is finished", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=(*launch("t1"), notify("t1", "stopped"))),
+    turn("an empty block count holds the turn", PROGRESS, True, "retro-20", files=(INBOX, (BLOCKS_FILE, ""))),
+    turn("a retro mark in other digits is ignored", PROGRESS, True, "retro-20", files=(INBOX, (MARK_NAME, "\u00b2"))),
     turn("a pass resets the blocks", PROGRESS, False, files=((BLOCKS_FILE, "2"),), wrote=(BLOCKS_FILE, "0")),
     turn("a background Agent with no result yet is running", PROGRESS, False, calls=BUSY_CALLS, transcript=(launch("t1")[0],)),
     turn(
@@ -1438,6 +1441,8 @@ BUDGET_CASES = [
     budget("the main session passes", "Goal: x", False, event={"agent_id": None, "agent_transcript_path": "project/s/subagents/agent-a1.jsonl"}),
     budget("no project means no rule", "Goal: x", False, config=None),
     budget("a missing transcript passes", "Goal: x", False, files=()),
+    budget("a broken config lets the call run", "Goal: x", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
+    budget("an empty transcript has the role's default", "Goal: x", False, files=(("s/subagents/agent-a1.jsonl", ""),)),
     budget(
         "a list brief is read",
         "",
@@ -1445,7 +1450,7 @@ BUDGET_CASES = [
         files=(("s/subagents/agent-a1.jsonl", json.dumps({"timestamp": OLD, "message": {"content": [{"type": "text", "text": "Budget: 0"}]}}) + "\n" + json.dumps({"type": "assistant", "message": {"id": "m", "content": [{"type": "tool_use", "id": "t", "name": "Read"}]}}) + "\n"),),
         config={"budget": {"worker": 99999999}},
     ),
-    budget("a broken transcript lets the call run", "", False, files=(("s/subagents/agent-a1.jsonl", "{not json\n"),), is_exit_one=True),
+    budget("a broken transcript has the role's default", "Goal: x", False, files=(("s/subagents/agent-a1.jsonl", "{not json\n"),)),
     Case(
         "the ledger row holds the duration",
         ("report_gate.py",),

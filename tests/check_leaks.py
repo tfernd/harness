@@ -32,6 +32,7 @@ def private_words() -> list[str]:
     env = os.environ.get("HARNESS_PRIVATE_WORDS")
     path = Path(env) if env else Path.home() / ".config" / "harness" / "private-words"
     if not path.is_file():
+        print(f"note: no private word list at {path.name}, so private words were not checked", file=sys.stderr)
         return []
     lines = (w.strip().lower() for w in path.read_text().splitlines())
     return [w for w in lines if w and not w.startswith("#")]

@@ -301,7 +301,7 @@ def get_open_feedback(root: Path, session: str, released: set[str], handled: set
     mark = root / RETRO_MARK
     text = mark.read_text().strip() if mark.exists() else ""
     # A mark past the inbox means the inbox was reset, and a line cannot cover items not yet filed.
-    seen = int(text) if text.isdigit() and int(text) <= len(items) else 0
+    seen = int(text) if text.isdecimal() and text.isascii() and int(text) <= len(items) else 0
     closed = min(get_covered(handled), len(items))
     if closed > seen:
         mark.write_text(str(closed))
@@ -350,7 +350,9 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
             f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}"
         )
     problems += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
-    blocks = int(blocks_path.read_text()) if blocks_path.exists() else 0
+    # A write cut short leaves this empty, and an empty count must not drop the Stop checks.
+    count = blocks_path.read_text().strip() if blocks_path.exists() else ""
+    blocks = int(count) if count.isdecimal() and count.isascii() else 0
     if problems and blocks < MAX_BLOCKS:
         blocks_path.write_text(str(blocks + 1))
         listed = "\n".join(f"- {problem}" for problem in problems)
