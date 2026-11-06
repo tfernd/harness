@@ -28,7 +28,7 @@ Always on:
    that waits runs in the background. A `for` loop, a loop without a sleep and a sleep outside any loop are not refused.
 
 On when the project's `.harness.json` asks, under its `guard` key:
-5. `ask_packages` (or its old name `deny_packages`): package changes (`uv add|remove|lock|sync|pip`, `uv run pip`, `pip`, `pip3`, `python -m pip`) ask the owner
+5. `ask_packages` (or its old name `deny_packages`): package changes (`uv add|remove|lock|sync|pip|tool`, `uvx`, `uv run pip`, `pip`, `pip3`, `python -m pip`) ask the owner
    instead of running at once. Any other rule the same command breaks still refuses it.
 6. `no_tmp`: throwaway files under `/tmp`: a path a command writes there, or a Write or Edit whose path lies there.
 7. `scratch`: a write by the writing commands below that lands inside the project but outside that folder is refused, and
@@ -110,7 +110,7 @@ PYTHONS = {"python", "python3", "pytest"}
 # The options of `uv run` that take a value in the next word.
 UV_VALUE_OPTIONS = {"--with", "--project", "--directory", "--python", "-p", "--group", "--extra", "--env-file"}
 # The `uv` subcommands that change packages; asked of the owner when `ask_packages` is on, wherever they stand in the command.
-UV_DENIED = {"add", "remove", "lock", "sync", "pip"}
+UV_DENIED = {"add", "remove", "lock", "sync", "pip", "tool"}
 # The `git push` options that rewrite or delete history on the remote; a plain push of a branch is allowed.
 PUSH_DENIED = {"--force", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "--prune"}
 # The short letters of a push option that force (`-f`) or delete (`-d`), alone or in a cluster.
@@ -151,7 +151,8 @@ MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Write a new file name, or truncate a log with `: > file`. A "
     "tracked file that must go uses `git rm`; anything else stays for the owner, except that `rm` works inside a scratch folder the project names.",
     "denied": "this rewrites history or discards uncommitted work, which is the owner's to run.",
-    ASK_RULE: "changing packages is the owner's to run, so they are asked first.",
+    ASK_RULE: "changing packages is the owner's to run, so they are asked first. `uvx` and `uv tool` fetch a tool outside the "
+    "lock: run the project's own as `uv run --frozen <tool>`.",
     "lock": "this project's Python runs under its lock.",
     "glob": "this unquoted glob matches no file, so zsh fails with 'no matches found', or it is a pattern for the command "
     "that the shell would expand first. Quote it (`--include='*.py'`), or use the Grep tool or `rg -g '*.py'`.",
@@ -316,7 +317,7 @@ def is_package_change(command: Command, /) -> bool:
 
     arguments = [word.text for word in command.arguments]
     name = os.path.basename(command.name)
-    if name in ("pip", "pip3"):
+    if name in ("pip", "pip3", "uvx"):
         return True
     if name == "uv":
         index = skip_options(command.arguments, 0, UV_VALUE_OPTIONS)

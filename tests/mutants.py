@@ -93,6 +93,8 @@ MUTANTS = (
     ("sudo-values-not-skipped", "guard.py", '"sudo": {"-u", "-g",', '"sudo": {"-g",'),
     ("git-value-options-not-skipped", "guard.py", 'GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree",', 'GIT_VALUE_OPTIONS = {"-C", "-c",'),
     ("eval-not-read", "guard.py", 'if name == "eval":\n        return get_segments(" ".join(arguments))', 'if False:\n        pass'),
+    ("uvx-allowed", "guard.py", 'if name in ("pip", "pip3", "uvx"):', 'if name in ("pip", "pip3"):'),
+    ("uv-tool-allowed", "guard.py", '"sync", "pip", "tool"}', '"sync", "pip"}'),
     ("python-m-pip-allowed", "guard.py", 'return name.startswith("python") and is_module_pip(arguments)', "return False"),
     ("uv-run-pip-allowed", "guard.py", 'return arguments[index:index + 1] in (["pip"], ["pip3"]) or is_module_pip(arguments[index + 1 :])', "return False"),
     ("mv-source-not-written", "guard.py", 'if name != "mv":\n        return []', "return []"),
