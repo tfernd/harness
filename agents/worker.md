@@ -6,6 +6,7 @@ model: sonnet
 skills:
   - report
   - evidence
+  - testing
   - comments
 ---
 

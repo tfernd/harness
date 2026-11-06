@@ -74,6 +74,9 @@ script, and the other way round. Check the shebang before trusting a line.
   the project's). Run both on each changed script; `bash -n <file>` checks syntax only.
 - A missing `shellcheck` or `shfmt` is reported as Not proven with the command that was tried, never as a pass.
 
+Independent gates that must all run, each failure shown and the call still failing: the gate recipe of
+`harness:tool-habits`.
+
 ## What no tool checks
 
 Whether the job should be a script in another language, whether a variable is quoted where shellcheck cannot see it

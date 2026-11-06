@@ -15,7 +15,13 @@ costs no turn.
 
 - Several files, or a file and its matches, in one script that prints only what you need; not a run of `cat`, `sed -n`,
   `grep` and `ls`. Locate and read in one call: print each match with three lines around it.
-- One file: the Read tool with `offset` and `limit`. Search: Grep and Glob. Without them, `rg` and `find` through Bash.
+- One file: the Read tool with `offset` and `limit`. Search: `rg` and `find` through Bash by default; Grep and Glob only
+  when they are listed among your tools (in many sessions they do not exist, and a call to them is wasted).
+- Cap a command that may print a lot (`cat` of a big file, a loop over files, `rg` over a tree, `git diff`): `| head -n 200`,
+  `rg -m`, `git diff --stat` first, Read with `limit`. One output over about 4,000 characters costs context for the rest
+  of the session.
+- A tool listed as deferred has no schema until you load it: call ToolSearch with `select:<name>` before its first call,
+  several names in one ToolSearch.
 - Do not read an unchanged file again or rerun an unchanged command.
 - Output too long for the result is saved to a file the result names: read that file with `offset` and `limit`. Do
   not rerun the command into a file of your own; a read-only role writes nothing.
@@ -26,7 +32,7 @@ costs no turn.
 - The script asserts that each target occurs once, so a missing text fails loudly and never edits nothing in silence.
 - A failed step must stop the rest: join with `&&`, never `;`. A failed edit must not feed a test, a build or a commit.
 - One-off Python in a tool call takes no PEP 723 header and no dependencies: `python3 -` and the standard library.
-- Before editing a kind of file, load its language skill, or a hook refuses the edit and asks you to.
+- Before editing a kind of file, load its language skill when you can; if you have not, a hook lets the edit run and gives you the skill's text with the result. Read it as the rules for the next edit.
 
 A whole unit, from edit to done, in one call:
 
@@ -74,6 +80,7 @@ git diff --stat
 - Read the output before saying "done". Without `pipefail`, a pipe into `tail` hides a test's exit code. Do not end a
   check in `|| true` or `|| echo`, and do not print `echo ----` separators.
 - Say what ran with its exit code, and what did not run and why. "Done" with no gate named is a claim, not a result.
+- One-call recipes for discovery, independent gates, a `sed` edit, web calls and an ML probe: `references/recipes.md`.
 
 ## Clean
 
@@ -87,7 +94,21 @@ git diff --stat
 - A list of files goes in an array (`files=(a.py b.py)`, then `"${files[@]}"`) or a Python script: zsh does not split
   `$files` into words, so the command gets one name with spaces in it.
 - Quote every glob: zsh refuses one that matches nothing. Read exit codes from `$pipestatus` in zsh.
-- A long run goes in the background. Never poll with `sleep` in a loop.
+
+## Waiting
+
+Never `sleep N` to wait and never poll in a foreground loop; a run that takes long goes with `run_in_background: true`, and
+its exit wakes you. The guard does not run a foreground `sleep`: it removes a direct one and the rest of the command runs at
+once, so the result may be early; it moves any other (a polling loop, a wrapper) to the background, where its exit wakes you.
+Nothing needs it:
+
+- Your own long job: run it with `run_in_background: true`, then do other work or end the turn. Its exit wakes you; read
+  the output then, not before.
+- A condition on this machine (a file, a log line): the wait itself runs in the background, with a bound:
+  `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`. Or Monitor, if you have it.
+- A service coming up: `curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL`.
+- A process you stopped: `timeout 5 tail --pid=PID -f /dev/null`, then the next step.
+- Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.
 
 ## Git
 
