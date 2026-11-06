@@ -271,6 +271,134 @@
       color: var(--ink);
     }
 
+    .install-tabs {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .install-tablist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+
+    .install-tab,
+    .install-copy {
+      font: inherit;
+      font-size: var(--text-sm);
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      padding: var(--space-1) var(--space-2);
+      cursor: pointer;
+    }
+
+    .install-tab[aria-selected="true"] {
+      color: var(--ink);
+      border-color: var(--accent);
+    }
+
+    .install-tab:focus-visible,
+    .install-copy:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .install-panel {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1) var(--space-2);
+    }
+
+    .install-panel .install-command {
+      overflow-wrap: anywhere;
+    }
+
+    .install-note {
+      margin: 0;
+      font-size: var(--text-xs);
+    }
+
+    .port-badges {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-inline-start: var(--space-2);
+      vertical-align: middle;
+    }
+
+    .port-badge,
+    .port-key {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: var(--text-xs);
+      line-height: 1.4;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      padding: 0 var(--space-1);
+      color: var(--ink);
+      background: var(--surface);
+    }
+
+    .port-badge svg {
+      width: 0.75rem;
+      height: 0.75rem;
+      fill: currentColor;
+    }
+
+    .port-badge[data-state="runs"],
+    .port-key[data-state="runs"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--surface);
+    }
+
+    .port-badge[data-state="advisory"],
+    .port-key[data-state="advisory"] {
+      color: var(--ask);
+      border-color: var(--ask);
+    }
+
+    .port-badge[data-state="off"],
+    .port-key[data-state="off"] {
+      color: var(--muted);
+      border-style: dashed;
+    }
+
+    .port-legend {
+      margin: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1) var(--space-2);
+      font-size: var(--text-xs);
+      color: var(--muted);
+    }
+
+    .port-notes {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--text-sm);
+    }
+
+    .port-notes caption {
+      text-align: start;
+      font-weight: 700;
+      padding-block-end: var(--space-2);
+      color: var(--ink);
+    }
+
+    .port-notes th,
+    .port-notes td {
+      text-align: start;
+      vertical-align: top;
+      padding: var(--space-1) var(--space-2);
+      border-block-end: 1px solid var(--line);
+    }
+
     .section {
       display: grid;
       gap: var(--space-3);
@@ -878,12 +1006,31 @@
         <li class="stats-item"><span class="stats-value">{{cases}}</span> test cases</li>
         <li class="stats-item"><span class="stats-value">{{mutants}}</span> planted bugs, each caught by a case</li>
       </ul>
-      <p class="install">
+      <div class="install" data-install>
         <span>Install:</span>
-        <code class="install-command">claude plugin marketplace add tfernd/harness</code>
-        <code class="install-command">claude plugin install harness@harness --scope user</code>
+        <div class="install-tabs">
+          <div class="install-tablist" role="tablist" aria-label="Install target">
+            <button type="button" class="install-tab" role="tab" id="install-tab-claude" aria-controls="install-panel-claude" aria-selected="true" tabindex="0">Claude Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-cortex" aria-controls="install-panel-cortex" aria-selected="false" tabindex="-1">Cortex Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-kiro" aria-controls="install-panel-kiro" aria-selected="false" tabindex="-1">Kiro</button>
+          </div>
+          <div class="install-panel" role="tabpanel" id="install-panel-claude" aria-labelledby="install-tab-claude">
+            <code class="install-command">claude plugin marketplace add tfernd/harness</code>
+            <code class="install-command">claude plugin install harness@harness --scope user</code>
+            <button type="button" class="install-copy" data-copy="claude plugin marketplace add tfernd/harness &amp;&amp; claude plugin install harness@harness --scope user">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
+            <code class="install-command">git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target cortex</code>
+            <button type="button" class="install-copy" data-copy="git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target cortex">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
+            <code class="install-command">git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target kiro</code>
+            <button type="button" class="install-copy" data-copy="git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target kiro">Copy</button>
+          </div>
+          <p class="install-note">Rerun a Cortex or Kiro line to update; add <code>--uninstall</code> to its harness-port command to remove it.</p>
+        </div>
         <a href="https://github.com/tfernd/harness">Source</a>
-      </p>
+      </div>
     </header>
 
     <main class="page-main">
@@ -923,6 +1070,13 @@
           <h2 class="section-title" id="strict-title">Six levels, from stopped to advice</h2>
           <p class="section-intro">Higher means stricter and fewer rules; pick a level to see its rules in plain words.</p>
         </div>
+        <p class="port-legend">
+          <span>Ported to, per rule:</span>
+          <span class="port-key" data-state="runs">runs</span>
+          <span class="port-key" data-state="advisory">advisory, warns but blocks nothing</span>
+          <span class="port-key" data-state="off">not ported</span>
+        </p>
+        <!-- port-notes -->
         <div class="strict" data-chooser>
           <div class="pyramid-box">
             <div class="pyramid" role="group" aria-label="Strictness levels, strictest first">
@@ -1319,6 +1473,77 @@
     });
     applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
     for (const chooser of document.querySelectorAll("[data-chooser]")) bindChooser(chooser);
+  </script>
+
+  <script type="module">
+    const COPY_LABEL = "Copy";
+    const COPIED_LABEL = "Copied";
+    const SELECTED_LABEL = "Selected: press Ctrl+C";
+    const LABEL_RESET_MS = 1600;
+    const KEY_STEPS = { ArrowRight: 1, ArrowLeft: -1 };
+
+    const showTab = (root, tab) => {
+      for (const other of root.querySelectorAll("[role='tab']")) {
+        const isSelected = other === tab;
+        const panelId = other.getAttribute("aria-controls");
+        const panel = document.getElementById(panelId);
+        if (!panel) throw new Error(`The install panel ${panelId} is missing from the page.`);
+        other.setAttribute("aria-selected", String(isSelected));
+        other.tabIndex = isSelected ? 0 : -1;
+        panel.hidden = !isSelected;
+      }
+    };
+
+    const moveTab = (root, tab, step) => {
+      const tabs = [...root.querySelectorAll("[role='tab']")];
+      const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
+      showTab(root, next);
+      next.focus();
+    };
+
+    const selectCommands = (panel) => {
+      const commands = panel.querySelectorAll(".install-command");
+      if (commands.length === 0) return;
+      const range = document.createRange();
+      range.setStartBefore(commands[0]);
+      range.setEndAfter(commands[commands.length - 1]);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    };
+
+    const copyCommand = async (button) => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy ?? "");
+        button.textContent = COPIED_LABEL;
+      } catch (error) {
+        console.warn("The clipboard is not available; the command is selected for copying.", error);
+        selectCommands(button.closest("[role='tabpanel']"));
+        button.textContent = SELECTED_LABEL;
+      }
+      setTimeout(() => {
+        button.textContent = COPY_LABEL;
+      }, LABEL_RESET_MS);
+    };
+
+    const bindInstall = (root) => {
+      root.addEventListener("click", (event) => {
+        if (!(event.target instanceof Element)) return;
+        const tab = event.target.closest("[role='tab']");
+        if (tab) showTab(root, tab);
+        const copyButton = event.target.closest("[data-copy]");
+        if (copyButton) void copyCommand(copyButton);
+      });
+      root.addEventListener("keydown", (event) => {
+        const tab = event.target instanceof Element ? event.target.closest("[role='tab']") : null;
+        const step = KEY_STEPS[event.key];
+        if (!tab || !step) return;
+        event.preventDefault();
+        moveTab(root, tab, step);
+      });
+    };
+
+    for (const root of document.querySelectorAll("[data-install]")) bindInstall(root);
   </script>
 </body>
 </html>

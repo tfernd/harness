@@ -51,6 +51,14 @@ SNIPPET = 60
 SNIPPET_LEAD = 20
 # The slots the template must hold exactly once.
 SINGLE_SLOTS = ("hooks-rest", "agents-rest", "agent-cards", "skills")
+RULE_HOOK = re.compile(r'<span class="rule-hook">([\w-]+\.py)</span>')
+PORT_NOTES_MARKER = "<!-- port-notes -->"
+# The words a port badge says for each state.
+PORT_STATES = {
+    "runs": "runs",
+    "advisory": "advisory, warns but blocks nothing",
+    "off": "not ported",
+}
 
 
 class Agent(NamedTuple):
@@ -99,6 +107,36 @@ class Layout(NamedTuple):
     rest_hooks: list[Hook]
     rest_agents: list[Agent]
     default_role: str
+
+
+class Port(NamedTuple):
+    """A tool a hook is ported to: its key in port/harness_port.py, its label on the page and its glyph path."""
+
+    key: str
+    label: str
+    glyph: str
+
+
+class PortNote(NamedTuple):
+    """A port fact the mapping cannot show: the state it sets for one hook script on one tool, and the README phrase it rests on."""
+
+    script: str
+    target: str
+    state: str
+    note: str
+    phrase: str  # text that must appear in README.md, so the note cannot outlive its source
+
+
+PORTS = (
+    Port("claude", "Claude", "M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"),
+    Port("cortex", "Cortex", "M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"),
+    Port("kiro", "Kiro", "M6 1l5 10H1z"),
+)
+PORT_NOTES = (
+    PortNote("report_gate.py", "cortex", "advisory", "Cortex cannot block at SubagentStop", "the report gate blocks nothing (advisory)"),
+    PortNote("guard.py", "kiro", "runs", 'an "ask" becomes a block', 'a guard "ask" becomes a block'),
+    PortNote("guard.py", "cortex", "runs", 'an "ask" becomes a block', 'An "ask" becomes a block.'),
+)
 
 
 # =========================================================================== #
@@ -483,6 +521,86 @@ def make_layout(slots: list[Slot], facts: Facts, /) -> Layout:
     return Layout(facts, placed, rest_hooks, rest_agents, default_role)
 
 
+def get_port_states(root: Path, script: str, /) -> dict[str, str]:  # keys are data: the port keys
+    """Each port's state for one hook script: runs or off, from hooks/hooks.json and harness_port's own conversion, then PORT_NOTES."""
+
+    port = import_path(root / "port" / "harness_port.py")
+    events = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+    marker = f"hooks/{script}"
+    groups = [
+        (event, group)
+        for event, event_groups in events.items()
+        for group in event_groups
+        if any(marker in command["command"] for command in group["hooks"])
+    ]
+    if not groups:
+        raise ValueError(f"{script} is on a rule row but has no hook in hooks/hooks.json")
+
+    states = {"claude": "runs"}
+    for target in ("cortex", "kiro"):
+        converted = False
+        for event, group in groups:
+            plan = port.Plan()
+            kiro_entries: list[dict] = []
+            port.plan_hook_group(plan, target, event, group, kiro_entries)
+            commands = [entry["action"]["command"] for entry in kiro_entries]
+            for cortex_group in plan.cortex_hooks.get(event, []):
+                commands.extend(hook["command"] for hook in cortex_group["hooks"])
+            converted = converted or any(marker in command for command in commands)
+        states[target] = "runs" if converted else "off"
+
+    for note in PORT_NOTES:
+        if note.script == script:
+            states[note.target] = note.state
+
+    return states
+
+
+def add_port_badges(page: str, root: Path, /) -> str:
+    """The page with a badge group after each rule row's hook script, and the port-notes table at its marker."""
+
+    readme_lines = (root / "README.md").read_text(encoding="utf-8").splitlines()
+    labels = {port.key: port.label for port in PORTS}
+    note_rows = []
+    for note in PORT_NOTES:
+        found = [number for number, line in enumerate(readme_lines, start=1) if note.phrase in line]
+        if len(found) != 1:
+            raise ValueError(f"README.md must hold the phrase {note.phrase!r} on one line, found it on {found}")
+        note_rows.append(
+            f"<tr><td><code>{html.escape(note.script)}</code></td><td>{labels[note.target]}</td>"
+            f"<td>{PORT_STATES[note.state]}</td><td>{html.escape(note.note)}</td>"
+            f"<td>README.md line {found[0]}</td></tr>"
+        )
+    if page.count(PORT_NOTES_MARKER) != 1:
+        raise ValueError(f"the template must hold {PORT_NOTES_MARKER} once")
+    table = (
+        '<table class="port-notes"><caption>What the port cannot show</caption>'
+        '<thead><tr><th scope="col">Hook</th><th scope="col">Tool</th><th scope="col">State</th>'
+        '<th scope="col">Note</th><th scope="col">Source</th></tr></thead>'
+        f"<tbody>{''.join(note_rows)}</tbody></table>"
+    )
+
+    states_by_script = {script: get_port_states(root, script) for script in set(RULE_HOOK.findall(page))}
+    parts = []
+    position = 0
+    for match in RULE_HOOK.finditer(page):
+        states = states_by_script[match.group(1)]
+        badges = []
+        for port in PORTS:
+            state = states[port.key]
+            text = f"{port.label}: {PORT_STATES[state]}"
+            badges.append(
+                f'<span class="port-badge" data-state="{state}"><svg viewBox="0 0 12 12" role="img" '
+                f'aria-label="{text}"><title>{text}</title><path d="{port.glyph}"/></svg>{port.label}</span>'
+            )
+        parts.append(page[position : match.end()])
+        parts.append(f'<span class="port-badges" role="group" aria-label="Ported to">{"".join(badges)}</span>')
+        position = match.end()
+    parts.append(page[position:])
+
+    return "".join(parts).replace(PORT_NOTES_MARKER, table)
+
+
 def make_page(template: str, facts: Facts, /) -> str:
     """The page: the template with its fact tokens and then its slots filled."""
 
@@ -522,7 +640,7 @@ def main() -> int:
 
     try:
         facts = get_facts(root)
-        page = make_page((root / TEMPLATE).read_text(encoding="utf-8"), facts)
+        page = add_port_badges(make_page((root / TEMPLATE).read_text(encoding="utf-8"), facts), root)
     except (ValueError, OSError, SyntaxError, ImportError) as error:
         print(f"build_map: {error}", file=sys.stderr)
         return 1
