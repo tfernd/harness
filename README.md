@@ -145,6 +145,13 @@ bin/harness-port --target kiro      # ~/.kiro: skills, agents, hooks/harness.jso
 bin/harness-port --target cortex    # ~/.snowflake/cortex: skills, agents, hooks.json (merged, yours are kept)
 ```
 
+Without a clone, one line fetches the repo into `~/.local/share/harness` and ports from there (rerun it to update):
+
+```sh
+git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2>/dev/null; git -C ~/.local/share/harness pull -q && ~/.local/share/harness/bin/harness-port --target cortex
+git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2>/dev/null; git -C ~/.local/share/harness pull -q && ~/.local/share/harness/bin/harness-port --target kiro
+```
+
 `--dest DIR` writes elsewhere, `--dry-run` writes nothing, `--uninstall` removes exactly the files in
 `harness-port.json`. Everything installs as `harness-<name>`; a command prints what it did not port.
 
