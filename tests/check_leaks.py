@@ -13,6 +13,8 @@ the words of a private list. The list is read from $HARNESS_PRIVATE_WORDS, else
 path is never printed.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import subprocess

@@ -5,6 +5,8 @@ falling compaction counts, the named excluded model, the date window and the abs
 Set COMPACTION_TOOL to point at another copy of the tool (used to show a planted bug fails).
 """
 
+from __future__ import annotations
+
 import json
 import os
 import subprocess

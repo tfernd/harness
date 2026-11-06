@@ -12,6 +12,8 @@ Checks frontmatter keys, name against folder, description and body length, every
 `--root FOLDER` to check another copy of the tree.
 """
 
+from __future__ import annotations
+
 import argparse
 import re
 import sys
