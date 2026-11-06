@@ -28,7 +28,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
-from guard import SOFT_RULES, find_command_breaches
+from guard import SOFT_RULES, Policy, find_command_breaches
 
 MAX_SHOWN = 120
 # A line holds a Bash call only if it holds this text, which saves parsing most of the bytes.
@@ -84,7 +84,7 @@ def main() -> int:
     crashes = Counter()
     for command, cwd, is_background in sorted(distinct, key=lambda call: call[0]):
         try:
-            for rule in find_command_breaches(command, cwd, is_background=is_background):
+            for rule in find_command_breaches(command, cwd, Policy(), is_background=is_background):
                 (noted if rule in SOFT_RULES else refused)[rule].append(command)
         except RecursionError:
             crashes["recursion"] += 1

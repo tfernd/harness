@@ -12,6 +12,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 CONFIG_NAME = ".harness.json"
 # The variable that points at the owner's config file, which every project gets under its own file; tests point it away.
@@ -21,7 +22,7 @@ TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "harness.json"
 DEFAULT_SECTIONS = ("brief", "skill_gate")
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
-EDIT_TOOLS = {"Edit", "Write", "NotebookEdit"}
+EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
 FEEDBACK_FOLDER = "harness-feedback"
 INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
 # The path of the handled file; `turn.py` imports it as HANDLED_NAME, since it names its own line pattern HANDLED.
@@ -55,7 +56,14 @@ def merge_sections(*layers: dict) -> dict:  # keys are data
     return merged
 
 
-def find_project(cwd: str, /) -> tuple[Path, dict]:  # keys are data: the dict holds keys of the user's config, not names in code
+class Project(NamedTuple):
+    """A project's folder and its merged config."""
+
+    root: Path
+    config: dict  # keys are data: the user's config sections
+
+
+def find_project(cwd: str, /) -> Project:  # keys are data: the dict holds keys of the user's config, not names in code
     """The project folder and its config: the template's DEFAULT_SECTIONS, then the owner's file, then the project's `.harness.json`.
 
     The project folder is the nearest one holding `.harness.json`, else the start folder itself. The search starts from
@@ -77,9 +85,9 @@ def find_project(cwd: str, /) -> tuple[Path, dict]:  # keys are data: the dict h
     for candidate in (folder, *folder.parents):
         path = candidate / CONFIG_NAME
         if path.is_file():
-            return candidate, merge_sections(base, read_sections(path))
+            return Project(candidate, merge_sections(base, read_sections(path)))
 
-    return folder, base
+    return Project(folder, base)
 
 
 def has_project_file(root: Path, /) -> bool:

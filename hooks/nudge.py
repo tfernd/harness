@@ -7,7 +7,8 @@
 # ///
 """PostToolUse hook on Read, Grep, Glob and Bash: in a project with `.harness.json`, adds one line of context at the moment an
 agent wastes tool turns, and never refuses. It fires on an exact repeat of a small read with no edit since, and on
-every RUN_LENGTH single small reads in a row, at most MAX_NUDGES times per agent, and stays silent past MAX_BYTES of transcript. A call in the agent's own transcript counts,
+every RUN_LENGTH single small reads in a row, at most MAX_NUDGES times per agent, and stays silent past MAX_BYTES of transcript.
+It also notes, once per agent, a test, lint or build piped into `tail` or `head` with no `pipefail`, which hides the failure. A call in the agent's own transcript counts,
 so no state is kept. `report_gate.py` and `import_reports.py` write the same counts to the ledger for `harness:retro`.
 """
 
@@ -33,6 +34,30 @@ RUN_LENGTH = 3
 MAX_NUDGES = 2
 # A longer transcript gets no nudge: this runs on every read, and only a whole transcript can count the cap.
 MAX_BYTES = 1048576
+# A pipe splits at one `|` (not `||`); a list splits at `;`, `&&`, `||` and a newline. Quoted text is blanked first.
+QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+LIST_SPLIT = re.compile(r"&&|\|\||[;\n]")
+PIPE_SPLIT = re.compile(r"(?<!\|)\|(?!\|)&?")
+# A heredoc body is text, not commands: the command is read up to its operator.
+HEREDOC = re.compile(r"<<(?!<)")
+PIPEFAIL = re.compile(r"\bpipefail\b")
+ZSH_STATUS = re.compile(r"\$\{?pipestatus")
+BASH_STATUS = re.compile(r"\$\{?PIPESTATUS")
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+PIPE_SINKS = frozenset({"tail", "head"})
+# Programs that are a gate alone, and those that are one with a subcommand (`cargo test`, `go test`).
+GATE_PROGRAMS = frozenset({"pytest", "make", "ruff", "tsc"})
+GATE_SUBCOMMANDS = {"cargo": {"test"}, "go": {"test"}, "npm": {"test", "run"}, "bun": {"test", "run"}, "pnpm": {"test", "run"}}
+SCRIPT_RUNNERS = frozenset({"python", "python3", "bash", "sh", "zsh"})
+TESTS_SCRIPT = re.compile(r"(?:^|/)tests/")
+PIPEFAIL_TEXT = (
+    "Harness note, not a refusal: a test, lint or build piped into tail or head reports the exit code of tail or head, "
+    "so a failure can pass unseen. Start the command with `set -o pipefail;` and read `$pipestatus` in zsh."
+)
+ZSH_STATUS_TEXT = (
+    "Harness note, not a refusal: in zsh the array is `$pipestatus` in lowercase; `$PIPESTATUS` is empty there. "
+    "`set -o pipefail;` at the start also makes a pipe fail with its first failing command."
+)
 REPEAT_TEXT = "Harness note, not a refusal: you already made this same read and edited nothing since. Use what you have, unless a command changed it."
 RUN_TEXT = (
     f"Harness note, not a refusal: your last {RUN_LENGTH} turns were one small read each. "
@@ -61,6 +86,65 @@ def is_small_read(call: dict, /) -> bool:  # keys are data
     words = command.split()
 
     return bool(words) and words[0] in SMALL_COMMANDS and not BATCHED_OR_WRITING.search(command)
+
+
+def is_gate(piece: str, /) -> bool:
+    """Whether one command of a pipe runs a test, lint or build."""
+
+    words = piece.split()
+    while words and ASSIGNMENT.match(words[0]):
+        words.pop(0)
+    if words[:2] == ["uv", "run"]:
+        words = [word for word in words[2:] if not word.startswith("-")]
+    if not words:
+        return False
+    program = os.path.basename(words[0])
+    if TESTS_SCRIPT.search(words[0]) or program in GATE_PROGRAMS:
+        return True
+    if program in SCRIPT_RUNNERS:
+        return any(TESTS_SCRIPT.search(word) or word == "pytest" for word in words[1:3])
+
+    return len(words) > 1 and words[1] in GATE_SUBCOMMANDS.get(program, ())
+
+
+def get_pipe_note(command: str, /) -> str:
+    """The note for a shell command that hides a gate's failure behind `tail` or `head`; empty when it does not."""
+
+    if PIPEFAIL.search(command):
+        return ""
+    if os.path.basename(os.environ.get("SHELL") or "") == "zsh" and BASH_STATUS.search(command) and not ZSH_STATUS.search(command):
+        return ZSH_STATUS_TEXT
+    if ZSH_STATUS.search(command) or BASH_STATUS.search(command):
+        return ""
+    for part in LIST_SPLIT.split(QUOTED.sub("x", HEREDOC.split(command)[0])):
+        pieces = PIPE_SPLIT.split(part)
+        for index, piece in enumerate(pieces[1:], 1):
+            words = piece.split()
+            if words and os.path.basename(words[0]) in PIPE_SINKS and any(is_gate(earlier) for earlier in pieces[:index]):
+                return PIPEFAIL_TEXT
+
+    return ""
+
+
+class PipeNudge(NamedTuple):
+    """The id of a Bash call that hides a failure and the note to send."""
+
+    call_id: str
+    note: str
+
+
+def get_pipe_nudge(turns: list[list[dict]], /) -> PipeNudge | None:
+    """The first Bash call of the run that hides a failure, with its note; one per agent."""
+
+    for turn in turns:
+        for call in turn:
+            if call.get("name") != "Bash":
+                continue
+            note = get_pipe_note(str((call.get("input") or {}).get("command") or ""))
+            if note:
+                return PipeNudge(str(call.get("id")), note)
+
+    return None
 
 
 def get_waste(turns: list[list[dict]], /) -> Waste:  # keys are data
@@ -117,6 +201,9 @@ def main() -> int:
     call_id = str(event.get("tool_use_id") or turns[-1][-1].get("id"))
     waste = get_waste(turns)
     text = dict(waste.nudges[:MAX_NUDGES]).get(call_id)
+    pipe_nudge = get_pipe_nudge(turns)
+    if pipe_nudge and pipe_nudge[0] == call_id:
+        text = f"{text} {pipe_nudge[1]}" if text else pipe_nudge[1]
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
 

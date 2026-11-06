@@ -34,6 +34,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 # HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
 from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines, has_project_file, write_atomic
@@ -42,9 +43,9 @@ MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
 RULE_PATHS = ("AGENTS.md", "CLAUDE.md", ".claude", ".harness.json")
 # The files in a rule folder that hold no rule.
-NOT_RULES = {"settings.local.json"}
+NOT_RULES = frozenset({"settings.local.json"})
 # The folders under a rule path that hold no rule.
-NOT_RULE_FOLDERS = {"__pycache__", ".git"}
+NOT_RULE_FOLDERS = frozenset({"__pycache__", ".git"})
 # Read by index: [0] is the folder that holds worktrees, [1] the worktrees folder skipped inside it.
 WORKTREES = (".claude", "worktrees")
 MAX_BLOCKS = 3
@@ -60,7 +61,7 @@ DEFERS = re.compile(r"next unit|next turn|next session|will add|to be written|wi
 APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
 APP_PROMPT_HEAD = 600
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
-FINISHED_STATUSES = {"completed", "failed", "killed", "stopped"}
+FINISHED_STATUSES = frozenset({"completed", "failed", "killed", "stopped"})
 HANDLED = re.compile(r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
 MIN_REASON_WORDS = 3
 # Inbox items waiting before a session that filed one owes a retro: often enough to act, rare enough to be read.
@@ -71,13 +72,21 @@ REFUSAL = re.compile(r"PreToolUse:\w+ hook error:.*?Blocked by the harness", re.
 ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+) ", re.M)
 
 
-def get_state_paths(session: str, /) -> tuple[Path, Path, Path]:
+class StatePaths(NamedTuple):
+    """A session's state files: its call count, its rule state at the turn's start, its blocks this turn."""
+
+    calls: Path
+    rules: Path
+    blocks: Path
+
+
+def get_state_paths(session: str, /) -> StatePaths:
     """The session's call count, its rule state at the turn's start, and its blocks this turn."""
 
     folder = data_folder() / "turns"
     folder.mkdir(exist_ok=True)
 
-    return folder / f"{session}.calls", folder / f"{session}.rules", folder / f"{session}.blocks"
+    return StatePaths(folder / f"{session}.calls", folder / f"{session}.rules", folder / f"{session}.blocks")
 
 
 def get_state_path(session: str, kind: str, /) -> Path:
@@ -272,7 +281,14 @@ def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /)
     return ""
 
 
-def get_handled(root: Path, rules_path: Path, config: dict, /) -> tuple[set[str], dict[str, str]]:  # keys are data
+class Handled(NamedTuple):
+    """The ids the handled file closes, and the reason each id with a failing line is not closed."""
+
+    handled: set[str]
+    invalid: dict[str, str]  # keys are data
+
+
+def get_handled(root: Path, rules_path: Path, config: dict, /) -> Handled:  # keys are data
     """The ids with a valid line in the handled file, and the reason the last line fails for each id with none."""
 
     path = root / HANDLED_NAME
@@ -295,7 +311,7 @@ def get_handled(root: Path, rules_path: Path, config: dict, /) -> tuple[set[str]
         else:
             handled.add(item_id)
 
-    return handled, {item_id: why for item_id, why in invalid.items() if item_id not in handled}
+    return Handled(handled, {item_id: why for item_id, why in invalid.items() if item_id not in handled})
 
 
 def get_covered(keys: set[str], /) -> int:

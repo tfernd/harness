@@ -22,16 +22,16 @@ SEPARATORS = ";&|()\n"
 # The operators a separator character starts, the longest first.
 SEPARATOR_OPERATOR = re.compile(r";;&|;;|;&|&&|\|\||\|&|[;&|()\n]")
 REDIRECT_OPERATOR = re.compile(r"<<<|<<-|<<|<>|<&|<|&>>|&>|>>|>&|>\||>")
-PIPES = {"|", "|&"}
+PIPES = frozenset({"|", "|&"})
 # The characters that, after a `$`, name a special parameter (`$?`, `$*`, `$#`): the pair is one word, so the `?` or `*` is
 # not a glob and the `#` does not start a comment.
 SPECIAL_PARAMETERS = "?*@#$!-"
 # The keywords that open a loop. A sleep in a while or until loop waits for a result; one in a for loop waits a fixed
 # count, so only the two polling keywords count as polling.
-LOOP_KEYWORDS = {"for", "select", "until", "while"}
-POLLING_LOOPS = {"until", "while"}
+LOOP_KEYWORDS = frozenset({"for", "select", "until", "while"})
+POLLING_LOOPS = frozenset({"until", "while"})
 # The reserved words that may stand before a keyword in the same segment (`do while`, `then until`).
-LEADING_WORDS = {"!", "{", "do", "elif", "else", "if", "then"}
+LEADING_WORDS = frozenset({"!", "{", "do", "elif", "else", "if", "then"})
 # The words after which a `[[` or a `((` still starts a command.
 OPENING_WORDS = LEADING_WORDS | POLLING_LOOPS
 
@@ -92,7 +92,7 @@ class Scanner:
     """
 
     def __init__(
-        self, text: str, open_loops: tuple[str, ...] = (), in_group: bool = False, start: int = 0, is_nested: bool = False, /
+        self, text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False, start: int = 0, is_nested: bool = False
     ) -> None:
         self.text = text
         self.index = start
@@ -169,14 +169,14 @@ class Scanner:
         if text[start] == "`":
             end = find_backtick_end(text, start + 1)
             inner = re.sub(r"\\([`\\$])", r"\1", text[start + 1 : end])
-            self.segments.extend(get_segments(inner, tuple(self.loops), True))
+            self.segments.extend(get_segments(inner, open_loops=tuple(self.loops), in_group=True))
             return end + 1
         if text.startswith("$((", start):
             end = find_arithmetic_end(text, start + 3)
             if end >= 0:
                 self.read_expansions(start + 3, end - 2)
                 return end
-        nested = Scanner(text, tuple(self.loops), True, start + 2, True)
+        nested = Scanner(text, open_loops=tuple(self.loops), in_group=True, start=start + 2, is_nested=True)
         self.segments.extend(nested.scan())
 
         return nested.index + 1
@@ -464,10 +464,10 @@ class Scanner:
         return self.segments
 
 
-def get_segments(text: str, open_loops: tuple[str, ...] = (), in_group: bool = False, /) -> list[Segment]:
+def get_segments(text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False) -> list[Segment]:
     """The simple commands of a shell command in the order they run, substitutions included.
 
     `open_loops` are the loops around the text; `in_group` says the text is itself a subshell.
     """
 
-    return Scanner(text, open_loops, in_group).scan()
+    return Scanner(text, open_loops=open_loops, in_group=in_group).scan()

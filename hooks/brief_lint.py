@@ -27,7 +27,15 @@ import sys
 from budget import LABELLED_BUDGET, QUOTED, get_turn_limit
 from common import PLUGIN_PREFIX, find_project, get_unfenced_lines, make_note_output
 
-DEFAULT_REQUIRED = {"worker": ["Goal:", "Write set:", "Judge:"], "*": ["Goal:"]}
+# Each role's lines come from its agent file: a reviewer reads the unit's spec ("Input:") and diffs against HEAD ("Tree:"),
+# an auditor reruns "each Judge of the brief" and reads the brief and tree, a runner runs the commands the brief lists ("Runs:").
+DEFAULT_REQUIRED = {
+    "worker": ["Goal:", "Write set:", "Judge:"],
+    "reviewer": ["Goal:", "Input:", "Tree:"],
+    "auditor": ["Goal:", "Input:", "Judge:"],
+    "runner": ["Goal:", "Runs:"],
+    "*": ["Goal:"],
+}
 # Claude Code's built-in agent types that carry no harness role; the empty name is the type Claude Code picks when none is given.
 GENERIC_AGENTS = frozenset({"", "general-purpose", "Explore", "Plan", "claude"})
 GENERIC_REFUSAL = (

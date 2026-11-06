@@ -28,6 +28,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 from common import HANDBACK_TOOL, read_events
 from nudge import get_turn_stats
@@ -52,7 +53,14 @@ def get_scores(lines: list[str], /) -> dict[str, str]:  # keys are data
     return scores
 
 
-def find_report(events: list[dict], /) -> tuple[str, dict]:  # keys are data
+class FoundReport(NamedTuple):
+    """An agent's final report text and the transcript event holding it."""
+
+    text: str
+    event: dict  # keys are data
+
+
+def find_report(events: list[dict], /) -> FoundReport:  # keys are data
     """The agent's final report and the event holding it, or ("", {}) when it ended with none."""
 
     for event in reversed(events):
@@ -66,12 +74,12 @@ def find_report(events: list[dict], /) -> tuple[str, dict]:  # keys are data
         for block in reversed(blocks):
             if block.get("type") == "tool_use" and block.get("name") == HANDBACK_TOOL:
                 handback = block.get("input")
-                return str(handback.get("message", "") if isinstance(handback, dict) else ""), event
+                return FoundReport(str(handback.get("message", "") if isinstance(handback, dict) else ""), event)
         text = "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
         if text.strip():
-            return text, event
+            return FoundReport(text, event)
 
-    return "", {}
+    return FoundReport("", {})
 
 
 def read_role(path: Path, /) -> str:

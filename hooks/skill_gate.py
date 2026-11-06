@@ -33,10 +33,11 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 from budget import get_agent_path
 from common import PLUGIN_PREFIX, find_project, get_scratch, make_note_output
-from guard import get_git_subcommand, get_written_words, resolve
+from guard import Policy, get_git_subcommand, get_written_words, resolve
 from shell import get_segments
 
 EDIT_PATH_KEYS = ("file_path", "notebook_path")
@@ -128,31 +129,45 @@ def get_script_files(command: str, /) -> list[str]:
     return names
 
 
-def get_bash_needs(command: str, cwd: str, /) -> tuple[list[str], bool]:
+class BashNeeds(NamedTuple):
+    """What a shell command asks of the skill gate: the files it writes and whether it makes a commit or pull request."""
+
+    files: list[str]
+    is_commit: bool
+
+
+def get_bash_needs(command: str, cwd: str, /) -> BashNeeds:
     """The files a shell command writes, as far as its text shows, and whether it makes a commit or a pull request."""
 
     files = get_script_files(command)
     is_commit = False
     for segment in get_segments(command):
-        call = resolve(segment)
+        call = resolve(segment, Policy())
         arguments = [word.text for word in call.arguments]
         name = os.path.basename(call.name)
         is_commit = is_commit or (name == "git" and get_git_subcommand(arguments) == "commit") or (name == "gh" and arguments[:1] == ["pr"] and arguments[1:2] in (["create"], ["edit"]))
         files += get_written_words(segment, call, cwd)
 
-    return files, is_commit
+    return BashNeeds(files, is_commit)
 
 
-def get_file_skills(patterns: dict, name: str, root: Path, scratch: str, cwd: str, /) -> tuple[str, list[str]]:  # keys are data
+class FileSkills(NamedTuple):
+    """A file's path from the project root and the skills it asks for."""
+
+    relative: str
+    skills: list[str]
+
+
+def get_file_skills(patterns: dict, name: str, root: Path, scratch: str, cwd: str, /) -> FileSkills:  # keys are data
     """A file's path from the project root and the skills it asks for; none under the scratch folder or outside the project."""
 
     absolute = os.path.realpath(os.path.join(cwd, os.path.expanduser(name)))
     is_scratch = scratch and (absolute == scratch or absolute.startswith(scratch + os.sep))
     if is_scratch or not absolute.startswith(str(root) + os.sep):
-        return name, []
+        return FileSkills(name, [])
     relative = absolute[len(str(root)) + 1 :]
 
-    return relative, get_required(patterns, relative)
+    return FileSkills(relative, get_required(patterns, relative))
 
 
 def get_needs(event: dict, patterns: dict, root: Path, scratch: str, cwd: str, /) -> dict[str, str]:  # keys are data

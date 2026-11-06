@@ -95,7 +95,14 @@ class Kept(NamedTuple):
     merged: str
 
 
-def split_report(report: str, /) -> tuple[list[str], list[tuple[str, list[str]]]]:
+class SplitReport(NamedTuple):
+    """A report cut at its `## ` headings: the lines before the first, and each section as its heading and lines."""
+
+    preamble: list[str]
+    sections: list[tuple[str, list[str]]]
+
+
+def split_report(report: str, /) -> SplitReport:
     """The lines before the first `## ` heading, and each section as its heading and all its lines, heading line first."""
 
     lines = report.splitlines()
@@ -110,7 +117,7 @@ def split_report(report: str, /) -> tuple[list[str], list[tuple[str, list[str]]]
         else:
             preamble.append(line)
 
-    return preamble, sections
+    return SplitReport(preamble, sections)
 
 
 def merge_reports(previous: str, new: str, /) -> str:
@@ -261,7 +268,15 @@ def result_text(block: dict, /) -> str:  # keys are data
     return content if isinstance(content, str) else ""
 
 
-def read_assistant_blocks(path: str, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
+class AssistantBlocks(NamedTuple):
+    """What a transcript holds of the assistant: its content blocks, each error result's text by call id, the model."""
+
+    blocks: list[dict]  # keys are data
+    failed: dict[str, str]
+    model: str | None
+
+
+def read_assistant_blocks(path: str, /) -> AssistantBlocks:  # keys are data
     """The content blocks of a transcript's assistant lines, the text of each error result by tool call id, the model.
 
     The transcript carries an exit code only for a failed call, as the first line `Exit code N` of its error result.
@@ -287,7 +302,7 @@ def read_assistant_blocks(path: str, /) -> tuple[list[dict], dict[str, str], str
                 elif entry.get("type") == "user" and block.get("type") == "tool_result" and block.get("is_error"):
                     failed[block.get("tool_use_id")] = result_text(block)
 
-    return blocks, failed, model
+    return AssistantBlocks(blocks, failed, model)
 
 
 def get_report(event: dict, blocks: list[dict], /, *, is_resend: bool = False) -> str:  # keys are data
@@ -642,7 +657,7 @@ def is_awaited(report: str, kept: Kept | None, /) -> bool:
     return not heading.search(report) or (kept is not None and report == kept.raw)
 
 
-def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
+def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> AssistantBlocks:  # keys are data
     """The transcript's blocks, read again until a new report holds a heading: a handback can reach the file after this hook starts.
 
     After a send-back the message judged then does not count as new.
@@ -657,7 +672,7 @@ def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> tuple[list[
         waited += REPORT_POLL_S
         blocks, failed, model = read_assistant_blocks(path)
 
-    return blocks, failed, model
+    return AssistantBlocks(blocks, failed, model)
 
 
 def main() -> int:
@@ -675,7 +690,7 @@ def main() -> int:
     path = event.get("agent_transcript_path") or ""
     tries = get_send_backs(event)
     kept = get_kept(event, tries)
-    blocks, failed, model = wait_for_report(event, path, kept) if os.path.isfile(path) else ([], {}, None)
+    blocks, failed, model = wait_for_report(event, path, kept) if os.path.isfile(path) else AssistantBlocks([], {}, None)
     sent = get_report(event, blocks, is_resend=kept is not None)
     report = merge_reports(kept.merged, sent) if kept and sent else (kept.merged if kept else sent)
     problems = check_report(report, cause_pattern)

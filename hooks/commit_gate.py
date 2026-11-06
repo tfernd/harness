@@ -36,7 +36,7 @@ CALL_END = re.compile(r"\n|;|&&|\|\|")
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n\s*\1\b", re.S)
 
 
-def get_option_value(words: list[str], long_name: str, letter: str = "", /) -> list[str]:
+def get_option_value(words: list[str], long_name: str, /, *, letter: str = "") -> list[str]:
     """Every value of an option in its long form, its short form, or the end of a short cluster such as `-am`."""
 
     values: list[str] = []
@@ -81,8 +81,8 @@ def read_message(values: list[str], command: str, /) -> str | None:
 def get_commit_message(words: list[str], command: str, cwd: str, /) -> str | None:
     """The message a `git commit` would use, None when it cannot be read from the command."""
 
-    messages = get_option_value(words, "--message", "m")
-    files = get_option_value(words, "--file", "F")
+    messages = get_option_value(words, "--message", letter="m")
+    files = get_option_value(words, "--file", letter="F")
     if messages:
         return read_message(messages, command)
     if not files:
@@ -142,7 +142,7 @@ def find_problems(command: str, cwd: str, /) -> list[str]:
             problems += check_message(message) if message is not None else check_attribution(get_text_up_to_call(command))
             problems += check_attribution("\n".join(get_option_value(words, "--trailer")))
         elif name == "gh" and words[1:2] == ["pr"] and words[2:3] in (["create"], ["edit"]):
-            body = read_message(get_option_value(words, "--body", "b"), command)
+            body = read_message(get_option_value(words, "--body", letter="b"), command)
             problems += check_attribution(body if body is not None else get_text_up_to_call(command))
 
     return list(dict.fromkeys(problems))

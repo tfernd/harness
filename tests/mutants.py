@@ -26,6 +26,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
 
 HARNESS = Path(__file__).resolve().parent.parent
 HOOKS = HARNESS / "hooks"
@@ -36,6 +37,8 @@ TIMEOUT = 170
 CASE_THREADS = 2
 DEFAULT_JOBS = max(1, (os.cpu_count() or 8) // 8)
 LOW_PRIORITY = 10
+# Returned in place of an exit code when the cases on a mutant ran past TIMEOUT: the mutant is neither killed nor survived.
+TIMED_OUT = -1
 # Name, file, the text to break, what it becomes.
 MUTANTS = (
     # A package change asks.
@@ -65,13 +68,13 @@ MUTANTS = (
     # The independent review's nine.
     ("herestring-word-kept-as-argument", "shell.py", 'if operator.startswith("<<<"):\n            self.target = "herestring"', 'if operator.startswith("<<<"):\n            self.target = ""'),
     ("heredoc-bodies-read-as-commands", "shell.py", 'if operator == "\\n" and self.heredocs:\n            self.skip_heredocs()', 'if operator == "\\n" and self.heredocs:\n            self.heredocs = []'),
-    ("python-c-read-as-shell", "guard.py", 'SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}', 'SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "python3"}'),
+    ("python-c-read-as-shell", "guard.py", 'SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})', 'SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "python3"})'),
     ("lessons-none-ignored", "turn.py", "if not section or none:", "if not section:"),
     ("deferred-count-not-kept", "turn.py", "if calls >= min_calls and not is_deferred:", "if calls >= min_calls:"),
     ("count-never-emptied", "turn.py", 'if calls >= min_calls and not is_deferred:\n        write_atomic(calls_path, "")', "if False:\n        pass"),
     ("git-reset-any", "guard.py", 'return subcommand == "reset" and "--hard" in arguments', 'return subcommand == "reset"'),
     ("blocks-not-reset-at-pass", "turn.py", 'write_atomic(blocks_path, "0")\n    if problems:', "if problems:"),
-    ("free-prefixes-ignored", "guard.py", "and not script.startswith(POLICY.free_prefixes)", ""),
+    ("free-prefixes-ignored", "guard.py", "and not script.startswith(policy.free_prefixes)", ""),
     # The shell reader.
     ("arithmetic-read-as-commands", "shell.py", 'if text.startswith("$((", start):', 'if False:'),
     ("arithmetic-substitution-not-read", "shell.py", "self.read_expansions(start + 3, end - 2)", "pass"),
@@ -100,11 +103,11 @@ MUTANTS = (
     ("sleep-sequence-branch-for-polling-loop", "guard.py", "return not segment.in_loop and not segment.in_group and", "return not segment.in_group and"),
     ("sleep-sequence-branch-for-subshell", "guard.py", "return not segment.in_loop and not segment.in_group and", "return not segment.in_loop and"),
     ("sleep-sequence-branch-for-nested-string", "guard.py", "flags.append(is_top_level and is_direct_sleep(segment))", "flags.append(is_direct_sleep(segment))"),
-    ("sleep-background-flag-not-set", "guard.py", 'return {**tool_input, "run_in_background": True}, SLEEP_BACKGROUND_NOTE', "return dict(tool_input), SLEEP_BACKGROUND_NOTE"),
+    ("sleep-background-flag-not-set", "guard.py", 'return SleepFix({**tool_input, "run_in_background": True}, SLEEP_BACKGROUND_NOTE)', "return SleepFix(dict(tool_input), SLEEP_BACKGROUND_NOTE)"),
     ("soft-hard-message-dropped-beside-soft", "guard.py", "    if not hard:\n        if breaches:", "    if not hard or any(rule in SOFT_RULES for rule in breaches):\n        if breaches:"),
     ("soft-updated-input-loses-fields", "guard.py", '{**tool_input, "command": SLEEP_SHADOW + command}', '{"command": SLEEP_SHADOW + command}'),
     ("soft-background-input-loses-fields", "guard.py", '{**tool_input, "run_in_background": True}', '{"command": command, "run_in_background": True}'),
-    ("soft-still-exits-2", "guard.py", "print(json.dumps(make_soft_output(breaches, tool_input)))\n        return 0", "print(json.dumps(make_soft_output(breaches, tool_input)))\n        return 2"),
+    ("soft-still-exits-2", "guard.py", "print(json.dumps(make_soft_output(breaches, tool_input, policy)))\n        return 0", "print(json.dumps(make_soft_output(breaches, tool_input, policy)))\n        return 2"),
     ("soft-repo-refused-again", "guard.py", 'SOFT_RULES = ("temporary", "repo", "sleep")', 'SOFT_RULES = ("temporary", "sleep")'),
     ("soft-temporary-refused-again", "guard.py", 'SOFT_RULES = ("temporary", "repo", "sleep")', 'SOFT_RULES = ("repo", "sleep")'),
     ("soft-note-dropped", "guard.py", 'output["additionalContext"] = "\\n".join(notes)', 'output["additionalContext"] = ""'),
@@ -112,18 +115,18 @@ MUTANTS = (
     ("shell-cluster-not-read", "guard.py", 'has_string_option = has_string_option or (is_cluster(argument) and "c" in argument)', 'has_string_option = has_string_option or argument == "-c"'),
     ("shell-value-option-not-skipped", "guard.py", "if argument in SHELL_VALUE_OPTIONS:", "if False:"),
     ("find-exec-not-read", "guard.py", 'if name == "find":\n        return get_find_runs(command.arguments)', 'if False:\n        pass'),
-    ("find-execdir-not-read", "guard.py", 'FIND_RUNNERS = {"-exec", "-execdir", "-ok", "-okdir"}', 'FIND_RUNNERS = {"-exec", "-ok", "-okdir"}'),
-    ("find-ok-not-read", "guard.py", 'FIND_RUNNERS = {"-exec", "-execdir", "-ok", "-okdir"}', 'FIND_RUNNERS = {"-exec", "-execdir", "-okdir"}'),
+    ("find-execdir-not-read", "guard.py", 'FIND_RUNNERS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})', 'FIND_RUNNERS = frozenset({"-exec", "-ok", "-okdir"})'),
+    ("find-ok-not-read", "guard.py", 'FIND_RUNNERS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})', 'FIND_RUNNERS = frozenset({"-exec", "-execdir", "-okdir"})'),
     ("sudo-options-not-skipped", "guard.py", 'index = skip_options(words, index + 1, OPTION_PREFIXES[word])', 'index = index + 1'),
     ("sudo-values-not-skipped", "guard.py", '"sudo": {"-u", "-g",', '"sudo": {"-g",'),
-    ("git-value-options-not-skipped", "guard.py", 'GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree",', 'GIT_VALUE_OPTIONS = {"-C", "-c",'),
+    ("git-value-options-not-skipped", "guard.py", 'GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree",', 'GIT_VALUE_OPTIONS = frozenset({"-C", "-c",'),
     ("eval-not-read", "guard.py", 'if name == "eval":\n        return get_segments(" ".join(arguments))', 'if False:\n        pass'),
     ("uvx-allowed", "guard.py", 'if name in ("pip", "pip3", "uvx"):', 'if name in ("pip", "pip3"):'),
     ("uv-tool-allowed", "guard.py", '"sync", "pip", "tool"}', '"sync", "pip"}'),
     ("python-m-pip-allowed", "guard.py", 'return name.startswith("python") and is_module_pip(arguments)', "return False"),
     ("uv-run-pip-allowed", "guard.py", 'return arguments[index:index + 1] in (["pip"], ["pip3"]) or is_module_pip(arguments[index + 1 :])', "return False"),
     ("mv-source-not-written", "guard.py", 'if name != "mv":\n        return []', "return []"),
-    ("mv-source-counts-as-temporary", "guard.py", 'any(is_temporary(path) for path in written)', 'any(is_temporary(path) for path in [*written, *moved])'),
+    ("mv-source-counts-as-temporary", "guard.py", 'any(is_temporary(path, policy) for path in written)', 'any(is_temporary(path, policy) for path in [*written, *moved])'),
     ("cp-t-not-read", "guard.py", 'targets = get_option_values(arguments, "t", "--target-directory") if name in TARGET_MOVERS else []', "targets = []"),
     ("paths-compared-unresolved", "guard.py", "return os.path.realpath(os.path.join(cwd, os.path.expanduser(path)))", "return os.path.normpath(os.path.join(cwd, os.path.expanduser(path)))"),
     ("scratch-not-normalized", "common.py", "return os.path.realpath(root / scratch) if scratch else \"\"", 'return os.path.join(str(root), scratch) if scratch else ""'),
@@ -131,7 +134,7 @@ MUTANTS = (
     ("matched-glob-refused", "guard.py", 'return next(glob.iglob(resolve_path(text, directory or ""), recursive=True), None) is None', "return True"),
     ("unmatched-glob-allowed", "guard.py", 'return next(glob.iglob(resolve_path(text, directory or ""), recursive=True), None) is None', "return False"),
     ("glob-not-recursive", "guard.py", 'directory or ""), recursive=True)', 'directory or ""), recursive=False)'),
-    ("glob-ignores-the-cd", "guard.py", "has_failing_glob(command, directory, globs[1])", "has_failing_glob(command, POLICY.root, globs[1])"),
+    ("glob-ignores-the-cd", "guard.py", "has_failing_glob(command, directory, globs[1])", "has_failing_glob(command, policy.root, globs[1])"),
     ("option-glob-judged-as-path", "guard.py", 'if text.startswith("-"):\n        return True', "if False:\n        return True"),
     ("expansion-glob-judged-as-path", "guard.py", "if may_have_written or any(character in text for character in UNEXPANDED) or (", "if may_have_written or ("),
     ("unknown-folder-glob-judged", "guard.py", " or (directory is None and not is_absolute(text)):", ":"),
@@ -244,7 +247,7 @@ MUTANTS = (
     ("changed-files-not-checked", "report_gate.py", "if not is_exempt and not is_named(path, report, folders):", "if False:"),
     ("scratch-not-exempt", "report_gate.py", "is_exempt = scratch and (path == scratch or path.startswith(scratch + os.sep))", "is_exempt = False"),
     ("failed-edit-counts", "report_gate.py", 'and block.get("id") not in failed:', ":"),
-    ("notebook-edit-ignored", "common.py", 'EDIT_TOOLS = {"Edit", "Write", "NotebookEdit"}', 'EDIT_TOOLS = {"Edit", "Write"}'),
+    ("notebook-edit-ignored", "common.py", 'EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})', 'EDIT_TOOLS = frozenset({"Edit", "Write"})'),
     ("named-by-substring", "report_gate.py", 'return re.search(rf"(?<![\\w./-])(?:\\./)?(?:{pattern})(?![\\w/-]|\\.\\w)", report) is not None', "return any(spelling in report for spelling in spellings)"),
     ("exit-claim-not-checked", "report_gate.py", "if exit_claim and not has_bash:", "if False:"),
     ("read-claim-not-checked", "report_gate.py", "problems = check_read_claims(report, root)", "problems = []"),
@@ -311,7 +314,7 @@ MUTANTS = (
     ("guard-curl-output-unread", "guard.py", 'outputs = get_option_values(arguments, "o", "--output")', "outputs = []"),
     ("guard-notebook-path-unread", "guard.py", 'tool_input.get("file_path") or tool_input.get("notebook_path")', 'tool_input.get("file_path")'),
     ("broken-owner-file-raises", "common.py", "    except (OSError, ValueError):\n        owner = {}", "    except ZeroDivisionError:\n        owner = {}"),
-    ("owner-file-beats-project", "common.py", "return candidate, merge_sections(base, read_sections(path))", "return candidate, merge_sections(read_sections(path), base)"),
+    ("owner-file-beats-project", "common.py", "return Project(candidate, merge_sections(base, read_sections(path)))", "return Project(candidate, merge_sections(read_sections(path), base))"),
     ("defaults-dropped", "common.py", 'DEFAULT_SECTIONS = ("brief", "skill_gate")', "DEFAULT_SECTIONS = ()"),
     ("guard-rules-without-project-file", "guard.py", "    if not has_project_file(root):\n        return Policy()\n", ""),
     ("commit-rule-without-project-file", "commit_gate.py", "if not has_project_file(root) or ", "if "),
@@ -321,6 +324,17 @@ MUTANTS = (
     ("brief-without-its-key", "brief_lint.py", 'if "brief" not in config:\n        return 0\n', ""),
     ("brief-generic-needs-its-key", "brief_lint.py", '    agent_type = tool_input.get("subagent_type") or ""\n', '    if "brief" not in config:\n        return 0\n    agent_type = tool_input.get("subagent_type") or ""\n'),
     ("brief-prefix-not-removed", "brief_lint.py", '.removeprefix(PLUGIN_PREFIX)', ""),
+    ("brief-reviewer-unchecked", "brief_lint.py", '    "reviewer": ["Goal:", "Input:", "Tree:"],\n', ""),
+    ("brief-auditor-unchecked", "brief_lint.py", '    "auditor": ["Goal:", "Input:", "Judge:"],\n', ""),
+    ("brief-runner-unchecked", "brief_lint.py", '    "runner": ["Goal:", "Runs:"],\n', ""),
+    ("brief-plan-allowed", "brief_lint.py", 'frozenset({"", "general-purpose", "Explore", "Plan", "claude"})', 'frozenset({"", "general-purpose", "Explore", "claude"})'),
+    ("brief-explore-allowed", "brief_lint.py", 'frozenset({"", "general-purpose", "Explore", "Plan", "claude"})', 'frozenset({"", "general-purpose", "Plan", "claude"})'),
+    ("guard-unlink-allowed", "guard.py", 'DELETERS = frozenset({"rm", "rmdir", "unlink", "shred"})', 'DELETERS = frozenset({"rm", "rmdir", "shred"})'),
+    ("guard-find-delete-allowed", "guard.py", 'return "-delete" in arguments', "return False"),
+    ("guard-pushd-unmoved", "guard.py", 'DIRECTORY_CHANGERS = frozenset({"cd", "pushd", "popd"})', 'DIRECTORY_CHANGERS = frozenset({"cd", "popd"})'),
+    ("guard-popd-unmoved", "guard.py", 'DIRECTORY_CHANGERS = frozenset({"cd", "pushd", "popd"})', 'DIRECTORY_CHANGERS = frozenset({"cd", "pushd"})'),
+    ("guard-wget-default-dropped", "guard.py", 'return get_option_values(arguments, "P", "--directory-prefix") or ["."]', "return []"),
+    ("guard-wget-prefix-ignored", "guard.py", 'return get_option_values(arguments, "P", "--directory-prefix") or ["."]', 'return ["."]'),
     ("brief-required-ignored", "brief_lint.py", '(config["brief"] or {}).get("required", DEFAULT_REQUIRED)', "DEFAULT_REQUIRED"),
     ("brief-worker-needs-no-judge", "brief_lint.py", '"worker": ["Goal:", "Write set:", "Judge:"]', '"worker": ["Goal:", "Write set:"]'),
     ("brief-label-anywhere", "brief_lint.py", "any(line.startswith(label) for line in lines)", "any(label in line for line in lines)"),
@@ -354,8 +368,8 @@ MUTANTS = (
     ("import-ledger-newline-not-joined", "import_reports.py", "if lacks_newline:", "if False:"),
     ("replay-soft-rule-refused", "replay.py", "(noted if rule in SOFT_RULES else refused)[rule]", "refused[rule]"),
     ("replay-command-counted-per-session", "replay.py", "distinct.add(call)", 'distinct.add((call[0], f"{call[1]}{path}", call[2]))'),
-    ("replay-glob-folder-unknown", "replay.py", "find_command_breaches(command, cwd, is_background=is_background)", "find_command_breaches(command, None, is_background=is_background)"),
-    ("replay-glob-judged-in-the-root", "replay.py", "find_command_breaches(command, cwd, is_background=is_background)", 'find_command_breaches(command, "/", is_background=is_background)'),
+    ("replay-glob-folder-unknown", "replay.py", "find_command_breaches(command, cwd, Policy(), is_background=is_background)", "find_command_breaches(command, None, Policy(), is_background=is_background)"),
+    ("replay-glob-judged-in-the-root", "replay.py", "find_command_breaches(command, cwd, Policy(), is_background=is_background)", 'find_command_breaches(command, "/", Policy(), is_background=is_background)'),
     # The tool-turn nudge.
     ("nudge-run-long", "nudge.py", "RUN_LENGTH = 3", "RUN_LENGTH = 4"),
     ("nudge-run-never", "nudge.py", "if run and run % RUN_LENGTH == 0:", "if False:"),
@@ -370,6 +384,15 @@ MUTANTS = (
     ("nudge-any-call-hears", "nudge.py", "dict(waste.nudges[:MAX_NUDGES]).get(call_id)", "next((text for _, text in waste.nudges[:MAX_NUDGES]), None)"),
     ("nudge-reads-the-session", "nudge.py", 'get_agent_path(event) if event.get("agent_id") else ', ""),
     ("nudge-silent", "nudge.py", "    if text:\n", "    if False:\n"),
+    ("pipe-pipefail-ignored", "nudge.py", "    if PIPEFAIL.search(command):\n", "    if False:\n"),
+    ("pipe-pipestatus-ignored", "nudge.py", "    if ZSH_STATUS.search(command) or BASH_STATUS.search(command):\n", "    if BASH_STATUS.search(command):\n"),
+    ("pipe-any-command-is-a-gate", "nudge.py", "any(is_gate(earlier) for earlier in pieces[:index])", "True"),
+    ("pipe-any-sink", "nudge.py", "os.path.basename(words[0]) in PIPE_SINKS and", "bool(words) and"),
+    ("pipe-list-not-split", "nudge.py", 'LIST_SPLIT = re.compile(r"&&|\\|\\||[;\\n]")', 'LIST_SPLIT = re.compile(r"(?!)")'),
+    ("pipe-quotes-read", "nudge.py", 'QUOTED = re.compile(r"\'[^\']*\'|\\"[^\\"]*\\"")', 'QUOTED = re.compile(r"(?!)")'),
+    ("pipe-every-call-hears", "nudge.py", "if pipe_nudge and pipe_nudge[0] == call_id:", "if pipe_nudge:"),
+    ("pipe-zsh-note-in-any-shell", "nudge.py", 'os.path.basename(os.environ.get("SHELL") or "") == "zsh" and BASH_STATUS', "BASH_STATUS"),
+    ("pipe-bash-status-unread", "nudge.py", "or BASH_STATUS.search(command):\n        return", "or False:\n        return"),
     ("nudge-bug-blocks", "nudge.py", "sys.exit(1)", "sys.exit(2)"),
     ("ledger-tool-turns-lost", "report_gate.py", "get_turn_stats(read_events(path)) if path else None", "None"),
     # The context hook.
@@ -400,11 +423,11 @@ MUTANTS = (
     ("skill-gate-any-heredoc-is-a-script", "skill_gate.py", '"python" in match.group(1) and ', ""),
     ("skill-gate-read-script-judged", "skill_gate.py", " and SCRIPT_WRITE.search(match.group(3))", ""),
     ("skill-gate-write-text-unseen", "skill_gate.py", '\\.write_text\\(|', ""),
-    ("guard-scratch-delete-refused", "guard.py", "is_delete(command) and not is_scratch_delete(command, directory)", "is_delete(command)"),
-    ("guard-scratch-itself-deleted", "guard.py", ".startswith(POLICY.scratch + os.sep) for word in paths]", ".startswith(POLICY.scratch) for word in paths]"),
+    ("guard-scratch-delete-refused", "guard.py", "is_delete(command) and not is_scratch_delete(command, directory, policy)", "is_delete(command)"),
+    ("guard-scratch-itself-deleted", "guard.py", ".startswith(policy.scratch + os.sep) for word in paths]", ".startswith(policy.scratch) for word in paths]"),
     ("guard-scratch-glob-deleted", "guard.py", "all(not word.is_glob and", "all("),
     ("guard-scratch-variable-deleted", "guard.py", ' and "$" not in word.text', ""),
-    ("guard-scratch-shred", "guard.py", "SCRATCH_DELETERS = {\"rm\", \"rmdir\"}", "SCRATCH_DELETERS = DELETERS"),
+    ("guard-scratch-shred", "guard.py", "SCRATCH_DELETERS = frozenset({\"rm\", \"rmdir\"})", "SCRATCH_DELETERS = DELETERS"),
     ("commit-dash-bullets-refused", "commit_gate.py", 'BULLETS = ("* ", "- ")', 'BULLETS = ("* ",)'),
     ("skill-gate-nothing-injected", "skill_gate.py", "    if missing:\n        plugin = ", "    if False:\n        plugin = "),
     ("skill-text-not-injected", "skill_gate.py", 'if text else ""', 'if False else ""'),
@@ -443,7 +466,15 @@ MUTANTS = (
 )
 
 
-def run_mutant(name: str, script: str, old: str, new: str, /) -> tuple[str, int, list[str]]:
+class MutantRun(NamedTuple):
+    """One mutant's name, the exit code of the cases run on it, and the cases that failed."""
+
+    name: str
+    code: int
+    failed: list[str]
+
+
+def run_mutant(name: str, script: str, old: str, new: str, /) -> MutantRun:
     """Breaks a copy of the hooks and runs the cases on it; returns the name, the exit code and the failed cases."""
 
     folder = WORK / name
@@ -453,11 +484,15 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> tuple[str, int,
     path = folder / script
     path.write_text(path.read_text().replace(old, new))
     command = ["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder), "--fail-fast", "--first", script, "--threads", str(CASE_THREADS)]
-    run = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT)
+    try:
+        run = subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return MutantRun(name, TIMED_OUT, [])
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
     failed = [line[5:].split(":")[0] for line in run.stdout.splitlines() if line.startswith("FAIL")]
-    shutil.rmtree(folder)
 
-    return name, run.returncode, failed
+    return MutantRun(name, run.returncode, failed)
 
 
 def get_rotted_names() -> list[str]:
@@ -492,17 +527,21 @@ def main() -> int:
         return 1 if rotted else 0
     chosen = [mutant for mutant in MUTANTS if arguments.only in mutant[0]]
     survivors = 0
+    timeouts = 0
     os.nice(LOW_PRIORITY)
     with ThreadPoolExecutor(arguments.jobs) as pool:
         futures = [pool.submit(run_mutant, *mutant) for mutant in chosen]
         for future in as_completed(futures):
             name, code, failed = future.result()
             survivors += code == 0
-            verdict = "SURVIVED" if code == 0 else f"killed by {len(failed)}"
+            timeouts += code == TIMED_OUT
+            verdict = "SURVIVED" if code == 0 else "TIMED OUT" if code == TIMED_OUT else f"killed by {len(failed)}"
             print(f"{verdict:16} {name}: {failed[:2]}", flush=True)
-    print(f"{len(chosen)} mutants, {survivors} survived")
+    print(f"{len(chosen)} mutants, {survivors} survived, {timeouts} timed out")
+    if WORK.exists() and not any(WORK.iterdir()):
+        WORK.rmdir()
 
-    return 1 if survivors else 0
+    return 1 if survivors or timeouts else 0
 
 
 if __name__ == "__main__":

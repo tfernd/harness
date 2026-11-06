@@ -65,6 +65,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Set
 from typing import NamedTuple
 
 from common import find_project, get_scratch, has_project_file
@@ -72,7 +73,7 @@ from shell import GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 
 # The words after which the next word is the command, with no option of their own: wrappers (`command`, `exec`, `nohup`,
 # `time`, `builtin`, `noglob`) and shell keywords or punctuation (`then`, `do`, `else`, `elif`, `if`, `while`, `until`, `!`, `{`, `}`).
-PREFIXES = {
+PREFIXES = frozenset({
     "command",
     "exec",
     "nohup",
@@ -89,7 +90,7 @@ PREFIXES = {
     "!",
     "{",
     "}",
-}
+})
 # The prefixes with options, each with the options that take a value in the next word.
 OPTION_PREFIXES = {
     "sudo": {"-u", "-g", "-h", "-p", "-C", "-r", "-t", "-T", "-U", "-D", "-R", "--user", "--group", "--host", "--prompt", "--chdir", "--chroot"},
@@ -103,40 +104,40 @@ OPTION_PREFIXES = {
     "setsid": set(),
 }
 # The commands that delete, and the shells whose -c string is a command.
-DELETERS = {"rm", "rmdir", "unlink", "shred"}
-SCRATCH_DELETERS = {"rm", "rmdir"}
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+DELETERS = frozenset({"rm", "rmdir", "unlink", "shred"})
+SCRATCH_DELETERS = frozenset({"rm", "rmdir"})
+SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
 # Commands that make no file unless they redirect, so a glob after them is judged by what exists now.
 READ_ONLY_COMMANDS = frozenset("cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [[".split())
 # The options of a shell that take a value in the next word, before its -c string.
-SHELL_VALUE_OPTIONS = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
+SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
 # The options of find that run the words after them, up to a `;` or a `+`.
-FIND_RUNNERS = {"-exec", "-execdir", "-ok", "-okdir"}
-FIND_RUNNER_ENDS = {";", "+"}
-PYTHONS = {"python", "python3", "pytest"}
+FIND_RUNNERS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
+FIND_RUNNER_ENDS = frozenset({";", "+"})
+PYTHONS = frozenset({"python", "python3", "pytest"})
 # The options of `uv run` that take a value in the next word.
-UV_VALUE_OPTIONS = {"--with", "--project", "--directory", "--python", "-p", "--group", "--extra", "--env-file"}
+UV_VALUE_OPTIONS = frozenset({"--with", "--project", "--directory", "--python", "-p", "--group", "--extra", "--env-file"})
 # The `uv` subcommands that change packages; asked of the owner when `ask_packages` is on, wherever they stand in the command.
-UV_DENIED = {"add", "remove", "lock", "sync", "pip", "tool"}
+UV_DENIED = frozenset({"add", "remove", "lock", "sync", "pip", "tool"})
 # The `git push` options that rewrite or delete history on the remote; a plain push of a branch is allowed.
-PUSH_DENIED = {"--force", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "--prune"}
+PUSH_DENIED = frozenset({"--force", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "--prune"})
 # The short letters of a push option that force (`-f`) or delete (`-d`), alone or in a cluster.
-PUSH_DENIED_LETTERS = set("fd")
+PUSH_DENIED_LETTERS = frozenset("fd")
 # The options of git before its subcommand that take a value in the next word.
-GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"}
+GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"})
 # The commands that create or copy files: their destination, or the paths named by their arguments.
-CREATORS = {"tee", "mkdir", "touch"}
-MOVERS = {"cp", "mv", "ln", "install", "rsync"}
+CREATORS = frozenset({"tee", "mkdir", "touch"})
+MOVERS = frozenset({"cp", "mv", "ln", "install", "rsync"})
 # The movers whose -t names the destination folder (rsync's -t keeps times).
-TARGET_MOVERS = {"cp", "mv", "ln", "install"}
-IN_PLACE_EDITORS = {"sed", "perl"}
+TARGET_MOVERS = frozenset({"cp", "mv", "ln", "install"})
+IN_PLACE_EDITORS = frozenset({"sed", "perl"})
 # The long option of tar that sets its mode, and the short letter it stands for.
 TAR_LONG_MODES = {"--extract": "x", "--create": "c", "--append": "r", "--update": "u"}
 # The folder of throwaway files; paths are compared after normalization, so `scratch/../../tmp` is `/tmp`.
 TEMPORARY = "/tmp"
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
 # The commands whose arguments are patterns they match themselves, not paths the shell expands.
-PATTERN_COMMANDS = {"[", "[[", "case", "test"}
+PATTERN_COMMANDS = frozenset({"[", "[[", "case", "test"})
 # The options whose value is a pattern the command matches itself, by command.
 GLOB_PATTERN_OPTIONS = {
     "find": {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-lname", "-ilname", "-regex", "-iregex"},
@@ -149,11 +150,11 @@ FIX_LIMIT = 300
 # The characters of a word the guard does not expand, so what its glob matches is not known.
 UNEXPANDED = "$`{"
 # The builtins whose `NAME=value` arguments are assignments, which no shell expands as a path.
-DECLARERS = {"export", "readonly", "declare", "typeset", "local"}
+DECLARERS = frozenset({"export", "readonly", "declare", "typeset", "local"})
 # The commands that move the working directory: `cd` and `pushd` to a folder, `popd` to a stacked one.
-DIRECTORY_CHANGERS = {"cd", "pushd", "popd"}
+DIRECTORY_CHANGERS = frozenset({"cd", "pushd", "popd"})
 # The commands that run their text in the current shell, so the folder they leave is not known statically.
-IN_SHELL_RUNNERS = {"eval", "source", "."}
+IN_SHELL_RUNNERS = frozenset({"eval", "source", "."})
 
 # The one rule that asks the owner instead of refusing.
 ASK_RULE = "packages"
@@ -199,9 +200,6 @@ class Policy(NamedTuple):
     lock_message: str = ""
 
 
-POLICY = Policy()
-
-
 def get_policy(cwd: str, /) -> Policy:
     """The rules of the project around a working directory."""
 
@@ -233,7 +231,7 @@ class Command(NamedTuple):
     is_free: bool
 
 
-def skip_options(words: list[Word], index: int, value_options: set[str], /) -> int:
+def skip_options(words: list[Word], index: int, value_options: Set[str], /) -> int:
     """The index of the first word from `index` that is not an option or an option's value."""
 
     while index < len(words) and words[index].text.startswith("-"):
@@ -242,7 +240,7 @@ def skip_options(words: list[Word], index: int, value_options: set[str], /) -> i
     return index
 
 
-def resolve(segment: Segment, /) -> Command:
+def resolve(segment: Segment, policy: Policy, /) -> Command:
     """The command a segment runs, past assignments, prefixes and the lock commands."""
 
     words = segment.words
@@ -250,7 +248,7 @@ def resolve(segment: Segment, /) -> Command:
     while index < len(words):
         word = words[index].text
         if ASSIGNMENT.match(word):
-            is_free = is_free or word == POLICY.free_env
+            is_free = is_free or word == policy.free_env
             index += 1
         elif word in PREFIXES:
             index += 1
@@ -258,7 +256,7 @@ def resolve(segment: Segment, /) -> Command:
             index = skip_options(words, index + 1, OPTION_PREFIXES[word])
             if word == "timeout":
                 index += 1  # skip its duration, the first non-option word
-        elif word.removeprefix("./") in POLICY.lock_commands:
+        elif word.removeprefix("./") in policy.lock_commands:
             is_locked = True
             index = skip_options(words, index + 1, set())
         else:
@@ -284,7 +282,7 @@ def get_interpreter_arguments(command: Command, /) -> list[str] | None:
     return None
 
 
-def is_python_run(command: Command, /) -> bool:
+def is_python_run(command: Command, policy: Policy, /) -> bool:
     """Whether a command runs the project's Python, other than a script that needs no lock."""
 
     rest = get_interpreter_arguments(command)
@@ -294,7 +292,7 @@ def is_python_run(command: Command, /) -> bool:
 
     script = script.removeprefix("./")
 
-    return script not in POLICY.free_scripts and not script.startswith(POLICY.free_prefixes)
+    return script not in policy.free_scripts and not script.startswith(policy.free_prefixes)
 
 
 def get_git_subcommand(arguments: list[str], /) -> str:
@@ -307,14 +305,14 @@ def get_git_subcommand(arguments: list[str], /) -> str:
     return arguments[index] if index < len(arguments) else ""
 
 
-def is_scratch_delete(command: Command, directory: str | None, /) -> bool:
+def is_scratch_delete(command: Command, directory: str | None, policy: Policy, /) -> bool:
     """Whether a plain `rm` or `rmdir` names only literal paths inside the scratch folder, never the folder itself."""
 
-    if not POLICY.scratch or directory is None or os.path.basename(command.name) not in SCRATCH_DELETERS:
+    if not policy.scratch or directory is None or os.path.basename(command.name) not in SCRATCH_DELETERS:
         return False
     paths = [word for word in command.arguments if not word.text.startswith("-")]
     is_literal = all(not word.is_glob and "$" not in word.text and "`" not in word.text for word in paths)
-    inside = [os.path.realpath(os.path.join(directory, word.text)).startswith(POLICY.scratch + os.sep) for word in paths]
+    inside = [os.path.realpath(os.path.join(directory, word.text)).startswith(policy.scratch + os.sep) for word in paths]
 
     return bool(paths) and is_literal and all(inside)
 
@@ -431,7 +429,7 @@ def quote_glob(text: str, /) -> str:
     return f"'{text}'"
 
 
-def get_glob_fix(command: str, words: list[str], cwd: str | None, /) -> str:
+def get_glob_fix(command: str, words: list[str], cwd: str | None, policy: Policy, /) -> str:
     """The command with each failing glob word quoted, or "" when that cannot be done safely.
 
     Safe: no word holds a quote, `$`, a backtick, a backslash or a leading `~`, every word stands alone in the text, and the
@@ -443,7 +441,7 @@ def get_glob_fix(command: str, words: list[str], cwd: str | None, /) -> str:
         if text.startswith("~") or any(character in text for character in "'\"$`\\"):
             return ""
         fixed = re.sub(rf"(?<!\S){re.escape(text)}(?![^\s;|&)])", lambda _: quote_glob(text), fixed)
-    if fixed == command or "glob" in find_command_breaches(fixed, cwd, is_background=False):
+    if fixed == command or "glob" in find_command_breaches(fixed, cwd, policy, is_background=False):
         return ""
 
     return fixed
@@ -481,14 +479,14 @@ def is_under(path: str, folder: str, /) -> bool:
     return path == folder or path.startswith(folder + os.sep)
 
 
-def is_temporary(path: str, /) -> bool:
-    return POLICY.no_tmp and is_under(path, os.path.realpath(TEMPORARY))
+def is_temporary(path: str, policy: Policy, /) -> bool:
+    return policy.no_tmp and is_under(path, os.path.realpath(TEMPORARY))
 
 
-def is_repo_write(path: str, /) -> bool:
+def is_repo_write(path: str, policy: Policy, /) -> bool:
     """Whether a path lies in the project outside its scratch folder, where the shell must not write."""
 
-    return bool(POLICY.scratch) and is_under(path, POLICY.root) and not is_under(path, POLICY.scratch)
+    return bool(policy.scratch) and is_under(path, policy.root) and not is_under(path, policy.scratch)
 
 
 def is_cluster(argument: str, /) -> bool:
@@ -676,7 +674,14 @@ def get_directory_after(command: Command, is_grouped: bool, directory: str | Non
 
 
 def find_breaches(
-    segments: list[Segment], cwd: str | None, is_locked: bool, is_free: bool, judges_globs: bool, /, *, failing_globs: list[str] | None = None
+    segments: list[Segment],
+    cwd: str | None,
+    is_locked: bool,
+    is_free: bool,
+    judges_globs: bool,
+    policy: Policy,
+    /,
+    *, failing_globs: list[str] | None = None
 ) -> list[str]:
     """The rules some simple commands break, each once, in rule order.
 
@@ -688,25 +693,25 @@ def find_breaches(
     directory = cwd
     may_have_written = False
     for segment in segments:
-        command = resolve(segment)
+        command = resolve(segment, policy)
         locked, free = is_locked or command.is_locked, is_free or command.is_free
         globs = (judges_globs, may_have_written)
-        command_breaches = get_command_breaches(segment, command, directory, locked or free, globs)
+        command_breaches = get_command_breaches(segment, command, directory, locked or free, globs, policy)
         breaches.extend(command_breaches)
         if failing_globs is not None and "glob" in command_breaches:
             failing_globs.extend(get_failing_globs(command, directory, may_have_written))
-        if command.name == "export" and any(word.text == POLICY.free_env for word in command.arguments):
+        if command.name == "export" and any(word.text == policy.free_env for word in command.arguments):
             is_free = True
         name = os.path.basename(command.name)
         inner_judges = judges_globs and not (name in SHELLS and name != "zsh")
-        breaches.extend(find_breaches(get_inner_segments(command), directory, locked, free, inner_judges, failing_globs=failing_globs))
+        breaches.extend(find_breaches(get_inner_segments(command), directory, locked, free, inner_judges, policy, failing_globs=failing_globs))
         may_have_written = may_have_written or name not in READ_ONLY_COMMANDS or bool(get_written_words(segment, command, directory))
         directory = get_directory_after(command, segment.in_group, directory)
 
     return [rule for rule in MESSAGES if rule in breaches]
 
 
-def find_command_breaches(command: str, cwd: str | None, /, *, is_background: bool, failing_globs: list[str] | None = None) -> list[str]:
+def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, failing_globs: list[str] | None = None) -> list[str]:
     """The rules a whole shell command breaks, soft ones included (`SOFT_RULES`), from the folder it starts in.
 
     `is_background` lets it sleep: a call that runs in the background raises no `sleep` breach.
@@ -715,13 +720,13 @@ def find_command_breaches(command: str, cwd: str | None, /, *, is_background: bo
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
 
-    breaches = find_breaches(get_segments(command), cwd, False, False, is_zsh, failing_globs=failing_globs)
+    breaches = find_breaches(get_segments(command), cwd, False, False, is_zsh, policy, failing_globs=failing_globs)
 
     return [rule for rule in breaches if rule != "sleep" or not is_background]
 
 
 def get_command_breaches(
-    segment: Segment, command: Command, directory: str | None, is_lock_free: bool, globs: tuple[bool, bool], /
+    segment: Segment, command: Command, directory: str | None, is_lock_free: bool, globs: tuple[bool, bool], policy: Policy, /
 ) -> list[str]:
     """The rules one simple command breaks.
 
@@ -733,15 +738,15 @@ def get_command_breaches(
     written = get_written_paths(words, directory)
     arguments = [word.text for word in command.arguments]
     moved = get_written_paths(get_moved_sources(os.path.basename(command.name), arguments), directory)
-    is_unknown_write = bool(POLICY.scratch) and directory is None and not all(is_absolute(word) for word in words)
+    is_unknown_write = bool(policy.scratch) and directory is None and not all(is_absolute(word) for word in words)
     checks = [
-        ("delete", is_delete(command) and not is_scratch_delete(command, directory)),
+        ("delete", is_delete(command) and not is_scratch_delete(command, directory, policy)),
         ("denied", is_denied(command)),
-        (ASK_RULE, POLICY.ask_packages and is_package_change(command)),
-        ("lock", bool(POLICY.lock_commands) and is_python_run(command) and not is_lock_free),
+        (ASK_RULE, policy.ask_packages and is_package_change(command)),
+        ("lock", bool(policy.lock_commands) and is_python_run(command, policy) and not is_lock_free),
         ("glob", globs[0] and has_failing_glob(command, directory, globs[1])),
-        ("temporary", any(is_temporary(path) for path in written)),
-        ("repo", is_unknown_write or any(is_repo_write(path) for path in [*written, *moved])),
+        ("temporary", any(is_temporary(path, policy) for path in written)),
+        ("repo", is_unknown_write or any(is_repo_write(path, policy) for path in [*written, *moved])),
         ("sleep", os.path.basename(command.name) == "sleep"),
     ]
 
@@ -762,33 +767,40 @@ def is_direct_sleep(segment: Segment, /) -> bool:
     return not segment.in_loop and not segment.in_group and words[index : index + 1] == ["sleep"]
 
 
-def find_sleeps(segments: list[Segment], /, *, is_top_level: bool = True) -> list[bool]:
+def find_sleeps(segments: list[Segment], policy: Policy, /, *, is_top_level: bool = True) -> list[bool]:
     """Whether each `sleep` the segments run, nested strings included, is a direct command of the top-level command."""
 
     flags: list[bool] = []
     for segment in segments:
-        command = resolve(segment)
+        command = resolve(segment, policy)
         if os.path.basename(command.name) == "sleep":
             flags.append(is_top_level and is_direct_sleep(segment))
-        flags.extend(find_sleeps(get_inner_segments(command), is_top_level=False))
+        flags.extend(find_sleeps(get_inner_segments(command), policy, is_top_level=False))
 
     return flags
 
 
-def get_sleep_fix(command: str, tool_input: dict, /) -> tuple[dict, str]:  # keys are data
+class SleepFix(NamedTuple):
+    """A sleeping call's changed input and the note that says how it changed."""
+
+    tool_input: dict  # keys are data
+    note: str
+
+
+def get_sleep_fix(command: str, tool_input: dict, policy: Policy, /) -> SleepFix:  # keys are data
     """The whole input of a foreground call that sleeps, changed so it does not wait, and the note that says how.
 
     Every `sleep` direct: the command gets `SLEEP_SHADOW` in front. Any other `sleep`: the call moves to the background.
     """
 
-    flags = find_sleeps(get_segments(command))
+    flags = find_sleeps(get_segments(command), policy)
     if flags and all(flags):
-        return {**tool_input, "command": SLEEP_SHADOW + command}, MESSAGES["sleep"]
+        return SleepFix({**tool_input, "command": SLEEP_SHADOW + command}, MESSAGES["sleep"])
 
-    return {**tool_input, "run_in_background": True}, SLEEP_BACKGROUND_NOTE
+    return SleepFix({**tool_input, "run_in_background": True}, SLEEP_BACKGROUND_NOTE)
 
 
-def make_soft_output(breaches: list[str], tool_input: dict, /) -> dict:  # keys are data
+def make_soft_output(breaches: list[str], tool_input: dict, policy: Policy, /) -> dict:  # keys are data
     """The PreToolUse output that lets the call run with a note, and with a changed input when a `sleep` is in it.
 
     Never carries a `permissionDecision`: the owner's permission prompts still apply to the call.
@@ -797,7 +809,7 @@ def make_soft_output(breaches: list[str], tool_input: dict, /) -> dict:  # keys 
     notes = [f"The harness guard let this run: {MESSAGES[rule]}" for rule in breaches if rule != "sleep"]
     output: dict = {"hookEventName": "PreToolUse"}
     if "sleep" in breaches:
-        output["updatedInput"], note = get_sleep_fix(tool_input.get("command") or "", tool_input)
+        output["updatedInput"], note = get_sleep_fix(tool_input.get("command") or "", tool_input, policy)
         notes.append(f"The harness guard changed this call: {note}")
     output["additionalContext"] = "\n".join(notes)
 
@@ -855,26 +867,25 @@ def get_inner_segments(command: Command, /) -> list[Segment]:
 
 
 def main() -> int:
-    global POLICY
     event = json.load(sys.stdin)
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
-    POLICY = get_policy(cwd)
+    policy = get_policy(cwd)
     command = ""
     failing_globs: list[str] = []
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
-        breaches = find_command_breaches(command, cwd, is_background=tool_input.get("run_in_background") is True, failing_globs=failing_globs)
+        breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, failing_globs=failing_globs)
     else:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        breaches = ["temporary"] if is_temporary(resolve_path(path, cwd)) else []
+        breaches = ["temporary"] if is_temporary(resolve_path(path, cwd), policy) else []
     hard = [rule for rule in breaches if rule not in SOFT_RULES]
     if not hard:
         if breaches:
-            print(json.dumps(make_soft_output(breaches, tool_input)))
+            print(json.dumps(make_soft_output(breaches, tool_input, policy)))
         return 0
-    messages = {**MESSAGES, "lock": POLICY.lock_message or MESSAGES["lock"]}
-    fix = get_glob_fix(command, failing_globs, cwd) if "glob" in hard else ""
+    messages = {**MESSAGES, "lock": policy.lock_message or MESSAGES["lock"]}
+    fix = get_glob_fix(command, failing_globs, cwd, policy) if "glob" in hard else ""
     if fix:
         shown = fix if len(fix) <= FIX_LIMIT else fix[: FIX_LIMIT - 1] + "…"
         messages["glob"] += f"\nRun instead: {shown}"
