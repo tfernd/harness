@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks skills compaction-test compaction mutants check replay clean
+.PHONY: help setup init validate test leaks skills compaction-test compaction mutants map check replay clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -36,7 +36,11 @@ compaction: ## Measure auto-compaction cost in your Claude Code logs: report in 
 mutants: ## Deliberate-bug audit of every rule; slow, run it once (MUTANT=text narrows it)
 	uv run python tests/mutants.py $(if $(MUTANT),--only $(MUTANT),)
 
-check: ## What the pre-push hook runs: cases, mutant check, skill form, leaks
+map: ## Rebuild the Harness Map page (docs/index.html) from the agents, skills, hooks and tests
+	uv run python docs/build_map.py
+
+check: ## What the pre-push hook runs: map freshness, cases, mutant check, skill form, leaks
+	uv run python docs/build_map.py --check
 	uv run python tests/run_cases.py
 	uv run python tests/mutants.py --check
 	uv run python tests/check_skills.py

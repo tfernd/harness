@@ -26,8 +26,9 @@ PLACEHOLDERS = frozenset({"user", "you", "name", "username", "me", "yourname", "
 HOME = re.compile(r"(?:/ho" r"me/|/Us" r"ers/|[A-Za-z]:\\Us" r"ers\\)([^/\\\s\"'`)]+)")
 EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
 EMAIL_OK = frozenset({"anthropic.com", "users.noreply.github.com"})
-# The places a handle may appear: the repo's own install path, and the marketplace's owner, who publishes it.
+# The places a handle may appear: the repo's own install path, its GitHub Pages address, and the marketplace's owner, who publishes it.
 REPO_PATH = "tfernd/harness"
+PAGES_URL = "{0}.github.io/{1}".format(*REPO_PATH.split("/"))
 OWNER_FILE = ".claude-plugin/marketplace.json"
 OWNER_LINE = f'"name": "{REPO_PATH.split("/")[0]}"'
 
@@ -62,7 +63,7 @@ def main() -> int:
         except (UnicodeDecodeError, OSError):
             continue
         for n, line in enumerate(text.splitlines(), 1):
-            low = line.lower().replace(REPO_PATH, "")
+            low = line.lower().replace(REPO_PATH, "").replace(PAGES_URL, "")
             if rel == OWNER_FILE:
                 low = low.replace(OWNER_LINE, "")
             kinds = []

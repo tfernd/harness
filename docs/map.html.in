@@ -1,0 +1,1362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harness Map</title>
+  <meta name="description" content="What the harness plugin for Claude Code does, how strict each rule is, and who does the work.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+  <script>
+    // The saved theme is set before the first paint, so a dark page never flashes light.
+    try {
+      if (localStorage.getItem("harness-map-theme") === "dark") document.documentElement.dataset.theme = "dark";
+    } catch (error) {
+      console.warn("The saved theme could not be read.", error);
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --surface-soft: #f1f3f6;
+      --ink: #111827;
+      --muted: #556070;
+      --line: #e2e6eb;
+      --accent: #2563eb;
+      --accent-text: #1d4ed8;
+      --refuse: #b42318;
+      --ask: #b54708;
+      --back: #6941c6;
+      --hold: #9a5b00;
+      --note: #175cd3;
+      --info: #0e7c86;
+      --advice: #5b6676;
+      --refuse-text: #b42318;
+      --ask-text: #b54708;
+      --back-text: #6941c6;
+      --hold-text: #8a5100;
+      --note-text: #175cd3;
+      --info-text: #0b6670;
+      --advice-text: #4b5563;
+      --on-tone: #ffffff;
+      --tint: 10%;
+      --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 1rem;
+      --space-4: 1.5rem;
+      --space-5: 2rem;
+      --space-6: 2.5rem;
+      --radius-small: 6px;
+      --radius: 10px;
+      --radius-large: 14px;
+      --text-xs: 0.75rem;
+      --text-sm: 0.875rem;
+      --text-md: 1rem;
+      --text-lg: 1.125rem;
+      --text-xl: 1.375rem;
+      --shadow: 0 1px 2px rgb(17 24 39 / 0.05), 0 2px 8px rgb(17 24 39 / 0.04);
+      --duration: 150ms;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-soft: #1c232c;
+      --ink: #e6edf3;
+      --muted: #9aa7b4;
+      --line: #2a333d;
+      --accent: #6ea8fe;
+      --accent-text: #8fbcff;
+      --refuse-text: #ff8a80;
+      --ask-text: #f5a35c;
+      --back-text: #b69cf7;
+      --hold-text: #e0b050;
+      --note-text: #79aefc;
+      --info-text: #5cc8d1;
+      --advice-text: #a9b4c2;
+      --tint: 18%;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: var(--text-md);
+      line-height: 1.55;
+    }
+
+    h1,
+    h2,
+    h3,
+    p,
+    ul,
+    ol,
+    dl,
+    dd {
+      margin: 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      text-wrap: balance;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    a {
+      color: var(--accent-text);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* Tones: one colour per kind of enforcement, a fill with white text and a text colour for tinted backgrounds. */
+    .is-refuse {
+      --tone: var(--refuse);
+      --tone-text: var(--refuse-text);
+    }
+
+    .is-ask {
+      --tone: var(--ask);
+      --tone-text: var(--ask-text);
+    }
+
+    .is-back {
+      --tone: var(--back);
+      --tone-text: var(--back-text);
+    }
+
+    .is-hold {
+      --tone: var(--hold);
+      --tone-text: var(--hold-text);
+    }
+
+    .is-note {
+      --tone: var(--note);
+      --tone-text: var(--note-text);
+    }
+
+    .is-info {
+      --tone: var(--info);
+      --tone-text: var(--info-text);
+    }
+
+    .is-advice {
+      --tone: var(--advice);
+      --tone-text: var(--advice-text);
+    }
+
+    .page {
+      max-width: 68rem;
+      margin-inline: auto;
+      padding: var(--space-5) var(--space-3) var(--space-6);
+      display: grid;
+      gap: var(--space-6);
+    }
+
+    .page-main {
+      display: grid;
+      gap: var(--space-6);
+    }
+
+    .page-head {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .page-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
+    .page-kicker,
+    .section-kicker {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-text);
+    }
+
+    .page-title {
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+    }
+
+    .page-lede {
+      color: var(--muted);
+      font-size: var(--text-lg);
+      max-width: 62ch;
+    }
+
+    .theme-toggle {
+      font: inherit;
+      font-size: var(--text-sm);
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: var(--space-1) var(--space-3);
+      cursor: pointer;
+    }
+
+    .theme-toggle[aria-pressed="true"] {
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+
+    .stats {
+      list-style: none;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .stats-item {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: var(--space-1) var(--space-3);
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .stats-value {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .install {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2) var(--space-3);
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .install-command {
+      background: var(--surface-soft);
+      border-radius: var(--radius-small);
+      padding: var(--space-1) var(--space-2);
+      color: var(--ink);
+    }
+
+    .section {
+      display: grid;
+      gap: var(--space-3);
+      align-content: start;
+    }
+
+    .section-head {
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .section-title {
+      font-size: var(--text-xl);
+      font-weight: 700;
+    }
+
+    .section-intro {
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-large);
+      box-shadow: var(--shadow);
+    }
+
+    /* 1. The parts */
+    .parts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+      gap: var(--space-3);
+    }
+
+    .part {
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-2);
+      align-content: start;
+      border-top: 3px solid var(--tone);
+    }
+
+    .part-head {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-2);
+    }
+
+    .part-title {
+      font-size: var(--text-lg);
+    }
+
+    .part-like {
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .part-text {
+      font-size: var(--text-sm);
+    }
+
+    .part-verdict {
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--tone-text);
+    }
+
+    .settings-note {
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-2);
+      background: color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+    }
+
+    .settings-note-title {
+      font-size: var(--text-md);
+    }
+
+    .settings-note-text {
+      font-size: var(--text-sm);
+    }
+
+    /* Marks shared by the rules and the settings note. */
+    .needs-file {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      white-space: nowrap;
+      padding: 1px var(--space-2);
+      border-radius: var(--radius-small);
+      color: var(--accent-text);
+      background: color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+    }
+
+    .repo-setting {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      white-space: nowrap;
+      color: var(--muted);
+    }
+
+    /* 2. How strict */
+    .strict {
+      display: grid;
+      gap: var(--space-4);
+      align-items: start;
+    }
+
+    .pyramid-box {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .pyramid {
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .pyramid-level {
+      font: inherit;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      min-height: 2.75rem;
+      margin-inline: auto;
+      padding: var(--space-1) var(--space-2);
+      border: 0;
+      border-radius: var(--radius-small);
+      color: var(--tone-text);
+      background: color-mix(in srgb, var(--tone) var(--tint), var(--surface));
+      cursor: pointer;
+      transition: background-color var(--duration), color var(--duration);
+    }
+
+    .pyramid-level:nth-child(1) {
+      width: 46%;
+    }
+
+    .pyramid-level:nth-child(2) {
+      width: 56%;
+    }
+
+    .pyramid-level:nth-child(3) {
+      width: 66%;
+    }
+
+    .pyramid-level:nth-child(4) {
+      width: 76%;
+    }
+
+    .pyramid-level:nth-child(5) {
+      width: 88%;
+    }
+
+    .pyramid-level:nth-child(6) {
+      width: 100%;
+    }
+
+    .pyramid-level[aria-pressed="true"] {
+      color: var(--on-tone);
+      background: var(--tone);
+      box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tone);
+    }
+
+    .pyramid-axis {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--muted);
+    }
+
+    .pyramid-legend {
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .level-panel {
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-3);
+      border-top: 4px solid var(--tone);
+    }
+
+    .level-head {
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .level-title {
+      font-size: var(--text-lg);
+      color: var(--tone-text);
+    }
+
+    .level-what {
+      color: var(--muted);
+    }
+
+    .rule-list {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .rule {
+      display: grid;
+      gap: var(--space-1);
+      padding-block-end: var(--space-2);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .rule:last-child {
+      border-bottom: 0;
+      padding-block-end: 0;
+    }
+
+    .rule-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: var(--space-1) var(--space-2);
+      font-size: var(--text-sm);
+    }
+
+    .rule-example {
+      color: var(--muted);
+    }
+
+    .rule-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-2);
+      margin-inline-start: auto;
+    }
+
+    .rule-hook {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--tone-text);
+    }
+
+    /* 3 and 4: the session and the crew side by side */
+    .split {
+      display: grid;
+      gap: var(--space-6);
+      align-items: start;
+    }
+
+    .legend {
+      list-style: none;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-3);
+      font-size: var(--text-xs);
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+    }
+
+    .legend-item::before {
+      content: "";
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: var(--tone);
+    }
+
+    .timeline {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: var(--space-2);
+      counter-reset: step;
+    }
+
+    .timeline-step {
+      counter-increment: step;
+      position: relative;
+      padding: var(--space-2) var(--space-3) var(--space-2) 3rem;
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .timeline-step::before {
+      content: counter(step);
+      position: absolute;
+      inset-inline-start: var(--space-3);
+      inset-block-start: var(--space-2);
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--accent-text);
+      border: 2px solid var(--accent);
+    }
+
+    .timeline-title {
+      font-size: var(--text-md);
+    }
+
+    .timeline-text {
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .hook-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1);
+    }
+
+    .hook-when {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      min-width: 5.5rem;
+    }
+
+    .hook-pill {
+      --tone: var(--advice);
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      line-height: 1;
+      padding: var(--space-1) var(--space-2);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      white-space: nowrap;
+    }
+
+    .hook-pill::before {
+      content: "";
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: var(--tone);
+    }
+
+    /* Each hook script's tone; a script with no rule here keeps the neutral one. */
+    .hook-guard,
+    .hook-budget,
+    .hook-brief-lint,
+    .hook-commit-gate {
+      --tone: var(--refuse);
+    }
+
+    .hook-report-gate {
+      --tone: var(--back);
+    }
+
+    .hook-skill-gate,
+    .hook-delegate,
+    .hook-nudge {
+      --tone: var(--note);
+    }
+
+    .hook-context,
+    .hook-turn {
+      --tone: var(--info);
+    }
+
+    .hook-turn-stop {
+      --tone: var(--hold);
+    }
+
+    .crew {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .crew-bands {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2) var(--space-3);
+    }
+
+    .crew-band {
+      display: grid;
+      gap: var(--space-1);
+      align-content: start;
+    }
+
+    .crew-band-name {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .crew-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+
+    .crew-chip {
+      font: inherit;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: var(--space-1) var(--space-3);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: baseline;
+      gap: var(--space-1);
+      transition: border-color var(--duration), background-color var(--duration);
+    }
+
+    .crew-chip[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) var(--tint), var(--surface));
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .crew-chip-model {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .crew-card {
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .crew-card-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .crew-card-name {
+      font-size: var(--text-lg);
+      margin-inline-end: auto;
+    }
+
+    .crew-card-use {
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .crew-card-facts {
+      display: grid;
+      gap: var(--space-1);
+      font-size: var(--text-sm);
+    }
+
+    .crew-card-fact {
+      display: grid;
+      grid-template-columns: 6.5rem minmax(0, 1fr);
+      gap: var(--space-2);
+      align-items: baseline;
+    }
+
+    .crew-card-term {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .crew-card-value {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+
+    .tag {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      padding: 2px var(--space-2);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .skill-chip {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      padding: 2px var(--space-2);
+      border-radius: var(--radius-small);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+      color: var(--accent-text);
+      cursor: help;
+    }
+
+    .skill-index {
+      font-size: var(--text-sm);
+    }
+
+    .skill-index-summary {
+      cursor: pointer;
+      color: var(--accent-text);
+      font-weight: 600;
+    }
+
+    .skill-list {
+      margin-block-start: var(--space-2);
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+      gap: var(--space-2) var(--space-3);
+    }
+
+    .skill-entry {
+      display: grid;
+      gap: 2px;
+    }
+
+    .skill-entry-text {
+      color: var(--muted);
+    }
+
+    /* 5. Gaps */
+    .gaps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+      gap: var(--space-3);
+    }
+
+    .gap {
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-1);
+      align-content: start;
+      border-inline-start: 4px solid var(--tone);
+    }
+
+    .gap-severity {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--tone-text);
+    }
+
+    .gap-title {
+      font-size: var(--text-md);
+    }
+
+    .gap-text {
+      font-size: var(--text-sm);
+      color: var(--muted);
+    }
+
+    .gap-next {
+      font-size: var(--text-sm);
+    }
+
+    .closed {
+      padding: var(--space-3);
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .closed-title {
+      font-size: var(--text-md);
+    }
+
+    .closed-list {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: var(--space-2);
+      font-size: var(--text-sm);
+    }
+
+    .closed-item {
+      display: grid;
+      grid-template-columns: 1.25rem minmax(0, 1fr);
+      gap: var(--space-1);
+    }
+
+    .closed-item::before {
+      content: "✓";
+      color: var(--info-text);
+      font-weight: 700;
+    }
+
+    .page-foot {
+      font-size: var(--text-sm);
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      padding-block-start: var(--space-3);
+    }
+
+    @media (min-width: 52rem) {
+      .strict {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      }
+
+      .split {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-head">
+      <div class="page-bar">
+        <span class="page-kicker">harness · a plugin for Claude Code</span>
+        <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">Dark mode</button>
+      </div>
+      <h1 class="page-title">Harness Map</h1>
+      <p class="page-lede">What the plugin does to a Claude Code session, how strict each rule is, and who does the work. Hover or tap anything coloured.</p>
+      <ul class="stats">
+        <li class="stats-item"><span class="stats-value">{{agents}}</span> agents</li>
+        <li class="stats-item"><span class="stats-value">{{skills}}</span> skills</li>
+        <li class="stats-item"><span class="stats-value">{{hooks}}</span> hook scripts</li>
+        <li class="stats-item"><span class="stats-value">{{cases}}</span> test cases</li>
+        <li class="stats-item"><span class="stats-value">{{mutants}}</span> planted bugs, each caught by a case</li>
+      </ul>
+      <p class="install">
+        <span>Install:</span>
+        <code class="install-command">claude plugin marketplace add tfernd/harness</code>
+        <code class="install-command">claude plugin install harness@harness --scope user</code>
+        <a href="https://github.com/tfernd/harness">Source</a>
+      </p>
+    </header>
+
+    <main class="page-main">
+      <section class="section" aria-labelledby="parts-title">
+        <div class="section-head">
+          <p class="section-kicker">1 · the parts</p>
+          <h2 class="section-title" id="parts-title">Skills tell, hooks enforce, agents do, reports connect them.</h2>
+          <p class="section-intro">A skill is text the model can ignore; a hook is a program it cannot argue with.</p>
+        </div>
+        <div class="parts">
+          <article class="card part is-advice">
+            <div class="part-head"><h3 class="part-title">Skill</h3><span class="part-like">the manual</span></div>
+            <p class="part-text">A short rule sheet the model reads before a kind of work: Python style, reviewing, reporting.</p>
+            <p class="part-verdict">Advice: the model can skip it.</p>
+          </article>
+          <article class="card part is-refuse">
+            <div class="part-head"><h3 class="part-title">Hook</h3><span class="part-like">the turnstile</span></div>
+            <p class="part-text">A small program Claude Code runs before or after an action. It can refuse the call, add a note or hold the turn.</p>
+            <p class="part-verdict">Enforced: the model cannot argue.</p>
+          </article>
+          <article class="card part is-note">
+            <div class="part-head"><h3 class="part-title">Agent</h3><span class="part-like">a contractor</span></div>
+            <p class="part-text">A separate session with one role, its own tools, preloaded skills and a turn budget. It does one job and hands back.</p>
+            <p class="part-verdict">Works in parallel, from a brief.</p>
+          </article>
+          <article class="card part is-back">
+            <div class="part-head"><h3 class="part-title">Report</h3><span class="part-like">a signed timesheet</span></div>
+            <p class="part-text">The fixed form every agent ends with. A skill says how to write it; a hook checks it against what the agent did.</p>
+            <p class="part-verdict">Where advice meets enforcement.</p>
+          </article>
+        </div>
+        <aside class="card settings-note" aria-labelledby="settings-title">
+          <h3 class="settings-note-title" id="settings-title">One settings file: <code>.harness.json</code></h3>
+          <p class="settings-note-text">A small settings file a repository commits to switch on the stricter, repo-specific rules: a scratch folder for throwaway files, the commit message rule, lessons and retros. Without it the safety rules, the agent rules and the report checks still run. Rules that need it carry the mark <span class="needs-file">needs .harness.json</span>; this repository commits one.</p>
+        </aside>
+      </section>
+
+      <section class="section" aria-labelledby="strict-title">
+        <div class="section-head">
+          <p class="section-kicker">2 · how strict</p>
+          <h2 class="section-title" id="strict-title">Six levels, from stopped to advice</h2>
+          <p class="section-intro">Higher means stricter and fewer rules; pick a level to see its rules in plain words.</p>
+        </div>
+        <div class="strict" data-chooser>
+          <div class="pyramid-box">
+            <div class="pyramid" role="group" aria-label="Strictness levels, strictest first">
+              <button type="button" class="pyramid-level is-refuse" data-choice="stopped" aria-pressed="true" aria-controls="level-stopped">Stopped</button>
+              <button type="button" class="pyramid-level is-ask" data-choice="asks" aria-pressed="false" aria-controls="level-asks">Asks you</button>
+              <button type="button" class="pyramid-level is-back" data-choice="sent-back" aria-pressed="false" aria-controls="level-sent-back">Sent back to redo</button>
+              <button type="button" class="pyramid-level is-hold" data-choice="turn" aria-pressed="false" aria-controls="level-turn">Turn can't end</button>
+              <button type="button" class="pyramid-level is-note" data-choice="reminder" aria-pressed="false" aria-controls="level-reminder">Gets a reminder</button>
+              <button type="button" class="pyramid-level is-advice" data-choice="advice" aria-pressed="false" aria-controls="level-advice">Advice only</button>
+            </div>
+            <div class="pyramid-axis"><span>stricter, fewer rules</span><span>looser, more rules</span></div>
+            <p class="pyramid-legend">The top four levels are enforced by a hook. A reminder never stops anything; advice is up to the model.</p>
+          </div>
+
+          <div class="card level-panel is-refuse" id="level-stopped" data-choice-panel="stopped">
+            <div class="level-head">
+              <h3 class="level-title">Stopped</h3>
+              <p class="level-what">The command never runs. The agent is told which rule fired and what to do instead.</p>
+            </div>
+            <ul class="rule-list">
+              <li class="rule">
+                <p>Deleting files is refused. With a scratch folder set, <code>rm</code> of named files inside it is allowed.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>rm -rf build/</code>, <code>git clean -fd</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>Rewriting shared history is refused.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>git push --force</code>, <code>git reset --hard</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A wildcard the shell would get wrong is refused: one that matches no file, or one meant for the command itself.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>ls *.nothing</code>; write <code>find . -name '*.py'</code>, quoted</span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>An agent without a harness role is refused.</p>
+                <div class="rule-line"><span class="rule-example">e.g. a general-purpose agent; send the brief to <code>harness:scout</code> or <code>harness:worker</code></span><span class="rule-meta"><span class="rule-hook">brief_lint.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>An agent past its turn budget can only hand back its report.</p>
+                <div class="rule-line"><span class="rule-example">e.g. a worker past its {{budget_worker}} turns</span><span class="rule-meta"><span class="rule-hook">budget.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A commit message must look like <code>fix(hooks): keep the last token</code> followed by bullet lines, and must never credit an AI.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>git commit -m "fixed stuff"</code>, or a Co-Authored-By line naming an AI</span><span class="rule-meta"><span class="rule-hook">commit_gate.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">this repo: {{repo_commit}}</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A project can name a wrapper that every Python run must go through, such as a queue that shares one GPU; a bare run is then refused.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>python train.py</code> without the wrapper</span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">guard.lock, this repo: {{repo_lock}}</span></span></div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card level-panel is-ask" id="level-asks" data-choice-panel="asks" hidden>
+            <div class="level-head">
+              <h3 class="level-title">Asks you</h3>
+              <p class="level-what">Claude Code pauses and asks you. Your yes runs it.</p>
+            </div>
+            <ul class="rule-list">
+              <li class="rule">
+                <p>Adding or removing packages asks you first.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>pip install requests</code>, <code>uv add httpx</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">guard.ask_packages, this repo: {{repo_packages}}</span></span></div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card level-panel is-back" id="level-sent-back" data-choice-panel="sent-back" hidden>
+            <div class="level-head">
+              <h3 class="level-title">Sent back to redo</h3>
+              <p class="level-what">The report goes back to the agent, naming only the parts that are wrong, up to {{send_backs}} times. It is checked when the agent hands it back, so the agent can still fix it.</p>
+            </div>
+            <ul class="rule-list">
+              <li class="rule">
+                <p>A report needs its parts: what was done, what is not proven, and a verdict of done, partial or blocked.</p>
+                <div class="rule-line"><span class="rule-example">e.g. a report with no <code>## Verdict</code></span><span class="rule-meta"><span class="rule-hook">report_gate.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>Each claim must match what the agent really did.</p>
+                <div class="rule-line"><span class="rule-example">e.g. "tests pass" with no command run, or a changed file it does not name</span><span class="rule-meta"><span class="rule-hook">report_gate.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A report stays short: at most {{report_chars}} characters outside code blocks.</p>
+                <div class="rule-line"><span class="rule-example">e.g. a whole test log pasted as prose</span><span class="rule-meta"><span class="rule-hook">report_gate.py</span></span></div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card level-panel is-hold" id="level-turn" data-choice-panel="turn" hidden>
+            <div class="level-head">
+              <h3 class="level-title">Turn can't end</h3>
+              <p class="level-what">Your turn does not end until the main session fixes this; it gets {{max_blocks}} tries.</p>
+            </div>
+            <ul class="rule-list">
+              <li class="rule">
+                <p>A long turn ends with a closing status, and waits while background agents still run.</p>
+                <div class="rule-line"><span class="rule-example">e.g. after {{min_calls}} or more edits or agent calls: {{headings}}</span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A turn that ran agents names each one under <code>## Agents</code>, with its verdict.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>- find the config loader: done, no problems</code></span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A lesson must change a rule file, or the status says <code>Lessons: none</code>.</p>
+                <div class="rule-line"><span class="rule-example">e.g. "Lessons: be more careful" with no rule changed</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="needs-file">needs .harness.json</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A retro is due when {{retro_items}} feedback items wait.</p>
+                <div class="rule-line"><span class="rule-example">e.g. the analyst groups them and proposes up to three rule changes</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="needs-file">needs .harness.json</span></span></div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card level-panel is-note" id="level-reminder" data-choice-panel="reminder" hidden>
+            <div class="level-head">
+              <h3 class="level-title">Gets a reminder</h3>
+              <p class="level-what">The call runs. The agent gets one line of advice with the result.</p>
+            </div>
+            <ul class="rule-list">
+              <li class="rule">
+                <p>The rules for a kind of file arrive before its first edit.</p>
+                <div class="rule-line"><span class="rule-example">e.g. the first edit of a <code>.py</code> file brings the Python style rules</span><span class="rule-meta"><span class="rule-hook">skill_gate.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A brief missing a line its role needs gets a note.</p>
+                <div class="rule-line"><span class="rule-example">e.g. a worker's brief needs {{brief_worker}}</span><span class="rule-meta"><span class="rule-hook">brief_lint.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>Wasted reads and hidden failures get a note.</p>
+                <div class="rule-line"><span class="rule-example">e.g. the same small file read twice; <code>pytest | tail</code> without <code>pipefail</code></span><span class="rule-meta"><span class="rule-hook">nudge.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A <code>sleep</code> that would block the session is removed or moved to the background.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>sleep 30 &amp;&amp; make test</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>Edit and Write change project files as usual. Shell commands that write files (<code>echo &gt; file</code>, <code>tee</code>, <code>cp</code>, <code>sed -i</code>) should land in the scratch folder inside the project; elsewhere they still run, with a note. A shell write under <code>/tmp</code> also runs, with a note.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>echo hi &gt; notes.txt</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">guard.scratch, this repo: {{repo_scratch}}</span></span></div>
+              </li>
+              <li class="rule">
+                <p>A repo can set <code>delegate</code> so the main session gets a note whenever it edits files itself instead of handing the work to agents.</p>
+                <div class="rule-line"><span class="rule-example">e.g. the main session runs <code>sed -i</code> on a source file</span><span class="rule-meta"><span class="rule-hook">delegate.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">delegate, this repo: {{repo_delegate}}</span></span></div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card level-panel is-advice" id="level-advice" data-choice-panel="advice" hidden>
+            <div class="level-head">
+              <h3 class="level-title">Advice only</h3>
+              <p class="level-what">Text the model reads before a kind of work. Nothing checks it was followed; a reviewer or a retro catches what slips.</p>
+            </div>
+            <ul class="rule-list">
+              <li class="rule">
+                <p>Code style, one skill per language.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>code-python</code>, <code>code-js</code>, <code>code-shell</code></span><span class="rule-meta"><span class="rule-hook">skills</span></span></div>
+              </li>
+              <li class="rule">
+                <p>Cheap tool calls: one script per job, the checks chained in one call.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>tool-habits</code>, put in front of every session and agent</span><span class="rule-meta"><span class="rule-hook">context.py</span></span></div>
+              </li>
+              <li class="rule">
+                <p>How to brief, review, audit, test, debug and refactor.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>review</code>, <code>testing</code>, <code>debug</code></span><span class="rule-meta"><span class="rule-hook">skills</span></span></div>
+              </li>
+              <li class="rule">
+                <p>When to hire agents at all: the main session works directly by default.</p>
+                <div class="rule-line"><span class="rule-example">e.g. <code>orchestrator</code>, <code>workflows</code></span><span class="rule-meta"><span class="rule-hook">skills</span></span></div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <div class="split">
+        <section class="section" aria-labelledby="session-title">
+          <div class="section-head">
+            <p class="section-kicker">3 · in what order</p>
+            <h2 class="section-title" id="session-title">One session, start to finish</h2>
+            <p class="section-intro">Hooks fire at fixed moments; at each, every matching hook runs side by side.</p>
+          </div>
+          <ul class="legend">
+            <li class="legend-item is-refuse">can stop a call</li>
+            <li class="legend-item is-back">sends a report back</li>
+            <li class="legend-item is-hold">holds the turn</li>
+            <li class="legend-item is-note">adds a note</li>
+            <li class="legend-item is-info">adds context or counts</li>
+          </ul>
+          <ol class="timeline">
+            <li class="card timeline-step">
+              <h3 class="timeline-title">Session starts</h3>
+              <p class="timeline-text">Claude Code opens in any repository. The model gets its working habits, the last lessons and the open problems.</p>
+              <div class="hook-row"><span class="hook-when">start</span><!-- @hooks SessionStart --></div>
+            </li>
+            <li class="card timeline-step">
+              <h3 class="timeline-title">You send a prompt</h3>
+              <p class="timeline-text">A new turn begins: the call count goes back to zero and the rule files are noted as they are.</p>
+              <div class="hook-row"><span class="hook-when">prompt</span><!-- @hooks UserPromptSubmit --></div>
+            </li>
+            <li class="card timeline-step">
+              <h3 class="timeline-title">The main session hires an agent</h3>
+              <p class="timeline-text">The agent must have a role; its brief is checked for the lines the role needs, and its turn budget is set.</p>
+              <div class="hook-row"><span class="hook-when">before</span><!-- @hooks PreToolUse Agent|Task --></div>
+            </li>
+            <li class="card timeline-step">
+              <h3 class="timeline-title">An agent starts</h3>
+              <p class="timeline-text">Fresh context with its role's skills preloaded, plus the habits, the report form it owes and the open problems for its role.</p>
+              <div class="hook-row"><span class="hook-when">start</span><!-- @hooks SubagentStart --></div>
+            </li>
+            <li class="card timeline-step">
+              <h3 class="timeline-title">Every tool call</h3>
+              <p class="timeline-text">Agent or main session, every command, edit and read. Before it, one refusal stops the call; after it come advice and a count of the turn's calls.</p>
+              <div class="hook-row"><span class="hook-when">before</span><!-- @hooks PreToolUse --></div>
+              <div class="hook-row"><span class="hook-when">after</span><!-- @hooks PostToolUse --></div>
+            </li>
+            <li class="card timeline-step">
+              <h3 class="timeline-title">The agent hands back</h3>
+              <p class="timeline-text">Its report is checked as it is handed back, so a bad one goes back while the agent can still fix it. The stop check catches the rest.</p>
+              <div class="hook-row"><span class="hook-when">hand-back</span><!-- @hooks PreToolUse SubagentHandback --></div>
+              <div class="hook-row"><span class="hook-when">stop</span><!-- @hooks SubagentStop --></div>
+            </li>
+            <li class="card timeline-step">
+              <h3 class="timeline-title">Your turn ends</h3>
+              <p class="timeline-text">A long turn closes with a status and a line per agent run; lessons, and a retro when one is due. Background agents are waited for.</p>
+              <div class="hook-row"><span class="hook-when">stop</span><!-- @hooks Stop --></div>
+            </li>
+            <!-- @hooks-rest -->
+          </ol>
+        </section>
+
+        <section class="section" aria-labelledby="crew-title">
+          <div class="section-head">
+            <p class="section-kicker">4 · who does the work</p>
+            <h2 class="section-title" id="crew-title">The crew</h2>
+            <p class="section-intro">You decide; the main session works and hires an agent only when parallel work pays.</p>
+          </div>
+          <div class="crew" data-chooser>
+            <div class="crew-bands" role="group" aria-label="Roles by band">
+              <div class="crew-band">
+                <span class="crew-band-name">Decides</span>
+                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="you" aria-pressed="false" aria-controls="role-you">You</button></div>
+              </div>
+              <div class="crew-band">
+                <span class="crew-band-name">Orchestrates</span>
+                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="main" aria-pressed="false" aria-controls="role-main">Main session</button></div>
+              </div>
+              <div class="crew-band">
+                <span class="crew-band-name">Thinks</span>
+                <div class="crew-chips"><!-- @agents planner researcher analyst --></div>
+              </div>
+              <div class="crew-band">
+                <span class="crew-band-name">Finds</span>
+                <div class="crew-chips"><!-- @agents scout --></div>
+              </div>
+              <div class="crew-band">
+                <span class="crew-band-name">Builds</span>
+                <div class="crew-chips"><!-- @agents worker --></div>
+              </div>
+              <div class="crew-band">
+                <span class="crew-band-name">Checks</span>
+                <div class="crew-chips"><!-- @agents cold-reader runner reviewer auditor --></div>
+              </div>
+              <!-- @agents-rest -->
+            </div>
+
+            <article class="card crew-card" id="role-you" data-choice-panel="you" aria-labelledby="role-you-name" hidden>
+              <div class="crew-card-head"><h3 class="crew-card-name" id="role-you-name">You</h3><span class="tag">owner</span></div>
+              <p>Set the direction, answer when Claude Code asks, and read the closing status.</p>
+              <p class="crew-card-use">The harness asks you only for what it cannot judge, such as a package change in a repo that wants that.</p>
+            </article>
+            <article class="card crew-card" id="role-main" data-choice-panel="main" aria-labelledby="role-main-name" hidden>
+              <div class="crew-card-head"><h3 class="crew-card-name" id="role-main-name">Main session</h3><span class="tag">your model</span><span class="tag">no budget</span><span class="tag">edits files</span></div>
+              <p>Does the work itself by default, scripts repetitive edits, and hires agents only where parallel work pays.</p>
+              <p class="crew-card-use">It already holds the context, so it is the cheapest worker for serial steps.</p>
+              <dl class="crew-card-facts">
+                <div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><!-- @skill-chips orchestrator workflows accept tool-habits --></dd></div>
+              </dl>
+            </article>
+            <!-- @agent-cards -->
+            <details class="skill-index">
+              <summary class="skill-index-summary">All {{skills}} skills</summary>
+              <dl class="skill-list"><!-- @skills --></dl>
+            </details>
+          </div>
+        </section>
+      </div>
+
+      <section class="section" aria-labelledby="gaps-title">
+        <div class="section-head">
+          <p class="section-kicker">5 · gaps</p>
+          <h2 class="section-title" id="gaps-title">What the harness does not cover yet</h2>
+          <p class="section-intro">Ranked by how likely each is to let a real mistake through.</p>
+        </div>
+        <div class="gaps">
+          <article class="card gap is-refuse">
+            <p class="gap-severity">high</p>
+            <h3 class="gap-title">No live run of this round's rules</h3>
+            <p class="gap-text">They pass {{cases}} cases and {{mutants}} planted bugs, but no real session under <code>claude --plugin-dir .</code> has used them yet.</p>
+            <p class="gap-next">Next: one live session in a fresh repo.</p>
+          </article>
+          <article class="card gap is-refuse">
+            <p class="gap-severity">high</p>
+            <h3 class="gap-title">Kiro and Cortex never run for real</h3>
+            <p class="gap-text">The port is tested with a stand-in; Kiro's sub-agent field name is a guess.</p>
+            <p class="gap-next">Next: one install on each tool.</p>
+          </article>
+          <article class="card gap is-refuse">
+            <p class="gap-severity">high</p>
+            <h3 class="gap-title">Workers can edit outside their write set</h3>
+            <p class="gap-text">The report gate checks that each changed file is named, not that the brief allowed it.</p>
+            <p class="gap-next">Next: a note when a change falls outside <code>Write set:</code>.</p>
+          </article>
+          <article class="card gap is-ask">
+            <p class="gap-severity">medium</p>
+            <h3 class="gap-title">Budgets count turns only</h3>
+            <p class="gap-text">No tokens or time per agent run reach the ledger.</p>
+            <p class="gap-next">Next: record them in the report gate.</p>
+          </article>
+          <article class="card gap is-advice">
+            <p class="gap-severity">low</p>
+            <h3 class="gap-title">The guard reads command text</h3>
+            <p class="gap-text">A Python script that deletes files, or a command built from variables, gets through.</p>
+            <p class="gap-next">Accepted: it is not a sandbox.</p>
+          </article>
+          <article class="card gap is-advice">
+            <p class="gap-severity">low</p>
+            <h3 class="gap-title">Read-only agents still have Bash</h3>
+            <p class="gap-text">A shell command can write a file; only the guard applies.</p>
+            <p class="gap-next">Accepted: probes need Bash.</p>
+          </article>
+        </div>
+        <aside class="card closed" aria-labelledby="closed-title">
+          <h3 class="closed-title" id="closed-title">Closed this round</h3>
+          <ul class="closed-list">
+            <li class="closed-item"><span>The report gate checks a report as the agent hands it back, so a bad report goes back while the agent can still fix it.</span></li>
+            <li class="closed-item"><span>The Stop hook sees background agents finish. It missed the app's newer notice, so the retro and the closing status never fired after one.</span></li>
+            <li class="closed-item"><span>The closing status names every agent run under <code>## Agents</code>, with its verdict.</span></li>
+          </ul>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="page-foot">
+      <p>Built from this repository's agents, skills, hooks and tests by <code>docs/build_map.py</code>. <code>make map</code> rebuilds it; <code>make check</code> fails when it is stale.</p>
+    </footer>
+  </div>
+
+  <script type="module">
+    const THEME_KEY = "harness-map-theme";
+    // A pointer that only crosses a chip on its way to the card below does not switch the card.
+    const HOVER_DELAY_MS = 120;
+    const page = document.documentElement;
+
+    const showChoice = (chooser, value) => {
+      for (const button of chooser.querySelectorAll("[data-choice]")) {
+        button.setAttribute("aria-pressed", String(button.dataset.choice === value));
+      }
+      for (const panel of chooser.querySelectorAll("[data-choice-panel]")) {
+        panel.hidden = panel.dataset.choicePanel !== value;
+      }
+    };
+
+    const findChoice = (event) => (event.target instanceof Element ? event.target.closest("[data-choice]") : null);
+
+    const bindChooser = (chooser) => {
+      let hoverTimer = 0;
+      const showNow = (event) => {
+        const button = findChoice(event);
+        if (button) showChoice(chooser, button.dataset.choice);
+      };
+      chooser.addEventListener("click", showNow);
+      chooser.addEventListener("focusin", showNow);
+      chooser.addEventListener("mouseover", (event) => {
+        const button = findChoice(event);
+        clearTimeout(hoverTimer);
+        if (button) hoverTimer = setTimeout(() => showChoice(chooser, button.dataset.choice), HOVER_DELAY_MS);
+      });
+    };
+
+    const saveTheme = (theme) => {
+      try {
+        localStorage.setItem(THEME_KEY, theme);
+      } catch (error) {
+        console.warn("The theme choice could not be saved.", error);
+      }
+    };
+
+    const themeButton = document.querySelector("[data-theme-toggle]");
+    const applyTheme = (theme) => {
+      page.dataset.theme = theme;
+      themeButton?.setAttribute("aria-pressed", String(theme === "dark"));
+    };
+
+    themeButton?.addEventListener("click", () => {
+      const theme = page.dataset.theme === "dark" ? "light" : "dark";
+      applyTheme(theme);
+      saveTheme(theme);
+    });
+    applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
+    for (const chooser of document.querySelectorAll("[data-chooser]")) bindChooser(chooser);
+  </script>
+</body>
+</html>

@@ -4,6 +4,8 @@ A Claude Code plugin that makes an AI coding session safer and cheaper to trust.
 refuse risky or wasteful actions, **skills** that give the model short rule sheets, and **agents** that do narrow jobs
 (find a fact, review a diff, run a check) and must report in a fixed, checked form.
 
+**[See the Harness Map](https://tfernd.github.io/harness/)**: one page on what runs when, what each rule stops, and who does what. `make map` rebuilds it from the repo, and `make check` fails when it is stale.
+
 Install, update and project setup are written for agents in [AGENTS.md](AGENTS.md). This page says what the plugin does,
 how the parts fit, what it stops and what it does not.
 
