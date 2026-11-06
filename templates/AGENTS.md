@@ -10,7 +10,7 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 - Off limits (read only if asked, never edited or imported): <paths, or "none">.
 
 ## 3. Writing code
-- Before touching a file, load the skill `skill_gate` in `.harness.json` names for it; a hook checks edits, shell writes and commits.
+- Before touching a file, load the skill the `skill_gate` setting names for it; a hook checks edits, shell writes and commits.
 - Run the project's lint, format and type checks before the report; their exit codes go in it.
 - Checks, cited by name: the check gate `<command>` (run once; a third failing run stops you); the full gate
   `<command>`.

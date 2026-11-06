@@ -338,40 +338,6 @@
       color: var(--tone-text);
     }
 
-    .settings-note {
-      padding: var(--space-3);
-      display: grid;
-      gap: var(--space-2);
-      background: color-mix(in srgb, var(--accent) var(--tint), var(--surface));
-      border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-    }
-
-    .settings-note-title {
-      font-size: var(--text-md);
-    }
-
-    .settings-note-text {
-      font-size: var(--text-sm);
-    }
-
-    /* Marks shared by the rules and the settings note. */
-    .needs-file {
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      white-space: nowrap;
-      padding: 1px var(--space-2);
-      border-radius: var(--radius-small);
-      color: var(--accent-text);
-      background: color-mix(in srgb, var(--accent) var(--tint), var(--surface));
-    }
-
-    .repo-setting {
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      white-space: nowrap;
-      color: var(--muted);
-    }
-
     /* 2. How strict */
     .strict {
       display: grid;
@@ -909,8 +875,8 @@
         <li class="stats-item"><span class="stats-value">9</span> agents</li>
         <li class="stats-item"><span class="stats-value">23</span> skills</li>
         <li class="stats-item"><span class="stats-value">10</span> hook scripts</li>
-        <li class="stats-item"><span class="stats-value">926</span> test cases</li>
-        <li class="stats-item"><span class="stats-value">435</span> planted bugs, each caught by a case</li>
+        <li class="stats-item"><span class="stats-value">943</span> test cases</li>
+        <li class="stats-item"><span class="stats-value">442</span> planted bugs, each caught by a case</li>
       </ul>
       <p class="install">
         <span>Install:</span>
@@ -949,10 +915,6 @@
             <p class="part-verdict">Where advice meets enforcement.</p>
           </article>
         </div>
-        <aside class="card settings-note" aria-labelledby="settings-title">
-          <h3 class="settings-note-title" id="settings-title">One settings file: <code>.harness.json</code></h3>
-          <p class="settings-note-text">A small settings file a repository commits to switch on the stricter, repo-specific rules: a scratch folder for throwaway files, the commit message rule, lessons and retros. Without it the safety rules, the agent rules and the report checks still run. Rules that need it carry the mark <span class="needs-file">needs .harness.json</span>; this repository commits one.</p>
-        </aside>
       </section>
 
       <section class="section" aria-labelledby="strict-title">
@@ -1003,11 +965,11 @@
               </li>
               <li class="rule">
                 <p>A commit message must look like <code>fix(hooks): keep the last token</code> followed by bullet lines, and must never credit an AI.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>git commit -m "fixed stuff"</code>, or a Co-Authored-By line naming an AI</span><span class="rule-meta"><span class="rule-hook">commit_gate.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">this repo: on</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>git commit -m "fixed stuff"</code>, or a Co-Authored-By line naming an AI</span><span class="rule-meta"><span class="rule-hook">commit_gate.py</span></span></div>
               </li>
               <li class="rule">
                 <p>A project can name a wrapper that every Python run must go through, such as a queue that shares one GPU; a bare run is then refused.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>python train.py</code> without the wrapper</span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">guard.lock, this repo: off</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>python train.py</code> without the wrapper</span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
               </li>
             </ul>
           </div>
@@ -1020,7 +982,7 @@
             <ul class="rule-list">
               <li class="rule">
                 <p>Adding or removing packages asks you first.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>pip install requests</code>, <code>uv add httpx</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">guard.ask_packages, this repo: off</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>pip install requests</code>, <code>uv add httpx</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
               </li>
             </ul>
           </div>
@@ -1062,11 +1024,11 @@
               </li>
               <li class="rule">
                 <p>A lesson must change a rule file, or the status says <code>Lessons: none</code>.</p>
-                <div class="rule-line"><span class="rule-example">e.g. "Lessons: be more careful" with no rule changed</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="needs-file">needs .harness.json</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. "Lessons: be more careful" with no rule changed</span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
               </li>
               <li class="rule">
                 <p>A retro is due when 20 feedback items wait.</p>
-                <div class="rule-line"><span class="rule-example">e.g. the analyst groups them and proposes up to three rule changes</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="needs-file">needs .harness.json</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. the analyst groups them and proposes up to three rule changes</span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
               </li>
             </ul>
           </div>
@@ -1095,11 +1057,11 @@
               </li>
               <li class="rule">
                 <p>Edit and Write change project files as usual. Shell commands that write files (<code>echo &gt; file</code>, <code>tee</code>, <code>cp</code>, <code>sed -i</code>) should land in the scratch folder inside the project; elsewhere they still run, with a note. A shell write under <code>/tmp</code> also runs, with a note.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>echo hi &gt; notes.txt</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">guard.scratch, this repo: scratch/</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>echo hi &gt; notes.txt</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
               </li>
               <li class="rule">
                 <p>A repo can set <code>delegate</code> so the main session gets a note whenever it edits files itself instead of handing the work to agents.</p>
-                <div class="rule-line"><span class="rule-example">e.g. the main session runs <code>sed -i</code> on a source file</span><span class="rule-meta"><span class="rule-hook">delegate.py</span><span class="needs-file">needs .harness.json</span><span class="repo-setting">delegate, this repo: off</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. the main session runs <code>sed -i</code> on a source file</span><span class="rule-meta"><span class="rule-hook">delegate.py</span></span></div>
               </li>
             </ul>
           </div>
@@ -1391,7 +1353,7 @@
           <article class="card gap is-refuse">
             <p class="gap-severity">high</p>
             <h3 class="gap-title">No live run of this round's rules</h3>
-            <p class="gap-text">They pass 926 cases and 435 planted bugs, but no real session under <code>claude --plugin-dir .</code> has used them yet.</p>
+            <p class="gap-text">They pass 943 cases and 442 planted bugs, but no real session under <code>claude --plugin-dir .</code> has used them yet.</p>
             <p class="gap-next">Next: one live session in a fresh repo.</p>
           </article>
           <article class="card gap is-refuse">

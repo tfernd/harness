@@ -5,7 +5,7 @@ description: How to write a commit - a Conventional Commits subject, a body of b
 
 # Git commits
 
-A commit is read later by someone asking why the code is this way. In a project with `.harness.json`, a hook refuses a message
+A commit is read later by someone asking why the code is this way. In every project, a hook refuses a message
 that breaks the form below or carries AI attribution.
 
 ## The message

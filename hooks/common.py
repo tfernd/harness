@@ -18,8 +18,6 @@ CONFIG_NAME = ".harness.json"
 # The variable that points at the owner's config file, which every project gets under its own file; tests point it away.
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "harness.json"
-# The template sections every project gets with no file of its own. `guard` names project facts (a scratch folder), so it stays out.
-DEFAULT_SECTIONS = ("brief", "skill_gate", "main_edits")
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
 EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
@@ -64,13 +62,13 @@ class Project(NamedTuple):
 
 
 def find_project(cwd: str, /) -> Project:  # keys are data: the dict holds keys of the user's config, not names in code
-    """The project folder and its config: the template's DEFAULT_SECTIONS, then the owner's file, then the project's `.harness.json`.
+    """The project folder and its config: the template, then the owner's file, then the project's `.harness.json`.
 
     The project folder is the nearest one holding `.harness.json`, else the start folder itself. The search starts from
     `CLAUDE_PROJECT_DIR`, so a `cd` in a session does not change its project; from `cwd` only when the variable is not set.
-    The owner's file is `$HARNESS_CONFIG`, else `~/.config/harness/config.json`. So the budget, brief, skill, report and turn
-    checks run in every project; the guard's project rules, the commit rule and delegation need the project's file
-    (`has_project_file`). A broken file raises: each hook then exits 1, which shows the error and lets the call run.
+    The owner's file is `$HARNESS_CONFIG`, else `~/.config/harness/config.json`. Every template section is a default, so
+    every rule runs in every project; a file only overrides (`lock` and `delegate` stay off until a file names them).
+    A broken project file raises: each hook then exits 1, which shows the error and lets the call run.
     """
 
     folder = Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()
@@ -81,7 +79,7 @@ def find_project(cwd: str, /) -> Project:  # keys are data: the dict holds keys 
         owner = read_sections(user_path)
     except (OSError, ValueError):
         owner = {}
-    base = merge_sections({key: template[key] for key in DEFAULT_SECTIONS if key in template}, owner)
+    base = merge_sections(template, owner)
     for candidate in (folder, *folder.parents):
         path = candidate / CONFIG_NAME
         if path.is_file():
@@ -96,20 +94,36 @@ def has_project_file(root: Path, /) -> bool:
     return (root / CONFIG_NAME).is_file()
 
 
-def get_feedback_root(root: Path, /) -> Path:
-    """The folder that holds `harness-feedback/`: the project itself when it has its own file, else one in the data folder,
-    so no file is ever written into a repo that never opted in."""
+def is_project_root(root: Path, /) -> bool:
+    """Whether the folder may take project rules that write into it or walk it: not `/`, the home folder or a parent of it.
+
+    A folder holding its own `.harness.json` always counts, since its owner named it a project.
+    """
 
     if has_project_file(root):
+        return True
+    home = Path.home().resolve()
+
+    return root != home and root not in home.parents
+
+
+def get_feedback_root(root: Path, /) -> Path:
+    """The folder that holds `harness-feedback/`: the project itself, else one in the data folder
+    when the start folder is no project root (`/` or the home folder), so no inbox lands there."""
+
+    if is_project_root(root):
         return root
 
     return data_folder() / "projects" / (re.sub(r"[^A-Za-z0-9]+", "-", str(root)).strip("-") or "root")
 
 
 def get_scratch(root: Path, config: dict, /) -> str:  # config keys
-    """The resolved absolute folder of `guard.scratch` (`scratch/` and `./scratch` are `scratch`), empty when not set."""
+    """The resolved absolute folder of `guard.scratch` (`scratch/` and `./scratch` are `scratch`), empty when not set
+    or when the root is no project root, where a scratch rule would cover the whole home folder."""
 
     scratch = config.get("guard", {}).get("scratch")
+    if not is_project_root(root):
+        return ""
 
     return os.path.realpath(root / scratch) if scratch else ""
 

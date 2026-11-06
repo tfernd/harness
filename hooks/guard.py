@@ -27,7 +27,7 @@ Always on:
 4. Waiting (soft, see below): a `sleep` anywhere in a foreground call, loop or not, also in a `$(...)`, a `bash -c` string or a
    `find -exec`. A call with `run_in_background` may sleep: its exit wakes the agent, so the wait costs no turn.
 
-On when the project's `.harness.json` asks, under its `guard` key:
+On by default (the template's `guard` section), off where the project's `.harness.json` sets it off; `lock` stays off until a project names it:
 5. `ask_packages` (or its old name `deny_packages`): package changes (`uv add|remove|lock|sync|pip|tool`, `uvx`, `uv run pip`, `pip`, `pip3`, `python -m pip`) ask the owner
    instead of running at once. Any other rule the same command breaks still refuses it.
 6. `no_tmp` (soft): throwaway files under `/tmp`: a path a command writes there, or a Write or Edit whose path lies there.
@@ -68,7 +68,7 @@ import sys
 from collections.abc import Set
 from typing import NamedTuple
 
-from common import find_project, get_scratch, has_project_file
+from common import find_project, get_scratch
 from shell import GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 
 # The words after which the next word is the command, with no option of their own: wrappers (`command`, `exec`, `nohup`,
@@ -187,7 +187,7 @@ SLEEP_SHADOW = "sleep() { :; }; "
 
 
 class Policy(NamedTuple):
-    """What the project's `.harness.json` turns on; the defaults are the rules of a project without one."""
+    """What the merged `guard` config turns on; the defaults below are the always-on rules."""
 
     root: str = ""
     scratch: str = ""  # the absolute folder the shell may write to; empty: the rule is off
@@ -204,8 +204,6 @@ def get_policy(cwd: str, /) -> Policy:
     """The rules of the project around a working directory."""
 
     root, config = find_project(cwd)
-    if not has_project_file(root):
-        return Policy()
     guard = config.get("guard", {})
     lock = guard.get("lock", {})
 

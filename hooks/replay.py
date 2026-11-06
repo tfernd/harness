@@ -8,7 +8,7 @@
 """Replay judge: run every Bash command of the owner's past sessions through the guard's always-on rules.
 
 Why: those rules run in every project, so a false refusal costs the most. This reads `~/.claude/projects/**/*.jsonl`,
-read-only, runs the guard in no-project mode in-process, and prints the total, the refusals by rule and a sample of each,
+read-only, runs the guard in-process with the defaults each command's folder gets (the template, the owner's file, a `.harness.json` found there), and prints the total, the refusals by rule and a sample of each,
 so a person can judge which class is false. A soft rule (the call runs with a note) is listed apart from the refusals. A command runs from the folder its transcript line names, and a glob is
 matched against today's files there. A command in one folder is counted once however many sessions hold it, and prints cut
 to 120 characters on one line. It writes nothing. Stdlib only.
@@ -28,7 +28,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
-from guard import SOFT_RULES, Policy, find_command_breaches
+from guard import SOFT_RULES, Policy, find_command_breaches, get_policy
 
 MAX_SHOWN = 120
 # A line holds a Bash call only if it holds this text, which saves parsing most of the bytes.
@@ -82,9 +82,12 @@ def main() -> int:
     refused: dict[str, list[str]] = defaultdict(list)
     noted: dict[str, list[str]] = defaultdict(list)
     crashes = Counter()
+    policies: dict[str | None, Policy] = {}
     for command, cwd, is_background in sorted(distinct, key=lambda call: call[0]):
+        if cwd not in policies:
+            policies[cwd] = get_policy(cwd) if cwd else Policy()
         try:
-            for rule in find_command_breaches(command, cwd, Policy(), is_background=is_background):
+            for rule in find_command_breaches(command, cwd, policies[cwd], is_background=is_background):
                 (noted if rule in SOFT_RULES else refused)[rule].append(command)
         except RecursionError:
             crashes["recursion"] += 1

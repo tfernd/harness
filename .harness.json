@@ -1,1 +1,0 @@
-{"guard": {"scratch": "scratch", "no_tmp": true}, "brief": {}, "skill_gate": {"*.py": ["harness:code-python"], "tests/*.py": ["harness:code-python", "harness:testing"]}, "stop": {"rule_paths": ["AGENTS.md", ".harness.json", "skills", "agents", "hooks", "templates"]}}

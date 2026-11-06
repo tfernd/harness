@@ -257,25 +257,6 @@ def get_num_cases(path: Path, /) -> int:
     return sum(len(getattr(module, name)) for name in names)
 
 
-def get_repo_settings(root: Path, /) -> dict[str, str]:  # keys are data: fact token names
-    """Whether this repository's own `.harness.json` turns on each optional rule the page names."""
-
-    path = root / ".harness.json"
-    if not path.is_file():
-        return dict.fromkeys(("repo_commit", "repo_lock", "repo_packages", "repo_scratch", "repo_delegate"), "off")
-    config = json.loads(path.read_text(encoding="utf-8"))
-    guard = config.get("guard") or {}
-    scratch = str(guard.get("scratch") or "").strip("./")
-
-    return {
-        "repo_commit": "off" if guard.get("commit_style") is False else "on",
-        "repo_lock": "on" if guard.get("lock") else "off",
-        "repo_packages": "on" if guard.get("ask_packages") or guard.get("deny_packages") else "off",
-        "repo_scratch": f"{scratch}/" if scratch else "off",
-        "repo_delegate": "on" if "delegate" in config else "off",
-    }
-
-
 def get_facts(root: Path, /) -> Facts:
     """Everything the page shows, read from the repository at `root`."""
 
@@ -303,7 +284,6 @@ def get_facts(root: Path, /) -> Facts:
         "headings": ", ".join(get_constant(turn, "HEADINGS", tuple)),
         "brief_worker": ", ".join(required.get("worker", required.get("*", []))),
         **budget_values,
-        **get_repo_settings(root),
     }
 
     return Facts(agents, skills, hooks, budgets, required, {key: str(value) for key, value in values.items()})

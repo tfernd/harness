@@ -235,7 +235,7 @@ MUTANTS = (
     ("commit-other-git-judged", "commit_gate.py", 'and get_git_subcommand(words[1:]) == "commit":', ':'),
     ("commit-git-options-missed", "commit_gate.py", 'get_git_subcommand(words[1:]) == "commit"', 'words[1:2] == ["commit"]'),
     ("commit-pr-unchecked", "commit_gate.py", 'elif name == "gh" and words[1:2] == ["pr"]', "elif False"),
-    ("commit-no-off-switch", "commit_gate.py", ' or config.get("guard", {}).get("commit_style") is False', ''),
+    ("commit-no-off-switch", "commit_gate.py", '    if config.get("guard", {}).get("commit_style") is False:\n', "    if False:\n"),
     ("commit-bug-blocks", "commit_gate.py", 'sys.exit(1)', 'sys.exit(2)'),
     ("report-agent-prefix-kept", "report_gate.py", 'name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)', 'name = (event.get("agent_type") or "")'),
     ("report-missing-form-only-for-workers", "report_gate.py", "problems = check_headings(sections)", 'problems = check_headings(sections) if name == "worker" else []'),
@@ -272,7 +272,8 @@ MUTANTS = (
     ("main-edits-max-ignored", "delegate.py", 'maximum = settings.get("max", DEFAULT_MAX_EDITS)', "maximum = DEFAULT_MAX_EDITS"),
     ("main-edits-allow-ignored", "delegate.py", 'allow = settings.get("allow", list(DEFAULT_EDIT_ALLOW))', "allow = list(DEFAULT_EDIT_ALLOW)"),
     ("main-edits-note-dropped", "delegate.py", "notes = [note for note in (check_delegate(event, root, config, cwd), edit_note) if note]", "notes = [note for note in (check_delegate(event, root, config, cwd),) if note]"),
-    ("main-edits-not-a-default-section", "common.py", 'DEFAULT_SECTIONS = ("brief", "skill_gate", "main_edits")', 'DEFAULT_SECTIONS = ("brief", "skill_gate")'),
+    ("guard-not-a-default-section", "common.py", "    base = merge_sections(template, owner)", '    base = merge_sections({key: value for key, value in template.items() if key != "guard"}, owner)'),
+    ("stop-not-a-default-section", "common.py", "    base = merge_sections(template, owner)", '    base = merge_sections({key: value for key, value in template.items() if key != "stop"}, owner)'),
     ("add-drops-the-edit-path", "turn.py", 'if name in EDIT_TOOLS and isinstance(path, str) and path:', "if False:"),
     ("add-drops-notebook-path", "turn.py", 'path = tool_input.get("file_path") or tool_input.get("notebook_path")', 'path = tool_input.get("file_path")'),
     ("check-agents-reads-every-tab-line", "turn.py", 'if line.split("\\t", 1)[0] in AGENT_TOOLS and "\\t" in line]', 'if "\\t" in line]'),
@@ -302,7 +303,7 @@ MUTANTS = (
     ("budget-one-early", "budget.py", "if num_turns <= limit:", "if num_turns < limit:"),
     ("budget-counts-calls", "budget.py", "num_turns = len(turns) + (not is_written)", "num_turns = sum(map(len, turns)) + (not is_written)"),
     ("budget-line-ignored", "budget.py", "limit = get_turn_limit(get_brief(first))", "limit = None"),
-    ("budget-default-wins", "budget.py", "    if limit is None and (has_project_file(root) or agent_type.startswith(PLUGIN_PREFIX)):\n", "    if True:\n"),
+    ("budget-default-wins", "budget.py", "    if limit is None:\n        limit = get_default(", "    if True:\n        limit = get_default("),
     ("budget-defaults-ignore-config", "budget.py", 'table = config.get("budget", DEFAULT_BUDGET)\n', "table = DEFAULT_BUDGET\n"),
     ("budget-unknown-role-gets-a-budget", "budget.py", 'turns = table.get(role, table.get("*"))', "turns = table.get(role, 1)"),
     ("budget-fence-read", "budget.py", "for line in get_unfenced_lines(brief):", "for line in brief.splitlines():"),
@@ -319,19 +320,26 @@ MUTANTS = (
     ("ledger-duration-dropped", "report_gate.py", '"duration_s": duration,', '"duration_s": None,'),
     ("ledger-duration-from-first-only", "budget.py", "round(last - first, 1)", "0.0"),
     # The brief rule.
-    ("feedback-written-into-repo", "common.py", "    if has_project_file(root):\n        return root\n\n    return data_folder()", "    return root\n\n    return data_folder()"),
-    ("repo-agent-report-gated", "report_gate.py", "if not is_judged(root, event):", "if False:"),
-    ("repo-agent-default-budget", "budget.py", "if limit is None and (has_project_file(root) or agent_type.startswith(PLUGIN_PREFIX)):", "if limit is None:"),
-    ("retro-without-project-file", "turn.py", "    if has_project_file(root):\n        problems += check_lessons", "    if True:\n        problems += check_lessons"),
-    ("owner-file-ignored", "common.py", "if key in template}, owner)", "if key in template})"),
+    ("feedback-written-into-home", "common.py", "    if is_project_root(root):\n        return root\n\n    return data_folder()", "    return root\n\n    return data_folder()"),
+    ("feedback-kept-out-of-repo", "common.py", "    if is_project_root(root):\n        return root\n\n    return data_folder()", "    return data_folder()"),
+    ("repo-agent-report-skipped", "report_gate.py", '    name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)\n', '    name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)\n    if not (event.get("agent_type") or "").startswith(PLUGIN_PREFIX):\n        return 0\n'),
+    ("repo-agent-handback-skipped", "report_gate.py", "not isinstance(report, str) or tries >= MAX_SEND_BACKS", 'not isinstance(report, str) or not (event.get("agent_type") or "").startswith(PLUGIN_PREFIX) or tries >= MAX_SEND_BACKS'),
+    ("retro-in-home", "turn.py", "    if is_project_root(root):\n        problems += check_lessons", "    if True:\n        problems += check_lessons"),
+    ("retro-needs-project-file", "turn.py", "    if is_project_root(root):\n        problems += check_lessons", "    if (root / '.harness.json').is_file():\n        problems += check_lessons"),
+    ("scratch-rule-in-home", "common.py", '    if not is_project_root(root):\n        return ""\n', ""),
+    ("home-is-a-project", "common.py", "return root != home and root not in home.parents", "return root != home"),
+    ("home-parents-are-projects", "common.py", "return root != home and root not in home.parents", "return root not in home.parents"),
+    ("owner-file-ignored", "common.py", "merge_sections(template, owner)", "merge_sections(template)"),
     ("transcript-non-object-kept", "turn.py", "            if isinstance(event, dict):\n                lines.append(event)", "            lines.append(event)"),
     ("guard-curl-output-unread", "guard.py", 'outputs = get_option_values(arguments, "o", "--output")', "outputs = []"),
     ("guard-notebook-path-unread", "guard.py", 'tool_input.get("file_path") or tool_input.get("notebook_path")', 'tool_input.get("file_path")'),
     ("broken-owner-file-raises", "common.py", "    except (OSError, ValueError):\n        owner = {}", "    except ZeroDivisionError:\n        owner = {}"),
     ("owner-file-beats-project", "common.py", "return Project(candidate, merge_sections(base, read_sections(path)))", "return Project(candidate, merge_sections(read_sections(path), base))"),
-    ("defaults-dropped", "common.py", 'DEFAULT_SECTIONS = ("brief", "skill_gate", "main_edits")', "DEFAULT_SECTIONS = ()"),
-    ("guard-rules-without-project-file", "guard.py", "    if not has_project_file(root):\n        return Policy()\n", ""),
-    ("commit-rule-without-project-file", "commit_gate.py", "if not has_project_file(root) or ", "if "),
+    ("defaults-dropped", "common.py", "    base = merge_sections(template, owner)", "    base = merge_sections({}, owner)"),
+    ("guard-rules-need-project-file", "guard.py", "    root, config = find_project(cwd)\n    guard = config", "    root, config = find_project(cwd)\n    if not (root / '.harness.json').is_file():\n        return Policy()\n    guard = config"),
+    ("commit-rule-needs-project-file", "commit_gate.py", "    if config.get(", "    if not (root / '.harness.json').is_file() or config.get("),
+    ("package-ask-off-by-default", "guard.py", 'ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),', 'ask_packages=bool(guard.get("deny_packages")),'),
+    ("tests-skill-not-gated", "common.py", "    base = merge_sections(template, owner)", '    template = {**template, "skill_gate": {key: value for key, value in template["skill_gate"].items() if key != "tests/*.py"}}\n    base = merge_sections(template, owner)'),
     ("brief-generic-allowed", "brief_lint.py", "if agent_type in GENERIC_AGENTS:", "if False:"),
     ("brief-no-type-allowed", "brief_lint.py", 'GENERIC_AGENTS = frozenset({"", "general-purpose"', 'GENERIC_AGENTS = frozenset({"general-purpose"'),
     ("brief-judges-sub-agents", "brief_lint.py", '    if event.get("agent_id"):\n        return 0\n', ""),
@@ -382,8 +390,8 @@ MUTANTS = (
     ("import-ledger-newline-not-joined", "import_reports.py", "if lacks_newline:", "if False:"),
     ("replay-soft-rule-refused", "replay.py", "(noted if rule in SOFT_RULES else refused)[rule]", "refused[rule]"),
     ("replay-command-counted-per-session", "replay.py", "distinct.add(call)", 'distinct.add((call[0], f"{call[1]}{path}", call[2]))'),
-    ("replay-glob-folder-unknown", "replay.py", "find_command_breaches(command, cwd, Policy(), is_background=is_background)", "find_command_breaches(command, None, Policy(), is_background=is_background)"),
-    ("replay-glob-judged-in-the-root", "replay.py", "find_command_breaches(command, cwd, Policy(), is_background=is_background)", 'find_command_breaches(command, "/", Policy(), is_background=is_background)'),
+    ("replay-glob-folder-unknown", "replay.py", "find_command_breaches(command, cwd, policies[cwd], is_background=is_background)", "find_command_breaches(command, None, policies[cwd], is_background=is_background)"),
+    ("replay-glob-judged-in-the-root", "replay.py", "find_command_breaches(command, cwd, policies[cwd], is_background=is_background)", 'find_command_breaches(command, "/", policies[cwd], is_background=is_background)'),
     # The tool-turn nudge.
     ("nudge-run-long", "nudge.py", "RUN_LENGTH = 3", "RUN_LENGTH = 4"),
     ("nudge-run-never", "nudge.py", "if run and run % RUN_LENGTH == 0:", "if False:"),
@@ -489,10 +497,9 @@ MUTANTS = (
     ("handback-mode-ignored", "report_gate.py", 'if sys.argv[1:2] == ["handback"]:', "if False:"),
     ("handback-never-refused", "report_gate.py", "    print(make_send_back(problems, is_handback=True), file=sys.stderr)\n\n    return 2", "    print(make_send_back(problems, is_handback=True), file=sys.stderr)\n\n    return 0"),
     ("handback-not-counted", "report_gate.py", "    write_atomic(get_send_backs_path(event), str(tries + 1))\n    print(make_send_back(problems, is_handback=True)", "    print(make_send_back(problems, is_handback=True)"),
-    ("handback-no-cap", "report_gate.py", "or not is_judged(root, event) or tries >= MAX_SEND_BACKS:", "or not is_judged(root, event):"),
+    ("handback-no-cap", "report_gate.py", "not isinstance(report, str) or tries >= MAX_SEND_BACKS:", "not isinstance(report, str):"),
     ("handback-asks-for-sections", "report_gate.py", "print(make_send_back(problems, is_handback=True), file=sys.stderr)", "print(make_send_back(problems), file=sys.stderr)"),
     ("handback-claims-unread", "report_gate.py", 'judged = {**event, "agent_transcript_path": str(path)} if path is not None else event', "judged = event"),
-    ("handback-judges-every-agent", "report_gate.py", "or not is_judged(root, event) or tries", "or tries"),
     # The app's notices of a finished agent, and the Agents section of the status.
     ("notice-attachment-unread", "turn.py", 'if line.get("type") == "attachment" and isinstance(attachment, dict) and isinstance(attachment.get("prompt"), str):', "if False:"),
     ("notice-queue-unread", "turn.py", 'if line.get("type") == "queue-operation" and isinstance(line.get("content"), str):', "if False:"),
@@ -516,10 +523,13 @@ class MutantRun(NamedTuple):
 def run_mutant(name: str, script: str, old: str, new: str, /) -> MutantRun:
     """Breaks a copy of the hooks and runs the cases on it; returns the name, the exit code and the failed cases."""
 
-    folder = WORK / name
-    if folder.exists():
-        shutil.rmtree(folder)
+    base = WORK / name
+    folder = base / "hooks"
+    if base.exists():
+        shutil.rmtree(base)
     shutil.copytree(HOOKS, folder, ignore=shutil.ignore_patterns("__pycache__"))
+    # The hooks read the template beside their folder, so a copy without it would run with no defaults.
+    shutil.copytree(HARNESS / "templates", base / "templates")
     path = folder / script
     path.write_text(path.read_text().replace(old, new))
     command = ["uv", "run", "python", str(RUN_CASES), "--hooks", str(folder), "--fail-fast", "--first", script, "--threads", str(CASE_THREADS)]
@@ -528,7 +538,7 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> MutantRun:
     except subprocess.TimeoutExpired:
         return MutantRun(name, TIMED_OUT, [])
     finally:
-        shutil.rmtree(folder, ignore_errors=True)
+        shutil.rmtree(base, ignore_errors=True)
     failed = [line[5:].split(":")[0] for line in run.stdout.splitlines() if line.startswith("FAIL")]
 
     return MutantRun(name, run.returncode, failed)

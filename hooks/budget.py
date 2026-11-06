@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on every tool: in a project with `.harness.json`, a sub-agent past its budget of model turns is refused every
+"""PreToolUse hook on every tool: in every project, a sub-agent past its budget of model turns is refused every
 tool call but the handback and told to send its report now, as a partial one. A call without `agent_id` came from the main session and
 passes.
 
@@ -26,7 +26,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, has_project_file, read_events
+from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, read_events
 
 # Turns meant to stop a runaway agent and no ordinary one. Defaults, not a measurement; a brief's `Budget:` line overrides them.
 # The fewest turns left when the note comes; a budget under this gets no note.
@@ -146,8 +146,7 @@ def main() -> int:
         first = {}
     agent_type = event.get("agent_type") or ""
     limit = get_turn_limit(get_brief(first))
-    # A repo's own agents get a default budget only where the repo opted in with its own file; harness roles get one everywhere.
-    if limit is None and (has_project_file(root) or agent_type.startswith(PLUGIN_PREFIX)):
+    if limit is None:
         limit = get_default(config, agent_type.removeprefix(PLUGIN_PREFIX))
     if limit is None:
         return 0

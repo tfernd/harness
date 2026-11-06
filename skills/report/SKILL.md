@@ -42,7 +42,7 @@ a failing command quoted with its exit code>
 | Problems | If any | One cause from the list per item, and the words "would have helped" with what would have |
 | Next time | If different | Left out when you would do the same |
 | Open | If any | Includes a change needed outside your write set, with its file |
-| Feedback | If any | Each item names a file to change; it goes to `harness-feedback/inbox.md` for a retro: the project's with `.harness.json`, else the plugin's data folder |
+| Feedback | If any | Each item names a file to change; it goes to `harness-feedback/inbox.md` for a retro: the project's (the plugin's data folder when the start folder is `/` or the home folder) |
 | Verdict | Always | Last. `done`, `partial` or `blocked`, then one sentence |
 
 Write the Verdict after the rest and let it follow from it. If Not proven holds something the job needed, the word is

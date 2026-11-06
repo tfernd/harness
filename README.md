@@ -23,7 +23,7 @@ how the parts fit, what it stops and what it does not.
 ## How you use it
 
 Install it once (see [AGENTS.md](AGENTS.md)) and run `/harness:init` in a project. Then work as usual: you ask, and the
-main session follows the `orchestrator` skill. `/harness:init` writes `.harness.json` and an `AGENTS.md`. You see a refusal
+main session follows the `orchestrator` skill. `/harness:init` writes an `AGENTS.md` (and a `.harness.json` only when the project needs an override). You see a refusal
 only when a hook stops something (the agent is told what to change, so usually you do nothing), a question when a package
 change needs your yes, and a closing status after a big job. In this repo, `make help` lists the checks.
 
@@ -49,16 +49,17 @@ you ── ask ──> main session (follows the orchestrator skill)
 Skills are text the model reads. Hooks run outside the model, so it cannot talk its way past them. Reports are where the
 two meet: a skill says what to write, a hook checks it.
 
-## Two modes
+## One mode: everywhere
 
-| Mode | When | What runs |
-|---|---|---|
-| **Everywhere** | The plugin is installed; no file needed | The safety guard, start-up context, turn tracking, the brief, skill, budget and report checks for `harness:` roles. Feedback goes to the plugin's data folder; nothing is written into the repo |
-| **Opted in** | The project has a `.harness.json` | All of the above, plus the guard's project rules (scratch, `/tmp`, packages, lock), the commit rule, retros, budgets and reports for the repo's own agents, and each rule its keys switch on |
+Every rule runs in every repo with no setup: the safety guard with its scratch folder (`scratch/`), `/tmp` and package-change
+rules, the commit rule, start-up context, turn tracking, retros and the feedback inbox, the brief, skill, budget and report
+checks for every agent, and the cap on the main session's own edits. Two rules stay off until a project names them: `guard.lock`
+(it needs a wrapper command) and `delegate`. A start folder that is `/`, the home folder or a parent of it is no project: there
+the scratch rule is off and the feedback goes to the plugin's data folder, not into the folder.
 
-Settings come in three layers, each key over the one before: the plugin's defaults, the owner's file
-(`~/.config/harness/config.json`, or `$HARNESS_CONFIG`), then the project's `.harness.json`. The plugin's defaults that apply in every repo,
-with or without a `.harness.json`, are the template's `brief`, `skill_gate` and `main_edits` sections (`DEFAULT_SECTIONS` in `hooks/common.py`).
+Settings come in three layers, each key over the one before: the plugin's defaults (all of `templates/harness.json`), the owner's file
+(`~/.config/harness/config.json`, or `$HARNESS_CONFIG`), then the project's `.harness.json`, which only overrides. A rule a project
+wants off is set off there, for example `"commit_style": false` or `"main_edits": {"max": 0}`.
 
 ## The hooks and what they stop
 
@@ -88,7 +89,7 @@ ledger.
 
 - **It is not a sandbox.** The guard reads command text. A script that deletes files from inside Python, or a command
   built from variables it cannot see, gets through.
-- **It fails open.** A bug in a hook, or a broken `.harness.json`, lets the call run. A hook never blocks on its own error.
+- **It fails open.** A bug in a hook, or a broken optional `.harness.json`, lets the call run. A hook never blocks on its own error.
 - **Read-only agents still have Bash.** `scout`, `reviewer` and the others have no Edit or Write tool, but a shell command
   can write; only the guard applies to it.
 - **Skills are mostly advice.** `skill_gate` reads a script's text, so a path built at run time gets past it. `tool-habits` is injected, but nothing checks that it is followed.
@@ -156,13 +157,13 @@ bin/harness-port --target cortex    # ~/.snowflake/cortex: skills, agents, hooks
 
 ## Configuration: `.harness.json`
 
-Every key is optional; the same keys work in the owner's file. `{}` opts a project in with the defaults.
+Every key is optional and the file itself is not needed: the defaults apply without it. The same keys work in the owner's file.
 
 | Key | Effect |
 |---|---|
-| `guard` | `scratch` names the scratch folder, `no_tmp` refuses `/tmp`, `ask_packages` asks before package changes, `lock` forces Python through a wrapper, `commit_style: false` turns the commit rule off |
+| `guard` | `scratch` names the scratch folder, `no_tmp` refuses `/tmp`, `ask_packages` asks before package changes, `lock` forces Python through a wrapper (off until set), `commit_style: false` turns the commit rule off |
 | `main_edits` | `max` (default 3, 0 is off) and `allow` (globs; default `harness-feedback/*`, `scratch/*`): the main session's edits per turn outside `allow` before the hook refuses and the change goes to a worker |
-| `delegate` | The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
+| `delegate` | Off until set. The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
 | `brief` | Briefs must hold the lines each role needs. `required` replaces the defaults |
 | `skill_gate` | Maps a file pattern to the skills to load before editing it |
 | `budget` | Model turns per role, with `*` for the rest. It replaces the default table, so an unlisted role has none. A brief overrides it with `Budget: 30 turns` |

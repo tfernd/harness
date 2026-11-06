@@ -6,7 +6,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Every push reaches every project that has it installed, so run `uv run python tests/run_cases.py` and `uv run python tests/check_leaks.py` before pushing.
 - Once per clone: `make setup` (it runs `git config core.hooksPath .githooks`, the pre-push check). `make help` lists the
   targets; `make check` is what the push runs. `make clean` empties `scratch/`, so run it only when you own the folder.
-- This repo runs under its own plugin: `.harness.json`. A hook or skill that gets in the way here
+- This repo runs under its own plugin, with the defaults and no `.harness.json`. A hook or skill that gets in the way here
   gets in the way everywhere, so fix it in the plugin.
 
 ## Install, update, set up a project
@@ -14,12 +14,11 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Install once per machine, then restart Claude Code or run `/reload-plugins`:
   `claude plugin marketplace add tfernd/harness` and `claude plugin install harness@harness --scope user`.
 - Update: `claude plugin marketplace update harness` and `claude plugin update harness@harness`. Every pushed commit is a version.
-- Per project, run `/harness:init` once. It writes `.harness.json` and `AGENTS.md` from `templates/`,
+- Per project, run `/harness:init` once. It writes `AGENTS.md` from `templates/` (and a `.harness.json` only if the project needs an override),
   asks only what the files do not settle, and shows a diff before touching an existing file.
-- A team commits `.harness.json` and `AGENTS.md`; each member still installs the plugin.
+- A team commits `AGENTS.md` (and `.harness.json` if it has one); each member still installs the plugin.
 - Uninstall: `claude plugin uninstall harness@harness`. Develop without touching the installed copy: `claude --plugin-dir .`.
-- Hooks do nothing: `uv` is missing. Without `.harness.json` the checks still run, but the guard's project rules, the commit rule
-  and retros stay off. A "harness guard
+- Hooks do nothing: `uv` is missing. Every rule runs with no `.harness.json`; it only overrides. A "harness guard
   blocked" message names the rule and the change to make.
 - `bin/harness-import` imports past report cards from transcripts into the ledger (`--dry-run` writes nothing).
 - `bin/compaction-report` measures what auto-compaction costs in your Claude Code logs and replays each session at other thresholds (`make compaction`; `--since`/`--until` take a window).

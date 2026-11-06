@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on Bash: in a project with `.harness.json`, a commit message follows `harness:git-commit`.
+"""PreToolUse hook on Bash: in every project, a commit message follows `harness:git-commit`.
 
 The message comes from `-m`, `-F` or a heredoc in the same command. A subject is `type(scope): summary` with no trailing period,
 then a blank line and `* ` or `- ` bullets, then an optional footer. A pull request is checked for AI attribution only.
@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-from common import find_project, has_project_file
+from common import find_project
 from guard import get_git_subcommand
 from shell import get_segments
 
@@ -152,7 +152,7 @@ def main() -> int:
     event = json.load(sys.stdin)
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
-    if not has_project_file(root) or config.get("guard", {}).get("commit_style") is False:
+    if config.get("guard", {}).get("commit_style") is False:
         return 0
     problems = find_problems((event.get("tool_input") or {}).get("command") or "", cwd)
     if not problems:

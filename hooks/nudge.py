@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PostToolUse hook on Read, Grep, Glob and Bash: in a project with `.harness.json`, adds one line of context at the moment an
+"""PostToolUse hook on Read, Grep, Glob and Bash: in every project, adds one line of context at the moment an
 agent wastes tool turns, and never refuses. It fires on an exact repeat of a small read with no edit since, and on
 every RUN_LENGTH single small reads in a row, at most MAX_NUDGES times per agent, and stays silent past MAX_BYTES of transcript.
 It also notes, once per agent, a test, lint or build piped into `tail` or `head` with no `pipefail`, which hides the failure. A call in the agent's own transcript counts,

@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on Agent and Task: in a project whose `.harness.json` has a `brief` key, the main session's prompt for a
+"""PreToolUse hook on Agent and Task: in every project (the template has a `brief` key), the main session's prompt for a
 harness role should hold the lines the role needs. The call always runs; a prompt that falls short gets a note in
 `additionalContext`. A call that carries `agent_id` came from a sub-agent and passes unchecked.
 

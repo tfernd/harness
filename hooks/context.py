@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""SessionStart and SubagentStart hook: in a project with `.harness.json`, tells a session what it owes.
+"""SessionStart and SubagentStart hook: in every project, tells a session what it owes.
 
 Both get the `tool-habits` skill and the setup facts that cost past agents a refused call: which tools may be missing, the shell, and the scratch folder. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells any agent
 the report form, the last lessons handled for its role and the open problems a retro kept. SessionStart also

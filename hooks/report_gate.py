@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""SubagentStop hook: in a project with `.harness.json`, every sub-agent stops only with a report in the `report` skill's
+"""SubagentStop hook: in every project, every sub-agent stops only with a report in the `report` skill's
 form, whose claims its own transcript backs.
 
 Answer, Not proven and Verdict are required; Problems, Next time, Open and Feedback appear when they have something to say.
@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
-from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_feedback_root, get_fenced_indices, get_scratch, get_unfenced_lines, has_project_file, read_events, write_atomic
+from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_feedback_root, get_fenced_indices, get_scratch, get_unfenced_lines, read_events, write_atomic
 from nudge import get_turn_stats
 
 # The form's sections in order; the rest are left out when they have nothing to say.
@@ -758,12 +758,6 @@ def get_problems(report: str, event: dict, root: Path, config: dict, found: Assi
     return problems
 
 
-def is_judged(root: Path, event: dict, /) -> bool:  # keys are data
-    """Whether the agent owes the form: a harness role anywhere; a repo's own agent only where the repo opted in with its own file."""
-
-    return has_project_file(root) or (event.get("agent_type") or "").startswith(PLUGIN_PREFIX)
-
-
 def check_handback(event: dict, /) -> int:  # keys are data
     """PreToolUse on the handback: a bad report is refused while the agent can still fix it.
 
@@ -774,7 +768,7 @@ def check_handback(event: dict, /) -> int:  # keys are data
     root, config = find_project(event.get("cwd") or os.getcwd())
     report = (event.get("tool_input") or {}).get("message")
     tries = get_send_backs(event)
-    if not event.get("agent_id") or not isinstance(report, str) or not is_judged(root, event) or tries >= MAX_SEND_BACKS:
+    if not event.get("agent_id") or not isinstance(report, str) or tries >= MAX_SEND_BACKS:
         return 0
     path = get_agent_path(event)
     found = read_assistant_blocks(str(path)) if path is not None else AssistantBlocks([], {}, None, {})
@@ -795,9 +789,6 @@ def main() -> int:
         return check_handback(event)
     root, config = find_project(event.get("cwd") or os.getcwd())
     name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
-    # A repo's own agents keep their own report form unless the repo opted in with its own file.
-    if not is_judged(root, event):
-        return 0
     path = event.get("agent_transcript_path") or ""
     tries = get_send_backs(event)
     kept = get_kept(event, tries)

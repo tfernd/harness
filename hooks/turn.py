@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""The main session's turn, in a project with `.harness.json`: `reset` at its start, `add` per call, `stop` at its end.
+"""The main session's turn, in every project: `reset` at its start, `add` per call, `stop` at its end.
 
 `turn.py reset` (UserPromptSubmit) empties the call count and saves a hash of each rule file. A task notification also
 fires UserPromptSubmit (probed in a headless run); while a status is still due (a `deferred` mark exists), `reset` keeps the
@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 # HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
-from common import EDIT_TOOLS, FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines, has_project_file, write_atomic
+from common import EDIT_TOOLS, FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines, is_project_root, write_atomic
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
@@ -429,8 +429,8 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
     handled: set[str] = set()
     invalid: dict[str, str] = {}
     open_ids: list[str] = []
-    # Lessons and retros write rules into the repo's files, so they hold only a repo that opted in with its own file.
-    if has_project_file(root):
+    # Lessons and retros read the repo's rule files and write its inbox, so they skip a start folder that is no project root.
+    if is_project_root(root):
         problems += check_lessons(message, rules_path, root, config, transcript)
         handled, invalid = get_handled(root, rules_path, config)
         open_ids = get_open_feedback(root, session, released, handled)
@@ -494,8 +494,8 @@ def main() -> int:
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
         if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
             write_atomic(calls_path, "")
-            # Rule hashes serve only the lessons and retro checks of an opted-in project; elsewhere the walk could be huge.
-            if has_project_file(root):
+            # Rule hashes serve only the lessons and retro checks; in the home folder the walk could be huge.
+            if is_project_root(root):
                 write_atomic(rules_path, json.dumps(get_rule_state(root, config)))
         write_atomic(blocks_path, "0")
     elif mode == "stop":
