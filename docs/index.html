@@ -271,6 +271,134 @@
       color: var(--ink);
     }
 
+    .install-tabs {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .install-tablist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+
+    .install-tab,
+    .install-copy {
+      font: inherit;
+      font-size: var(--text-sm);
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      padding: var(--space-1) var(--space-2);
+      cursor: pointer;
+    }
+
+    .install-tab[aria-selected="true"] {
+      color: var(--ink);
+      border-color: var(--accent);
+    }
+
+    .install-tab:focus-visible,
+    .install-copy:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .install-panel {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1) var(--space-2);
+    }
+
+    .install-panel .install-command {
+      overflow-wrap: anywhere;
+    }
+
+    .install-note {
+      margin: 0;
+      font-size: var(--text-xs);
+    }
+
+    .port-badges {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-inline-start: var(--space-2);
+      vertical-align: middle;
+    }
+
+    .port-badge,
+    .port-key {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: var(--text-xs);
+      line-height: 1.4;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      padding: 0 var(--space-1);
+      color: var(--ink);
+      background: var(--surface);
+    }
+
+    .port-badge svg {
+      width: 0.75rem;
+      height: 0.75rem;
+      fill: currentColor;
+    }
+
+    .port-badge[data-state="runs"],
+    .port-key[data-state="runs"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--surface);
+    }
+
+    .port-badge[data-state="advisory"],
+    .port-key[data-state="advisory"] {
+      color: var(--ask);
+      border-color: var(--ask);
+    }
+
+    .port-badge[data-state="off"],
+    .port-key[data-state="off"] {
+      color: var(--muted);
+      border-style: dashed;
+    }
+
+    .port-legend {
+      margin: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1) var(--space-2);
+      font-size: var(--text-xs);
+      color: var(--muted);
+    }
+
+    .port-notes {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--text-sm);
+    }
+
+    .port-notes caption {
+      text-align: start;
+      font-weight: 700;
+      padding-block-end: var(--space-2);
+      color: var(--ink);
+    }
+
+    .port-notes th,
+    .port-notes td {
+      text-align: start;
+      vertical-align: top;
+      padding: var(--space-1) var(--space-2);
+      border-block-end: 1px solid var(--line);
+    }
+
     .section {
       display: grid;
       gap: var(--space-3);
@@ -878,12 +1006,31 @@
         <li class="stats-item"><span class="stats-value">943</span> test cases</li>
         <li class="stats-item"><span class="stats-value">442</span> planted bugs, each caught by a case</li>
       </ul>
-      <p class="install">
+      <div class="install" data-install>
         <span>Install:</span>
-        <code class="install-command">claude plugin marketplace add tfernd/harness</code>
-        <code class="install-command">claude plugin install harness@harness --scope user</code>
+        <div class="install-tabs">
+          <div class="install-tablist" role="tablist" aria-label="Install target">
+            <button type="button" class="install-tab" role="tab" id="install-tab-claude" aria-controls="install-panel-claude" aria-selected="true" tabindex="0">Claude Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-cortex" aria-controls="install-panel-cortex" aria-selected="false" tabindex="-1">Cortex Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-kiro" aria-controls="install-panel-kiro" aria-selected="false" tabindex="-1">Kiro</button>
+          </div>
+          <div class="install-panel" role="tabpanel" id="install-panel-claude" aria-labelledby="install-tab-claude">
+            <code class="install-command">claude plugin marketplace add tfernd/harness</code>
+            <code class="install-command">claude plugin install harness@harness --scope user</code>
+            <button type="button" class="install-copy" data-copy="claude plugin marketplace add tfernd/harness &amp;&amp; claude plugin install harness@harness --scope user">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
+            <code class="install-command">git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target cortex</code>
+            <button type="button" class="install-copy" data-copy="git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target cortex">Copy</button>
+          </div>
+          <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
+            <code class="install-command">git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target kiro</code>
+            <button type="button" class="install-copy" data-copy="git clone -q https://github.com/tfernd/harness ~/.local/share/harness 2&gt;/dev/null; git -C ~/.local/share/harness pull -q &amp;&amp; ~/.local/share/harness/bin/harness-port --target kiro">Copy</button>
+          </div>
+          <p class="install-note">Rerun a Cortex or Kiro line to update; add <code>--uninstall</code> to its harness-port command to remove it.</p>
+        </div>
         <a href="https://github.com/tfernd/harness">Source</a>
-      </p>
+      </div>
     </header>
 
     <main class="page-main">
@@ -923,6 +1070,13 @@
           <h2 class="section-title" id="strict-title">Six levels, from stopped to advice</h2>
           <p class="section-intro">Higher means stricter and fewer rules; pick a level to see its rules in plain words.</p>
         </div>
+        <p class="port-legend">
+          <span>Ported to, per rule:</span>
+          <span class="port-key" data-state="runs">runs</span>
+          <span class="port-key" data-state="advisory">advisory, warns but blocks nothing</span>
+          <span class="port-key" data-state="off">not ported</span>
+        </p>
+        <table class="port-notes"><caption>What the port cannot show</caption><thead><tr><th scope="col">Hook</th><th scope="col">Tool</th><th scope="col">State</th><th scope="col">Note</th><th scope="col">Source</th></tr></thead><tbody><tr><td><code>report_gate.py</code></td><td>Cortex</td><td>advisory, warns but blocks nothing</td><td>Cortex cannot block at SubagentStop</td><td>README.md line 163</td></tr><tr><td><code>guard.py</code></td><td>Kiro</td><td>runs</td><td>an &quot;ask&quot; becomes a block</td><td>README.md line 159</td></tr><tr><td><code>guard.py</code></td><td>Cortex</td><td>runs</td><td>an &quot;ask&quot; becomes a block</td><td>README.md line 163</td></tr></tbody></table>
         <div class="strict" data-chooser>
           <div class="pyramid-box">
             <div class="pyramid" role="group" aria-label="Strictness levels, strictest first">
@@ -945,31 +1099,31 @@
             <ul class="rule-list">
               <li class="rule">
                 <p>Deleting files is refused. With a scratch folder set, <code>rm</code> of named files inside it is allowed.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>rm -rf build/</code>, <code>git clean -fd</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>rm -rf build/</code>, <code>git clean -fd</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>Rewriting shared history is refused.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>git push --force</code>, <code>git reset --hard</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>git push --force</code>, <code>git reset --hard</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A wildcard the shell would get wrong is refused: one that matches no file, or one meant for the command itself.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>ls *.nothing</code>; write <code>find . -name '*.py'</code>, quoted</span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>ls *.nothing</code>; write <code>find . -name '*.py'</code>, quoted</span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>An agent without a harness role is refused.</p>
-                <div class="rule-line"><span class="rule-example">e.g. a general-purpose agent; send the brief to <code>harness:scout</code> or <code>harness:worker</code></span><span class="rule-meta"><span class="rule-hook">brief_lint.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. a general-purpose agent; send the brief to <code>harness:scout</code> or <code>harness:worker</code></span><span class="rule-meta"><span class="rule-hook">brief_lint.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="off"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: not ported"><title>Cortex: not ported</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>An agent past its turn budget can only hand back its report.</p>
-                <div class="rule-line"><span class="rule-example">e.g. a worker past its 70 turns</span><span class="rule-meta"><span class="rule-hook">budget.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. a worker past its 70 turns</span><span class="rule-meta"><span class="rule-hook">budget.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A commit message must look like <code>fix(hooks): keep the last token</code> followed by bullet lines, and must never credit an AI.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>git commit -m "fixed stuff"</code>, or a Co-Authored-By line naming an AI</span><span class="rule-meta"><span class="rule-hook">commit_gate.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>git commit -m "fixed stuff"</code>, or a Co-Authored-By line naming an AI</span><span class="rule-meta"><span class="rule-hook">commit_gate.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A project can name a wrapper that every Python run must go through, such as a queue that shares one GPU; a bare run is then refused.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>python train.py</code> without the wrapper</span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>python train.py</code> without the wrapper</span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
             </ul>
           </div>
@@ -982,7 +1136,7 @@
             <ul class="rule-list">
               <li class="rule">
                 <p>Adding or removing packages asks you first.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>pip install requests</code>, <code>uv add httpx</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>pip install requests</code>, <code>uv add httpx</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
             </ul>
           </div>
@@ -995,15 +1149,15 @@
             <ul class="rule-list">
               <li class="rule">
                 <p>A report needs its parts: what was done, what is not proven, and a verdict of done, partial or blocked.</p>
-                <div class="rule-line"><span class="rule-example">e.g. a report with no <code>## Verdict</code></span><span class="rule-meta"><span class="rule-hook">report_gate.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. a report with no <code>## Verdict</code></span><span class="rule-meta"><span class="rule-hook">report_gate.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="advisory"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: advisory, warns but blocks nothing"><title>Cortex: advisory, warns but blocks nothing</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="off"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: not ported"><title>Kiro: not ported</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>Each claim must match what the agent really did.</p>
-                <div class="rule-line"><span class="rule-example">e.g. "tests pass" with no command run, or a changed file it does not name</span><span class="rule-meta"><span class="rule-hook">report_gate.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. "tests pass" with no command run, or a changed file it does not name</span><span class="rule-meta"><span class="rule-hook">report_gate.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="advisory"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: advisory, warns but blocks nothing"><title>Cortex: advisory, warns but blocks nothing</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="off"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: not ported"><title>Kiro: not ported</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A report stays short: at most 6000 characters outside code blocks.</p>
-                <div class="rule-line"><span class="rule-example">e.g. a whole test log pasted as prose</span><span class="rule-meta"><span class="rule-hook">report_gate.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. a whole test log pasted as prose</span><span class="rule-meta"><span class="rule-hook">report_gate.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="advisory"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: advisory, warns but blocks nothing"><title>Cortex: advisory, warns but blocks nothing</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="off"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: not ported"><title>Kiro: not ported</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
             </ul>
           </div>
@@ -1016,19 +1170,19 @@
             <ul class="rule-list">
               <li class="rule">
                 <p>A long turn ends with a closing status, and waits while background agents still run.</p>
-                <div class="rule-line"><span class="rule-example">e.g. after 3 or more edits or agent calls: Verdict, Done, Needs you, Next, Lessons</span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. after 3 or more edits or agent calls: Verdict, Done, Needs you, Next, Lessons</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A turn that ran agents names each one under <code>## Agents</code>, with its verdict.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>- find the config loader: done, no problems</code></span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>- find the config loader: done, no problems</code></span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A lesson must change a rule file, or the status says <code>Lessons: none</code>.</p>
-                <div class="rule-line"><span class="rule-example">e.g. "Lessons: be more careful" with no rule changed</span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. "Lessons: be more careful" with no rule changed</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A retro is due when 20 feedback items wait.</p>
-                <div class="rule-line"><span class="rule-example">e.g. the analyst groups them and proposes up to three rule changes</span><span class="rule-meta"><span class="rule-hook">turn.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. the analyst groups them and proposes up to three rule changes</span><span class="rule-meta"><span class="rule-hook">turn.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
             </ul>
           </div>
@@ -1041,27 +1195,27 @@
             <ul class="rule-list">
               <li class="rule">
                 <p>The rules for a kind of file arrive before its first edit.</p>
-                <div class="rule-line"><span class="rule-example">e.g. the first edit of a <code>.py</code> file brings the Python style rules</span><span class="rule-meta"><span class="rule-hook">skill_gate.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. the first edit of a <code>.py</code> file brings the Python style rules</span><span class="rule-meta"><span class="rule-hook">skill_gate.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A brief missing a line its role needs gets a note.</p>
-                <div class="rule-line"><span class="rule-example">e.g. a worker's brief needs Goal:, Write set:, Judge:</span><span class="rule-meta"><span class="rule-hook">brief_lint.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. a worker's brief needs Goal:, Write set:, Judge:</span><span class="rule-meta"><span class="rule-hook">brief_lint.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="off"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: not ported"><title>Cortex: not ported</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>Wasted reads and hidden failures get a note.</p>
-                <div class="rule-line"><span class="rule-example">e.g. the same small file read twice; <code>pytest | tail</code> without <code>pipefail</code></span><span class="rule-meta"><span class="rule-hook">nudge.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. the same small file read twice; <code>pytest | tail</code> without <code>pipefail</code></span><span class="rule-meta"><span class="rule-hook">nudge.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A <code>sleep</code> that would block the session is removed or moved to the background.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>sleep 30 &amp;&amp; make test</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>sleep 30 &amp;&amp; make test</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>Edit and Write change project files as usual. Shell commands that write files (<code>echo &gt; file</code>, <code>tee</code>, <code>cp</code>, <code>sed -i</code>) should land in the scratch folder inside the project; elsewhere they still run, with a note. A shell write under <code>/tmp</code> also runs, with a note.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>echo hi &gt; notes.txt</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>echo hi &gt; notes.txt</code></span><span class="rule-meta"><span class="rule-hook">guard.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>A repo can set <code>delegate</code> so the main session gets a note whenever it edits files itself instead of handing the work to agents.</p>
-                <div class="rule-line"><span class="rule-example">e.g. the main session runs <code>sed -i</code> on a source file</span><span class="rule-meta"><span class="rule-hook">delegate.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. the main session runs <code>sed -i</code> on a source file</span><span class="rule-meta"><span class="rule-hook">delegate.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
             </ul>
           </div>
@@ -1078,7 +1232,7 @@
               </li>
               <li class="rule">
                 <p>Cheap tool calls: one script per job, the checks chained in one call.</p>
-                <div class="rule-line"><span class="rule-example">e.g. <code>tool-habits</code>, put in front of every session and agent</span><span class="rule-meta"><span class="rule-hook">context.py</span></span></div>
+                <div class="rule-line"><span class="rule-example">e.g. <code>tool-habits</code>, put in front of every session and agent</span><span class="rule-meta"><span class="rule-hook">context.py</span><span class="port-badges" role="group" aria-label="Ported to"><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Claude: runs"><title>Claude: runs</title><path d="M6 1l1.4 3.6L11 6 7.4 7.4 6 11 4.6 7.4 1 6l3.6-1.4z"/></svg>Claude</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Cortex: runs"><title>Cortex: runs</title><path d="M1 1h4v4H1zm6 0h4v4H7zM1 7h4v4H1zm6 0h4v4H7z"/></svg>Cortex</span><span class="port-badge" data-state="runs"><svg viewBox="0 0 12 12" role="img" aria-label="Kiro: runs"><title>Kiro: runs</title><path d="M6 1l5 10H1z"/></svg>Kiro</span></span></span></div>
               </li>
               <li class="rule">
                 <p>How to brief, review, audit, test, debug and refactor.</p>
@@ -1456,6 +1610,77 @@
     });
     applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
     for (const chooser of document.querySelectorAll("[data-chooser]")) bindChooser(chooser);
+  </script>
+
+  <script type="module">
+    const COPY_LABEL = "Copy";
+    const COPIED_LABEL = "Copied";
+    const SELECTED_LABEL = "Selected: press Ctrl+C";
+    const LABEL_RESET_MS = 1600;
+    const KEY_STEPS = { ArrowRight: 1, ArrowLeft: -1 };
+
+    const showTab = (root, tab) => {
+      for (const other of root.querySelectorAll("[role='tab']")) {
+        const isSelected = other === tab;
+        const panelId = other.getAttribute("aria-controls");
+        const panel = document.getElementById(panelId);
+        if (!panel) throw new Error(`The install panel ${panelId} is missing from the page.`);
+        other.setAttribute("aria-selected", String(isSelected));
+        other.tabIndex = isSelected ? 0 : -1;
+        panel.hidden = !isSelected;
+      }
+    };
+
+    const moveTab = (root, tab, step) => {
+      const tabs = [...root.querySelectorAll("[role='tab']")];
+      const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
+      showTab(root, next);
+      next.focus();
+    };
+
+    const selectCommands = (panel) => {
+      const commands = panel.querySelectorAll(".install-command");
+      if (commands.length === 0) return;
+      const range = document.createRange();
+      range.setStartBefore(commands[0]);
+      range.setEndAfter(commands[commands.length - 1]);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    };
+
+    const copyCommand = async (button) => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy ?? "");
+        button.textContent = COPIED_LABEL;
+      } catch (error) {
+        console.warn("The clipboard is not available; the command is selected for copying.", error);
+        selectCommands(button.closest("[role='tabpanel']"));
+        button.textContent = SELECTED_LABEL;
+      }
+      setTimeout(() => {
+        button.textContent = COPY_LABEL;
+      }, LABEL_RESET_MS);
+    };
+
+    const bindInstall = (root) => {
+      root.addEventListener("click", (event) => {
+        if (!(event.target instanceof Element)) return;
+        const tab = event.target.closest("[role='tab']");
+        if (tab) showTab(root, tab);
+        const copyButton = event.target.closest("[data-copy]");
+        if (copyButton) void copyCommand(copyButton);
+      });
+      root.addEventListener("keydown", (event) => {
+        const tab = event.target instanceof Element ? event.target.closest("[role='tab']") : null;
+        const step = KEY_STEPS[event.key];
+        if (!tab || !step) return;
+        event.preventDefault();
+        moveTab(root, tab, step);
+      });
+    };
+
+    for (const root of document.querySelectorAll("[data-install]")) bindInstall(root);
   </script>
 </body>
 </html>
