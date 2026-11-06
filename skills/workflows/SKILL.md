@@ -5,26 +5,26 @@ description: Load when framing a job. Picks the job shape (scout fan-out, bug fi
 
 # Job shapes and size tiers
 
-Pick the shape, then the tier. The main session follows `harness:orchestrator`: it does each step itself unless the
-step names an agent or its cost rules say one pays.
+Pick the shape, then the tier. The main session follows `harness:orchestrator`: it plans, briefs, checks and commits;
+every change is a worker's, reading wide is a scout's.
 A **unit** is one change that one worker can finish inside one write set.
 
 ## Size tiers
 
 | Tier | Is | Steps |
 |---|---|---|
-| Small | one file, no public contract | edit, gates |
-| Medium | one unit across 2 or more files, no public contract | read-back, edit (a script if repetitive), run it, gates, one reviewer |
+| Small | one file, no public contract | one worker (or the main session's one small edit), gates |
+| Medium | one unit across 2 or more files, no public contract | read-back, one worker (it scripts what is repetitive), run it, gates, one reviewer |
 | Large | several units, or any public contract | the numbered steps below |
 
 Large steps, each with its owner:
 
 1. Read-back and a budget for the round (main session).
 2. Spec (main session), with one cold reader when a worker will build from it.
-3. A script for everything mechanical (main session).
-4. The plumbing and every serial step (main session); parallel workers only for units that are independent and large.
-5. Run the product: a smoke test first, then the gates (main session).
-6. One review of the whole diff, high severity only (reviewer), then each fix (main session).
+3. A script for everything mechanical (a worker).
+4. The plumbing and every serial step (one worker each); parallel workers for units that are independent and large.
+5. Run the product: a smoke test first, then the gates (main session runs them, or a runner).
+6. One review of the whole diff, a branch or a pull request included, high severity only (reviewer), then each fix (a worker).
 7. Full test (main session, or a runner when it is long).
 
 The read-back is one sentence of what stays and what goes (`harness:orchestrator`). The gates are the project's checks,
@@ -58,7 +58,7 @@ A bug claim is probed before any fix (`harness:evidence`).
 
 1. Write the spec (`harness:spec`): goal, non-goals, decisions, write sets, judges.
 2. Cold read of the spec as a brief (`harness:cold-read`); settle the differences.
-3. Build against the judges, with workers only where parallel pays. Run the product, then one reviewer reads against
+3. Build against the judges, with workers (in parallel where units are independent). Run the product, then one reviewer reads against
    the spec (`harness:review`).
 
 ## Spike
@@ -82,7 +82,7 @@ Use when units are independent.
 3. Disjoint write sets: no path appears in two. A change needed outside a write set is reported, not made.
 4. Workers run in one message, in the background.
 5. Check each unit's judges.
-6. Integrate: the main session wires the units together and owns the shared files.
+6. Integrate: one worker wires the units together and owns the shared files.
 7. Run the product and the full check, then one reviewer reads the whole diff.
 
 ## Hillclimb

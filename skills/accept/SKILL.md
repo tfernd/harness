@@ -45,7 +45,9 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
 2. `## Done`: table Item | Result (done, partly, failed) | Evidence (the proposal file, or the command and exit code).
 3. Optional: `## Decisions` (Decision | Reason | Alternative rejected | Taken by), so the owner can overrule one; `## Problems`
    (Problem | Fix | State), where a fix is a rule, hook or gate named by its file, never "be careful".
-4. Optional: `## Agents`: one row per agent run, and a one-line model fit (was each model right for its task).
+4. `## Agents`, required when the turn ran agents: one row per agent, its Task cell starting with the description it was
+   given, and what happened to its problems (fixed in FILE, filed, rejected: why, or none); then a one-line model fit (was
+   each model right for its task). The Stop hook holds a turn whose section misses an agent.
 
    | Agent (role, model) | Task | Result | Quality 1-5 | What went wrong | Brief fix |
    |---|---|---|---|---|---|

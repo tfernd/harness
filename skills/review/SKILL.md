@@ -1,6 +1,6 @@
 ---
 name: review
-description: How one unit of code or a design is reviewed against its spec - the order, severities A to C, the finding form, optional lenses, a layout survey. Also the worker's steps for fixing its own failing test or gate. Load to review a unit or to fix a failure.
+description: How one unit of code, a design, a branch or a pull request is reviewed against its spec - the order, severities A to C, the finding form, optional lenses, a layout survey. Also the worker's steps for fixing its own failing test or gate. Load to review a unit or to fix a failure.
 ---
 
 # Reviewing
@@ -56,6 +56,12 @@ outline (`harness:evidence`) and run the style tools. Every
 type, function and constant sits in the module whose job it is: used only elsewhere, or a job another module names, is a
 move; so are a second job in a module and near-duplicates. Return a move list (name, `path:line` from, module to,
 rule), then splits and merges.
+
+## A branch or a pull request
+
+One reviewer at the end reads the whole branch or pull request against its description, spec or issue, in the same order
+and with the same findings. It reports and never posts comments, approves or merges: the owner decides what goes on the
+pull request. Scope, run, read order and checklist: `references/branch.md`.
 
 ## Fixing a failure (the worker's job)
 

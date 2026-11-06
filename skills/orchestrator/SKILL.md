@@ -1,27 +1,29 @@
 ---
 name: orchestrator
-description: Load at the start of every main session. The main session works directly by default and uses scripts first, agents only where parallel work pays. Holds the cost rules, the roles, the brief template, checkpoints and the learning loop. Sub-agents never load it.
+description: Load at the start of every main session. The main session orchestrates - it plans, briefs, checks and commits, and hands changes to workers and wide reading to scouts. Holds the cost rules, the roles, the brief template, checkpoints and the learning loop. Sub-agents never load it.
 ---
 
 # The orchestrator
 
-**The main session does the work itself by default.** It has the context loaded, so it edits, runs and tests directly,
-accepts (`harness:accept`) and talks to the owner. An agent costs a cold start and a brief, so one is spawned only where
-the rules below say it pays. A project that sets the `delegate` key of `.harness.json` has a hook that notes the main
-session's edits and runs, which still run: there, and only there, they go to agents. Models per role: `harness:models`. Job shapes and
-size tiers: `harness:workflows`.
+**The main session orchestrates; workers change files.** It reads enough to decide, then plans, briefs, checks,
+commits (`harness:accept`) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
+`harness:worker` with a write set disjoint from every running agent's; wide reading goes to a `harness:scout`. The main
+session edits itself only: a feedback or plan file, a commit message, the lessons of the closing status, and one small
+edit (about three lines) that a brief would cost more than. A hook counts the main session's own edits per turn and
+refuses past a cap (the `main_edits` section of the settings, default 3 edits a turn; files under `harness-feedback/`
+and `scratch/` do not count). Models per role: `harness:models`. Job shapes and size tiers: `harness:workflows`.
 
 ## What each round costs
 
 | Rule | In practice |
 |---|---|
-| **Script before agent** | Repetitive work (moves, renames, import rewrites, merges) is one codemod; agents get only what it cannot do |
-| **Edit directly** | A serial step stays here, where the context already is |
-| **Agents only where parallel pays** | Work that is truly independent and large; write the plumbing here first |
+| **Script before agent** | A worker scripts a mechanical change (moves, renames, import rewrites, merges) as one codemod, by hand only what it cannot do |
+| **A change is a worker** | A serial change is one worker, not the main session; the main session briefs it and checks the result |
+| **Agents in parallel where it pays** | Independent, large units get one worker each, disjoint write sets; the shared plumbing goes first, to one worker |
 | **Tight briefs** | Exact files, the contract and the done check, so an agent re-reads little |
 | **One round, one goal** | Never renames, contracts and clean-up together; small commits, each one usable |
 | **Run it first** | Start the product (a headless smoke test in the gate) before any review; polish waits until it runs |
-| **One reviewer at the end** | One read of the whole diff, high severity only (`harness:review`); the main session applies each fix |
+| **One reviewer at the end** | One read of the whole diff, a branch or a pull request, high severity only (`harness:review`); a worker applies each fix |
 | **A budget per round** | State turns and tokens up front; over it, stop, rethink and tell the owner |
 
 - Never hand a list of findings to one fixer. After any fix, compare the test count and the deleted files with the
@@ -78,23 +80,7 @@ A generic agent (`general-purpose`, `Explore`, `Plan`, no type) is refused in ev
 form or turn budget. A hook notes a worker brief without `Goal:`,
 `Write set:` and `Judge:`; the spawn still runs. One spawn, one question or one change.
 
-Lines the brief itself must hold:
-
-- A judge that may already fail says so. The agent runs it once first and reports a failure it did not cause as a
-  problem with cause `other agent`.
-- A brief that asks for a new judge names the deliberate bug that must fail it, read off the code (`harness:testing`).
-- A brief that changes a public signature lists every caller, found by `rg`.
-- A size limit states what it counts (file or report, frontmatter, fenced blocks) and which moves can reach it.
-
-Checklist before it goes out (the sender's, not text of the brief):
-
-- Every fact comes from a file read or a report, never memory. A name, count or path is checked by `rg`; a line is given
-  as its text; a number carries its command.
-- Every "or" in the job is decided or asked of the owner; every command the job names exists and was run, or the brief
-  says "measure only"; a limit is derived from its source, not typed again; a helper the job asks for is not already
-  there (`rg` for one that does the same).
-- Re-read the whole brief: no sentence contradicts another.
-- `references/brief-checks.md` adds more checks, before sending and at acceptance; it does not repeat this list.
+Lines the brief must hold, and the sender's checklist before it goes out: `references/brief-checks.md`.
 
 ## Cold read
 
@@ -124,17 +110,8 @@ checkpoint, and read it first on resume: `references/resume.md`.
 
 ## The learning loop
 
-1. Read each report's Problems, Next time and Feedback first. A Verdict of partial or blocked, or an auditor's grade of 3 or
-   less, changes the brief template, the role or the skill it names.
-2. In the same turn, unasked, the orchestrator writes a prevention for each problem. A problem seen twice gets a hook or a gate,
-   not a sentence (`harness:retro`).
-3. Each lesson has one home: a trap for every agent, the project `AGENTS.md`; a role's craft, `agents/`; writing, tests or
-   review, the skill that owns it; a decision or open question, the plan file. A line an accepted change made false is
-   deleted in the same change.
-4. Each Feedback item lands in `harness-feedback/inbox.md`: the project's own with `.harness.json`, else the plugin's data folder. Open items stay in the report: put
-   them to the owner.
-5. No item needs a verdict of its own. When 20 items wait, the Stop hook holds a session that filed one until a retro is
-   done: the procedure is in `harness:retro`.
+Read each report's Problems, Next time and Feedback first, write a prevention for each problem in the same turn, give it one
+home and file each Feedback item. Steps: `references/learning-loop.md`.
 
 ## Talking to the owner
 

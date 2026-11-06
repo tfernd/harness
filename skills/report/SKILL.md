@@ -7,7 +7,8 @@ description: The report every sub-agent ends with - what was done, what is not p
 
 Your report is the main session's only view of your run. Keep it short and useful: say what was done and what is not
 proven. A passing check gets one line; quote a command only when it failed or matters. `hooks/report_gate.py` sends back a
-report that breaks the form. It names the sections that are wrong; send only those again, and the sections you leave out stay as they were.
+report that breaks the form, naming the sections that are wrong. A refused handback: call it again with the whole report,
+fixed. A report sent back after you stopped: send only those sections again; the ones you leave out stay as they were.
 
 ## The form
 
@@ -52,10 +53,10 @@ Write the Verdict after the rest and let it follow from it. If Not proven holds 
 - Each file you changed through Edit, Write or NotebookEdit is named by its absolute or project-relative path, unless it
   lies under the project's scratch folder.
 - A claim that tests, lint, a check, a gate or a build passed needs a Bash call of yours.
-- Each `exit <N>` you write is the result of a Bash call: the code a failed call printed (`Exit code N`), or 0 for a call
-  that did not fail.
-- A mark READ `` `path:line` ``, when you use one, names an existing file with at least that many lines; `path:a-b` checks
-  `b`. A text quoted right after it, in "..." or backticks, must lie on that line or within 3 lines.
+- Each `exit <N>` you write is the result of a Bash call: the code a failed call printed (`Exit code N`), 0 for a call
+  that did not fail, or a code a call printed itself (`rg exit 1`, make's `Error 2`). Describing a code, write "exits with 2".
+- A mark READ `` `path:line` ``, when you use one, names an existing file with at least that many lines, by its path from
+  the project root or an end of path only one project file has; `path:a-b` checks `b`. A text quoted right after it, in "..." or backticks, must lie on that line or within 3 lines.
 
 ## Filling it
 

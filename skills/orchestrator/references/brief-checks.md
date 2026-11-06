@@ -1,13 +1,33 @@
 # Brief checks
 
-Checks the main session makes before a brief goes out, and when it accepts, in addition to the lists in
-`harness:orchestrator` (none repeats them). Each is one line.
+The lists the main session uses before a brief goes out, and when it accepts. Each is one line.
 
-## Framing
+## Lines the brief must hold
+
+- A judge that may already fail says so. The agent runs it once first and reports a failure it did not cause as a
+  problem with cause `other agent`.
+- A brief that asks for a new judge names the deliberate bug that must fail it, read off the code (`harness:testing`).
+- A brief that changes a public signature lists every caller, found by `rg`.
+- A size limit states what it counts (file or report, frontmatter, fenced blocks) and which moves can reach it.
+
+## Checklist before it goes out (the sender's, not text of the brief)
+
+- Every fact comes from a file read or a report, never memory. A name, count or path is checked by `rg`; a line is given
+  as its text; a number carries its command.
+- Every "or" in the job is decided or asked of the owner; every command the job names exists and was run, or the brief
+  says "measure only"; a limit is derived from its source, not typed again; a helper the job asks for is not already
+  there (`rg` for one that does the same).
+- Re-read the whole brief: no sentence contradicts another.
+- The checks below add to this list.
+
+## Also check
+
+### Framing
 
 - Measure first: a method gets its result against a baseline before anything is built.
 
-## Briefs
+### Briefs
+
 - A write set naming a scratch subfolder: create it before the agent starts, since a shell `cd` into a missing folder trips the guard.
 - A judge that runs tests also checks how many ran: a zero-test run exits 0 and passes for the wrong reason.
 - A brief fits its turn budget: more steps than the budget can hold ends as a partial result, so split it before sending.
@@ -26,7 +46,7 @@ Checks the main session makes before a brief goes out, and when it accepts, in a
 - A helper two trees will share goes in the write set.
 - A brief that adds code states the file's line count against the limit.
 
-## Accepting
+### Accepting
 
 - Accepting a new module includes wiring it where the project registers modules.
 - An outline pass looks for misplaced names.
