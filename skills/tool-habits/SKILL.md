@@ -17,6 +17,8 @@ costs no turn.
   `grep` and `ls`. Locate and read in one call: print each match with three lines around it.
 - One file: the Read tool with `offset` and `limit`. Search: Grep and Glob. Without them, `rg` and `find` through Bash.
 - Do not read an unchanged file again or rerun an unchanged command.
+- Output too long for the result is saved to a file the result names: read that file with `offset` and `limit`. Do
+  not rerun the command into a file of your own; a read-only role writes nothing.
 
 ## Edit and check in one call
 
@@ -82,6 +84,8 @@ git diff --stat
 ## Shell
 
 - Use absolute paths; a `cd` may not carry to the next call.
+- A list of files goes in an array (`files=(a.py b.py)`, then `"${files[@]}"`) or a Python script: zsh does not split
+  `$files` into words, so the command gets one name with spaces in it.
 - Quote every glob: zsh refuses one that matches nothing. Read exit codes from `$pipestatus` in zsh.
 - A long run goes in the background. Never poll with `sleep` in a loop.
 
