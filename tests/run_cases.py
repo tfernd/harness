@@ -569,6 +569,42 @@ def bash_failed(tool_id: str, code: int, /) -> dict:  # keys are data
     return {"type": "user", "message": {"content": [block]}}
 HANDLED_NAME = "harness-feedback/handled.md"
 CLEAN_REPORT = answer_report("Nothing changed.")
+def bash_output(tool_id: str, text: str, /) -> dict:  # keys are data
+    """The result of a Bash call that did not fail, holding what it printed."""
+
+    block = {"type": "tool_result", "tool_use_id": tool_id, "content": text}
+
+    return {"type": "user", "message": {"content": [block]}}
+
+
+def handback_event(report: str, /, *, agent_type: str = "harness:worker") -> dict:  # keys are data
+    """A PreToolUse event of a sub-agent's handback; like the app's, it names only the session's transcript."""
+
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "SubagentHandback",
+        "tool_input": {"message": report},
+        "agent_type": agent_type,
+        "agent_id": "a1",
+        "session_id": SESSION,
+        "transcript_path": "project/s.jsonl",
+    }
+
+
+def handback(name: str, report: str, blocks: bool, text: str = "", /, *, lines: tuple[dict, ...] = (), **options: object) -> Case:  # keys are data
+    """The handback check on `report`, the agent's transcript holding `lines`."""
+
+    options.setdefault("config", {})
+    transcript = ("s/subagents/agent-a1.jsonl", "".join(f"{json.dumps(line)}\n" for line in lines))
+    options["files"] = (transcript, *options.get("files", ()))
+    event = handback_event(report, agent_type=str(options.pop("agent_type", "harness:worker")))
+    if "event_input" in options:
+        event["tool_input"] = options.pop("event_input")
+
+    return Case(name, ("report_gate.py", "handback"), event, blocks, text, **options)
+
+
+SEND_BACK_COUNT = "data/send-backs/a1.count"
 EXIT_REPORT = exit_report(0)
 FEEDBACK_ITEM = "skills/report/SKILL.md: add a rule to the report skill"
 FEEDBACK_ID = hashlib.sha1(FEEDBACK_ITEM.encode()).hexdigest()[:8]
@@ -821,6 +857,20 @@ GATE_CASES = (
     gate("a READ range checks its end", stop_event(answer_report("READ `AGENTS.md:1-2`")), True, "past the end"),
     gate("a READ of a missing file goes back", stop_event(answer_report("READ `gone.md:1`")), True, "does not exist"),
     gate("a READ without the backticks is not a claim", stop_event(answer_report("READ gone.md:1")), False),
+    gate("a READ by an end of path one file has is accepted", stop_event(answer_report('READ `pkg/doc.md:2` "line two"')), False, files=(("src/pkg/doc.md", NUMBERED),)),
+    gate("a READ by its end checks the line in that file", stop_event(answer_report("READ `doc.md:11`")), True, "past the end", files=(("src/pkg/doc.md", NUMBERED),)),
+    gate("a READ end two files share goes back", stop_event(answer_report("READ `doc.md:1`")), True, "2 project files end with it", files=(("a/doc.md", "x\n"), ("b/doc.md", "x\n"))),
+    gate("an exit code a command printed is accepted", transcript_event(exit_report(1)), False, transcript=(bash_call("t1"), bash_output("t1", "rg exit 1"))),
+    gate("make's Error line backs its code", transcript_event(exit_report(2)), False, transcript=(bash_call("t1"), bash_output("t1", "make: *** [Makefile:3: static] Error 2"))),
+    gate("a number printed with no exit word backs nothing", transcript_event(exit_report(1)), True, "ended with that code", transcript=(bash_call("t1"), bash_output("t1", "1 file changed"))),
+    gate("the Problems send-back gives an example line", stop_event(make_report(replace=("Problems", "- the brief was vague (cause: brief)"))), True, "naming the fixture would have helped"),
+    handback("a bad handback is refused and asks for the whole report", make_report(skip="Not proven"), True, "with the whole report"),
+    handback("a good handback runs", make_report(), False),
+    handback("a refused handback counts a send-back", make_report(skip="Not proven"), True, wrote=(SEND_BACK_COUNT, "1")),
+    handback("a handback after three send-backs runs", make_report(skip="Not proven"), False, files=((SEND_BACK_COUNT, "3"),)),
+    handback("a repo's own agent hands back freely where the repo has no file", make_report(skip="Not proven"), False, config=None, agent_type="custom"),
+    handback("a handback's claims are read from the agent's transcript", exit_report(1), True, "ended with that code", lines=(bash_call("t1"),)),
+    handback("a handback with no message is let go", "", False, event_input={}),
     # report gate: hardening
     gate(
         "an exit code no Bash call ended with goes back",
@@ -1133,6 +1183,20 @@ def notify(tool_id: str, status: str, /) -> dict:  # keys are data
     return {"type": "user", "message": {"role": "user", "content": body}}
 
 
+def queued_notify(tool_id: str, /) -> dict:  # keys are data
+    """A finished agent's notification as the app delivers it now: the prompt of a queued command's attachment."""
+
+    body = notify(tool_id, "completed")["message"]["content"]
+
+    return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": body}}
+
+
+def queue_notify(tool_id: str, /) -> dict:  # keys are data
+    """A finished agent's notification as a queue operation's content."""
+
+    return {"type": "queue-operation", "operation": "enqueue", "content": notify(tool_id, "completed")["message"]["content"]}
+
+
 def both_notify() -> dict:  # keys are data
     """One user line with two notifications: the launched agent runs on, another one finished."""
 
@@ -1189,6 +1253,32 @@ TURN_CASES = (
     turn("a transcript line that is no object is skipped", "", False, transcript=(12, assistant({"type": "text", "text": "Done."}))),
     turn("a last line that is a tool call does not crash", "", False, transcript=(assistant({"type": "text", "text": "Done."}), assistant({"type": "tool_use", "id": "t", "name": "Bash", "input": {}}))),
     Case("no mode does nothing", ("turn.py",), {"session_id": SESSION}, False, config={}),
+    turn("an agent's finish in a queued command is seen", "Done.", True, "needs the job status", calls=BUSY_CALLS, transcript=(*launch("t1"), queued_notify("t1"))),
+    turn("an agent's finish in a queue operation is seen", "Done.", True, "needs the job status", calls=BUSY_CALLS, transcript=(*launch("t1"), queue_notify("t1"))),
+    turn("a turn that ran a named agent needs it under Agents", FULL_STATUS, True, "Missing: Audit the parser", calls=["Agent\tAudit the parser", "Edit", "Edit"]),
+    turn("an Agents section naming each agent passes", f"{FULL_STATUS}\n## Agents\n- audit the parser: done, problems none", False, calls=["Agent\tAudit the parser", "Edit", "Edit"]),
+    turn("an agent named outside the Agents section does not count", f"{FULL_STATUS}\n## Agents\n- other\n## Notes\naudit the parser", True, "Missing", calls=["Agent\tAudit the parser", "Edit", "Edit"]),
+    Case("add keeps an agent's description", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Agent", "tool_input": {"description": "audit  the\nparser"}}, False, config={}, wrote=(CALLS_FILE, "Agent\taudit the parser")),
+    Case("add keeps another tool's name alone", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Edit", "tool_input": {"description": "x"}}, False, config={}, wrote=(CALLS_FILE, "Edit"), not_wrote=(CALLS_FILE, "\t")),
+    turn(
+        "a Bash result that quotes the launch text is no running agent",
+        "Done.",
+        True,
+        "needs the job status",
+        calls=BUSY_CALLS,
+        transcript=(
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "b1", "name": "Bash", "input": {"command": "rg launched t.jsonl"}}]}},
+            bash_output("b1", "Async agent launched successfully."),
+        ),
+    ),
+    turn(
+        "check_agents reads agent lines only, not an edit's path",
+        f"{FULL_STATUS}\n## Agents\n- audit: done",
+        False,
+        calls=("Agent\taudit", "Edit\tsrc/a.py", "Edit\tsrc/b.py", "Edit\tsrc/c.py"),
+    ),
+    Case("add keeps an edit's path", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Edit", "tool_input": {"file_path": "src/a.py"}}, False, config={}, wrote=(CALLS_FILE, "Edit\tsrc/a.py")),
+    Case("add keeps a notebook edit's path", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "NotebookEdit", "tool_input": {"notebook_path": "n.ipynb"}}, False, config={}, wrote=(CALLS_FILE, "NotebookEdit\tn.ipynb")),
     turn("a progress note with a background agent running is allowed", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1")),
     turn(
         "a background agent marked only by its result counts as running",
@@ -1471,6 +1561,36 @@ def main_bash(name: str, command: str, is_noted: bool, /, **options: object) -> 
 
 
 ONLY_DOCS = {"write_allow": ["docs/*"], "bash_allow": ["make check"]}
+def edit_call(name: str, path: str, calls: list[str], blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
+    """A main-session edit under the `main_edits` rule, after the turn's earlier `calls`; `blocks` says it is refused."""
+
+    event = {"session_id": SESSION, "tool_name": "Edit", "agent_id": None, "tool_input": {"file_path": path}}
+    counted = (CALLS_FILE, "".join(f"{call}\n" for call in calls))
+    options.setdefault("config", {})
+    if blocks:
+        return Case(name, ("delegate.py",), event, True, text or "main_edits", files=(counted,), **options)
+
+    return Case(name, ("delegate.py",), event, False, lacks="Blocked by", is_unchanged=True, context=text, files=(counted,), **options)
+
+
+THREE_EDITS = ["Edit\tsrc/a.py", "Write\tsrc/b.py", "NotebookEdit\tn.ipynb"]
+MAIN_EDIT_CASES = (
+    edit_call("the 4th counted edit is refused", "src/d.py", THREE_EDITS, True, "3 edits"),
+    edit_call("the refusal names the cap, the worker and the config key", "src/d.py", THREE_EDITS, True, '"main_edits": {"max": N}'),
+    edit_call("the 3rd counted edit is noted", "src/c.py", THREE_EDITS[:2], False, "edit 3 of 3"),
+    edit_call("the 1st counted edit is noted", "src/c.py", [], False, "edit 1 of 3"),
+    edit_call("an allowed path is never refused", "scratch/x.py", THREE_EDITS, False),
+    edit_call("an allowed path is never noted", "harness-feedback/inbox.md", THREE_EDITS, False),
+    edit_call("an allowed edit in the file does not count", "src/d.py", ["Edit\tscratch/a.py", "Edit\tharness-feedback/x.md", *THREE_EDITS[:2]], False, "edit 3 of 3"),
+    edit_call("agent lines do not count", "src/d.py", ["Agent\taudit", "Agent\tfind", *THREE_EDITS[:2]], False, "edit 3 of 3"),
+    edit_call("max 0 turns the rule off", "src/d.py", THREE_EDITS, False, config={"main_edits": {"max": 0}}),
+    edit_call("a project raises the cap", "src/d.py", THREE_EDITS, False, "edit 4 of 5", config={"main_edits": {"max": 5}}),
+    edit_call("a project lowers the cap", "src/b.py", THREE_EDITS[:1], True, "cap is 1", config={"main_edits": {"max": 1}}),
+    edit_call("a project replaces the allow list", "docs/a.md", THREE_EDITS, False, config={"main_edits": {"allow": ["docs/*"]}}),
+    Case("a sub-agent's edit is never refused", ("delegate.py",), {"session_id": SESSION, "tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/d.py"}}, False, config={}, lacks="main_edits", files=((CALLS_FILE, "".join(f"{call}\n" for call in THREE_EDITS)),)),
+    Case("a Bash call is out of the cap", ("delegate.py",), {"session_id": SESSION, "tool_name": "Bash", "agent_id": None, "tool_input": {"command": "make x"}}, False, config={}, lacks="main_edits", files=((CALLS_FILE, "".join(f"{call}\n" for call in THREE_EDITS)),)),
+    edit_call("a path outside the project counts", "../x.py", THREE_EDITS, True),
+)
 DELEGATE_CASES = (
     main_call("an edit with an empty allow list is noted", "Edit", {"file_path": "src/a.py"}, True, "write_allow"),
     main_call("a write outside the allow list is noted", "Write", {"file_path": "src/a.py"}, True, "write_allow", settings=ONLY_DOCS),
@@ -1867,7 +1987,7 @@ CONTEXT_CASES = (
     context("another shell is not called zsh", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="The shell is zsh", shell="/bin/bash"),
     context("the scratch folder is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "Throwaway files go in `scratch/`", config={"guard": {"scratch": "scratch"}}),
     context("no scratch folder, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="Throwaway"),
-    context("the temporary folder rule is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "A write under `/tmp` is refused", config={"guard": {"no_tmp": True}}),
+    context("the temporary folder rule is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "A write under `/tmp` runs, with a note", config={"guard": {"no_tmp": True}}),
     context("no temporary folder rule, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="/tmp"),
     context("a session start names the orchestrator", {"hook_event_name": "SessionStart"}, "harness:orchestrator"),
     context("a session start's output is hook-specific", {"hook_event_name": "SessionStart"}, '"hookEventName": "SessionStart"'),
@@ -2288,7 +2408,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of this hook first")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     cases.sort(key=lambda case: arguments.first not in case.script)
     failures = 0

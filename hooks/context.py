@@ -68,7 +68,7 @@ def get_setup_text(config: dict, /) -> str:  # config keys
     if guard.get("scratch"):
         lines.append(f"Throwaway files go in `{guard['scratch']}/`.")
     if guard.get("no_tmp"):
-        lines.append("A write under `/tmp` is refused, even where the environment names a scratchpad there.")
+        lines.append("A write under `/tmp` runs, with a note: throwaway files go in the scratch folder, even where the environment names a scratchpad under `/tmp`.")
 
     return " ".join(lines)
 

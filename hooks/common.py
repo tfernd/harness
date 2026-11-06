@@ -19,7 +19,7 @@ CONFIG_NAME = ".harness.json"
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "harness.json"
 # The template sections every project gets with no file of its own. `guard` names project facts (a scratch folder), so it stays out.
-DEFAULT_SECTIONS = ("brief", "skill_gate")
+DEFAULT_SECTIONS = ("brief", "skill_gate", "main_edits")
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
 EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})

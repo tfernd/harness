@@ -14,6 +14,8 @@ count and the saved hashes, and so it does for any notification or sub-agent's m
 sub-agent. `turn.py stop` (Stop) holds the turn, up to MAX_BLOCKS times, on three checks:
   - a turn with `min_calls` calls or more ends with the headings, unless a background agent of the session still runs:
     then the turn is a progress note, the count is kept, and the status is due once the last agent has finished;
+  - a status of a turn that ran agents has an `## Agents` section naming each one by the description it was given, which
+    `add` keeps beside the tool's name;
   - a closing Lessons section needs a rule file changed this turn: its hash now differs from the one saved at `reset` (contents only, no git); a section that
     defers its lessons fails the same way, and "Lessons: none" on a line of its own is the only way to have none. A rule
     file edited before the turn's start and committed in it is no change, since only contents are compared;
@@ -37,7 +39,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 # HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
-from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines, has_project_file, write_atomic
+from common import EDIT_TOOLS, FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines, has_project_file, write_atomic
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
@@ -62,6 +64,8 @@ APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
 APP_PROMPT_HEAD = 600
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
 FINISHED_STATUSES = frozenset({"completed", "failed", "killed", "stopped"})
+AGENT_TOOLS = frozenset({"Agent", "Task"})
+AGENTS_HEADING = "## Agents"
 HANDLED = re.compile(r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
 MIN_REASON_WORDS = 3
 # Inbox items waiting before a session that filed one owes a retro: often enough to act, rare enough to be read.
@@ -148,27 +152,46 @@ def get_user_text(line: dict, /) -> str:  # keys are data
     return ""
 
 
+def get_notice_text(line: dict, /) -> str:  # keys are data
+    """The text of a transcript line that may carry a task notification.
+
+    The app has delivered one as a user line, as a queued command's attachment and as a queue operation's content.
+    """
+
+    attachment = line.get("attachment")
+    if line.get("type") == "attachment" and isinstance(attachment, dict) and isinstance(attachment.get("prompt"), str):
+        return attachment["prompt"]
+    if line.get("type") == "queue-operation" and isinstance(line.get("content"), str):
+        return line["content"]
+
+    return get_user_text(line) if line.get("type") == "user" else ""
+
+
 def count_running_agents(transcript: list[dict], /) -> int:  # keys are data
     """The background Agent or Task calls with no final task notification yet."""
 
     launched: set[str] = set()
     finished: set[str] = set()
+    # Only a result of an Agent or Task call can be a launch: a Bash call that printed the text is not one.
+    agent_calls: set[str] = set()
     for line in transcript:
         content = line.get("message", {}).get("content")
         blocks = content if isinstance(content, list) else []
         if line.get("type") == "assistant":
             for block in blocks:
-                is_call = block.get("type") == "tool_use" and block.get("name") in ("Agent", "Task")
+                is_call = block.get("type") == "tool_use" and block.get("name") in AGENT_TOOLS
+                if is_call:
+                    agent_calls.add(block.get("id"))
                 if is_call and (block.get("input") or {}).get("run_in_background") is True:
                     launched.add(block.get("id"))
         elif line.get("type") == "user":
             for block in blocks:
                 # A background launch is told by the text of its tool result, which is the host's wording, not a field.
                 is_result = isinstance(block, dict) and block.get("type") == "tool_result"
-                if is_result and "Async agent launched" in json.dumps(block.get("content")):
+                if is_result and block.get("tool_use_id") in agent_calls and "Async agent launched" in json.dumps(block.get("content")):
                     launched.add(block.get("tool_use_id"))
-            found = NOTIFICATION.findall(get_user_text(line))
-            finished.update(tool_id for tool_id, status in found if status in FINISHED_STATUSES)
+        found = NOTIFICATION.findall(get_notice_text(line))
+        finished.update(tool_id for tool_id, status in found if status in FINISHED_STATUSES)
 
     return len(launched - finished)
 
@@ -185,6 +208,37 @@ def get_closing_message(event: dict, transcript: list[dict], /) -> str:  # keys 
                 message = texts[-1] if texts else message
 
     return "\n".join(get_unfenced_lines(message))
+
+
+def get_agents_section(message: str, /) -> str:
+    """The closing message's `## Agents` section, up to the next `## ` heading; empty when there is none."""
+
+    lines: list[str] = []
+    is_inside = False
+    for line in message.splitlines():
+        if line.startswith("## "):
+            is_inside = line.strip() == AGENTS_HEADING
+        elif is_inside:
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
+def check_agents(message: str, call_lines: list[str], /) -> list[str]:
+    """A turn that ran agents names each one, by the description it was given, in the status's `## Agents` section."""
+
+    agent_lines = [line.split("\t", 1) for line in call_lines if line.split("\t", 1)[0] in AGENT_TOOLS and "\t" in line]
+    names = list(dict.fromkeys(parts[1] for parts in agent_lines))
+    section = " ".join(get_agents_section(message).lower().split())
+    missing = [name for name in names if name.lower() not in section]
+    if not missing:
+        return []
+
+    return [
+        f'the turn ran agents, so the status needs an "{AGENTS_HEADING}" section: one line per agent, starting with the description '
+        f"it was given, then its verdict and what happened to its problems (fixed in FILE, filed, rejected: why, or none). "
+        f'Missing: {"; ".join(missing)}'
+    ]
 
 
 def get_lessons(message: str, /) -> str:
@@ -351,7 +405,8 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
     calls_path, rules_path, blocks_path = get_state_paths(session)
     deferred_path, released_path = get_state_path(session, "deferred"), get_state_path(session, "released")
     settings = config.get("stop", {})
-    calls = len(calls_path.read_text().splitlines()) if calls_path.exists() else 0
+    call_lines = calls_path.read_text().splitlines() if calls_path.exists() else []
+    calls = len(call_lines)
     min_calls = settings.get("min_calls", MIN_CALLS)
     transcript = read_transcript(event.get("transcript_path") or "")
     message = get_closing_message(event, transcript)
@@ -368,6 +423,8 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
                 f'the turn ran agents or edited files ({calls} calls), so the closing message needs the job status, as '
                 f'"## NAME" lines: {"; ".join(missing)}'
             )
+        if not is_deferred:
+            problems += check_agents(message, call_lines)
     released = set(released_path.read_text().split()) if released_path.exists() else set()
     handled: set[str] = set()
     invalid: dict[str, str] = {}
@@ -408,6 +465,21 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
     return 0
 
 
+def get_call_line(event: dict, /) -> str:  # keys are data
+    """A counted call's line: the tool's name, and after a tab the description of an agent or the path of an edit."""
+
+    name = event.get("tool_name") or "tool"
+    tool_input = event.get("tool_input") or {}
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if name in EDIT_TOOLS and isinstance(path, str) and path:
+        return f"{name}\t{path}"
+    description = tool_input.get("description")
+    if name in AGENT_TOOLS and isinstance(description, str) and description.strip():
+        return f"{name}\t{' '.join(description.split())}"
+
+    return name
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     root, config = find_project(event.get("cwd") or os.getcwd())
@@ -417,7 +489,7 @@ def main() -> int:
         if not event.get("agent_id"):
             # One short append is not torn on Linux, so the counter needs no temporary file.
             with open(calls_path, "a") as file:
-                file.write(f"{event.get('tool_name') or 'tool'}\n")
+                file.write(f"{get_call_line(event)}\n")
     elif mode == "reset":
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
         if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():

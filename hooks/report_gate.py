@@ -15,8 +15,9 @@ the agent's last block, handback or text, holding `## Answer`, else its last mes
 The claims come from the agent's transcript, never from git, since parallel agents share a tree: each file it changed
 through Edit, Write or NotebookEdit is named in the report by its absolute or project-relative path (`guard.scratch` is
 exempt), a claim that a check passed needs a Bash call, each `exit <N>` is the result of a Bash call (the transcript shows a
-code only for a failed call, `Exit code N`; a call that did not fail is 0), and a READ `path:line` names an existing file with
-that many lines; a text quoted after it must lie within 3 lines of that line.
+code only for a failed call, `Exit code N`; a call that did not fail is 0) or a code a Bash call printed (`rg exit 1`, `rc=2`,
+make's `Error 2`), and a READ `path:line` names an existing file with that many lines, by its path from the project root or by
+an end of path that only one project file has; a text quoted after it must lie within 3 lines of that line.
 
 A bad report goes back to the agent, up to MAX_SEND_BACKS times; then the agent may stop and the orchestrator is warned.
 The send-back names only the sections that are wrong and asks for only those. The gate keeps the report it judged; on the
@@ -25,6 +26,11 @@ a section whose heading is not the form's is dropped, and the sections come in t
 before. The merged report is what is judged and what is filed: once the agent stops, one row goes to `ledger.jsonl` in the
 plugin's data folder, and each Feedback item goes to the project's `harness-feedback/inbox.md`, where it waits for a retro
 (`turn.py`).
+
+`report_gate.py handback` runs on PreToolUse of the handback tool, where an agent of the app ends: a send-back at its stop
+would reach nobody. It runs the same checks on the report the call carries, reading the claims from the agent's transcript,
+and refuses a bad one (exit 2) so the agent calls again with the whole report fixed. Its refusals and the stop's send-backs
+share one count.
 
 `.harness.json` may set, under `report`: `causes` (more causes a problem may name).
 """
@@ -35,6 +41,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -73,6 +80,12 @@ REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
 NO_PROBLEM = re.compile(r"(- +)?no problem", re.I)
 MAX_SEND_BACKS = 3
+# An exit code a command printed rather than ended with: `rg exit 1`, `rc=2`, make's `Error 2`, `returncode: 1`.
+PRINTED_EXIT = r"\b(?:exit|code|rc|status|returncode|returned|error)\b\D{{0,12}}\b{code}\b"
+# The project's files, for a READ path given by its end: git's list, else a walk of this many files at most.
+GIT_TIMEOUT_S = 3
+MAX_WALK_FILES = 20000
+SKIPPED_FOLDERS = frozenset({"node_modules", "__pycache__"})
 # Characters a report may hold outside fenced blocks, which are evidence the reader skips. Every character of a report stays
 # in the main session's context; the project file's `report.max_chars` overrides it.
 MAX_REPORT_CHARS = 6000
@@ -269,11 +282,12 @@ def result_text(block: dict, /) -> str:  # keys are data
 
 
 class AssistantBlocks(NamedTuple):
-    """What a transcript holds of the assistant: its content blocks, each error result's text by call id, the model."""
+    """What a transcript holds of the assistant: its content blocks, each error result's text by call id, the model, each result's text by call id."""
 
     blocks: list[dict]  # keys are data
     failed: dict[str, str]
     model: str | None
+    outputs: dict[str, str]
 
 
 def read_assistant_blocks(path: str, /) -> AssistantBlocks:  # keys are data
@@ -284,6 +298,7 @@ def read_assistant_blocks(path: str, /) -> AssistantBlocks:  # keys are data
 
     blocks: list[dict] = []
     failed: dict[str, str] = {}
+    outputs: dict[str, str] = {}
     model: str | None = None
     with open(path, errors="replace") as file:
         for line in file:
@@ -299,10 +314,12 @@ def read_assistant_blocks(path: str, /) -> AssistantBlocks:  # keys are data
                     continue
                 if entry.get("type") == "assistant":
                     blocks.append(block)
-                elif entry.get("type") == "user" and block.get("type") == "tool_result" and block.get("is_error"):
-                    failed[block.get("tool_use_id")] = result_text(block)
+                elif entry.get("type") == "user" and block.get("type") == "tool_result":
+                    outputs[block.get("tool_use_id")] = result_text(block)
+                    if block.get("is_error"):
+                        failed[block.get("tool_use_id")] = result_text(block)
 
-    return AssistantBlocks(blocks, failed, model)
+    return AssistantBlocks(blocks, failed, model, outputs)
 
 
 def get_report(event: dict, blocks: list[dict], /, *, is_resend: bool = False) -> str:  # keys are data
@@ -364,20 +381,63 @@ def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
     return re.search(rf"(?<![\w./-])(?:\./)?(?:{pattern})(?![\w/-]|\.\w)", report) is not None
 
 
+def get_project_files(root: str, /) -> list[str]:
+    """The project's files relative to its root: git's tracked and unignored ones, else a walk of MAX_WALK_FILES at most."""
+
+    try:
+        run = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        run = None
+    if run is not None and run.returncode == 0:
+        return run.stdout.splitlines()
+    found: list[str] = []
+    for folder, names, files in os.walk(root):
+        names[:] = [name for name in names if not name.startswith(".") and name not in SKIPPED_FOLDERS]
+        found += [os.path.relpath(os.path.join(folder, name), root) for name in files]
+        if len(found) >= MAX_WALK_FILES:
+            break
+
+    return found
+
+
+def find_by_end(path: str, files: list[str], /) -> list[str]:
+    """The project files whose path is `path` or ends with it after a folder."""
+
+    end = path.removeprefix("./")
+
+    return [name for name in files if name == end or name.endswith("/" + end)]
+
+
 def check_read_claims(report: str, root: str, /) -> list[Problem]:
     """Each READ `path:line` names an existing file with at least that many lines; `path:a-b` checks `b`.
 
-    A claim followed by a quoted text needs that text on its lines or within QUOTE_WINDOW lines of them.
+    A path not found from the root is looked up by its end: one project file ending with it is that file. A claim followed
+    by a quoted text needs that text on its lines or within QUOTE_WINDOW lines of them.
     """
 
     problems: list[Problem] = []
+    files: list[str] | None = None
     for match in READ_CLAIM.finditer(report):
         path, first, last = match.groups()
         section = get_section_at(report, match.start())
         full = os.path.join(root, os.path.expanduser(path))
         if not os.path.isfile(full):
-            problems.append(Problem(section, f"READ names a file that does not exist: {path}"))
-            continue
+            files = get_project_files(root) if files is None else files
+            found = find_by_end(path, files)
+            if len(found) > 1:
+                problems.append(Problem(section, f"READ names {path}, and {len(found)} project files end with it: give its path from the project root"))
+                continue
+            if not found:
+                problems.append(Problem(section, f"READ names a file that does not exist: {path}"))
+                continue
+            full = os.path.join(root, found[0])
         with open(full, errors="replace") as file:
             lines = file.read().splitlines()
         count = len(lines)
@@ -403,8 +463,8 @@ def check_read_claims(report: str, root: str, /) -> list[Problem]:
     return problems
 
 
-def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /) -> list[Problem]:  # keys are data
-    """Each `exit N` of the report is the result of a Bash call: a failed call's `Exit code N`, or 0 for a call that did not fail."""
+def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], outputs: dict[str, str], /) -> list[Problem]:  # keys are data
+    """Each `exit N` of the report is the result of a Bash call: a failed call's `Exit code N`, 0 for a call that did not fail, or a code a call printed."""
 
     seen: set[int] = set()
     for block in blocks:
@@ -416,6 +476,7 @@ def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /
             elif match:
                 seen.add(int(match.group(1)))
     claimed = sorted({int(code) for code in EXIT_CLAIM.findall(report)})
+    printed = "\n".join(outputs.get(block.get("id"), "") for block in blocks if block.get("type") == "tool_use" and block.get("name") == "Bash")
 
     return [
         Problem(
@@ -424,7 +485,7 @@ def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /
             f"(codes seen: {', '.join(map(str, sorted(seen))) or 'none'}): write the exit code each command printed, or drop the claim",
         )
         for code in claimed
-        if code not in seen
+        if code not in seen and not re.search(PRINTED_EXIT.format(code=code), printed, re.I)
     ]
 
 
@@ -452,7 +513,9 @@ def check_length(report: str, limit: int, /) -> list[Problem]:
     return [Problem(longest, text)]
 
 
-def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: dict[str, str], /) -> list[Problem]:  # keys are data
+def check_claims(
+    report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: dict[str, str], outputs: dict[str, str], /
+) -> list[Problem]:  # keys are data
     """What the report claims against what its transcript shows; no transcript leaves only the READ claims."""
 
     problems = check_read_claims(report, root)
@@ -473,7 +536,7 @@ def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list
     if exit_claim and not has_bash:
         problems.append(Problem(get_section_at(report, exit_claim.start()), "the report claims an exit code, and the transcript holds no Bash call"))
     elif has_bash:
-        problems += check_exit_claims(report, blocks, failed)
+        problems += check_exit_claims(report, blocks, failed, outputs)
 
     return problems
 
@@ -607,11 +670,15 @@ def get_kept(event: dict, tries: int, /) -> Kept | None:  # keys are data
         return None
 
 
-def make_send_back(problems: list[Problem], /) -> str:
-    """The reason of a send-back: the sections that are wrong with what is wrong in each, and the form of those sections only."""
+def make_send_back(problems: list[Problem], /, *, is_handback: bool = False) -> str:
+    """The reason of a send-back: the sections that are wrong with what is wrong in each, and the form of those sections only.
+
+    A refused handback asks for the whole report again, since the main session gets only what the handback carries.
+    """
 
     hints = {
-        "Problems": f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped.',
+        "Problems": f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped, for example: '
+        '"- The first test run failed on a missing fixture (cause: brief). A Runs: line naming the fixture would have helped."',
         "Feedback": "Each Feedback item names a file to change.",
         "Verdict": "Verdict is last and opens with done, partial or blocked, then one sentence.",
     }
@@ -619,12 +686,13 @@ def make_send_back(problems: list[Problem], /) -> str:
     lines = [f"- {section}: " + "; ".join(problem.text for problem in problems if problem.section == section) for section in wrong]
     advice = " ".join(hints[section] for section in wrong if section in hints)
 
-    return (
-        "Your report breaks the report skill's form in these sections only:\n"
-        + "\n".join(lines)
-        + "\nSend again only these sections, each as its `## ` heading line and its body; every other section stays as it was. "
-        + advice
-    ).strip()
+    ask = (
+        f"Call {HANDBACK_TOOL} again with the whole report, these sections fixed; the main session gets only what that call carries. "
+        if is_handback
+        else "Send again only these sections, each as its `## ` heading line and its body; every other section stays as it was. "
+    )
+
+    return ("Your report breaks the report skill's form in these sections only:\n" + "\n".join(lines) + "\n" + ask + advice).strip()
 
 
 def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: str | None, config: dict, role: str, root: str, /) -> dict:  # keys are data
@@ -665,45 +733,86 @@ def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> AssistantBl
     REPORT_WAIT_S is not defended by a case, since none can write the file late; past it the agent counts as ended with no report.
     """
 
-    blocks, failed, model = read_assistant_blocks(path)
+    found = read_assistant_blocks(path)
     waited = 0.0
-    while is_awaited(get_report(event, blocks, is_resend=kept is not None), kept) and waited < REPORT_WAIT_S:
+    while is_awaited(get_report(event, found.blocks, is_resend=kept is not None), kept) and waited < REPORT_WAIT_S:
         time.sleep(REPORT_POLL_S)
         waited += REPORT_POLL_S
-        blocks, failed, model = read_assistant_blocks(path)
+        found = read_assistant_blocks(path)
 
-    return AssistantBlocks(blocks, failed, model)
+    return found
 
 
-def main() -> int:
-    event = json.load(sys.stdin)
-    root, config = find_project(event.get("cwd") or os.getcwd())
+def get_problems(report: str, event: dict, root: Path, config: dict, found: AssistantBlocks, /) -> list[Problem]:  # keys are data
+    """Everything wrong with a report: its form, its length and the claims its transcript does not back."""
+
     settings = config.get("report", {})
-    name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
-    # A repo's own agents keep their own report form unless the repo opted in with its own file.
-    if not has_project_file(root) and not (event.get("agent_type") or "").startswith(PLUGIN_PREFIX):
-        return 0
     # A cause counts as a whole word, and not when a `|` follows it: the skill's template lists the causes as
     # `brief | tool | ...`, and a copied list is not a choice.
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
     cause_pattern = re.compile(rf"cause:\s*({causes})(?![a-z]|\s*\|)", re.I)
+    problems = check_report(report, cause_pattern)
+    problems += check_length(report, get_max_chars(settings))
+    problems += check_claims(report, event, str(root), get_scratch(root, config), found.blocks, found.failed, found.outputs)
+
+    return problems
+
+
+def is_judged(root: Path, event: dict, /) -> bool:  # keys are data
+    """Whether the agent owes the form: a harness role anywhere; a repo's own agent only where the repo opted in with its own file."""
+
+    return has_project_file(root) or (event.get("agent_type") or "").startswith(PLUGIN_PREFIX)
+
+
+def check_handback(event: dict, /) -> int:  # keys are data
+    """PreToolUse on the handback: a bad report is refused while the agent can still fix it.
+
+    The count is the one the stop reads, so the two send back MAX_SEND_BACKS times at most between them; past it the
+    handback goes through and the stop files the report with its problems.
+    """
+
+    root, config = find_project(event.get("cwd") or os.getcwd())
+    report = (event.get("tool_input") or {}).get("message")
+    tries = get_send_backs(event)
+    if not event.get("agent_id") or not isinstance(report, str) or not is_judged(root, event) or tries >= MAX_SEND_BACKS:
+        return 0
+    path = get_agent_path(event)
+    found = read_assistant_blocks(str(path)) if path is not None else AssistantBlocks([], {}, None, {})
+    # A PreToolUse event names only the session's transcript; the claims are read from the agent's own.
+    judged = {**event, "agent_transcript_path": str(path)} if path is not None else event
+    problems = get_problems(report, judged, root, config, found)
+    if not problems:
+        return 0
+    write_atomic(get_send_backs_path(event), str(tries + 1))
+    print(make_send_back(problems, is_handback=True), file=sys.stderr)
+
+    return 2
+
+
+def main() -> int:
+    event = json.load(sys.stdin)
+    if sys.argv[1:2] == ["handback"]:
+        return check_handback(event)
+    root, config = find_project(event.get("cwd") or os.getcwd())
+    name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
+    # A repo's own agents keep their own report form unless the repo opted in with its own file.
+    if not is_judged(root, event):
+        return 0
     path = event.get("agent_transcript_path") or ""
     tries = get_send_backs(event)
     kept = get_kept(event, tries)
-    blocks, failed, model = wait_for_report(event, path, kept) if os.path.isfile(path) else AssistantBlocks([], {}, None)
-    sent = get_report(event, blocks, is_resend=kept is not None)
+    found = wait_for_report(event, path, kept) if os.path.isfile(path) else AssistantBlocks([], {}, None, {})
+    sent = get_report(event, found.blocks, is_resend=kept is not None)
     report = merge_reports(kept.merged, sent) if kept and sent else (kept.merged if kept else sent)
-    problems = check_report(report, cause_pattern)
-    problems += check_length(report, get_max_chars(settings))
-    problems += check_claims(report, event, str(root), get_scratch(root, config), blocks, failed)
-    extra = get_extra(event, blocks, failed, model, config, name, str(root))
+    problems = get_problems(report, event, root, config, found)
+    extra = get_extra(event, found.blocks, found.failed, found.model, config, name, str(root))
     texts = [problem.text for problem in problems]
     if not problems:
         finish(event, str(root), name, report, [], extra)
         return 0
     listed = "; ".join(texts)
     # An agent that handed back has ended, so a send-back would reach nobody and lose its row and feedback.
-    has_ended = bool(blocks) and blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
+    has_ended = bool(found.blocks) and found.blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
     if has_ended or tries >= MAX_SEND_BACKS:
         finish(event, str(root), name, report, texts, extra)
         cause = "and it has already ended" if has_ended else f"after {tries} send-backs"

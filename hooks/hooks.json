@@ -33,6 +33,16 @@
         ]
       },
       {
+        "matcher": "SubagentHandback",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\" handback",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Bash|Write|Edit|NotebookEdit",
         "hooks": [
           {
@@ -80,7 +90,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Agent|Task|Edit|Write",
+        "matcher": "Agent|Task|Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",

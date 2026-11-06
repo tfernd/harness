@@ -15,8 +15,8 @@ how the parts fit, what it stops and what it does not.
 - **Make agent work checkable.** A sub-agent cannot end with "done": its report has fixed sections, and its claims (files
   changed, exit codes, `path:line` evidence) are checked against what it really did.
 - **Turn problems into rules.** What agents report piles up in an inbox, and a due retro turns it into changes.
-- **Keep the cost down.** The main session works directly, scripts repetitive work, and uses agents only where parallel
-  work pays.
+- **Keep the cost down.** The main session orchestrates: it scripts repetitive work, hands changes to `harness:worker` agents
+  (a hook caps the edits it makes itself in one turn), and uses agents where parallel work pays.
 
 ## How you use it
 
@@ -38,8 +38,8 @@ you ── ask ──> main session (follows the orchestrator skill)
  at every start     context: orchestrator pointer, tool-habits, report form, open problems
  before each call   guard · delegate · skill_gate · brief_lint · budget
  after a read       nudge
- when an agent ends report_gate: checks the report, files problems in the inbox and the ledger
- when a turn ends   turn: status, lessons, and a retro when 20 items wait
+ when an agent ends report_gate: checks the report before its handback, files problems in the inbox and the ledger
+ when a turn ends   turn: status, each agent's outcome, lessons, and a retro when 20 items wait
                  ▼
  inbox ──> analyst ──> a new rule in a hook, skill or brief template, or a line in open.md
 ```
@@ -55,7 +55,8 @@ two meet: a skill says what to write, a hook checks it.
 | **Opted in** | The project has a `.harness.json` | All of the above, plus the guard's project rules (scratch, `/tmp`, packages, lock), the commit rule, retros, budgets and reports for the repo's own agents, and each rule its keys switch on |
 
 Settings come in three layers, each key over the one before: the plugin's defaults, the owner's file
-(`~/.config/harness/config.json`, or `$HARNESS_CONFIG`), then the project's `.harness.json`.
+(`~/.config/harness/config.json`, or `$HARNESS_CONFIG`), then the project's `.harness.json`. The plugin's defaults that apply in every repo,
+with or without a `.harness.json`, are the template's `brief`, `skill_gate` and `main_edits` sections (`DEFAULT_SECTIONS` in `hooks/common.py`).
 
 ## The hooks and what they stop
 
@@ -65,13 +66,13 @@ Settings come in three layers, each key over the one before: the plugin's defaul
 | `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`; `rm` works inside a named scratch folder), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early. Lets a foreground `sleep` run changed (removed, or moved to the background) and says so |
 | `guard.py`, configured | Before a command or edit | Asks you before package changes and refuses Python run outside its lock wrapper. Lets writes under `/tmp` and shell writes outside the scratch folder run, with a note on where such files belong |
 | `commit_gate.py` | Before a command | Refuses a commit whose message `-m`, `-F` or a heredoc shows is not `type(scope): title` with `* ` bullets, and a commit or pull request whose text shows AI attribution. It cannot read a commit that opens an editor, or a message in a variable set by an earlier call |
-| `delegate.py` | Before a command or edit | With the `delegate` key, lets edits and unlisted commands from the main session run and adds a note that agents do the work here |
+| `delegate.py` | Before a command or edit | With the `delegate` key, lets edits and unlisted commands from the main session run and adds a note that agents do the work here. In every project, `main_edits` refuses the main session's edit once it has made `max` (default 3) edits in one turn outside `allow` (default `harness-feedback/*`, `scratch/*`): the change goes to a `harness:worker`; `max` 0 turns it off; Bash edits are not counted |
 | `skill_gate.py` | Before a command or edit | With the `skill_gate` key, lets an edit run and gives the agent the skill's own text when it has not seen it, for that kind of file, including a shell write or a Python script that writes, and for a commit or pull request the `git-commit` text. Once per agent; needs no Skill call |
 | `brief_lint.py` | Before an agent starts | In any project, refuses a generic agent (`general-purpose`, `Explore`, `Plan`, or no type) and names the harness role to use. With the `brief` key, lets the brief go and adds a note when it has no `Goal:`, when a worker brief has no `Write set:` and `Judge:`, a reviewer brief no `Input:` and `Tree:`, an auditor brief no `Input:` and `Judge:`, a runner brief no `Runs:`, or when the budget is in anything but turns |
 | `budget.py` | Before every call | Refuses every call but the handback from an agent past its turns, so it sends a partial report. Any agent type has a default |
 | `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent, and once per agent after a test or build piped into `tail`/`head` without `pipefail`. Refuses nothing |
-| `report_gate.py` | An agent stops | Any agent type must end with a report: Answer, Not proven and a Verdict of done, partial or blocked, plus Problems, Next time, Open and Feedback when they have something to say. Sends back a malformed one, or one its transcript does not back, up to 3 times, naming only the sections that are wrong; the gate merges the sections the agent resends into the report it kept. Files problems and writes the ledger |
-| `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, a lesson with no rule changed, a bare "no lessons" after a refused call, or a due retro |
+| `report_gate.py` | An agent hands back or stops | Any agent type must end with a report: Answer, Not proven and a Verdict of done, partial or blocked, plus Problems, Next time, Open and Feedback when they have something to say. Refuses the handback of a malformed one, or one its transcript does not back, while the agent can still fix it; an agent that stops without a handback gets the report sent back instead. Up to 3 times in all, naming only the sections that are wrong. Files problems and writes the ledger |
+| `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, a status that does not name each agent run under `## Agents`, a lesson with no rule changed, a bare "no lessons" after a refused call, or a due retro |
 
 A refusal says which rule fired and what to change. A rule marked as letting the call run says so in a note with the result.
 
@@ -158,6 +159,7 @@ Every key is optional; the same keys work in the owner's file. `{}` opts a proje
 | Key | Effect |
 |---|---|
 | `guard` | `scratch` names the scratch folder, `no_tmp` refuses `/tmp`, `ask_packages` asks before package changes, `lock` forces Python through a wrapper, `commit_style: false` turns the commit rule off |
+| `main_edits` | `max` (default 3, 0 is off) and `allow` (globs; default `harness-feedback/*`, `scratch/*`): the main session's edits per turn outside `allow` before the hook refuses and the change goes to a worker |
 | `delegate` | The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
 | `brief` | Briefs must hold the lines each role needs. `required` replaces the defaults |
 | `skill_gate` | Maps a file pattern to the skills to load before editing it |

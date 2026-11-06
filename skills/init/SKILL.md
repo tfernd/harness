@@ -36,11 +36,12 @@ Every key is optional; the key's presence turns its rule on. `{}` turns on the r
 ```
 
 - `skill_gate`: init writes the template's defaults (`.py` to `harness:code-python`, JS and TS to `harness:code-js`, `.html` and `.css` to `harness:code-html-css`, `.tf` and `.tfvars` to `harness:code-terraform`, `.sh` to `harness:code-shell`, test files to `harness:testing`); drop the entries of languages the project lacks.
-- `guard`: `scratch` is the throwaway folder; `no_tmp` refuses writes under `/tmp`.
-- `delegate` (optional, not in the starter; add it only to make agents do every edit): the main session may edit only paths matching a `write_allow` glob (relative to the project root, matched
-  with fnmatch) and may run Bash only when every simple command starts with a default or `bash_allow` prefix. A prefix
-  matches whole words: `git log` matches `git log -3`, not `git logs`. The default prefixes are `DEFAULT_BASH_ALLOW` in `hooks/delegate.py`. A push is not on the list: it needs the owner's word, or a `bash_allow` entry of the project. The main session commits only on the owner's word, whatever the list allows. An empty `write_allow` lets the main session edit nothing.
-- `brief`: turns on the brief check. Default `required` is `{"worker": ["Goal:", "Write set:", "Judge:"], "*":
-  ["Goal:"]}`; it applies to every agent type.
+- `guard`: `scratch` is the throwaway folder; `no_tmp` adds a note to a write under `/tmp`; a shell write in the project outside `scratch` gets one too.
+- `main_edits` (on in every repo, so the starter does not need it): `max` (default 3, 0 is off) caps the main session's own edits per turn outside `allow` (default `harness-feedback/*`, `scratch/*`); past it, changes go to a `harness:worker`. Raise it with `"main_edits": {"max": N}`.
+- `delegate` (optional, not in the starter; add it only to make agents do every edit): the main session's edits outside a `write_allow` glob (relative to the project root, matched
+  with fnmatch), and its Bash commands unless every simple command starts with a default or `bash_allow` prefix, run with a note that agents do the work here. A prefix
+  matches whole words: `git log` matches `git log -3`, not `git logs`. The default prefixes are `DEFAULT_BASH_ALLOW` in `hooks/delegate.py`. A push is not on the list: it needs the owner's word, or a `bash_allow` entry of the project. The main session commits only on the owner's word, whatever the list allows. An empty `write_allow` notes every edit.
+- `brief`: turns on the brief check. Default `required` is `DEFAULT_REQUIRED` in `hooks/brief_lint.py` (per role, with `*`
+  for the rest); it applies to every agent type.
 
 Feedback of sub-agents lands in `harness-feedback/`; commit the folder.
