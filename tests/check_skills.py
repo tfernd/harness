@@ -17,11 +17,13 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from collections.abc import Set
 from pathlib import Path
+from typing import NamedTuple
 
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent
-SKILL_KEYS = {"name", "description"}
-AGENT_KEYS = {"name", "description", "tools", "model", "skills"}
+SKILL_KEYS = frozenset({"name", "description"})
+AGENT_KEYS = frozenset({"name", "description", "tools", "model", "skills"})
 MAX_DESCRIPTION = 300
 MAX_BODY_LINES = 150
 SCANNED_FOLDERS = ("skills", "agents", "templates", "hooks")
@@ -31,7 +33,14 @@ KEY_LINE = re.compile(r"^([A-Za-z_][\w-]*):\s*(.*)$")
 ITEM_LINE = re.compile(r"^\s+-\s+(.*?)\s*$")
 
 
-def split_frontmatter(text: str) -> tuple[dict[str, str | list[str]], list[str]] | None:
+class Frontmatter(NamedTuple):
+    """A file's frontmatter keys with their values, and the body lines after it."""
+
+    fields: dict[str, str | list[str]]  # keys are data
+    body: list[str]
+
+
+def split_frontmatter(text: str, /) -> Frontmatter | None:
     """Return the frontmatter keys with their values and the body lines, or None when there is none."""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -49,10 +58,10 @@ def split_frontmatter(text: str) -> tuple[dict[str, str | list[str]], list[str]]
         elif (item := ITEM_LINE.match(line)) and key:
             current = fields[key]
             fields[key] = [*current, item.group(1)] if isinstance(current, list) else [item.group(1)]
-    return fields, lines[end + 1 :]
+    return Frontmatter(fields, lines[end + 1 :])
 
 
-def read_documents(root: Path, kind: str, filename: str) -> list[Path]:
+def read_documents(root: Path, kind: str, filename: str, /) -> list[Path]:
     folder = root / kind
     if not folder.is_dir():
         return []
@@ -61,13 +70,13 @@ def read_documents(root: Path, kind: str, filename: str) -> list[Path]:
     return sorted(folder.glob("*.md"))
 
 
-def check_frontmatter(rel: str, fields: dict[str, str | list[str]], allowed: set[str]) -> list[str]:
+def check_frontmatter(rel: str, fields: dict[str, str | list[str]], allowed: Set[str], /) -> list[str]:
     problems = [f"{rel}: frontmatter key not allowed: {key}" for key in fields if key not in allowed]
     problems += [f"{rel}: frontmatter key missing: {key}" for key in sorted(allowed) if key not in fields]
     return problems
 
 
-def check_skill(root: Path, path: Path) -> list[str]:
+def check_skill(root: Path, path: Path, /) -> list[str]:
     rel = path.relative_to(root).as_posix()
     parsed = split_frontmatter(path.read_text())
     if parsed is None:
@@ -87,7 +96,7 @@ def check_skill(root: Path, path: Path) -> list[str]:
     return problems
 
 
-def check_agent(root: Path, path: Path, skill_names: set[str]) -> list[str]:
+def check_agent(root: Path, path: Path, skill_names: Set[str], /) -> list[str]:
     rel = path.relative_to(root).as_posix()
     parsed = split_frontmatter(path.read_text())
     if parsed is None:
@@ -101,7 +110,7 @@ def check_agent(root: Path, path: Path, skill_names: set[str]) -> list[str]:
     return problems
 
 
-def check_harness_refs(root: Path, known: set[str]) -> list[str]:
+def check_harness_refs(root: Path, known: Set[str], /) -> list[str]:
     problems = []
     for folder in SCANNED_FOLDERS:
         base = root / folder
@@ -119,7 +128,7 @@ def check_harness_refs(root: Path, known: set[str]) -> list[str]:
     return problems
 
 
-def check_tree(root: Path) -> list[str]:
+def check_tree(root: Path, /) -> list[str]:
     skills = read_documents(root, "skills", "SKILL.md")
     agents = read_documents(root, "agents", "")
     skill_names = {path.parent.name for path in skills}

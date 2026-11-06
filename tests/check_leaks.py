@@ -22,12 +22,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLACEHOLDERS = {"user", "you", "name", "username", "me", "yourname", "your-name", "example", "<user>", "$user"}
+PLACEHOLDERS = frozenset({"user", "you", "name", "username", "me", "yourname", "your-name", "example", "<user>", "$user"})
 HOME = re.compile(r"(?:/ho" r"me/|/Us" r"ers/|[A-Za-z]:\\Us" r"ers\\)([^/\\\s\"'`)]+)")
 EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
-EMAIL_OK = {"anthropic.com", "users.noreply.github.com"}
-# The one place a handle may appear: the repo's own install path.
+EMAIL_OK = frozenset({"anthropic.com", "users.noreply.github.com"})
+# The places a handle may appear: the repo's own install path, and the marketplace's owner, who publishes it.
 REPO_PATH = "tfernd/harness"
+OWNER_FILE = ".claude-plugin/marketplace.json"
+OWNER_LINE = f'"name": "{REPO_PATH.split("/")[0]}"'
 
 
 def private_words() -> list[str]:
@@ -61,6 +63,8 @@ def main() -> int:
             continue
         for n, line in enumerate(text.splitlines(), 1):
             low = line.lower().replace(REPO_PATH, "")
+            if rel == OWNER_FILE:
+                low = low.replace(OWNER_LINE, "")
             kinds = []
             for m in HOME.finditer(line):
                 if m.group(1).lower() not in PLACEHOLDERS:

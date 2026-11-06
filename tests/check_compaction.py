@@ -20,19 +20,19 @@ PRICED = "claude-sonnet-5-5"
 UNPRICED = "claude-mystery-9"
 HOME_PREFIX = "/".join(("", "home", ""))
 # (timestamp, input, cache read, cache write, output) of the five main-session calls.
-MAIN_CALLS = [
+MAIN_CALLS = (
     ("2026-10-01T10:00:00Z", 10, 0, 40000, 1000),
     ("2026-10-01T10:01:00Z", 5, 40000, 2000, 500),
     ("2026-10-01T10:02:00Z", 5, 42000, 3000, 400),
     ("2026-10-01T10:04:00Z", 5, 30000, 9000, 300),
     ("2026-10-02T09:00:00Z", 5, 39000, 1000, 200),
-]
+)
 # Dollars worked by hand at $2 input, $10 output, $0.20 cache read, $2.50 cache write per million tokens.
 EXPECTED_ALL = 0.19176
 EXPECTED_LAST_DAY = 0.01231
 
 
-def make_call(name: str, model: str, usage: tuple[str, int, int, int, int]) -> str:
+def make_call(name: str, model: str, usage: tuple[str, int, int, int, int], /) -> str:
     """One assistant log line."""
     timestamp, inp, read, write, out = usage
     usage_data = {
@@ -45,7 +45,7 @@ def make_call(name: str, model: str, usage: tuple[str, int, int, int, int]) -> s
     return json.dumps({"type": "assistant", "timestamp": timestamp, "message": message}, separators=(",", ":"))
 
 
-def make_logs(root: Path) -> None:
+def make_logs(root: Path, /) -> None:
     """Write the synthetic folder: a main session with one compaction, a sub-agent run and an unpriced model."""
     project = root / "project-one"
     (project / "session" / "subagents").mkdir(parents=True)
@@ -64,7 +64,7 @@ def make_logs(root: Path) -> None:
     (project / "other.jsonl").write_text("\n".join(other) + "\n")
 
 
-def run_tool(root: Path, out: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+def run_tool(root: Path, out: Path, /, *extra: str) -> subprocess.CompletedProcess[str]:
     """Run the tool with a clean environment for the log folder."""
     env = {key: value for key, value in os.environ.items() if key != "CLAUDE_CONFIG_DIR"}
     return subprocess.run(
