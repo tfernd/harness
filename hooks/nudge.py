@@ -108,9 +108,6 @@ def get_turn_stats(events: list[dict], /) -> dict:  # keys are data
 
 def main() -> int:
     event = json.load(sys.stdin)
-    root, _ = find_project(event.get("cwd") or os.getcwd())
-    if root is None:
-        return 0
     path = get_agent_path(event) if event.get("agent_id") else Path(event.get("transcript_path") or "")
     if path is None or not path.is_file() or path.stat().st_size > MAX_BYTES:
         return 0

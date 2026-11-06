@@ -26,7 +26,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, read_events
+from common import HANDBACK_TOOL, PLUGIN_PREFIX, find_project, get_turns, get_unfenced_lines, has_project_file, read_events
 
 # Turns meant to stop a runaway agent and no ordinary one. Defaults, not a measurement; a brief's `Budget:` line overrides them.
 # The fewest turns left when the note comes; a budget under this gets no note.
@@ -135,7 +135,7 @@ def main() -> int:
         return 0
     root, config = find_project(event.get("cwd") or os.getcwd())
     path = get_agent_path(event)
-    if root is None or path is None:
+    if path is None:
         return 0
     with open(path, errors="replace") as file:
         line = file.readline()
@@ -144,10 +144,11 @@ def main() -> int:
         first = json.loads(line)
     except ValueError:
         first = {}
-    role = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
+    agent_type = event.get("agent_type") or ""
     limit = get_turn_limit(get_brief(first))
-    if limit is None:
-        limit = get_default(config, role)
+    # A repo's own agents get a default budget only where the repo opted in with its own file; harness roles get one everywhere.
+    if limit is None and (has_project_file(root) or agent_type.startswith(PLUGIN_PREFIX)):
+        limit = get_default(config, agent_type.removeprefix(PLUGIN_PREFIX))
     if limit is None:
         return 0
     turns = get_turns(read_events(path))

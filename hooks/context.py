@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from common import FILE_EDGES, HANDLED, INBOX, OPEN_PROBLEMS, PLUGIN_PREFIX, data_folder, find_project
+from common import FILE_EDGES, HANDLED, INBOX, OPEN_PROBLEMS, PLUGIN_PREFIX, data_folder, find_project, get_feedback_root
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
@@ -90,9 +90,10 @@ def get_lessons(root: Path, agent_type: str, /) -> str:
     """The role's last handled lessons (no auto items, no vanished rule file), newest last, within the character limit; empty when there are none or a file fails."""
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)
+    feedback = get_feedback_root(root)
     try:
-        inbox = (root / INBOX).read_text(errors="replace")
-        handled = (root / HANDLED).read_text(errors="replace")
+        inbox = (feedback / INBOX).read_text(errors="replace")
+        handled = (feedback / HANDLED).read_text(errors="replace")
     except OSError:
         return ""
     files = {item_id: name.strip(FILE_EDGES) for item_id, name in RULE_LINE.findall(handled)}
@@ -115,7 +116,7 @@ def get_open_problems(root: Path, agent_type: str, /) -> str:
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)
     try:
-        text = (root / OPEN_PROBLEMS).read_text(errors="replace")
+        text = (get_feedback_root(root) / OPEN_PROBLEMS).read_text(errors="replace")
     except OSError:
         return ""
     problems = [problem.strip()[:MAX_LESSON_TEXT] for owner, problem in OPEN_LINE.findall(text) if owner in (role, "all")]
@@ -152,8 +153,6 @@ def get_retro_line(root: Path, /) -> str:
 def main() -> int:
     event = json.load(sys.stdin)
     root, config = find_project(event.get("cwd") or os.getcwd())
-    if root is None:
-        return 0
     name = event.get("hook_event_name")
     text = ""
     habits = get_habits_text()

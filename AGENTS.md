@@ -18,7 +18,8 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
   asks only what the files do not settle, and shows a diff before touching an existing file.
 - A team commits `.harness.json` and `AGENTS.md`; each member still installs the plugin.
 - Uninstall: `claude plugin uninstall harness@harness`. Develop without touching the installed copy: `claude --plugin-dir .`.
-- Hooks do nothing: `uv` is missing, or the project has no `.harness.json` (only the safety guard runs). A "harness guard
+- Hooks do nothing: `uv` is missing. Without `.harness.json` the checks still run, but the guard's project rules, the commit rule
+  and retros stay off. A "harness guard
   blocked" message names the rule and the change to make.
 - `bin/harness-import` imports past report cards from transcripts into the ledger (`--dry-run` writes nothing).
 - `bin/compaction-report` measures what auto-compaction costs in your Claude Code logs and replays each session at other thresholds (`make compaction`; `--since`/`--until` take a window).

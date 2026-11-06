@@ -6,12 +6,13 @@
 # exclude-newer = "7 days"
 # ///
 """PreToolUse hook on Bash, Write, Edit and NotebookEdit: in a project whose `.harness.json` has a `delegate` key, the main
-session hands its edits and runs to agents. A call that carries `agent_id` came from a sub-agent and passes.
+session hands its edits and runs to agents. The call always runs; one that breaks the rule gets a note in
+`additionalContext`. A call that carries `agent_id` came from a sub-agent and passes unchecked.
 
-`delegate.write_allow` holds globs relative to the project root, matched with fnmatch (its `*` also matches `/`, so `docs/*` covers `docs/a/b.md`); a file outside them is refused,
+`delegate.write_allow` holds globs relative to the project root, matched with fnmatch (its `*` also matches `/`, so `docs/*` covers `docs/a/b.md`); a file outside them is noted,
 apart from `harness-feedback/handled.md`. `delegate.bash_allow` adds prefixes to DEFAULT_BASH_ALLOW; each simple command of
-a Bash call must start with one, whole word by whole word, so `git status && make x` is refused. A shell redirect into
-a file is refused too, since it would be an edit. `$(cat <<'EOF' ...)`, the form of a commit message, reads no file: a
+a Bash call should start with one, whole word by whole word, so `git status && make x` is noted. A shell redirect into
+a file is noted too, since it would be an edit. `$(cat <<'EOF' ...)`, the form of a commit message, reads no file: a
 bare `cat` (the word `cat` alone, with no argument) is allowed.
 """
 
@@ -23,7 +24,7 @@ import os
 import sys
 from pathlib import Path
 
-from common import HANDLED, find_project
+from common import HANDLED, find_project, make_note_output
 from shell import Segment, get_segments
 
 DEFAULT_BASH_ALLOW = (
@@ -41,7 +42,7 @@ DEFAULT_BASH_ALLOW = (
 )
 # The redirect target that writes no file.
 NULL_DEVICE = "/dev/null"
-ADVICE = "the main session delegates edits and runs in this project (`harness:orchestrator`): give this to an agent."
+ADVICE = "the main session delegates edits and runs in this project (`harness:orchestrator`): give the next one to an agent."
 
 
 def is_allowed_segment(segment: Segment, prefixes: list[list[str]], /) -> bool:
@@ -91,23 +92,23 @@ def main() -> int:
         return 0
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
-    if root is None or "delegate" not in config:
+    if "delegate" not in config:
         return 0
     settings = config["delegate"] or {}
     tool_input = event.get("tool_input") or {}
     if event.get("tool_name") == "Bash":
-        refused = check_bash(tool_input.get("command") or "", settings)
-        if not refused:
+        offending = check_bash(tool_input.get("command") or "", settings)
+        if not offending:
             return 0
-        message = f"`{refused}` is not on this project's list of main-session commands, or it redirects into a file"
+        message = f"`{offending}` is not on this project's list of main-session commands, or it redirects into a file"
     else:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         if is_allowed_path(path, root, settings, cwd):
             return 0
         message = f"{path} is not under this project's `delegate.write_allow`"
-    print(f"Blocked by the harness delegate rule: {message}; {ADVICE}", file=sys.stderr)
+    print(json.dumps(make_note_output(f"The harness delegate rule let this call run, but {message}; {ADVICE}")))
 
-    return 2
+    return 0
 
 
 if __name__ == "__main__":

@@ -19,8 +19,12 @@ code only for a failed call, `Exit code N`; a call that did not fail is 0), and 
 that many lines; a text quoted after it must lie within 3 lines of that line.
 
 A bad report goes back to the agent, up to MAX_SEND_BACKS times; then the agent may stop and the orchestrator is warned.
-Once it stops, one row goes to `ledger.jsonl` in the plugin's data folder, and each Feedback item goes to the project's
-`harness-feedback/inbox.md`, where it waits for a retro (`turn.py`).
+The send-back names only the sections that are wrong and asks for only those. The gate keeps the report it judged; on the
+next stop it merges: a section of the new message replaces the sections of the same heading, a section not resent is kept,
+a section whose heading is not the form's is dropped, and the sections come in the form's order. A whole new report works as
+before. The merged report is what is judged and what is filed: once the agent stops, one row goes to `ledger.jsonl` in the
+plugin's data folder, and each Feedback item goes to the project's `harness-feedback/inbox.md`, where it waits for a retro
+(`turn.py`).
 
 `.harness.json` may set, under `report`: `causes` (more causes a problem may name).
 """
@@ -34,9 +38,10 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
-from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_scratch, get_unfenced_lines, read_events
+from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, PLUGIN_PREFIX, data_folder, find_project, get_feedback_root, get_fenced_indices, get_scratch, get_unfenced_lines, has_project_file, read_events, write_atomic
 from nudge import get_turn_stats
 
 # The form's sections in order; the rest are left out when they have nothing to say.
@@ -54,6 +59,8 @@ PASS_CLAIM = re.compile(r"\b(tests?|lint|checks?|gates?|build)\b[^.\n]{0,40}\b(p
 CLOSING_TAGS = re.compile(r"(</[A-Za-z][A-Za-z0-9_-]*>|\s)*$")
 EXIT_CODE = re.compile(r"exit\s+[0-9]+", re.I)
 ANSWER_HEADING = re.compile(r"^## Answer\s*$", re.M)
+# After a send-back the new message may hold any section of the form.
+SECTION_HEADING = re.compile(rf"^## ({'|'.join(ORDER)})\s*$", re.M)
 READ_CLAIM = re.compile(r"READ `([^`:]+):([0-9]+)(?:-([0-9]+))?`")
 # The text a READ claim quotes: right after the claim, in double quotes or backticks.
 READ_QUOTE = re.compile(r'[\s:,;\u2013\u2014-]*(?:"([^"\n]+)"|`([^`\n]+)`)')
@@ -66,9 +73,70 @@ REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
 NO_PROBLEM = re.compile(r"(- +)?no problem", re.I)
 MAX_SEND_BACKS = 3
+# Characters a report may hold outside fenced blocks, which are evidence the reader skips. Every character of a report stays
+# in the main session's context; the project file's `report.max_chars` overrides it.
+MAX_REPORT_CHARS = 6000
 # Seconds this hook waits for a report to reach the transcript, and between looks; well under the hook's timeout of 10.
 REPORT_WAIT_S = 3
 REPORT_POLL_S = 0.25
+
+
+class Problem(NamedTuple):
+    """One way a report breaks the form, with the section the agent must send again to fix it."""
+
+    section: str
+    text: str
+
+
+class Kept(NamedTuple):
+    """What the gate keeps between a send-back and the next stop: the message judged and the merged report."""
+
+    raw: str
+    merged: str
+
+
+def split_report(report: str, /) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """The lines before the first `## ` heading, and each section as its heading and all its lines, heading line first."""
+
+    lines = report.splitlines()
+    fenced = get_fenced_indices(lines)
+    preamble: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    for index, line in enumerate(lines):
+        if line.startswith("## ") and index not in fenced:
+            sections.append((line[3:].strip(), [line]))
+        elif sections:
+            sections[-1][1].append(line)
+        else:
+            preamble.append(line)
+
+    return preamble, sections
+
+
+def merge_reports(previous: str, new: str, /) -> str:
+    """The previous report with the sections of the new message in place of those of the same heading.
+
+    A section not resent stays; a section whose heading is not the form's is dropped; the result is in the form's order.
+    The title is the new message's when it has one.
+    """
+
+    old_preamble, old_sections = split_report(previous)
+    new_preamble, new_sections = split_report(new)
+    resent = {heading for heading, _ in new_sections}
+    kept = [(heading, lines) for heading, lines in old_sections if heading in ORDER and heading not in resent]
+    merged = sorted([*kept, *new_sections], key=lambda section: ORDER.index(section[0]) if section[0] in ORDER else len(ORDER))
+    preamble = new_preamble if REPORT_TITLE.search("\n".join(new_preamble)) else old_preamble
+
+    return "\n".join([*preamble, *(line for _, lines in merged for line in lines)])
+
+
+def get_section_at(report: str, position: int, /) -> str:
+    """The form's section holding this character position of the report, Answer when it lies in none."""
+
+    sections = read_sections(report[:position])
+    heading = sections[-1][0] if sections else ""
+
+    return heading if heading in ORDER else "Answer"
 
 
 def read_sections(report: str, /) -> list[tuple[str, list[str]]]:
@@ -107,17 +175,17 @@ def is_none(lines: list[str], /) -> bool:
     return item_text(" ".join(lines)).rstrip(" .").lower() == "none"
 
 
-def check_headings(sections: list[tuple[str, list[str]]], /) -> list[str]:
+def check_headings(sections: list[tuple[str, list[str]]], /) -> list[Problem]:
     """The required headings are there, each heading is the form's and comes once, in order, with Verdict last."""
 
     names = [name for name, _ in sections]
-    problems = [f"missing: {heading}" for heading in REQUIRED if heading not in names]
-    problems += [f"not a section of the form: {name}" for name in dict.fromkeys(names) if name not in ORDER]
-    problems += [f"duplicated: {heading}" for heading in ORDER if names.count(heading) > 1]
+    problems = [Problem(heading, f"missing: {heading}") for heading in REQUIRED if heading not in names]
+    problems += [Problem(name, f"not a section of the form: {name} (leave it out)") for name in dict.fromkeys(names) if name not in ORDER]
+    problems += [Problem(heading, f"duplicated: {heading}") for heading in ORDER if names.count(heading) > 1]
     known = [name for name in dict.fromkeys(names) if name in ORDER]
-    problems += [f"out of order: {name}" for name, expected in zip(known, sorted(known, key=ORDER.index), strict=True) if name != expected]
+    problems += [Problem(name, f"out of order: {name}") for name, expected in zip(known, sorted(known, key=ORDER.index), strict=True) if name != expected]
     if "Verdict" in names and names[-1] != "Verdict":
-        problems.append("Verdict must be the last section")
+        problems.append(Problem("Verdict", "Verdict must be the last section"))
 
     return problems
 
@@ -166,7 +234,7 @@ def check_section(heading: str, lines: list[str], cause_pattern: re.Pattern[str]
     return []
 
 
-def check_report(report: str, cause_pattern: re.Pattern[str], /) -> list[str]:
+def check_report(report: str, cause_pattern: re.Pattern[str], /) -> list[Problem]:
     """Every way a report breaks its form."""
 
     sections = read_sections(report)
@@ -176,9 +244,9 @@ def check_report(report: str, cause_pattern: re.Pattern[str], /) -> list[str]:
         if heading not in bodies:
             continue
         if bodies[heading]:
-            problems += check_section(heading, bodies[heading], cause_pattern)
+            problems += [Problem(heading, text) for text in check_section(heading, bodies[heading], cause_pattern)]
         else:
-            problems.append(f"{heading} is empty")
+            problems.append(Problem(heading, f"{heading} is empty"))
 
     return problems
 
@@ -222,17 +290,21 @@ def read_assistant_blocks(path: str, /) -> tuple[list[dict], dict[str, str], str
     return blocks, failed, model
 
 
-def get_report(event: dict, blocks: list[dict], /) -> str:  # keys are data
-    """The agent's last block, handback or text, holding `## Answer`, else its last message. User lines never count."""
+def get_report(event: dict, blocks: list[dict], /, *, is_resend: bool = False) -> str:  # keys are data
+    """The agent's last block, handback or text, holding `## Answer`, else its last message. User lines never count.
 
+    After a send-back (`is_resend`) a heading of any section of the form will do, since the agent sends only the sections asked for.
+    """
+
+    heading = SECTION_HEADING if is_resend else ANSWER_HEADING
     last = event.get("last_assistant_message") or ""
-    if ANSWER_HEADING.search(last):
+    if heading.search(last):
         return last
     report = ""
     for block in blocks:
         is_handback = block.get("type") == "tool_use" and block.get("name") == HANDBACK_TOOL
         text = (block.get("input") or {}).get("message") if is_handback else block.get("text")
-        if isinstance(text, str) and ANSWER_HEADING.search(text):
+        if isinstance(text, str) and heading.search(text):
             report = text
 
     return report or last
@@ -277,25 +349,26 @@ def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
     return re.search(rf"(?<![\w./-])(?:\./)?(?:{pattern})(?![\w/-]|\.\w)", report) is not None
 
 
-def check_read_claims(report: str, root: str, /) -> list[str]:
+def check_read_claims(report: str, root: str, /) -> list[Problem]:
     """Each READ `path:line` names an existing file with at least that many lines; `path:a-b` checks `b`.
 
     A claim followed by a quoted text needs that text on its lines or within QUOTE_WINDOW lines of them.
     """
 
-    problems: list[str] = []
+    problems: list[Problem] = []
     for match in READ_CLAIM.finditer(report):
         path, first, last = match.groups()
+        section = get_section_at(report, match.start())
         full = os.path.join(root, os.path.expanduser(path))
         if not os.path.isfile(full):
-            problems.append(f"READ names a file that does not exist: {path}")
+            problems.append(Problem(section, f"READ names a file that does not exist: {path}"))
             continue
         with open(full, errors="replace") as file:
             lines = file.read().splitlines()
         count = len(lines)
         line = int(last or first)
         if line > count:
-            problems.append(f"READ {path}:{line} is past the end of the file, which has {count} lines")
+            problems.append(Problem(section, f"READ {path}:{line} is past the end of the file, which has {count} lines"))
             continue
         quote = READ_QUOTE.match(report, match.end())
         quoted = quote and (quote.group(1) or quote.group(2))
@@ -305,14 +378,17 @@ def check_read_claims(report: str, root: str, /) -> list[str]:
             parts = [" ".join(part.split()) for part in re.split(r"\.\.\.|\u2026", quoted)]
             if not all(part in window for part in parts if part):
                 problems.append(
-                    f"READ {path}:{line} quotes text that is not on that line or within {QUOTE_WINDOW} lines of it "
-                    f"({quoted[:50]!r}): quote the line's own text, or fix the line number"
+                    Problem(
+                        section,
+                        f"READ {path}:{line} quotes text that is not on that line or within {QUOTE_WINDOW} lines of it "
+                        f"({quoted[:50]!r}): quote the line's own text, or fix the line number",
+                    )
                 )
 
     return problems
 
 
-def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /) -> list[str]:  # keys are data
+def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /) -> list[Problem]:  # keys are data
     """Each `exit N` of the report is the result of a Bash call: a failed call's `Exit code N`, or 0 for a call that did not fail."""
 
     seen: set[int] = set()
@@ -327,14 +403,41 @@ def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], /
     claimed = sorted({int(code) for code in EXIT_CLAIM.findall(report)})
 
     return [
-        f"the report claims `exit {code}` and no Bash call of the transcript ended with that code "
-        f"(codes seen: {', '.join(map(str, sorted(seen))) or 'none'}): write the exit code each command printed, or drop the claim"
+        Problem(
+            get_section_at(report, re.search(rf"exit\s+{code}\b", report, re.I).start()),
+            f"the report claims `exit {code}` and no Bash call of the transcript ended with that code "
+            f"(codes seen: {', '.join(map(str, sorted(seen))) or 'none'}): write the exit code each command printed, or drop the claim",
+        )
         for code in claimed
         if code not in seen
     ]
 
 
-def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: dict[str, str], /) -> list[str]:  # keys are data
+def get_max_chars(settings: object, /) -> int:
+    """The report length limit: `report.max_chars` when it is a positive integer, else the default."""
+
+    value = settings.get("max_chars") if isinstance(settings, dict) else None
+
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else MAX_REPORT_CHARS
+
+
+def check_length(report: str, limit: int, /) -> list[Problem]:
+    """One problem when the report, outside its fenced blocks, is over the limit; it names the longest section."""
+
+    count = len("\n".join(get_unfenced_lines(report)))
+    if count <= limit:
+        return []
+    sections = read_sections(report)
+    longest = max(sections, key=lambda section: len("\n".join(section[1])))[0] if sections else "Answer"
+    text = (
+        f"the report is {count} characters, over the limit of {limit}: cut repeated detail, keep each claim with its evidence, "
+        "move long lists to a file in the scratch folder and name it"
+    )
+
+    return [Problem(longest, text)]
+
+
+def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: dict[str, str], /) -> list[Problem]:  # keys are data
     """What the report claims against what its transcript shows; no transcript leaves only the READ claims."""
 
     problems = check_read_claims(report, root)
@@ -345,13 +448,15 @@ def check_claims(report: str, event: dict, root: str, scratch: str, blocks: list
     for path in get_changed_files(blocks, failed, cwd):
         is_exempt = scratch and (path == scratch or path.startswith(scratch + os.sep))
         if not is_exempt and not is_named(path, report, folders):
-            problems.append(f"the report does not name a file the agent changed: {path}")
+            problems.append(Problem("Answer", f"the report does not name a file the agent changed: {path}"))
     # No Bash call at all is its own message; with some, each `exit N` is matched to a result.
     has_bash = any(block.get("type") == "tool_use" and block.get("name") == "Bash" for block in blocks)
-    if PASS_CLAIM.search(report) and not has_bash:
-        problems.append("the report says a check passed, and the transcript holds no Bash call")
-    if EXIT_CODE.search(report) and not has_bash:
-        problems.append("the report claims an exit code, and the transcript holds no Bash call")
+    pass_claim = PASS_CLAIM.search(report)
+    exit_claim = EXIT_CODE.search(report)
+    if pass_claim and not has_bash:
+        problems.append(Problem(get_section_at(report, pass_claim.start()), "the report says a check passed, and the transcript holds no Bash call"))
+    if exit_claim and not has_bash:
+        problems.append(Problem(get_section_at(report, exit_claim.start()), "the report claims an exit code, and the transcript holds no Bash call"))
     elif has_bash:
         problems += check_exit_claims(report, blocks, failed)
 
@@ -461,7 +566,50 @@ def get_send_backs_path(event: dict, /) -> Path:  # keys are data
 def get_send_backs(event: dict, /) -> int:  # keys are data
     path = get_send_backs_path(event)
 
-    return int(path.read_text()) if path.exists() else 0
+    try:
+        return int(path.read_text())
+    except (OSError, ValueError):
+        return 0
+
+
+def get_kept_path(event: dict, /) -> Path:  # keys are data
+    """The file holding the report the gate judged at the last send-back."""
+
+    return get_send_backs_path(event).with_suffix(".report")
+
+
+def get_kept(event: dict, tries: int, /) -> Kept | None:  # keys are data
+    """The report kept at the last send-back, None before any send-back or when the file is unreadable."""
+
+    path = get_kept_path(event)
+    if not tries or not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+
+        return Kept(str(data["raw"]), str(data["merged"]))
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def make_send_back(problems: list[Problem], /) -> str:
+    """The reason of a send-back: the sections that are wrong with what is wrong in each, and the form of those sections only."""
+
+    hints = {
+        "Problems": f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped.',
+        "Feedback": "Each Feedback item names a file to change.",
+        "Verdict": "Verdict is last and opens with done, partial or blocked, then one sentence.",
+    }
+    wrong = list(dict.fromkeys(problem.section for problem in problems))
+    lines = [f"- {section}: " + "; ".join(problem.text for problem in problems if problem.section == section) for section in wrong]
+    advice = " ".join(hints[section] for section in wrong if section in hints)
+
+    return (
+        "Your report breaks the report skill's form in these sections only:\n"
+        + "\n".join(lines)
+        + "\nSend again only these sections, each as its `## ` heading line and its body; every other section stays as it was. "
+        + advice
+    ).strip()
 
 
 def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: str | None, config: dict, role: str, root: str, /) -> dict:  # keys are data
@@ -479,21 +627,32 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
 
     path = get_send_backs_path(event)
     send_backs = get_send_backs(event)
-    if path.exists():
-        path.unlink()
+    for stale in (path, get_kept_path(event)):
+        if stale.exists():
+            stale.unlink()
     session = event.get("session_id") or "unknown"
-    write_ledger(event, root, role, report, send_backs, problems, file_feedback(root, session, role, get_feedback(report)), extra)
+    write_ledger(event, root, role, report, send_backs, problems, file_feedback(str(get_feedback_root(Path(root))), session, role, get_feedback(report)), extra)
 
 
-def wait_for_report(event: dict, path: str, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
-    """The transcript's blocks, read again until a report holds its first heading: a handback can reach the file after this hook starts.
+def is_awaited(report: str, kept: Kept | None, /) -> bool:
+    """Whether the report is not there yet: it holds no heading, or it is the message already judged."""
+
+    heading = ANSWER_HEADING if kept is None else SECTION_HEADING
+
+    return not heading.search(report) or (kept is not None and report == kept.raw)
+
+
+def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> tuple[list[dict], dict[str, str], str | None]:  # keys are data
+    """The transcript's blocks, read again until a new report holds a heading: a handback can reach the file after this hook starts.
+
+    After a send-back the message judged then does not count as new.
 
     REPORT_WAIT_S is not defended by a case, since none can write the file late; past it the agent counts as ended with no report.
     """
 
     blocks, failed, model = read_assistant_blocks(path)
     waited = 0.0
-    while not ANSWER_HEADING.search(get_report(event, blocks)) and waited < REPORT_WAIT_S:
+    while is_awaited(get_report(event, blocks, is_resend=kept is not None), kept) and waited < REPORT_WAIT_S:
         time.sleep(REPORT_POLL_S)
         waited += REPORT_POLL_S
         blocks, failed, model = read_assistant_blocks(path)
@@ -506,39 +665,39 @@ def main() -> int:
     root, config = find_project(event.get("cwd") or os.getcwd())
     settings = config.get("report", {})
     name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)
-    if root is None:
+    # A repo's own agents keep their own report form unless the repo opted in with its own file.
+    if not has_project_file(root) and not (event.get("agent_type") or "").startswith(PLUGIN_PREFIX):
         return 0
     # A cause counts as a whole word, and not when a `|` follows it: the skill's template lists the causes as
     # `brief | tool | ...`, and a copied list is not a choice.
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
     cause_pattern = re.compile(rf"cause:\s*({causes})(?![a-z]|\s*\|)", re.I)
     path = event.get("agent_transcript_path") or ""
-    blocks, failed, model = wait_for_report(event, path) if os.path.isfile(path) else ([], {}, None)
-    report = get_report(event, blocks)
+    tries = get_send_backs(event)
+    kept = get_kept(event, tries)
+    blocks, failed, model = wait_for_report(event, path, kept) if os.path.isfile(path) else ([], {}, None)
+    sent = get_report(event, blocks, is_resend=kept is not None)
+    report = merge_reports(kept.merged, sent) if kept and sent else (kept.merged if kept else sent)
     problems = check_report(report, cause_pattern)
+    problems += check_length(report, get_max_chars(settings))
     problems += check_claims(report, event, str(root), get_scratch(root, config), blocks, failed)
     extra = get_extra(event, blocks, failed, model, config, name, str(root))
+    texts = [problem.text for problem in problems]
     if not problems:
         finish(event, str(root), name, report, [], extra)
         return 0
-    listed = "; ".join(problems)
-    tries = get_send_backs(event)
+    listed = "; ".join(texts)
     # An agent that handed back has ended, so a send-back would reach nobody and lose its row and feedback.
-    has_ended = bool(blocks) and blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not report)
+    has_ended = bool(blocks) and blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
     if has_ended or tries >= MAX_SEND_BACKS:
-        finish(event, str(root), name, report, problems, extra)
+        finish(event, str(root), name, report, texts, extra)
         cause = "and it has already ended" if has_ended else f"after {tries} send-backs"
         warning = f"Sub-agent {name} stopped with a bad report {cause}: {listed}"
         print(json.dumps({"systemMessage": warning}))
         return 0
-    get_send_backs_path(event).write_text(str(tries + 1))
-    headings = "\n".join(f"## {heading}" for heading in ORDER)
-    reason = (
-        f"Your report breaks the report skill's form: {listed}\n"
-        f"Send the WHOLE report again, not only the fix. Sections in this order, each heading on its own line, once; Answer, Not proven and Verdict always, the rest only if they have something to say:\n{headings}\n"
-        f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped. Each Feedback item names a file to change. '
-        "Verdict is last and opens with done, partial or blocked, then one sentence."
-    )
+    write_atomic(get_send_backs_path(event), str(tries + 1))
+    write_atomic(get_kept_path(event), json.dumps({"raw": sent, "merged": report}))
+    reason = make_send_back(problems)
     print(json.dumps({"decision": "block", "reason": reason}))
 
     return 0

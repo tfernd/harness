@@ -109,7 +109,10 @@ class Case(NamedTuple):
     first, under the project (or the data folder when the name starts with `data/`); `wrote` is a file and a text it must
     then hold, `not_wrote` a file and a text it must not. `config` is `.harness.json`, None for no file. `cwd` is the
     event's folder and `project_dir` the value of `CLAUDE_PROJECT_DIR`, each relative to the case's temporary folder and
-    created if missing; `links` are symlinks made there, as (name, target). `before` are hook runs that go first, as
+    created if missing; `links` are symlinks made there, as (name, target). `updated` is the whole input the printed JSON must
+    carry as `updatedInput`; `is_unchanged` says the printed JSON must carry none; `context` and `context_lacks` are text the
+    printed `additionalContext` must and must not hold. Any of them also requires exit 0 and no
+    `permissionDecision`, which would take the call out of the owner's permission prompts. `before` are hook runs that go first, as
     (script, event), whose result does not count. ROOT in an event or a transcript stands for the temporary folder.
     """
 
@@ -131,6 +134,10 @@ class Case(NamedTuple):
     links: tuple[tuple[str, str], ...] = ()
     before: tuple[tuple[tuple[str, ...], dict], ...] = ()
     shell: str = "/usr/bin/zsh"
+    updated: dict | None = None  # keys are data; the whole input the hook must print as `updatedInput`
+    is_unchanged: bool = False
+    context: str = ""  # text the printed `additionalContext` must hold
+    context_lacks: str = ""  # text it must not hold
 
 
 # ===========================================================================
@@ -144,10 +151,35 @@ def bash(name: str, command: str, blocks: bool, text: str = "", /, *, config: di
     return Case(name, ("guard.py",), event, blocks, text, config, **options)
 
 
-def write_call(name: str, path: str, blocks: bool, text: str = "", /) -> Case:
+def background_bash(name: str, command: str, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
+    event = {"tool_name": "Bash", "tool_input": {"command": command, "run_in_background": True}}
+
+    return Case(name, ("guard.py",), event, blocks, text, STRICT, **options)
+
+
+# Put before a command whose every sleep is direct; the guard's own text, repeated so a change of it is seen.
+SHADOW = "sleep() { :; }; "
+
+
+def soft_sleep(name: str, command: str, updated: str | None, /, *, config: dict | None = STRICT, text: str = "", **fields: object) -> Case:  # keys are data
+    """A foreground call that sleeps: `updated` is the command the hook must print, None when the call must move to the background."""
+
+    tool_input = {"command": command, **fields}
+    if updated is None:
+        expected = {**tool_input, "run_in_background": True}
+        note = text or "now runs in the background"
+    else:
+        expected = {**tool_input, "command": updated}
+        note = text or "was removed from this command"
+    event = {"tool_name": "Bash", "tool_input": tool_input}
+
+    return Case(name, ("guard.py",), event, False, note, config, updated=expected)
+
+
+def write_call(name: str, path: str, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
     event = {"tool_name": "Write", "tool_input": {"file_path": path}}
 
-    return Case(name, ("guard.py",), event, blocks, text, STRICT)
+    return Case(name, ("guard.py",), event, blocks, text, STRICT, **options)
 
 
 # The real uv cache, kept because each case sets HOME to its own folder.
@@ -158,12 +190,13 @@ COMMIT = "git commit -m \"$(cat <<'EOF'\n{body}\nEOF\n)\""
 DELETE = "nothing is deleted"
 HISTORY = "owner's to run"
 GLOB = "unquoted glob"
-REPO = "project files change"
+REPO = "Project files change"
 GUARD_CASES = [
     bash("a package change asks the owner", "pip install x", True, '"permissionDecision": "ask"'),
     bash("a package change exits clean, so the call can run once accepted", "uv add x", True, "they are asked first", lacks="Blocked"),
     bash("the new key asks too", "pip install x", True, '"permissionDecision": "ask"', config={"guard": {"ask_packages": True}}),
     bash("no key, no question", "pip install x", False, config={"guard": {}}),
+    bash("the owner's file sets no guard rule without a project file", "pip install x", False, config=None, files=(("data/user.json", '{"guard": {"ask_packages": true}}'),)),
     bash("uvx asks the owner", "uvx ruff check src", True, '"permissionDecision": "ask"'),
     bash("uv tool run asks the owner", "uv --quiet tool run ruff check src", True, '"permissionDecision": "ask"'),
     bash("uv tool install asks the owner", "uv tool install ruff", True, '"permissionDecision": "ask"'),
@@ -179,16 +212,16 @@ GUARD_CASES = [
     bash("a bare bash -c does not crash", "bash -c", False),
     bash("a script named like a command is no command string", 'bash -x "pip install y"', False),
     bash("the words of a plain find run nothing", "find . pip install y", False),
-    Case("a notebook under the temporary folder is refused", ("guard.py",), {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/n.ipynb"}}, True, config=STRICT),
+    Case("a notebook under the temporary folder runs with a note", ("guard.py",), {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/n.ipynb"}}, False, config=STRICT, is_unchanged=True, context="let this run"),
     bash("an escaped letter stays in its word", r"p\ip install x", True),
-    bash("a sleep under find is no polling", r"find . -exec sleep 1 \;", False),
-    bash("a sleep under an unended find is no polling", "find . -exec sleep 1", False),
+    soft_sleep("a sleep under find moves the call to the background", r"find . -exec sleep 1 \;", None),
+    soft_sleep("a sleep under an unended find moves the call to the background", "find . -exec sleep 1", None),
     bash("git with options alone passes", "git --version", False),
     bash("uv with options alone passes", "uv --version", False),
     bash("an export of another variable frees nothing", "export FOO=1; uv run python x.py", True, LOCK_MESSAGE),
     bash("a positional parameter stays in a path", "echo a > /$1tmp/y", False),
-    bash("a tar made under the temporary folder is refused", "tar -cf /tmp/a.tar b", True),
-    bash("a cd in a subshell does not move the next step", "(cd scratch); echo hi > AGENTS.md", True, REPO),
+    bash("a tar made under the temporary folder runs with a note", "tar -cf /tmp/a.tar b", False, is_unchanged=True, context="let this run"),
+    bash("a cd in a subshell does not move the next step", "(cd scratch); echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("an open backtick does not crash", "echo `ls", False),
     bash("a command after a parameter is still read", "echo ${X}; uv pip install y", True),
     bash("an open parameter does not crash", "echo ${X", False),
@@ -209,13 +242,13 @@ GUARD_CASES = [
     bash("an option glob in sh -c passes", "sh -c 'grep -rn x --include=*.py .'", False),
     bash("a glob in zsh -c is refused", "zsh -c 'ls *.nothing'", True, "matches no file"),
     bash("a loop with no sleep passes", "while read line; do echo hi; done", False),
-    bash("a sleep in an inner polling loop is refused", "for x in a; do while true; do sleep 1; done; done", True),
-    bash("curl writing into the repo is refused", "curl -o AGENTS.md http://x", True),
+    soft_sleep("a sleep in an inner polling loop moves the call to the background", "for x in a; do while true; do sleep 1; done; done", None),
+    bash("curl writing into the repo runs with a note", "curl -o AGENTS.md http://x", False, is_unchanged=True, context="let this run"),
     bash("curl with no output file passes", "curl http://x", False),
-    bash("a copy into the repo is refused", "cp a AGENTS.md", True),
+    bash("a copy into the repo runs with a note", "cp a AGENTS.md", False, is_unchanged=True),
     bash("a venv python without the lock is refused", ".venv/bin/python x.py", True, LOCK_MESSAGE),
     bash("a plain sed passes", "sed -n 1p AGENTS.md", False),
-    bash("a sed -i in the repo is refused", "sed -i s/a/b/ AGENTS.md", True),
+    bash("a sed -i in the repo runs with a note", "sed -i s/a/b/ AGENTS.md", False, is_unchanged=True),
     bash("an allowed uv command passes", "uv tree", False),
     bash("the free variable named by another command frees nothing", "echo NO_QUEUE=; uv run python x.py", True, LOCK_MESSAGE),
     bash("listing a tar writes nothing", "tar -tf a.tar", False),
@@ -225,6 +258,7 @@ GUARD_CASES = [
     bash("a +ref git push is refused", "git push origin +topic", True, "owner's to run"),
     bash("a delete git push is refused", "git push origin --delete topic", True, "owner's to run"),
     bash("git reset --hard is refused", "git reset --hard HEAD~1", True, "owner's to run"),
+    bash("a broken owner's file keeps the hard rules", "git reset --hard HEAD~1", True, "owner's to run", config=None, files=(("data/user.json", "{bad"),)),
     bash("uv sync is refused", "uv sync", True, "owner's to run"),
     bash("uv run python without the lock is refused", "uv run python x.py", True, LOCK_MESSAGE),
     bash("uv run python under queue is allowed", "bin/queue -- uv run python x.py", False),
@@ -264,21 +298,55 @@ GUARD_CASES = [
     bash("a glob behind a variable is not judged", "ls $x/*.nothing", False),
     bash("a glob with braces is not judged", "ls {a,b}/*.nothing", False),
     bash("a glob in an option from an unknown folder is refused", "cd $x && grep --include=*.py x .", True, GLOB),
+    bash("a failing glob is answered with the command quoted", "ls *.nomatch", True, "Run instead: ls '*.nomatch'"),
+    bash("the quoted fix of a failing glob passes", "ls '*.nomatch'", False),
+    bash("an option glob is quoted on its value", "rg foo --include=*.py", True, "Run instead: rg foo --include='*.py'"),
+    bash("two failing globs are both quoted", "ls *.nomatch src/*.nope", True, "Run instead: ls '*.nomatch' 'src/*.nope'"),
+    bash("the quoted fix of two failing globs passes", "ls '*.nomatch' 'src/*.nope'", False),
+    bash("a glob word holding a quote gets no fix", "ls *.nomatch'x'", True, "unquoted glob", lacks="Run instead"),
+    bash("a long fix is cut", "ls " + " ".join(f"{index}*.nomatch" for index in range(60)), True, "…", lacks="'59*.nomatch'"),
     bash("find -name with a glob that matches is refused", "find . -name *.py", True, GLOB, files=(("a.py", ""),)),
     bash("rg -g with a glob that matches is refused", "rg -g *.py x", True, GLOB, files=(("a.py", ""),)),
     bash("grep --include with a glob that matches is refused", "grep --include *.py x .", True, GLOB, files=(("a.py", ""),)),
     bash("a matching glob after another command's -name is allowed", "ls -name *.py", False, files=(("a.py", ""),)),
     bash("$? is no glob", "echo $?", False),
-    bash("a redirect into /tmp is refused", "echo hi > /tmp/x", True, "never under /tmp"),
-    bash("a redirect over a project file is refused", "echo hi > AGENTS.md", True, "project files change"),
+    bash("a redirect into /tmp runs with a note", "echo hi > /tmp/x", False, "never under /tmp", is_unchanged=True),
+    bash("a redirect over a project file runs with a note", "echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("a redirect into scratch is allowed", "echo hi > scratch/t/x.txt", False),
-    bash("sed -i on a project file is refused", "sed -i s/a/b/ AGENTS.md", True, "project files change"),
-    bash("a sleep in a while loop is refused", "while true; do sleep 1; done", True, "polls"),
-    bash("a sleep in a for loop is allowed", "for i in 1 2; do sleep 1; done", False),
+    bash("sed -i on a project file runs with a note", "sed -i s/a/b/ AGENTS.md", False, REPO, is_unchanged=True),
+    soft_sleep("a sleep in a while loop moves the call to the background", "while true; do sleep 1; done", None),
+    soft_sleep("a sleep in an until condition moves the call to the background", "until sleep 1; do x; done", None),
+    soft_sleep("a sleep in a for loop is removed by shadowing", "for i in 1 2; do sleep 1; done", SHADOW + "for i in 1 2; do sleep 1; done"),
+    soft_sleep("a sleep after then is removed by shadowing", "if true; then sleep 1; fi", SHADOW + "if true; then sleep 1; fi"),
+    soft_sleep("a sleep alone is removed by shadowing", "sleep 110", SHADOW + "sleep 110"),
+    soft_sleep("a sleep before a read leaves the read in place", "sleep 110; cat AGENTS.md", SHADOW + "sleep 110; cat AGENTS.md"),
+    soft_sleep("a sleep keeps every other input field", "sleep 3", SHADOW + "sleep 3", description="wait", timeout=5000),
+    soft_sleep("a false background flag is carried and the sleep removed", "sleep 1", SHADOW + "sleep 1", run_in_background=False),
+    soft_sleep("a sleep by its path moves the call to the background", "/bin/sleep 1", None),
+    soft_sleep("a sleep after an assignment moves the call to the background", "X=1 sleep 1", None),
+    soft_sleep("a sleep in a pipeline moves the call to the background", "sleep 1 | cat", None),
+    soft_sleep("a sleep in the background of the shell moves the call to the background", "sleep 1 &", None),
+    soft_sleep("a sleep under timeout moves the call to the background", "timeout 9 sleep 1", None),
+    soft_sleep("a sleep under command moves the call to the background", "command sleep 1", None),
+    soft_sleep("one wrapped sleep moves the whole call to the background", "sleep 1; timeout 9 sleep 1", None),
+    soft_sleep("a background move keeps every other input field", "until [ -f x ]; do sleep 5; done", None, description="wait", timeout=5000),
+    soft_sleep("a sleep in a substitution moves the call to the background", "echo $(sleep 1)", None),
+    soft_sleep("a sleep in a shell string moves the call to the background", "sh -c 'sleep 1'", None),
+    soft_sleep("a sleep in an eval moves the call to the background", "eval 'sleep 1'", None),
+    bash("the word sleep as an argument passes", "echo sleep", False),
+    bash("the word sleep in a heredoc passes", "cat <<'E'\nsleep 1\nE", False),
+    background_bash("a sleep in the background passes untouched", "sleep 1", False, is_unchanged=True),
+    background_bash("a polling loop in the background passes untouched", "until [ -f x ]; do sleep 5; done", False, is_unchanged=True),
+    soft_sleep("a false background flag still removes a sleep", "sleep 1", SHADOW + "sleep 1", run_in_background=False),
+    background_bash("the background lets only sleep through", "sleep 1; rm x", True, DELETE),
+    bash("a sleep beside a delete is refused with the delete message only", "sleep 1; rm x", True, DELETE, lacks="removed"),
+    bash("a repo write beside a delete is refused with the delete message only", "echo hi > AGENTS.md; rm x", True, DELETE, lacks="went through"),
+    bash("a sleep beside a package change asks and changes nothing", "pip install x; sleep 1", True, '"permissionDecision": "ask"', lacks="updatedInput"),
+    soft_sleep("a sleep and a repo write give both notes", "sleep 1; echo hi > AGENTS.md", SHADOW + "sleep 1; echo hi > AGENTS.md", text="Project files change"),
     bash("python -c is not read as a shell", "python3 -c 'print(2 > 1)'", False),
     bash("a python heredoc is not read as a shell", HEREDOC.format(call="print(2 > 1)"), False),
     bash("a heredoc body is no command", "cat <<'EOF'\nrm x\nEOF", False),
-    bash("a command after a heredoc is judged", "cat <<'EOF'\nx\nEOF\necho hi > AGENTS.md", True, "project files change"),
+    bash("a command after a heredoc is judged", "cat <<'EOF'\nx\nEOF\necho hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("a here-string word is no argument", "cat <<< a*b", False),
     bash("a soft git reset is allowed", "git reset --soft HEAD~1", False),
     bash("a plain git reset is allowed", "git reset HEAD~1", False),
@@ -287,13 +355,13 @@ GUARD_CASES = [
     bash("uv run python inside bash -c is refused", "bash -c 'uv run python x.py'", True, LOCK_MESSAGE),
     bash("the lock inside bash -c is allowed", "bash -c 'bin/queue -- uv run python x.py'", False),
     bash("uv run python after env VAR=1 is refused", "env FOO=1 uv run python x.py", True, LOCK_MESSAGE),
-    bash("a project write inside bash -c is refused", "bash -c 'echo hi > AGENTS.md'", True, "project files change"),
-    write_call("a Write under /tmp is refused", "/tmp/x.txt", True, "never under /tmp"),
+    bash("a project write inside bash -c runs with a note", "bash -c 'echo hi > AGENTS.md'", False, REPO, is_unchanged=True),
+    write_call("a Write under /tmp runs with a note", "/tmp/x.txt", False, "never under /tmp", is_unchanged=True),
     write_call("a Write of a project file is allowed", "AGENTS.md", False),
     bash("rm is refused with no project", "rm x", True, "nothing is deleted", config=None),
     bash("a forced push is refused with no project", "git push -f", True, "owner's to run", config=None),
     bash("a glob is refused with no project", "ls *.py", True, "unquoted glob", config=None),
-    bash("a sleep poll is refused with no project", "until false; do sleep 1; done", True, "polls", config=None),
+    soft_sleep("a sleep is removed with no project", "sleep 1", SHADOW + "sleep 1", config=None),
     bash("a repo redirect is allowed with no project", "echo hi > AGENTS.md", False, config=None),
     bash("a /tmp redirect is allowed with no project", "echo hi > /tmp/x", False, config=None),
     bash("uv sync is allowed with no project", "uv sync", False, config=None),
@@ -339,18 +407,18 @@ GUARD_CASES = [
         COMMIT.format(body="sad :(") + " && rm -rf x",
         COMMIT.format(body="glad") + " && rm -rf x",
     )),
-    bash("a sleep in a [[ loop is refused", "while [[ -z $x ]]; do sleep 1; done", True, "polls", config=None),
+    soft_sleep("a sleep in a [[ loop moves the call to the background", "while [[ -z $x ]]; do sleep 1; done", None, config=None),
     bash("a glob after [[ ]] is judged", "[[ -f x ]] && ls *.py", True, GLOB, config=None),
     bash("a glob after $(( )) is judged", "echo $((1 + 1)) *.py", True, GLOB, config=None),
     bash("strict: python3 -m pip is refused", "python3 -m pip install x", True, HISTORY),
     bash("strict: python -mpip is refused", "python -mpip install x", True, HISTORY),
     bash("strict: uv run pip is refused", "uv run pip install x", True, HISTORY),
     bash("strict: uv run python -m pip is refused", "NO_QUEUE= uv run python -m pip install x", True, HISTORY),
-    bash("strict: mv of a project file is refused", "mv AGENTS.md scratch/gone", True, REPO),
+    bash("strict: mv of a project file runs with a note", "mv AGENTS.md scratch/gone", False, REPO, is_unchanged=True),
     bash("strict: mv inside scratch is allowed", "mv scratch/a scratch/b", False),
     bash("strict: mv of a /tmp file into scratch is allowed", "mv /tmp/a scratch/b", False),
     bash("strict: cp out of the project tree into scratch is allowed", "cp AGENTS.md scratch/copy", False),
-    bash("strict: cp -t names its destination", "cp -t . scratch/x", True, REPO),
+    bash("strict: cp -t names its destination", "cp -t . scratch/x", False, REPO, is_unchanged=True),
     bash("strict: cp -t into scratch is allowed", "cp -t scratch AGENTS.md", False),
     # False refusals: none of these runs anything a rule refuses.
     *(bash(f"allowed: {command!r}", command, False, config=None) for command in (
@@ -383,10 +451,10 @@ GUARD_CASES = [
     bash("strict: a pipeline after a cd keeps the folder", "cd scratch && make 2>&1 | tee out.log", False),
     bash("strict: a later command after a pipeline keeps the folder", "cd scratch && echo a | cat && echo hi > ok.txt", False),
     bash("strict: a redirect at a pipeline's end keeps the folder", "cd scratch && git log | head -3 > out.txt", False),
-    bash("strict: a cd in a pipeline leaves the folder unknown", "cd scratch | cat; echo hi > ok.txt", True, REPO),
-    bash("strict: a cd in the background leaves the folder unknown", "cd scratch & echo hi > ok.txt", True, REPO),
-    bash("strict: a cd and its list in the background", "cd scratch && echo a &\necho hi > ok.txt", True, REPO),
-    bash("strict: a cd in a substitution leaves the folder", "x=$(cd scratch); echo hi > AGENTS.md", True, REPO),
+    bash("strict: a cd in a pipeline leaves the folder unknown", "cd scratch | cat; echo hi > ok.txt", False, REPO, is_unchanged=True),
+    bash("strict: a cd in the background leaves the folder unknown", "cd scratch & echo hi > ok.txt", False, REPO, is_unchanged=True),
+    bash("strict: a cd and its list in the background", "cd scratch && echo a &\necho hi > ok.txt", False, REPO, is_unchanged=True),
+    bash("strict: a cd in a substitution leaves the folder", "x=$(cd scratch); echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("strict: a command after a redirect target is no target", "echo a >&2; rm x", True, DELETE),
     bash("strict: a malformed redirect does not swallow the next command", "echo a > ; rm x", True, DELETE),
     bash("strict: a closed descriptor names no file", "echo a >&- b", False),
@@ -394,12 +462,12 @@ GUARD_CASES = [
     bash("an argument after a process substitution is no command", "diff <(sort a) rm", False, config=None),
     bash("strict: scratch/ is the scratch folder", "echo hi > scratch/x.txt", False, config={"guard": {"scratch": "scratch/"}}),
     bash("strict: ./scratch is the scratch folder", "echo hi > scratch/x.txt", False, config={"guard": {"scratch": "./scratch"}}),
-    bash("strict: scratch/ still guards the rest", "echo hi > AGENTS.md", True, REPO, config={"guard": {"scratch": "scratch/"}}),
-    bash("strict: a symlinked cwd is still inside", "echo hi > AGENTS.md", True, REPO, cwd="link", links=(("link", "project"),)),
+    bash("strict: scratch/ still guards the rest", "echo hi > AGENTS.md", False, REPO, config={"guard": {"scratch": "scratch/"}}, is_unchanged=True),
+    bash("strict: a symlinked cwd is still inside", "echo hi > AGENTS.md", False, REPO, cwd="link", links=(("link", "project"),), is_unchanged=True),
     bash("strict: a symlinked cwd still reaches scratch", "echo hi > scratch/x.txt", False, cwd="link", links=(("link", "project"),)),
-    bash("strict: a symlink in scratch to the project is a project write", "echo hi > scratch/out/AGENTS.md", True, REPO, links=(("project/scratch/out", "project"),)),
+    bash("strict: a symlink in scratch to the project is a project write", "echo hi > scratch/out/AGENTS.md", False, REPO, links=(("project/scratch/out", "project"),), is_unchanged=True),
     bash("the project variable pins the rules past a cd", "uv sync", True, HISTORY, cwd="elsewhere", project_dir="project"),
-    bash("the project variable pins the writes too", "echo hi > ../project/AGENTS.md", True, REPO, cwd="elsewhere", project_dir="project"),
+    bash("the project variable pins the writes too", "echo hi > ../project/AGENTS.md", False, REPO, cwd="elsewhere", project_dir="project", is_unchanged=True),
     bash("the project variable wins over a cwd's config", "uv sync", False, cwd="project", project_dir="elsewhere"),
     bash("without the variable the walk goes up from cwd", "uv sync", True, HISTORY, cwd="project/scratch/t"),
     bash("without the variable a cwd outside has no rules", "uv sync", False, cwd="elsewhere"),
@@ -452,6 +520,22 @@ def exit_report(*codes: int) -> str:
     return answer_report("Changed one file. " + " ".join(f"Command {number} exit {code}." for number, code in enumerate(codes, 1)))
 
 
+def sized_report(size: int, /) -> str:
+    """A complete report of exactly `size` characters (it holds no fence)."""
+
+    base = len(answer_report("Nothing changed."))
+
+    return answer_report("Nothing changed." + "x" * (size - base))
+
+
+def fenced_report(size: int, /) -> str:
+    """A complete report whose Answer holds a fenced block of about `size` characters."""
+
+    block = "\n".join(["y" * 99] * (size // 100))
+
+    return answer_report(f"Nothing changed.\n```\n{block}\n```")
+
+
 def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
     options.setdefault("config", {})
 
@@ -499,6 +583,11 @@ GATE_CASES = [
         transcript=(bash_call("t1"), {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": [{"type": "text", "text": "Exit code 1\noutput"}]}]}}),
     ),
     gate("a complete report is accepted", stop_event(make_report()), False),
+    gate("a report just under the length limit passes", stop_event(sized_report(6000)), False, lacks="characters, over the limit"),
+    gate("a report just over the length limit goes back with the count", stop_event(sized_report(6001)), True, "the report is 6001 characters, over the limit of 6000"),
+    gate("a long fenced block does not count toward the length", stop_event(fenced_report(20000)), False),
+    gate("report.max_chars raises the limit", stop_event(sized_report(7000)), False, config={"report": {"max_chars": 8000}}),
+    gate("report.max_chars lowers the limit", stop_event(sized_report(2000)), True, "over the limit of 1000", config={"report": {"max_chars": 1000}}),
     gate("a repeated heading goes back", stop_event(make_report() + "\n## Answer\nagain"), True, "duplicated: Answer"),
     gate("a heading in a fence does not count", stop_event(make_report() + "\n```\n## Answer\n```"), False),
     gate("TBD in Answer goes back", stop_event(make_report(replace=("Answer", "TBD"))), True, "placeholder"),
@@ -528,7 +617,16 @@ GATE_CASES = [
         )
         for text in ("none", "N/A", "No feedback.", "None needed.")
     ),
-    gate("no project means no gate", stop_event("no headings"), False, config=None),
+    gate("no project file still gates a harness role", stop_event("no headings"), True, "missing: Answer", config=None),
+    gate("no project file leaves a repo's own agent alone", stop_event("no headings", agent_type="builder"), False, config=None),
+    gate("a project file gates a repo's own agent", stop_event("no headings", agent_type="builder"), True, "missing: Answer"),
+    gate(
+        "no project file keeps feedback out of the repo",
+        stop_event(FEEDBACK_REPORT),
+        False,
+        config=None,
+        not_wrote=(INBOX_NAME, FEEDBACK_ITEM),
+    ),
     gate(
         "a feedback item reaches the inbox",
         stop_event(FEEDBACK_REPORT),
@@ -928,6 +1026,70 @@ GATE_CASES = [
 ]
 
 
+# After a send-back: only the wrong sections are named and resent, and the gate merges.
+STRAY = "\n## Note\nstray"
+LEDGER_NAME = "data/ledger.jsonl"
+BARE_REPORT = make_report(replace=("Answer", "FIRSTANSWER changed one file."), fill={"Not proven": "BARETOKEN"})
+FEEDBACK_BARE = make_report(fill={"Not proven": "BARETOKEN", "Feedback": f"- {FEEDBACK_ITEM}"})
+FIX_NOT_PROVEN = "## Not proven\n- the live run was not made, the owner can run it"
+VERDICT_ONLY = "## Verdict\ndone: the unit is complete"
+
+
+def resend(name: str, first: str, second: str, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
+    """The gate judges `first`, which goes back, then `second`, sent as the agent's next message."""
+
+    return gate(name, stop_event(second), blocks, text, before=((("report_gate.py",), stop_event(first)),), **options)
+
+
+RESEND_CASES = [
+    gate("a send-back names the wrong section", stop_event(BARE_REPORT), True, "Not proven is bare", lacks="Answer"),
+    gate("a send-back asks for the sections only", stop_event(BARE_REPORT), True, "Send again only these sections", lacks="Send the WHOLE"),
+    gate("a send-back names each wrong section once", stop_event(make_report(skip="Not proven", fill={"Verdict": "fine"})), True, "- Verdict: Verdict must open", lacks="Problems"),
+    gate("a send-back names a claim in the section that holds it", transcript_event(make_report(fill={"Next time": "The tests passed."})), True, "- Next time: the report says a check passed", lacks="- Answer", transcript=(assistant({"type": "text", "text": "hi"}),)),
+    gate("a send-back about Verdict gives only its form", stop_event(make_report(fill={"Verdict": "fine"})), True, "opens with done, partial or blocked", lacks="cause:"),
+    gate("a send-back about Problems gives only its form", stop_event(make_report(fill={"Problems": "- it broke"})), True, "what would have helped", lacks="Verdict is last"),
+    gate("a send-back about Feedback gives only its form", stop_event(make_report(fill={"Feedback": "- change something"})), True, "names a file to change", lacks="done, partial"),
+    gate("a stray section is named as one to leave out", stop_event(make_report() + STRAY), True, "- Note: not a section of the form: Note (leave it out)"),
+    resend("a resent section is merged with the rest", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "FIRSTANSWER")),
+    resend("a resent section replaces the old one", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "the live run was not made"), not_wrote=(LEDGER_NAME, "BARETOKEN")),
+    resend("a merged report keeps its Verdict", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "done: the unit is complete")),
+    resend("a merged report counts the send-back", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, '"send_backs": 1')),
+    resend("a merged report files the feedback of the first", FEEDBACK_BARE, FIX_NOT_PROVEN, False, wrote=(INBOX_NAME, FEEDBACK_ITEM)),
+    resend("a whole new report still works", BARE_REPORT, make_report(), False, wrote=(LEDGER_NAME, '"accepted": true'), not_wrote=(LEDGER_NAME, "FIRSTANSWER")),
+    resend("a still wrong resend goes back again", BARE_REPORT, "## Not proven\nstill", True, "- Not proven: Not proven is bare", lacks="- Answer"),
+    resend("a resend of one section does not name the others", BARE_REPORT, "## Not proven\nstill", True, lacks="Verdict"),
+    resend("a resend with a bad section next to a good one names the bad one only", BARE_REPORT, FIX_NOT_PROVEN + "\n## Verdict\nfine", True, "- Verdict:", lacks="- Not proven"),
+    resend("a resend in the wrong order is put right", BARE_REPORT, VERDICT_ONLY + "\n" + FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, '"accepted": true')),
+    resend("a stray section is dropped by the merge", make_report() + STRAY, VERDICT_ONLY, False, wrote=(LEDGER_NAME, '"accepted": true'), not_wrote=(LEDGER_NAME, "stray")),
+    resend("a resent section for a stray one leaves it out", make_report() + STRAY, "## Answer\nChanged one file, again.", False, wrote=(LEDGER_NAME, "Changed one file, again."), not_wrote=(LEDGER_NAME, "stray")),
+    resend("a duplicate resend is named", BARE_REPORT, FIX_NOT_PROVEN + "\n" + FIX_NOT_PROVEN, True, "duplicated: Not proven"),
+    resend("a resend does not need the title", "# Report: worker, do the job\n" + BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "Report: worker, do the job")),
+    resend("a resend with its own title wins", "# Report: worker, first job\n" + BARE_REPORT, "# Report: worker, second job\n" + FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "second job"), not_wrote=(LEDGER_NAME, "first job")),
+    resend("an unchanged resend does not hide the old report", BARE_REPORT, BARE_REPORT, True, "Not proven is bare"),
+    resend("a resend without headings keeps the old report", BARE_REPORT, "Done, fixed it.", True, "Not proven is bare"),
+    gate("without a send-back a partial is judged whole", stop_event(FIX_NOT_PROVEN), True, "missing: Answer"),
+    gate("a send-back counted but nothing kept is judged on the message", stop_event(FIX_NOT_PROVEN), True, "missing: Answer", files=(("data/send-backs/a1.count", "1"),)),
+    gate("an empty send-back count is zero", stop_event(FIX_NOT_PROVEN), True, "missing: Answer", files=(("data/send-backs/a1.count", ""),), lacks="let the agent stop"),
+    gate("an empty kept report is ignored", stop_event(make_report()), False, files=(("data/send-backs/a1.count", "1"), ("data/send-backs/a1.report", "")), lacks="let the agent stop"),
+    gate("a kept report that cannot be read is ignored", stop_event(make_report()), False, files=(("data/send-backs/a1.count", "1"), ("data/send-backs/a1.report", "not json"))),
+    gate(
+        "a partial handback after a send-back is merged",
+        transcript_event("Done."),
+        False,
+        transcript=(assistant({"type": "tool_use", "name": "SubagentHandback", "input": {"message": FIX_NOT_PROVEN}}),),
+        before=((("report_gate.py",), stop_event(BARE_REPORT)),),
+        wrote=(LEDGER_NAME, "FIRSTANSWER"),
+    ),
+    gate(
+        "the kept report is dropped once the agent stops",
+        stop_event(make_report()),
+        False,
+        files=(("data/send-backs/a1.count", "1"), ("data/send-backs/a1.report", json.dumps({"raw": "x", "merged": make_report()}))),
+        not_wrote=("data/send-backs/a1.report", "merged"),
+    ),
+]
+
+
 # ===========================================================================
 # The turn
 # ===========================================================================
@@ -1008,6 +1170,7 @@ LESSONS = "Done.\n\n**Lessons:** the brief was vague, so a rule is needed.\n"
 NO_RULE_PATHS = {"stop": {"rule_paths": []}}
 TURN_CASES = [
     turn("the status is read from the transcript when the event has none", "", False, calls=BUSY_CALLS, transcript=(assistant({"type": "text", "text": FULL_STATUS}),)),
+    turn("a transcript line that is no object is skipped", "", False, transcript=(12, assistant({"type": "text", "text": "Done."}))),
     turn("a last line that is a tool call does not crash", "", False, transcript=(assistant({"type": "text", "text": "Done."}), assistant({"type": "tool_use", "id": "t", "name": "Bash", "input": {}}))),
     Case("no mode does nothing", ("turn.py",), {"session_id": SESSION}, False, config={}),
     turn("a progress note with a background agent running is allowed", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1")),
@@ -1041,12 +1204,18 @@ TURN_CASES = [
     turn("two calls need no status", PROGRESS, False, calls=["Edit", "Edit"]),
     turn("a heading in a fence does not count", f"```\n{FULL_STATUS}\n```", True, "Verdict", calls=BUSY_CALLS),
     turn("a project's min_calls is read", PROGRESS, False, calls=BUSY_CALLS, config={"stop": {"min_calls": 5}}),
-    turn("no project means no gate", PROGRESS, False, calls=BUSY_CALLS, config=None),
+    turn("no project file still asks for the closing status", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None),
+    turn("no project file holds no retro", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None, files=(INBOX,), lacks="retro"),
     turn("a due retro is refused", PROGRESS, True, "retro-20", files=(INBOX,)),
     turn("a handled feedback id is allowed", PROGRESS, False, files=(INBOX, HANDLED_RULE)),
     turn("a rejected feedback id is allowed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n"))),
     turn("a handled line with no verdict does not count", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, "retro-20: looked\n"))),
     turn("a missing inbox is no error", PROGRESS, False),
+    turn("an empty blocks file counts as zero", PROGRESS, True, "Verdict", calls=BUSY_CALLS, files=((BLOCKS_FILE, ""),), lacks="let the call run", wrote=(BLOCKS_FILE, "1")),
+    turn("junk saved rules do not trap the lessons check", LESSONS, False, files=((RULES_FILE, "{junk"),), config=NO_RULE_PATHS, lacks="let the call run"),
+    turn("an empty saved rules file does not trap the lessons check", LESSONS, False, files=((RULES_FILE, ""),), config=NO_RULE_PATHS, lacks="let the call run"),
+    turn("junk saved rules do not trap a handled line", PROGRESS, False, files=(INBOX, HANDLED_RULE, (RULES_FILE, "[1")), lacks="let the call run"),
+    turn("saved rules that are not an object do not trap a handled line", PROGRESS, False, files=(INBOX, HANDLED_RULE, (RULES_FILE, "[]")), lacks="let the call run"),
     turn("lessons with no rule change are refused", LESSONS, True, "no change to show", files=(RULES_KEPT,), config=NO_RULE_PATHS),
     turn("lessons that defer are refused", "**Lessons:** will add a rule next turn.\n", True, "defers", files=(RULES_KEPT,), config=NO_RULE_PATHS),
     turn("lessons with a rule change are allowed", LESSONS, False, files=(RULES_OTHER,), config=NO_RULE_PATHS),
@@ -1253,11 +1422,11 @@ TURN_CASES = [
         wrote=(BLOCKS_FILE, "0"),
     ),
     Case(
-        "add does nothing with no project",
+        "add counts with no project file",
         ("turn.py", "add"),
         {"session_id": SESSION, "tool_name": "Edit"},
         False,
-        not_wrote=(f"data/turns/{SESSION}.calls", "Edit"),
+        wrote=(f"data/turns/{SESSION}.calls", "Edit"),
     ),
 ]
 
@@ -1267,31 +1436,37 @@ TURN_CASES = [
 # ===========================================================================
 
 
-def main_call(name: str, tool: str, tool_input: dict, blocks: bool, text: str = "", /, *, settings: object = None, **options: object) -> Case:  # keys are data
-    """A call of the main session under the delegate rule; `settings` is its `delegate` key, empty by default."""
+def main_call(name: str, tool: str, tool_input: dict, is_noted: bool, text: str = "", /, *, settings: object = None, **options: object) -> Case:  # keys are data
+    """A call of the main session under the delegate rule; `settings` is its `delegate` key, empty by default.
+
+    The call always runs, unchanged: `is_noted` says it gets a note in `additionalContext` that holds `text`.
+    """
 
     options.setdefault("config", {"delegate": settings if settings is not None else {}})
+    event = {"tool_name": tool, "agent_id": None, "tool_input": tool_input}
+    if is_noted:
+        return Case(name, ("delegate.py",), event, False, is_unchanged=True, context=text or "delegate rule", **options)
 
-    return Case(name, ("delegate.py",), {"tool_name": tool, "agent_id": None, "tool_input": tool_input}, blocks, text, **options)
+    return Case(name, ("delegate.py",), event, False, lacks="delegate rule", is_unchanged=True, **options)
 
 
-def main_bash(name: str, command: str, blocks: bool, /, **options: object) -> Case:
-    return main_call(name, "Bash", {"command": command}, blocks, "main-session commands" if blocks else "", **options)
+def main_bash(name: str, command: str, is_noted: bool, /, **options: object) -> Case:
+    return main_call(name, "Bash", {"command": command}, is_noted, "main-session commands" if is_noted else "", **options)
 
 
 ONLY_DOCS = {"write_allow": ["docs/*"], "bash_allow": ["make check"]}
 DELEGATE_CASES = [
-    main_call("an edit with an empty allow list is refused", "Edit", {"file_path": "src/a.py"}, True, "write_allow"),
-    main_call("a write outside the allow list is refused", "Write", {"file_path": "src/a.py"}, True, "write_allow", settings=ONLY_DOCS),
+    main_call("an edit with an empty allow list is noted", "Edit", {"file_path": "src/a.py"}, True, "write_allow"),
+    main_call("a write outside the allow list is noted", "Write", {"file_path": "src/a.py"}, True, "write_allow", settings=ONLY_DOCS),
     main_call("a write inside the allow list is allowed", "Write", {"file_path": "docs/a.md"}, False, settings=ONLY_DOCS),
-    main_call("a notebook edit outside is refused", "NotebookEdit", {"notebook_path": "n.ipynb"}, True, "write_allow", settings=ONLY_DOCS),
+    main_call("a notebook edit outside is noted", "NotebookEdit", {"notebook_path": "n.ipynb"}, True, "write_allow", settings=ONLY_DOCS),
     main_call("an absolute path inside the allow list is allowed", "Write", {"file_path": f"{ROOT}/project/docs/b.md"}, False, settings=ONLY_DOCS),
     main_call("a symlinked path is read resolved", "Write", {"file_path": "link/a.py"}, True, "write_allow", settings=ONLY_DOCS, links=(("project/link", "project/src"),)),
-    main_call("a path outside the project is refused whatever the glob", "Write", {"file_path": "../x"}, True, "write_allow", settings={"write_allow": ["*"]}),
+    main_call("a path outside the project is noted whatever the glob", "Write", {"file_path": "../x"}, True, "write_allow", settings={"write_allow": ["*"]}),
     main_call("the handled file is always allowed", "Edit", {"file_path": "harness-feedback/handled.md"}, False),
     main_call("the inbox is not", "Edit", {"file_path": "harness-feedback/inbox.md"}, True, "write_allow"),
-    Case("a sub-agent's edit passes", ("delegate.py",), {"tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/a.py"}}, False, config={"delegate": {}}),
-    Case("a sub-agent's command passes", ("delegate.py",), {"tool_name": "Bash", "agent_id": "a1", "tool_input": {"command": "make x"}}, False, config={"delegate": {}}),
+    Case("a sub-agent's edit passes", ("delegate.py",), {"tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/a.py"}}, False, config={"delegate": {}}, lacks="delegate rule"),
+    Case("a sub-agent's command passes", ("delegate.py",), {"tool_name": "Bash", "agent_id": "a1", "tool_input": {"command": "make x"}}, False, config={"delegate": {}}, lacks="delegate rule"),
     main_call("no delegate key means no rule", "Edit", {"file_path": "src/a.py"}, False, config={}),
     main_call("no project means no rule", "Edit", {"file_path": "src/a.py"}, False, config=None),
     *(main_bash(f"delegate allows: {command!r}", command, False) for command in (
@@ -1310,7 +1485,7 @@ DELEGATE_CASES = [
         COMMIT.format(body="subject\n\nbody 1) with \"quotes\""),
         "git log > /dev/null 2>&1",
     )),
-    *(main_bash(f"delegate refuses: {command!r}", command, True) for command in (
+    *(main_bash(f"delegate notes: {command!r}", command, True) for command in (
         "git logs",
         "git status && make x",
         "make x; git status",
@@ -1322,8 +1497,8 @@ DELEGATE_CASES = [
     )),
     main_bash("git options before an allowed command pass", "git -C docs status", False),
     main_bash("git options do not free a push", "git -C docs push", True),
-    main_bash("a push is refused by default", "git push origin topic", True),
-    main_bash("a push is refused after other defaults", "git add -A && git push", True),
+    main_bash("a push is noted by default", "git push origin topic", True),
+    main_bash("a push is noted after other defaults", "git add -A && git push", True),
     main_bash("a project may list a push", "git push origin topic", False, settings={"bash_allow": ["git push"]}),
     main_bash("add and commit pass by default", "git add -A && git commit -m x", False),
     main_bash("bash_allow adds a prefix", "make check -j2", False, settings=ONLY_DOCS),
@@ -1347,19 +1522,23 @@ DELEGATE_CASES = [
 # ===========================================================================
 
 
-def brief(name: str, role: str, prompt: str, blocks: bool, text: str = "", /, **options: object) -> Case:  # keys are data
+def brief(name: str, role: str, prompt: str, is_noted: bool, text: str = "", /, **options: object) -> Case:  # keys are data
+    """An Agent call under the brief rule. It always runs, unchanged: `is_noted` says it gets a note holding `text`."""
+
     options.setdefault("config", {"brief": {}})
     event = {"tool_name": "Agent", "tool_input": {"subagent_type": role, "prompt": prompt}}
+    if is_noted:
+        return Case(name, ("brief_lint.py",), event, False, is_unchanged=True, context=text or "brief rule", **options)
 
-    return Case(name, ("brief_lint.py",), event, blocks, text, **options)
+    return Case(name, ("brief_lint.py",), event, False, lacks="brief rule", is_unchanged=True, **options)
 
 
 GOOD_BRIEF = "Do it.\nGoal: x\nWrite set: y\nJudge: z\n"
 BRIEF_CASES = [
     brief("a fence with a language hides a budget", "scout", "Goal: x\n```python\nBudget: 5 minutes\n```", False),
     brief("a whole worker brief passes", "worker", GOOD_BRIEF, False),
-    brief("a budget in minutes is refused", "scout", "Goal: x\nBudget: 5 minutes", True, "counts model turns"),
-    brief("a budget in a sentence in minutes is refused", "scout", "Goal: x. Budget: 40 minutes. Folder: a", True, "counts model turns"),
+    brief("a budget in minutes is noted", "scout", "Goal: x\nBudget: 5 minutes", True, "counts model turns"),
+    brief("a budget in a sentence in minutes is noted", "scout", "Goal: x. Budget: 40 minutes. Folder: a", True, "counts model turns"),
     brief("a budget in turns passes", "scout", "Goal: x\nBudget: 5 turns", False),
     brief("a bare budget passes", "scout", "Goal: x\nBudget: 5", False),
     brief("a sentence opening with the word passes", "scout", "Goal: x\nBudget is 30 turns, roughly", False),
@@ -1367,21 +1546,32 @@ BRIEF_CASES = [
     brief("a quoted budget passes", "scout", "Goal: x\nThe old form was `Do x. Budget: 5 minutes` here", False),
     brief("a budget in a fence passes", "scout", "Goal: x\n```\nBudget: 5 minutes\n```", False),
     brief("a prefixed worker is the worker", "harness:worker", "Goal: x", True, "Write set:"),
-    brief("a worker brief without Judge is refused", "worker", "Goal: x\nWrite set: y", True, "Judge:"),
-    brief("a worker brief without Write set is refused", "worker", "Goal: x\nJudge: y", True, "Write set:"),
+    brief("a worker brief without Judge is noted", "worker", "Goal: x\nWrite set: y", True, "Judge:"),
+    brief("a worker brief without Write set is noted", "worker", "Goal: x\nJudge: y", True, "Write set:"),
     brief("a label in the middle of a line does not count", "scout", "The Goal: is x", True, "Goal:"),
     brief("a bold label counts", "scout", "**Goal:** x", False),
     brief("a scout needs Goal", "scout", "Look at x", True, "Goal:"),
     brief("a prefixed reviewer needs Goal", "harness:reviewer", "Look at x", True, "Goal:"),
     brief("a scout with Goal passes", "scout", "Goal: x", False),
-    brief("another agent type needs a Goal line", "Explore", "Look at x", True, "Goal:"),
+    Case("a general-purpose agent is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "Goal: x"}}, True, "harness:scout", config={"brief": {}}),
+    Case("an Explore agent is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "Explore", "prompt": "Goal: x"}}, True, "`Explore` has no harness role", config={"brief": {}}),
+    Case("an agent with no type is refused", ("brief_lint.py",), {"tool_name": "Task", "tool_input": {"prompt": "Goal: x"}}, True, "an agent with no type", config={"brief": {}}),
+    Case("a generic agent is refused without the brief key", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "x"}}, True, "no harness role", config={}),
+    Case("a generic agent is refused with no project file", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "x"}}, True, "no harness role", config=None),
+    brief("a project's own agent type needs a Goal line", "builder", "Look at x", True, "Goal:"),
     brief("another plugin's worker needs a Goal line", "other:worker", "Look at x", True, "Goal:"),
-    brief("another agent type with a Goal passes", "Explore", "Goal: look at x", False),
-    brief("a brief with no agent type needs a Goal line", "", "Look at x", True, "Goal:"),
-    brief("the refusal reads without an agent type", "", "Look at x", True, "a brief for this agent needs"),
-    brief("no agent type with a Goal passes", "", "Goal: x", False),
-    brief("no brief key means no rule", "worker", "Look at x", False, config={}),
-    brief("no project means no rule", "worker", "Look at x", False, config=None),
+    brief("a project's own agent type with a Goal passes", "builder", "Goal: look at x", False),
+    brief("no brief key still notes", "worker", "Look at x", True, "Write set:", config={}),
+    brief("no project file still notes", "worker", "Look at x", True, "Write set:", config=None),
+    brief("the owner's file replaces the default", "worker", "Goal: x", True, "Plan:", config=None, files=(("data/user.json", '{"brief": {"required": {"worker": ["Plan:"]}}}'),)),
+    brief(
+        "the project's file beats the owner's",
+        "worker",
+        "Goal: x",
+        False,
+        config={"brief": {"required": {"worker": ["Goal:"]}}},
+        files=(("data/user.json", '{"brief": {"required": {"worker": ["Plan:"]}}}'),),
+    ),
     brief(
         "brief.required replaces the default",
         "worker",
@@ -1397,6 +1587,7 @@ BRIEF_CASES = [
         {"tool_name": "Agent", "agent_id": "a1", "tool_input": {"subagent_type": "worker", "prompt": "x"}},
         False,
         config={"brief": {}},
+        lacks="brief rule",
     ),
 ]
 
@@ -1456,7 +1647,10 @@ BUDGET_CASES = [
     budget("another agent type inside the default passes", "Goal: x", False, role="Explore", turns=40),
     budget("another agent type with a line is refused", "Goal: x\nBudget: 1", True, role="Explore"),
     budget("the main session passes", "Goal: x", False, event={"agent_id": None, "agent_transcript_path": "project/s/subagents/agent-a1.jsonl"}),
-    budget("no project means no rule", "Goal: x", False, config=None),
+    budget("no project file still gives a harness role its budget", "Goal: x", True, "70 turns", config=None),
+    budget("no project file gives a repo's own agent no default", "Goal: x", False, role="builder", config=None),
+    budget("no project file keeps a brief's budget for a repo's own agent", "Budget: 5 turns", True, "5 turns", role="builder", config=None),
+    budget("a project file gives a repo's own agent the default", "Goal: x", True, "40 turns", role="builder"),
     budget("a missing transcript passes", "Goal: x", False, files=()),
     budget("a broken config lets the call run", "Goal: x", False, config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
     budget("an empty transcript has the role's default", "Goal: x", False, files=(("s/subagents/agent-a1.jsonl", ""),)),
@@ -1546,7 +1740,7 @@ NUDGE_CASES = [
     nudge("a call that is not the wasteful one hears nothing", REPEATED[:2], lacks="additionalContext", event={"tool_use_id": "r0"}),
     nudge("the main session is nudged from its transcript", REPEATED[:2], "same read", path="s.jsonl", event={"agent_id": None}),
     nudge("a sub-agent is not judged by the session's transcript", REPEATED[:2], lacks="additionalContext", path="s.jsonl"),
-    nudge("no project means no nudge", REPEATED[:2], lacks="additionalContext", config=None),
+    nudge("no project file still nudges", REPEATED[:2], "same read", config=None),
     nudge(
         "a transcript past the size limit gets no nudge",
         REPEATED[:2],
@@ -1555,7 +1749,6 @@ NUDGE_CASES = [
     ),
     nudge("a missing transcript passes", REPEATED[:2], lacks="additionalContext", files=()),
     nudge("a torn transcript line is skipped", REPEATED[:2], lacks="additionalContext", files=(("s/subagents/agent-a1.jsonl", "{not json\n"),)),
-    nudge("a broken config lets the call run", REPEATED[:2], lacks="additionalContext", config=None, files=((".harness.json", "{not json"),), is_exit_one=True),
 ]
 
 
@@ -1571,6 +1764,21 @@ IMPORT_LINES = (
     {"type": "assistant", "timestamp": NEW, "message": {"id": "m3", "content": [{"type": "text", "text": OLD_REPORT}]}},
 )
 IMPORT_TEXT = "".join(json.dumps(line) + "\n" for line in IMPORT_LINES)
+LEDGER_NO_NEWLINE = ("data/ledger.jsonl", '{"agent_id": "zz"}')
+
+
+def replay_transcript(name: str, commands: tuple[tuple[str, str], ...], /) -> tuple[str, str]:
+    """A transcript file of Bash calls, each (command, folder), at `name` under the owner's projects folder."""
+
+    lines = (
+        {"type": "assistant", "cwd": folder, "message": {"content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": command}}]}}
+        for command, folder in commands
+    )
+
+    return f"../.claude/projects/p/{name}.jsonl", "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines)
+
+
+REPLAY_WORK = ("../work/x.txt", "x\n")
 TOOL_CASES = [
     Case("a handback's message is the report", ("import_reports.py",), {}, False, "to add: 1", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "h", "name": "SubagentHandback", "input": {"message": OLD_REPORT}}]}})),)),
     Case("another tool's message is no report", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": "m", "content": [{"type": "tool_use", "id": "s", "name": "SendMessage", "input": {"message": OLD_REPORT}}]}})),)),
@@ -1580,8 +1788,14 @@ TOOL_CASES = [
     Case("an imported row counts its tool turns", ("import_reports.py",), {}, False, files=((IMPORT_SOURCE, IMPORT_TEXT),), wrote=("data/ledger.jsonl", '"tool_turns": {"turns": 2, "calls": 2, "one_call_turns": 2, "longest_small_run": 2, "small_reads": 2, "repeats": 0}')),
     Case("a transcript with no report card is no row", ("import_reports.py",), {}, False, "with a report card: 0", files=((IMPORT_SOURCE, json.dumps(IMPORT_LINES[0]) + "\n"),), not_wrote=("data/ledger.jsonl", "imported")),
     Case("a dry run writes nothing", ("import_reports.py", "--dry-run"), {}, False, "to add: 1", files=((IMPORT_SOURCE, IMPORT_TEXT),), not_wrote=("data/ledger.jsonl", "imported")),
+    Case("a row is added to a ledger with no final newline", ("import_reports.py",), {}, False, files=((IMPORT_SOURCE, IMPORT_TEXT), LEDGER_NO_NEWLINE), wrote=("data/ledger.jsonl", '"zz"}\n{"time"')),
     Case("a second import adds nothing", ("import_reports.py",), {}, False, "to add: 0", files=((IMPORT_SOURCE, IMPORT_TEXT),), before=((("import_reports.py",), {}),)),
     Case("the replay counts a refused command", ("replay.py",), {}, False, "refused: 1 distinct", files=(("../.claude/projects/p/s.jsonl", json.dumps({"type": "assistant", "cwd": "/", "message": {"content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "rm x"}}]}}, separators=(",", ":")) + "\n"),)),
+    Case("the replay does not refuse a soft rule", ("replay.py",), {}, False, "refused: 0 distinct", files=(replay_transcript("s", (("sleep 5", "/"),)),)),
+    Case("the replay lists a soft rule apart", ("replay.py",), {}, False, "run with a note: 1 distinct", files=(replay_transcript("s", (("sleep 5", "/"),)),)),
+    Case("a command in two sessions is listed once", ("replay.py",), {}, False, "== refused delete: 1", files=(replay_transcript("s", (("rm x", "/"),)), replay_transcript("t", (("rm x", "/"),)))),
+    Case("a glob is matched in the folder of its transcript line", ("replay.py",), {}, False, "refused: 0 distinct", files=(replay_transcript("s", (("ls x.*", "@ROOT@/work"),)), REPLAY_WORK)),
+    Case("a glob with no match there is refused", ("replay.py",), {}, False, "== refused glob: 1", files=(replay_transcript("s", (("ls y.*", "@ROOT@/work"),)), REPLAY_WORK)),
 ]
 
 
@@ -1623,7 +1837,8 @@ CONTEXT_CASES = [
     context("a worker is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "few tool turns"),
     context("a missing skill falls back to a pointer", {"hook_event_name": "SessionStart"}, "Load the `harness:tool-habits` skill", plugin_root="nowhere"),
     context("a helper is told the tool-turn rule", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "few tool turns"),
-    context("no project means no context", {"hook_event_name": "SessionStart"}, lacks="orchestrator", config=None),
+    context("no project file still gets the context", {"hook_event_name": "SessionStart"}, "orchestrator", config=None),
+    context("a broken owner file still starts the session with its context", {"hook_event_name": "SessionStart"}, "orchestrator", config=None, files=(("data/user.json", "{not json"),)),
     context("the project variable finds the project", {"hook_event_name": "SessionStart"}, "orchestrator", cwd="elsewhere", project_dir="project"),
 ]
 
@@ -1796,8 +2011,11 @@ def skill_lines(*skills: str) -> str:
     return "".join(json.dumps(skill_call(skill)) + "\n" for skill in skills)
 
 
-def skill_gate(name: str, path: str, blocks: bool, text: str = "", /, *, agent: str = "", main: tuple[str, ...] = (), **options: object) -> Case:  # keys are data
-    """An edit of `path`; `main` are the skills the session's transcript holds, `agent` the sub-agent's (a sub-agent call when set)."""
+def skill_gate(name: str, path: str, is_injected: bool, text: str = "", /, *, agent: str = "", main: tuple[str, ...] = (), **options: object) -> Case:  # keys are data
+    """An edit of `path`; `main` are the skills the session's transcript holds, `agent` the sub-agent's (a sub-agent call when set).
+
+    The call always runs, unchanged: `is_injected` says the skills missing from the transcript are given in `additionalContext`, holding `text`.
+    """
 
     gate_config = {"guard": {"scratch": "scratch"}, "skill_gate": {"*.py": ["harness:code-python"], "*.css": ["harness:code-html-css"], "docs/*.md": ["write-docs"], "*.md": ["write-md"]}}
     options.setdefault("config", gate_config)
@@ -1808,13 +2026,20 @@ def skill_gate(name: str, path: str, blocks: bool, text: str = "", /, *, agent: 
     options.setdefault("transcript", tuple(skill_call(skill) for skill in main))
     event |= options.pop("event", {})
 
-    return Case(name, ("skill_gate.py",), event, blocks, text, **options)
+    if is_injected:
+        return Case(name, ("skill_gate.py",), event, False, is_unchanged=True, context=text or "Harness skill", **options)
+
+    return Case(name, ("skill_gate.py",), event, False, lacks="Harness skill", is_unchanged=True, **options)
 
 
-def shell_gate(name: str, command: str, blocks: bool, text: str = "", /, *, main: tuple[str, ...] = (), **options: object) -> Case:
-    return skill_gate(name, "", blocks, text, main=main, event={"tool_name": "Bash", "tool_input": {"command": command}}, **options)
+def shell_gate(name: str, command: str, is_injected: bool, text: str = "", /, *, main: tuple[str, ...] = (), **options: object) -> Case:
+    return skill_gate(name, "", is_injected, text, main=main, event={"tool_name": "Bash", "tool_input": {"command": command}}, **options)
 
 
+BIG_BODY = "x" * 6000
+PLUG_FILES = tuple((f"plug/skills/{name}/SKILL.md", f"---\nname: {name}\ndescription: d\n---\n{name.upper()[5:]}BODY {BIG_BODY}\n") for name in ("code-python", "code-js"))
+PY_JS_CONFIG = {"skill_gate": {"*.py": ["harness:code-python", "harness:code-js"]}}
+MARKER_LINE = {"type": "user", "message": {"content": [{"type": "text", "text": "Harness skill text: harness:code-python\n(Reference text)"}]}}
 PY_EDIT = "python3 - <<'EOF'\np = 'src/app.py'\ns = open(p).read()\nopen(p, 'w').write(s)\nEOF"
 SKILL_GATE_CASES = [
     shell_gate("a commit needs its skill", "git commit -m 'feat: y'", True, "harness:git-commit"),
@@ -1833,34 +2058,44 @@ SKILL_GATE_CASES = [
     shell_gate("a heredoc to cat is no script", "cat <<'EOF'\nopen('a.py', 'w')\nEOF", False),
     shell_gate("a script writing into scratch needs nothing", "python3 - <<'EOF'\nopen('scratch/a.py', 'w')\nEOF", False),
     shell_gate("running a script needs nothing", "python3 app.py", False),
-    skill_gate("skill gate: an edit with the skill missing is refused", "app.py", True, "Load the skill harness:code-python with the Skill tool before editing app.py, then repeat the call."),
+    skill_gate("skill gate: an edit with the skill missing gets its text", "app.py", True, "Harness skill text: harness:code-python"),
     skill_gate("skill gate: a prefixed Skill call allows", "app.py", False, main=("harness:code-python",)),
     skill_gate("skill gate: a bare Skill call allows", "app.py", False, main=("code-python",)),
-    skill_gate("skill gate: another skill does not allow", "app.py", True, main=("code-js",)),
+    skill_gate("skill gate: another skill does not count", "app.py", True, main=("code-js",)),
     skill_gate(
-        "skill gate: another tool naming a skill does not allow",
+        "skill gate: another tool naming a skill does not count",
         "app.py",
         True,
         transcript=(assistant({"type": "text", "text": "Skill"}, {"type": "tool_use", "id": "b1", "name": "Bash", "input": {"skill": "harness:code-python"}}),),
     ),
-    skill_gate("skill gate: no key means no rule", "app.py", False, config={}),
-    skill_gate("skill gate: no project means no rule", "app.py", False, config=None),
+    skill_gate("skill gate: no key still applies the defaults", "app.py", True, "harness:code-python", config={}),
+    skill_gate("skill gate: no project file still applies the defaults", "app.py", True, "harness:code-python", config=None),
     skill_gate("skill gate: scratch is exempt", "scratch/t/x.py", False),
     skill_gate("skill gate: an unmatched extension passes", "notes.txt", False),
     skill_gate("skill gate: a path outside the project passes", "@ROOT@/elsewhere/app.py", False),
     skill_gate("skill gate: a nested file matches a bare pattern", "pkg/deep/app.py", True, "pkg/deep/app.py"),
     skill_gate("skill gate: a missing transcript lets the call run", "app.py", False, event={"transcript_path": "missing.jsonl"}),
-    skill_gate("skill gate: a broken config lets the call run", "app.py", False, config={"skill_gate": ["not", "a map"]}),
+    skill_gate("skill gate: a broken section falls back to the defaults", "app.py", True, "harness:code-python", config={"skill_gate": ["not", "a map"]}),
     skill_gate("skill gate: a sub-agent reads its own transcript", "app.py", False, agent=skill_lines("harness:code-python")),
     skill_gate("skill gate: a sub-agent does not borrow the session's skill", "app.py", True, "harness:code-python", agent=skill_lines("code-js"), main=("harness:code-python",)),
-    skill_gate("skill gate: the main session with an empty transcript is refused", "app.py", True, "harness:code-python"),
+    skill_gate("skill gate: the main session with an empty transcript gets the text", "app.py", True, "harness:code-python"),
     skill_gate("skill gate: a preloaded skill counts", "app.py", False, agent=json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": "<command-message>code-python</command-message>\n<command-name>harness:code-python</command-name>"}]}}) + "\n"),
     skill_gate("skill gate: a slash pattern beats a bare one", "docs/a.md", True, "write-docs"),
     skill_gate("skill gate: the winning pattern's skills are enough", "docs/a.md", False, main=("write-docs",)),
     skill_gate("skill gate: a bare pattern applies outside the slash one", "a.md", True, "write-md"),
     skill_gate("skill gate: every matching bare pattern is required", "app.py", True, "harness:code-html-css", config={"skill_gate": {"*.py": ["harness:code-python"], "app.*": ["harness:code-html-css"]}}, main=("code-python",)),
     skill_gate("skill gate: the union is allowed when both are loaded", "app.py", False, config={"skill_gate": {"*.py": ["harness:code-python"], "app.*": ["harness:code-html-css"]}}, main=("code-python", "harness:code-html-css")),
-    skill_gate("skill gate: one line per missing skill", "app.py", True, "harness:code-html-css", config={"skill_gate": {"*.py": ["harness:code-python", "harness:code-html-css"]}}, main=("code-python",)),
+    skill_gate("skill gate: the skill's own text is given", "app.py", True, "# Python", context_lacks="name: code-python"),
+    skill_gate("skill gate: the frontmatter is cut", "app.py", True, "PYTHONBODY", context_lacks="description: d", plugin_root="project/plug", files=PLUG_FILES, config=PY_JS_CONFIG),
+    skill_gate("skill gate: a marker in the transcript counts as loaded", "app.py", False, transcript=(MARKER_LINE,)),
+    skill_gate("skill gate: a marker in a sub-agent's transcript counts", "app.py", False, agent=json.dumps(MARKER_LINE) + "\n"),
+    skill_gate("skill gate: a marker of another skill does not count", "app.py", True, "Harness skill text: harness:code-python", transcript=(MARKER_LINE | {"message": {"content": [{"type": "text", "text": "Harness skill text: harness:code-js\nx"}]}},)),
+    skill_gate("skill gate: a note is no marker", "app.py", True, "Harness skill text: harness:code-python", transcript=(MARKER_LINE | {"message": {"content": [{"type": "text", "text": "Harness skill note: harness:code-python applies"}]}},)),
+    skill_gate("skill gate: whole skills go in up to the cap, a note for the rest", "app.py", True, "Harness skill note: harness:code-js", context_lacks="Harness skill text: harness:code-js", plugin_root="project/plug", files=PLUG_FILES, config=PY_JS_CONFIG),
+    skill_gate("skill gate: the first skill is given whole beside a note", "app.py", True, "Harness skill text: harness:code-python", plugin_root="project/plug", files=PLUG_FILES, config=PY_JS_CONFIG),
+    skill_gate("skill gate: a skill the plugin lacks gets a note", "app.py", True, "Harness skill note: harness:code-python", context_lacks="Harness skill text:", plugin_root="project/plug"),
+    skill_gate("skill gate: a name with a path is no skill", "app.py", True, "Harness skill note: harness:../x", context_lacks="Harness skill text:", config={"skill_gate": {"*.py": ["harness:../x"]}}),
+    skill_gate("skill gate: one note per missing skill", "app.py", True, "harness:code-html-css", config={"skill_gate": {"*.py": ["harness:code-python", "harness:code-html-css"]}}, main=("code-python",)),
 ]
 
 
@@ -1883,7 +2118,36 @@ def is_blocked(run: subprocess.CompletedProcess[str], /) -> bool:
         return False
 
 
+def check_output(case: Case, run: subprocess.CompletedProcess[str], /) -> str:
+    """Why the printed JSON does not match `updated` or `is_unchanged`, or an empty string."""
+
+    if case.updated is None and not case.is_unchanged and not case.context and not case.context_lacks:
+        return ""
+    if run.returncode != 0:
+        return f"a soft rule must exit 0, got {run.returncode}"
+    try:
+        output = json.loads(run.stdout).get("hookSpecificOutput", {}) if run.stdout.strip() else {}
+    except ValueError:
+        return f"the output is no JSON: {run.stdout.strip()[:200]!r}"
+    if "permissionDecision" in output:
+        return f"a soft rule must carry no permissionDecision: {output['permissionDecision']!r}"
+    if case.is_unchanged and "updatedInput" in output:
+        return f"the call must run unchanged, got {output['updatedInput']!r}"
+    if case.updated is not None and output.get("updatedInput") != case.updated:
+        return f"updatedInput is {output.get('updatedInput')!r}, expected {case.updated!r}"
+    note = output.get("additionalContext", "")
+    if case.context and case.context not in note:
+        return f"additionalContext lacks {case.context!r}: {note[:200]!r}"
+    if case.context_lacks and case.context_lacks in note:
+        return f"additionalContext holds {case.context_lacks!r}"
+
+    return ""
+
+
 def check_files(case: Case, root: Path, /) -> str:
+    leftovers = [path.name for path in root.rglob(".*.tmp")]
+    if leftovers:
+        return f"a temporary file of write_atomic was left behind: {leftovers}"
     if case.wrote is not None:
         path = resolve(root, case.wrote[0])
         if not path.exists() or case.wrote[1] not in path.read_text():
@@ -1938,7 +2202,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
             if name:
                 (root / name).mkdir(parents=True, exist_ok=True)
         (root / "transcript.jsonl").write_text("".join(f"{json.dumps(line)}\n" for line in case.transcript).replace(ROOT, str(root)))
-        environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root), "UV_CACHE_DIR": UV_CACHE}
+        environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root), "UV_CACHE_DIR": UV_CACHE, "HARNESS_CONFIG": str(root / "data" / "user.json")}
         environment.pop("CLAUDE_PROJECT_DIR", None)
         if case.plugin_root:
             environment["CLAUDE_PLUGIN_ROOT"] = str(root / case.plugin_root)
@@ -1966,7 +2230,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
         if case.lacks and case.lacks in message:
             return f"the message holds {case.lacks!r}: {message.strip()[:200]!r}"
 
-        return check_files(case, root)
+        return check_output(case, run) or check_files(case, root)
 
 
 def main() -> int:
@@ -1977,7 +2241,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of this hook first")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *BRIEF_CASES, *BUDGET_CASES, *SKILL_GATE_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     cases.sort(key=lambda case: arguments.first not in case.script)
     failures = 0

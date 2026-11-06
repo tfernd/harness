@@ -6,11 +6,16 @@
 # exclude-newer = "7 days"
 # ///
 """PreToolUse hook on Agent and Task: in a project whose `.harness.json` has a `brief` key, the main session's prompt for a
-harness role holds the lines the role needs. A call that carries `agent_id` came from a sub-agent and passes.
+harness role should hold the lines the role needs. The call always runs; a prompt that falls short gets a note in
+`additionalContext`. A call that carries `agent_id` came from a sub-agent and passes unchecked.
 
 `brief.required` maps a role, or `*` for the rest, to the labels a line of the prompt must start with. A custom `required` REPLACES
-DEFAULT_REQUIRED: a role it does not list is unchecked unless a `*` entry covers it. DEFAULT_REQUIRED stands when it is not set. A `Budget:` line that names no turns (`Budget: 5 minutes`) is refused too, since `budget.py` would
+DEFAULT_REQUIRED: a role it does not list is unchecked unless a `*` entry covers it. DEFAULT_REQUIRED stands when it is not set. A `Budget:` line that names no turns (`Budget: 5 minutes`) is noted too, since `budget.py` would
 silently use the default. It applies to every agent type, with or without the `harness:` prefix.
+
+One case refuses, in any project, with or without `.harness.json` or its `brief` key: an agent of a generic type (GENERIC_AGENTS, or none
+named). It has no role, so it gets no role skills, no
+report form and no default turn budget, and the longest agents in real transcripts were all of this kind.
 """
 
 from __future__ import annotations
@@ -20,9 +25,16 @@ import os
 import sys
 
 from budget import LABELLED_BUDGET, QUOTED, get_turn_limit
-from common import PLUGIN_PREFIX, find_project, get_unfenced_lines
+from common import PLUGIN_PREFIX, find_project, get_unfenced_lines, make_note_output
 
 DEFAULT_REQUIRED = {"worker": ["Goal:", "Write set:", "Judge:"], "*": ["Goal:"]}
+# Claude Code's built-in agent types that carry no harness role; the empty name is the type Claude Code picks when none is given.
+GENERIC_AGENTS = frozenset({"", "general-purpose", "Explore", "Plan", "claude"})
+GENERIC_REFUSAL = (
+    "Blocked by the harness brief rule: {name} has no harness role, so it gets no role skills, no report form and no turn budget. "
+    "Send the same brief to a role: harness:scout finds a fact, harness:worker makes a change, harness:runner runs checks, "
+    "harness:reviewer reviews, harness:planner plans, harness:researcher reads outside sources."
+)
 # What may stand before a label on its line: a list bullet, a heading mark, bold markers.
 LINE_MARKS = " \t-*#"
 
@@ -47,21 +59,26 @@ def main() -> int:
     event = json.load(sys.stdin)
     if event.get("agent_id"):
         return 0
-    root, config = find_project(event.get("cwd") or os.getcwd())
-    if root is None or "brief" not in config:
-        return 0
+    _, config = find_project(event.get("cwd") or os.getcwd())
     tool_input = event.get("tool_input") or {}
-    role = (tool_input.get("subagent_type") or "").removeprefix(PLUGIN_PREFIX)
+    agent_type = tool_input.get("subagent_type") or ""
+    if agent_type in GENERIC_AGENTS:
+        print(GENERIC_REFUSAL.format(name=f"`{agent_type}`" if agent_type else "an agent with no type"), file=sys.stderr)
+        return 2
+    if "brief" not in config:
+        return 0
+    role = agent_type.removeprefix(PLUGIN_PREFIX)
     required = (config["brief"] or {}).get("required", DEFAULT_REQUIRED)
     missing = get_missing(tool_input.get("prompt") or "", required.get(role, required.get("*", [])))
+    notes = []
     if has_unreadable_budget(tool_input.get("prompt") or ""):
-        print("Blocked by the harness brief rule: a budget counts model turns. Write `Budget: 30 turns`, or reword the line if it means something else.", file=sys.stderr)
-        return 2
-    if not missing:
-        return 0
-    print(f"Blocked by the harness brief rule: a brief for {role or "this agent"} needs the lines {', '.join(missing)}", file=sys.stderr)
+        notes.append("a budget counts model turns, and this brief's budget line names none, so the agent gets the default. Next time write `Budget: 30 turns`, or reword the line if it means something else.")
+    if missing:
+        notes.append(f"a brief for {role} needs the lines {', '.join(missing)}, and this one lacks them.")
+    if notes:
+        print(json.dumps(make_note_output("\n".join(f"The harness brief rule let this call run: {note}" for note in notes))))
 
-    return 2
+    return 0
 
 
 if __name__ == "__main__":

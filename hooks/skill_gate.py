@@ -5,20 +5,24 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on Bash, Edit, Write and NotebookEdit: refuses an edit of a file until the calling agent has loaded the skill
-its kind of file asks for, and a commit or pull request until it has loaded `harness:git-commit`.
+"""PreToolUse hook on Bash, Edit, Write and NotebookEdit: when an edit of a file is about to run before the calling agent has
+the skill its kind of file asks for, or a commit or pull request before `harness:git-commit`, the call runs and the hook puts
+the skill's own text in `additionalContext`, so the agent needs no Skill call (many sub-agents have none). It never blocks.
 
 On Bash the files are what the command writes as far as its text shows: redirects, `tee`, `sed -i`, and in a Python heredoc that
-writes, any quoted file name, since a script may hold its path in a variable. A path built at run time gets through. Running a
-script asks for nothing.
+writes, any quoted file name, since a script may hold its path in a variable; a wrong match costs one injected text. A path built
+at run time gets through. Running a script asks for nothing.
 
 The `skill_gate` key of `.harness.json` maps a glob to a list of skill names; without the key the hook does nothing. A
 pattern without `/` matches the file name at any depth, one with `/` the path relative to the project root. A pattern with
 `/` beats one without; of the patterns of the winning kind, every skill of every match is required. A skill counts as
-loaded when the agent's own transcript holds a Skill tool call naming it, with or without the `harness:` prefix, or a
-`<command-name>` line, which is how a skill preloaded through an agent's `skills:` frontmatter appears in a sub-agent's
-transcript. Files under `guard.scratch`, files no pattern matches and paths outside the project pass. Exit 2 blocks and
-names the skill; any error or missing transcript lets the call run.
+loaded when the agent's own transcript holds a Skill tool call naming it, with or without the `harness:` prefix, a
+`<command-name>` line (a skill preloaded through an agent's `skills:` frontmatter), or the marker line this hook wrote
+when it injected the text. Files under `guard.scratch`, files no pattern matches and paths outside the project pass.
+
+The text of a `harness:` skill is read from the plugin's `skills/<name>/SKILL.md`, frontmatter removed, each piece opening with
+a marker line. Whole skills go in up to MAX_INJECTED characters; a skill the plugin does not hold, or that no longer fits, gets
+a one-line note naming it. Any error or missing transcript lets the call run with no output.
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ import sys
 from pathlib import Path
 
 from budget import get_agent_path
-from common import PLUGIN_PREFIX, find_project, get_scratch
+from common import PLUGIN_PREFIX, find_project, get_scratch, make_note_output
 from guard import get_git_subcommand, get_written_words, resolve
 from shell import get_segments
 
@@ -39,6 +43,11 @@ EDIT_PATH_KEYS = ("file_path", "notebook_path")
 # A preloaded skill is injected as a user message holding this tag.
 COMMAND_TAG = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
 COMMIT_SKILL = "harness:git-commit"
+# The line that opens each injected skill; a transcript holding it counts the skill as loaded.
+MARKER = "Harness skill text: "
+MARKER_TAG = re.compile(r"Harness skill text: ([\w:-]+)")
+# Characters of skill text one call may inject: the harness shows an additionalContext of about 10,000 whole and cuts a longer one to a preview.
+MAX_INJECTED = 9500
 # A heredoc: the line that opens it, its delimiter, its body.
 HEREDOC = re.compile(r"^([^\n]*)<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n\s*\2\b", re.S | re.M)
 SCRIPT_WRITE = re.compile(r"\.write_text\(|\.write_bytes\(|\.write\(|\bopen\([^)\n]*['\"][wax]\+?b?['\"]")
@@ -76,7 +85,7 @@ def get_required(patterns: dict, relative: str, /) -> list[str]:  # keys are dat
 
 
 def get_loaded(path: Path, /) -> set[str]:
-    """The normalized names of the skills a transcript shows as loaded: Skill calls and preloaded `<command-name>` tags."""
+    """The normalized names of the skills a transcript shows as loaded: Skill calls, preloaded `<command-name>` tags, injected markers."""
 
     loaded: set[str] = set()
     for line in path.read_bytes().split(b"\n"):
@@ -92,6 +101,8 @@ def get_loaded(path: Path, /) -> set[str]:
                         loaded.add(normalize(skill))
         elif b"<command-name>" in line:
             loaded.update(normalize(name) for name in COMMAND_TAG.findall(line.decode(errors="replace")))
+        if MARKER.encode() in line:
+            loaded.update(normalize(name) for name in MARKER_TAG.findall(line.decode(errors="replace")))
 
     return loaded
 
@@ -163,12 +174,44 @@ def get_needs(event: dict, patterns: dict, root: Path, scratch: str, cwd: str, /
     return needs
 
 
+def get_skill_text(skill: str, plugin: Path, /) -> str | None:
+    """The body of the plugin's `skills/<name>/SKILL.md` without its frontmatter, None when the plugin holds no such skill."""
+
+    name = normalize(skill)
+    path = plugin / "skills" / name / "SKILL.md"
+    if not skill.startswith(PLUGIN_PREFIX) or not re.fullmatch(r"[\w-]+", name) or not path.is_file():
+        return None
+    text = path.read_text()
+    if text.startswith("---\n"):
+        _, _, text = text[4:].partition("\n---\n")
+
+    return text.strip()
+
+
+def make_context(missing: dict[str, str], plugin: Path, /) -> str:
+    """The note that gives each missing skill's text, whole while the total stays within MAX_INJECTED, else a one-line note."""
+
+    pieces: list[str] = []
+    notes: list[str] = []
+    used = 0
+    for skill, action in missing.items():
+        text = get_skill_text(skill, plugin)
+        piece = f"{MARKER}{skill}\n(Reference text, given because this call is {action}; nothing to answer.)\n\n{text}" if text else ""
+        if piece and used + len(piece) <= MAX_INJECTED:
+            pieces.append(piece)
+            used += len(piece)
+        else:
+            notes.append(f"Harness skill note: {skill} applies to this call ({action}); its text was not given here, so read it with the Skill tool if you have one.")
+
+    return "\n\n".join([*pieces, *notes])
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
     patterns = config.get("skill_gate")
-    if root is None or not isinstance(patterns, dict) or not patterns:
+    if not isinstance(patterns, dict) or not patterns:
         return 0
     needs = get_needs(event, patterns, root, get_scratch(root, config), cwd)
     path = get_transcript(event)
@@ -176,10 +219,11 @@ def main() -> int:
         return 0
     loaded = get_loaded(path)
     missing = {skill: action for skill, action in needs.items() if normalize(skill) not in loaded}
-    for skill, action in missing.items():
-        print(f"Load the skill {skill} with the Skill tool before {action}, then repeat the call.", file=sys.stderr)
+    if missing:
+        plugin = Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
+        print(json.dumps(make_note_output(make_context(missing, plugin))))
 
-    return 2 if missing else 0
+    return 0
 
 
 if __name__ == "__main__":

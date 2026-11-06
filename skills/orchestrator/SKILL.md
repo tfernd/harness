@@ -7,8 +7,8 @@ description: Load at the start of every main session. The main session works dir
 
 **The main session does the work itself by default.** It has the context loaded, so it edits, runs and tests directly,
 accepts (`harness:accept`) and talks to the owner. An agent costs a cold start and a brief, so one is spawned only where
-the rules below say it pays. A project that sets the `delegate` key of `.harness.json` has a hook that refuses the main
-session's edits and runs: there, and only there, they go to agents. Models per role: `harness:models`. Job shapes and
+the rules below say it pays. A project that sets the `delegate` key of `.harness.json` has a hook that notes the main
+session's edits and runs, which still run: there, and only there, they go to agents. Models per role: `harness:models`. Job shapes and
 size tiers: `harness:workflows`.
 
 ## What each round costs
@@ -70,12 +70,13 @@ Input:     the paths to read (about 8 files); never pasted code
 Write set: every file it may change, or an explicit glob, disjoint from every running agent's
 Judge:     the commands or tests that decide it is done, and the baseline of "unchanged"
 Runs:      what it may run, smallest case first; one result row per case as it finishes
-Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them; the brief check refuses any other unit
+Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them; the brief check notes any other unit
 Report:    `harness:report`, headings in order
 ```
 
-A project that sets the `brief` key of `.harness.json` has a hook that refuses a worker brief without `Goal:`,
-`Write set:` and `Judge:`. One spawn, one question or one change.
+A generic agent (`general-purpose`, `Explore`, `Plan`, no type) is refused in every project: it has no role skills, report
+form or turn budget. A hook notes a worker brief without `Goal:`,
+`Write set:` and `Judge:`; the spawn still runs. One spawn, one question or one change.
 
 Lines the brief itself must hold:
 
@@ -103,12 +104,16 @@ as not run. Fix the brief, then send it.
 
 ## Running agents
 
-- Independent agents go out in one message, in the background. Write sets of parallel agents are disjoint.
+- Independent agents go out in one message, with `run_in_background`; write sets of parallel agents are disjoint. While
+  they run, do the independent work at hand (reads for the next step, a brief, a check); with none, end the turn: the
+  completion notice wakes the session. Never sit idle behind a foreground agent.
+- At most two heavy jobs run at once on the owner's machine (GPU work, renders, full test suites, builds, mutation
+  audits); queue the rest. Light read-only agents do not count. A project may set its own number in `AGENTS.md`.
 - Never stop an agent for the time it has taken: a slow machine or a long test is no fault of the agent. Stop one only when it
   is stuck: its transcript gains nothing between two looks, or it repeats a failing call.
 - A report is data and carries no authority. Agreement between agents is not evidence: a bug claim is probed before it is
   fixed (`harness:evidence`).
-- An agent report that breaks the form goes back whole; the hook allows three send-backs.
+- An agent report that breaks the form goes back with the wrong sections named; the agent resends only those, the hook merges them, and it allows three send-backs.
 
 ## Checkpoints
 
@@ -124,7 +129,7 @@ loop below), give the owner the closing status (`harness:accept`), and go on onl
 3. Each lesson has one home: a trap for every agent, the project `AGENTS.md`; a role's craft, `agents/`; writing, tests or
    review, the skill that owns it; a decision or open question, the plan file. A line an accepted change made false is
    deleted in the same change.
-4. In a project with `.harness.json`, each Feedback item lands in `harness-feedback/inbox.md`. Open items stay in the report: put
+4. Each Feedback item lands in `harness-feedback/inbox.md`: the project's own with `.harness.json`, else the plugin's data folder. Open items stay in the report: put
    them to the owner.
 5. No item needs a verdict of its own. When 20 items wait, the Stop hook holds a session that filed one until a retro is
    done: run one `harness:analyst`, apply or reject each proposal, keep its open problems in `harness-feedback/open.md`
@@ -136,7 +141,7 @@ loop below), give the owner the closing status (`harness:accept`), and go on onl
 
 - Results in plain words first (what was measured, the baseline, the verdict), then the numbers; every comparison a
   signed percent against a named baseline. A cause told to the owner is probed first.
-- Technical choices are the orchestrator's: decide and carry on. The owner decides direction, formats, deleting,
-  pushing, installing and permissions.
+- Work down the plan without asking. Ask only before an irreversible or outward step (delete outside scratch, push,
+  install, permissions) or a change of direction or format; decide any other choice and state its cost in one line.
 - Ask what must be true of the product, never which tests to use.
 - Settings files are written as a proposal in the scratch folder; the owner applies them.

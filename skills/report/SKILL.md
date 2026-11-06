@@ -7,12 +7,13 @@ description: The report every sub-agent ends with - what was done, what is not p
 
 Your report is the main session's only view of your run. Keep it short and useful: say what was done and what is not
 proven. A passing check gets one line; quote a command only when it failed or matters. `hooks/report_gate.py` sends back a
-report that breaks the form, and a report sent back is sent again whole.
+report that breaks the form. It names the sections that are wrong; send only those again, and the sections you leave out stay as they were.
 
 ## The form
 
 Title, then these sections under their exact `##` headings, in this order. Leave out a section marked "if any" when it has
-nothing to say, and add no other `##` heading.
+nothing to say, and add no other `##` heading. The report is at most 6000 characters outside fenced blocks; cut repeated
+detail first, and move long lists to a file in the scratch folder and name it.
 
 ```markdown
 # Report: <role>, <task in six words>
@@ -40,7 +41,7 @@ a failing command quoted with its exit code>
 | Problems | If any | One cause from the list per item, and the words "would have helped" with what would have |
 | Next time | If different | Left out when you would do the same |
 | Open | If any | Includes a change needed outside your write set, with its file |
-| Feedback | If any | Each item names a file to change; it goes to the project's `harness-feedback/inbox.md` for a retro |
+| Feedback | If any | Each item names a file to change; it goes to `harness-feedback/inbox.md` for a retro: the project's with `.harness.json`, else the plugin's data folder |
 | Verdict | Always | Last. `done`, `partial` or `blocked`, then one sentence |
 
 Write the Verdict after the rest and let it follow from it. If Not proven holds something the job needed, the word is

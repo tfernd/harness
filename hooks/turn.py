@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 # HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
-from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines
+from common import FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, find_project, get_unfenced_lines, has_project_file, write_atomic
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
@@ -119,9 +119,12 @@ def read_transcript(path: str, /) -> list[dict]:  # keys are data
     with open(path, errors="replace") as file:
         for line in file:
             try:
-                lines.append(json.loads(line))
+                event = json.loads(line)
             except ValueError:
                 continue
+            # A line that is valid JSON but no object (a number, a list) is skipped like a torn one.
+            if isinstance(event, dict):
+                lines.append(event)
 
     return lines
 
@@ -222,7 +225,8 @@ def check_lessons(message: str, rules_path: Path, root: Path, config: dict, tran
         return []
     # Skipped when no state was saved (no `reset` ran in this session), or when a rule file differs from it: that is the
     # change the lessons need.
-    if not rules_path.exists() or json.loads(rules_path.read_text()) != get_rule_state(root, config):
+    saved = get_saved_rules(rules_path)
+    if saved is None or saved != get_rule_state(root, config):
         return []
     if DEFERS.search(section):
         return ["the Lessons section defers its lessons and no rule file changed this turn: write them now, then say so"]
@@ -231,6 +235,17 @@ def check_lessons(message: str, rules_path: Path, root: Path, config: dict, tran
         "the Lessons section has no change to show: no rule file changed this turn. Write each lesson into its file now, "
         'then say so; or write "Lessons: none" on a line of its own when no problem was met'
     ]
+
+
+def get_saved_rules(rules_path: Path, /) -> dict | None:  # keys are data
+    """The rule state saved at the turn's start, None when the file is missing, empty or not a JSON object."""
+
+    try:
+        saved = json.loads(rules_path.read_text())
+    except (OSError, ValueError):
+        return None
+
+    return saved if isinstance(saved, dict) else None
 
 
 def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /) -> str:  # keys are data
@@ -245,12 +260,13 @@ def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /)
     if not path.is_relative_to(root):
         return ""
     # Skipped when no state was saved (no `reset` ran in this session): only the file's existence counts.
-    if not rules_path.exists():
+    saved = get_saved_rules(rules_path)
+    if saved is None:
         return ""
     state = get_rule_state(root, config)
     if str(path) not in state:
         return f"{name} is no rule file (not under rule_paths): name the rule file that changed"
-    if json.loads(rules_path.read_text()).get(str(path)) == state[str(path)]:
+    if saved.get(str(path)) == state[str(path)]:
         return f"{name} was not changed this turn (same content as at the turn's start): write the rule into it"
 
     return ""
@@ -304,7 +320,7 @@ def get_open_feedback(root: Path, session: str, released: set[str], handled: set
     seen = int(text) if text.isdecimal() and text.isascii() and int(text) <= len(items) else 0
     closed = min(get_covered(handled), len(items))
     if closed > seen:
-        mark.write_text(str(closed))
+        write_atomic(mark, str(closed))
         seen = closed
     waiting = items[seen:]
     is_mine = any(owner == session for _, owner in waiting)
@@ -330,16 +346,21 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
         missing = [name for name in settings.get("headings", HEADINGS) if f"## {name}" not in found]
         if missing and count_running_agents(transcript) > 0:
             is_deferred = True
-            deferred_path.write_text("1")
+            write_atomic(deferred_path, "1")
         elif missing:
             problems.append(
                 f'the turn ran agents or edited files ({calls} calls), so the closing message needs the job status, as '
                 f'"## NAME" lines: {"; ".join(missing)}'
             )
-    problems += check_lessons(message, rules_path, root, config, transcript)
     released = set(released_path.read_text().split()) if released_path.exists() else set()
-    handled, invalid = get_handled(root, rules_path, config)
-    open_ids = get_open_feedback(root, session, released, handled)
+    handled: set[str] = set()
+    invalid: dict[str, str] = {}
+    open_ids: list[str] = []
+    # Lessons and retros write rules into the repo's files, so they hold only a repo that opted in with its own file.
+    if has_project_file(root):
+        problems += check_lessons(message, rules_path, root, config, transcript)
+        handled, invalid = get_handled(root, rules_path, config)
+        open_ids = get_open_feedback(root, session, released, handled)
     # A retro may be the agent that runs: it is due again at the stop after the agents have finished.
     if open_ids and count_running_agents(transcript) > 0:
         open_ids = []
@@ -354,17 +375,17 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
     count = blocks_path.read_text().strip() if blocks_path.exists() else ""
     blocks = int(count) if count.isdecimal() and count.isascii() else 0
     if problems and blocks < MAX_BLOCKS:
-        blocks_path.write_text(str(blocks + 1))
+        write_atomic(blocks_path, str(blocks + 1))
         listed = "\n".join(f"- {problem}" for problem in problems)
         print(json.dumps({"decision": "block", "reason": f"This turn ends with open checks:\n{listed}\nFix each, then stop."}))
         return 0
     if calls >= min_calls and not is_deferred:
-        calls_path.write_text("")
+        write_atomic(calls_path, "")
     if not is_deferred and deferred_path.exists():
         deferred_path.unlink()
     if open_ids:
-        released_path.write_text(" ".join(sorted(released | set(open_ids))))
-    blocks_path.write_text("0")
+        write_atomic(released_path, " ".join(sorted(released | set(open_ids))))
+    write_atomic(blocks_path, "0")
     if problems:
         print(json.dumps({"systemMessage": f"The turn ends with open checks: {'; '.join(problems)}"}))
 
@@ -374,20 +395,21 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
 def main() -> int:
     event = json.load(sys.stdin)
     root, config = find_project(event.get("cwd") or os.getcwd())
-    if root is None:
-        return 0
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     calls_path, rules_path, blocks_path = get_state_paths(event.get("session_id") or "unknown")
     if mode == "add":
         if not event.get("agent_id"):
+            # One short append is not torn on Linux, so the counter needs no temporary file.
             with open(calls_path, "a") as file:
                 file.write(f"{event.get('tool_name') or 'tool'}\n")
     elif mode == "reset":
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
         if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
-            calls_path.write_text("")
-            rules_path.write_text(json.dumps(get_rule_state(root, config)))
-        blocks_path.write_text("0")
+            write_atomic(calls_path, "")
+            # Rule hashes serve only the lessons and retro checks of an opted-in project; elsewhere the walk could be huge.
+            if has_project_file(root):
+                write_atomic(rules_path, json.dumps(get_rule_state(root, config)))
+        write_atomic(blocks_path, "0")
     elif mode == "stop":
         return stop(event, root, config)
 

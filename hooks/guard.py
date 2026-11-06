@@ -5,7 +5,7 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on Bash, Write, Edit and NotebookEdit: refuses dangerous commands, in every project, for sub-agents as well as the main session.
+"""PreToolUse hook on Bash, Write, Edit and NotebookEdit: refuses dangerous commands and steers cheap mistakes, in every project, for sub-agents as well as the main session.
 
 It judges commands, not text: `shell.py` reads the command as a shell does, so a heredoc's body, a quoted string or an
 argument (`ls .venv/bin/python`) is never taken for a command, and what runs inside `$(...)`, backticks and `<(...)` is.
@@ -24,17 +24,17 @@ Always on:
    shell's `-c` string, where a glob with no match stays literal; a path glob after a step that may write its files
    (`make && cat out/*`); a relative glob from an unknown folder; and a word with `$`, a backtick or a brace, whose expansion is not read. No glob: `$?`, `$*`, `${...}`, `$((...))`, the arguments of `[`, `[[`,
    `case` and `test`, and the value of `export NAME=...`.
-4. Polling: a `sleep` inside a `while` or `until` loop, also in a `$(...)` or a `bash -c` string inside one. A command
-   that waits runs in the background. A `for` loop, a loop without a sleep and a sleep outside any loop are not refused.
+4. Waiting (soft, see below): a `sleep` anywhere in a foreground call, loop or not, also in a `$(...)`, a `bash -c` string or a
+   `find -exec`. A call with `run_in_background` may sleep: its exit wakes the agent, so the wait costs no turn.
 
 On when the project's `.harness.json` asks, under its `guard` key:
 5. `ask_packages` (or its old name `deny_packages`): package changes (`uv add|remove|lock|sync|pip|tool`, `uvx`, `uv run pip`, `pip`, `pip3`, `python -m pip`) ask the owner
    instead of running at once. Any other rule the same command breaks still refuses it.
-6. `no_tmp`: throwaway files under `/tmp`: a path a command writes there, or a Write or Edit whose path lies there.
-7. `scratch`: a write by the writing commands below that lands inside the project but outside that folder is refused, and
-   so is `mv` of a project file out of its place. A write outside the project is not this rule's.
+6. `no_tmp` (soft): throwaway files under `/tmp`: a path a command writes there, or a Write or Edit whose path lies there.
+7. `scratch` (soft): a write by the writing commands below that lands inside the project but outside that folder, and
+   a `mv` of a project file out of its place. A write outside the project is not this rule's.
    Files change through the Edit and Write tools or a Python script; what Python code writes is not read.
-8. `lock`: `uv run python`, `uv run pytest` or the venv's python outside a call wrapped by one of the `commands` (the
+8. `lock` (hard): `uv run python`, `uv run pytest` or the venv's python outside a call wrapped by one of the `commands` (the
    wrapper words that set the lock, a queue for a GPU, say). Allowed: `free_env` (the whole `NAME=value` word) before the command, the `free_scripts`, and any script or `-m` module starting with a
    `free_prefixes` entry. `message` is the refusal.
 
@@ -47,7 +47,14 @@ folder is not known (a `cd` with no target, `cd -`, a variable, a substitution, 
 `( )` group, a substitution, a pipeline or the background, `eval`, `source`), a relative written path is refused for the
 rest of that command, until a `cd` to an absolute existing folder, when the `scratch` rule (7) is on; a shell variable in a path is not expanded.
 
-Exit 2 blocks the call and hands the message on stderr to the agent; exit 0 lets it run, and asks the owner first when it prints `permissionDecision: ask`; exit 1 (a bug in this guard or
+Hard rules (1, 2, 3, 8) exit 2, which blocks the call and hands the message on stderr to the agent. A call that breaks a hard
+rule is refused with the hard messages only. Soft rules (4, 6, 7) let the call run: the guard exits 0 and prints an
+`additionalContext` note for the agent, with no `permissionDecision`, so the owner's permission prompts still apply. A
+foreground `sleep` also changes the call (`updatedInput` carries every other field of the input): when every `sleep` is a
+direct command of the top-level command (not in a `while` or `until` loop, a subshell, a pipeline, a substitution, a wrapper such as
+`timeout`, `sh -c`, `eval` or `find -exec`), the command gets `sleep() { :; }; ` in front, so nothing is cut or parsed; any other
+`sleep` (a polling loop, a wrapper) leaves the command alone and sets `run_in_background`, since removing the sleep from a
+polling loop would spin the CPU. Exit 0 with `permissionDecision: ask` asks the owner first; exit 1 (a bug in this guard or
 a broken `.harness.json`) shows the error and lets the call run: the guard fails open, so a broken config drops every rule.
 """
 
@@ -60,8 +67,8 @@ import re
 import sys
 from typing import NamedTuple
 
-from common import find_project, get_scratch
-from shell import GLOB_CHARACTERS, Segment, Word, get_segments
+from common import find_project, get_scratch, has_project_file
+from shell import GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 
 # The words after which the next word is the command, with no option of their own: wrappers (`command`, `exec`, `nohup`,
 # `time`, `builtin`, `noglob`) and shell keywords or punctuation (`then`, `do`, `else`, `elif`, `if`, `while`, `until`, `!`, `{`, `}`).
@@ -136,6 +143,9 @@ GLOB_PATTERN_OPTIONS = {
     "rg": {"-g", "--glob", "--iglob"},
     "grep": {"--include", "--exclude", "--exclude-dir"},
 }
+# The most characters of a suggested command that a refusal shows.
+FIX_LIMIT = 300
+
 # The characters of a word the guard does not expand, so what its glob matches is not known.
 UNEXPANDED = "$`{"
 # The builtins whose `NAME=value` arguments are assignments, which no shell expands as a path.
@@ -156,13 +166,23 @@ MESSAGES = {
     "lock": "this project's Python runs under its lock.",
     "glob": "this unquoted glob matches no file, so zsh fails with 'no matches found', or it is a pattern for the command "
     "that the shell would expand first. Quote it (`--include='*.py'`), or use the Grep tool or `rg -g '*.py'`.",
-    "temporary": "throwaway files go in the project's scratch folder, never under /tmp.",
-    "repo": "project files change through the Edit and Write tools or a Python script. A shell redirect, tee, sed -i, "
-    "cp, mv, curl or tar may write only under the scratch folder. A relative path is taken from the working directory "
+    "temporary": "this write went through. Throwaway files belong in the project's scratch folder, never under /tmp.",
+    "repo": "this write went through. Project files change through the Edit and Write tools or a Python script; a shell redirect, tee, "
+    "sed -i, cp, mv, curl or tar belongs under the scratch folder. A relative path is taken from the working directory "
     "after any cd in the same command; use absolute paths when in doubt.",
-    "poll": "a `sleep` inside a `while` or `until` loop polls for a result, even a loop that may never run. Run the command in the background and wait "
-    "for its notification instead.",
+    "sleep": "`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "
+    "the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "
+    "notifies you on exit, and a condition runs as a background `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`.",
 }
+# The rules that let the call run with a note; every other rule refuses.
+SOFT_RULES = ("temporary", "repo", "sleep")
+# The note for a `sleep` the guard could not remove: it moved the call to the background instead.
+SLEEP_BACKGROUND_NOTE = (
+    "this command waits with `sleep` (a polling loop, a wrapper or a nested string), so it now runs in the background and its exit "
+    "wakes you: read the output then, not before. Waiting on a timer in the foreground spends the owner's time (`harness:tool-habits`, Waiting)."
+)
+# Put before a command whose every `sleep` is direct: the function shadows the program, so no text is parsed or cut.
+SLEEP_SHADOW = "sleep() { :; }; "
 
 
 class Policy(NamedTuple):
@@ -186,7 +206,7 @@ def get_policy(cwd: str, /) -> Policy:
     """The rules of the project around a working directory."""
 
     root, config = find_project(cwd)
-    if root is None:
+    if not has_project_file(root):
         return Policy()
     guard = config.get("guard", {})
     lock = guard.get("lock", {})
@@ -377,21 +397,56 @@ def is_failing_glob(text: str, directory: str | None, may_have_written: bool, /)
     return next(glob.iglob(resolve_path(text, directory or ""), recursive=True), None) is None
 
 
-def has_failing_glob(command: Command, directory: str | None, may_have_written: bool, /) -> bool:
-    """Whether an argument holds an unquoted glob that fails or is a pattern for the command, which then must be quoted."""
+def get_failing_globs(command: Command, directory: str | None, may_have_written: bool, /) -> list[str]:
+    """The unquoted glob arguments that fail or are a pattern for the command, which then must be quoted."""
 
     name = os.path.basename(command.name)
     if name in PATTERN_COMMANDS:
-        return False
+        return []
     is_declarer = name in DECLARERS
     pattern_options = GLOB_PATTERN_OPTIONS.get(name, set())
+    failing: list[str] = []
     for index, word in enumerate(command.arguments):
         is_judged = word.is_glob and not (is_declarer and ASSIGNMENT.match(word.text))
         is_pattern = index > 0 and command.arguments[index - 1].text in pattern_options
         if is_judged and (is_pattern or is_failing_glob(word.text, directory, may_have_written)):
-            return True
+            failing.append(word.text)
 
-    return False
+    return failing
+
+
+def has_failing_glob(command: Command, directory: str | None, may_have_written: bool, /) -> bool:
+    """Whether an argument holds an unquoted glob that fails or is a pattern for the command."""
+
+    return bool(get_failing_globs(command, directory, may_have_written))
+
+
+def quote_glob(text: str, /) -> str:
+    """The glob word in single quotes; an option's value is quoted, not its name (`--include='*.py'`)."""
+
+    if text.startswith("-") and "=" in text:
+        option, _, value = text.partition("=")
+        return f"{option}='{value}'"
+
+    return f"'{text}'"
+
+
+def get_glob_fix(command: str, words: list[str], cwd: str | None, /) -> str:
+    """The command with each failing glob word quoted, or "" when that cannot be done safely.
+
+    Safe: no word holds a quote, `$`, a backtick, a backslash or a leading `~`, every word stands alone in the text, and the
+    guard's own glob rule accepts the result.
+    """
+
+    fixed = command
+    for text in dict.fromkeys(words):
+        if text.startswith("~") or any(character in text for character in "'\"$`\\"):
+            return ""
+        fixed = re.sub(rf"(?<!\S){re.escape(text)}(?![^\s;|&)])", lambda _: quote_glob(text), fixed)
+    if fixed == command or "glob" in find_command_breaches(fixed, cwd, is_background=False):
+        return ""
+
+    return fixed
 
 
 # ===========================================================================
@@ -620,11 +675,13 @@ def get_directory_after(command: Command, is_grouped: bool, directory: str | Non
 # ===========================================================================
 
 
-def find_breaches(segments: list[Segment], cwd: str | None, is_locked: bool, is_free: bool, in_loop: bool, judges_globs: bool, /) -> list[str]:
+def find_breaches(
+    segments: list[Segment], cwd: str | None, is_locked: bool, is_free: bool, judges_globs: bool, /, *, failing_globs: list[str] | None = None
+) -> list[str]:
     """The rules some simple commands break, each once, in rule order.
 
-    `in_loop` says they run in a loop; `cwd` is the folder they start in, None when that is not known; `judges_globs` says
-    their shell is zsh, the one that fails on a glob with no match.
+    `cwd` is the folder they start in, None when that is not known; `judges_globs` says
+    their shell is zsh, the one that fails on a glob with no match. A list as `failing_globs` collects the glob words that fail.
     """
 
     breaches: list[str] = []
@@ -633,30 +690,38 @@ def find_breaches(segments: list[Segment], cwd: str | None, is_locked: bool, is_
     for segment in segments:
         command = resolve(segment)
         locked, free = is_locked or command.is_locked, is_free or command.is_free
-        is_looping = in_loop or segment.in_loop
         globs = (judges_globs, may_have_written)
-        breaches.extend(get_command_breaches(segment, command, directory, locked or free, is_looping, globs))
+        command_breaches = get_command_breaches(segment, command, directory, locked or free, globs)
+        breaches.extend(command_breaches)
+        if failing_globs is not None and "glob" in command_breaches:
+            failing_globs.extend(get_failing_globs(command, directory, may_have_written))
         if command.name == "export" and any(word.text == POLICY.free_env for word in command.arguments):
             is_free = True
         name = os.path.basename(command.name)
         inner_judges = judges_globs and not (name in SHELLS and name != "zsh")
-        breaches.extend(find_breaches(get_inner_segments(command), directory, locked, free, is_looping, inner_judges))
+        breaches.extend(find_breaches(get_inner_segments(command), directory, locked, free, inner_judges, failing_globs=failing_globs))
         may_have_written = may_have_written or name not in READ_ONLY_COMMANDS or bool(get_written_words(segment, command, directory))
         directory = get_directory_after(command, segment.in_group, directory)
 
     return [rule for rule in MESSAGES if rule in breaches]
 
 
-def find_command_breaches(command: str, cwd: str | None, /) -> list[str]:
-    """The rules a whole shell command breaks, from the folder it starts in."""
+def find_command_breaches(command: str, cwd: str | None, /, *, is_background: bool, failing_globs: list[str] | None = None) -> list[str]:
+    """The rules a whole shell command breaks, soft ones included (`SOFT_RULES`), from the folder it starts in.
+
+    `is_background` lets it sleep: a call that runs in the background raises no `sleep` breach.
+    A list as `failing_globs` collects the glob words that fail.
+    """
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
 
-    return find_breaches(get_segments(command), cwd, False, False, False, is_zsh)
+    breaches = find_breaches(get_segments(command), cwd, False, False, is_zsh, failing_globs=failing_globs)
+
+    return [rule for rule in breaches if rule != "sleep" or not is_background]
 
 
 def get_command_breaches(
-    segment: Segment, command: Command, directory: str | None, is_lock_free: bool, is_looping: bool, globs: tuple[bool, bool], /
+    segment: Segment, command: Command, directory: str | None, is_lock_free: bool, globs: tuple[bool, bool], /
 ) -> list[str]:
     """The rules one simple command breaks.
 
@@ -677,10 +742,66 @@ def get_command_breaches(
         ("glob", globs[0] and has_failing_glob(command, directory, globs[1])),
         ("temporary", any(is_temporary(path) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path) for path in [*written, *moved])),
-        ("poll", os.path.basename(command.name) == "sleep" and is_looping),
+        ("sleep", os.path.basename(command.name) == "sleep"),
     ]
 
     return [rule for rule, is_breach in checks if is_breach]
+
+
+def is_direct_sleep(segment: Segment, /) -> bool:
+    """Whether a top-level segment runs the `sleep` function-shadowing can catch: its first word past `do`, `then` and the like.
+
+    A segment in a polling loop, a subshell, a pipeline, a substitution or the background is not direct.
+    """
+
+    words = [word.text for word in segment.words]
+    index = 0
+    while index < len(words) and words[index] in LEADING_WORDS:
+        index += 1
+
+    return not segment.in_loop and not segment.in_group and words[index : index + 1] == ["sleep"]
+
+
+def find_sleeps(segments: list[Segment], /, *, is_top_level: bool = True) -> list[bool]:
+    """Whether each `sleep` the segments run, nested strings included, is a direct command of the top-level command."""
+
+    flags: list[bool] = []
+    for segment in segments:
+        command = resolve(segment)
+        if os.path.basename(command.name) == "sleep":
+            flags.append(is_top_level and is_direct_sleep(segment))
+        flags.extend(find_sleeps(get_inner_segments(command), is_top_level=False))
+
+    return flags
+
+
+def get_sleep_fix(command: str, tool_input: dict, /) -> tuple[dict, str]:  # keys are data
+    """The whole input of a foreground call that sleeps, changed so it does not wait, and the note that says how.
+
+    Every `sleep` direct: the command gets `SLEEP_SHADOW` in front. Any other `sleep`: the call moves to the background.
+    """
+
+    flags = find_sleeps(get_segments(command))
+    if flags and all(flags):
+        return {**tool_input, "command": SLEEP_SHADOW + command}, MESSAGES["sleep"]
+
+    return {**tool_input, "run_in_background": True}, SLEEP_BACKGROUND_NOTE
+
+
+def make_soft_output(breaches: list[str], tool_input: dict, /) -> dict:  # keys are data
+    """The PreToolUse output that lets the call run with a note, and with a changed input when a `sleep` is in it.
+
+    Never carries a `permissionDecision`: the owner's permission prompts still apply to the call.
+    """
+
+    notes = [f"The harness guard let this run: {MESSAGES[rule]}" for rule in breaches if rule != "sleep"]
+    output: dict = {"hookEventName": "PreToolUse"}
+    if "sleep" in breaches:
+        output["updatedInput"], note = get_sleep_fix(tool_input.get("command") or "", tool_input)
+        notes.append(f"The harness guard changed this call: {note}")
+    output["additionalContext"] = "\n".join(notes)
+
+    return {"hookSpecificOutput": output}
 
 
 def get_shell_string(arguments: list[str], /) -> str:
@@ -739,15 +860,25 @@ def main() -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     POLICY = get_policy(cwd)
+    command = ""
+    failing_globs: list[str] = []
     if event.get("tool_name") == "Bash":
-        breaches = find_command_breaches(tool_input.get("command") or "", cwd)
+        command = tool_input.get("command") or ""
+        breaches = find_command_breaches(command, cwd, is_background=tool_input.get("run_in_background") is True, failing_globs=failing_globs)
     else:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         breaches = ["temporary"] if is_temporary(resolve_path(path, cwd)) else []
-    if not breaches:
+    hard = [rule for rule in breaches if rule not in SOFT_RULES]
+    if not hard:
+        if breaches:
+            print(json.dumps(make_soft_output(breaches, tool_input)))
         return 0
     messages = {**MESSAGES, "lock": POLICY.lock_message or MESSAGES["lock"]}
-    lines = [f"Blocked by the harness guard: {messages[rule]}" for rule in breaches if rule != ASK_RULE]
+    fix = get_glob_fix(command, failing_globs, cwd) if "glob" in hard else ""
+    if fix:
+        shown = fix if len(fix) <= FIX_LIMIT else fix[: FIX_LIMIT - 1] + "…"
+        messages["glob"] += f"\nRun instead: {shown}"
+    lines = [f"Blocked by the harness guard: {messages[rule]}" for rule in hard if rule != ASK_RULE]
     if not lines:
         decision = {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": f"The harness guard: {MESSAGES[ASK_RULE]}"}
         print(json.dumps({"hookSpecificOutput": decision}))

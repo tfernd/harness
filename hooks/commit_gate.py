@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-from common import find_project
+from common import find_project, has_project_file
 from guard import get_git_subcommand
 from shell import get_segments
 
@@ -152,7 +152,7 @@ def main() -> int:
     event = json.load(sys.stdin)
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
-    if root is None or config.get("guard", {}).get("commit_style") is False:
+    if not has_project_file(root) or config.get("guard", {}).get("commit_style") is False:
         return 0
     problems = find_problems((event.get("tool_input") or {}).get("command") or "", cwd)
     if not problems:
