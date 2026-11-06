@@ -13,7 +13,11 @@ stays a sentence is not a result.
 When 20 items wait in `harness-feedback/inbox.md` past the count in `harness-feedback/retro-mark`, the Stop hook holds a
 session that filed one. Run one `harness:analyst`; apply or reject each proposal; keep its open problems in
 `harness-feedback/open.md`, one `- <role or all>: <problem>` per line, and delete a line once a rule fixes it. Then add the
-line the hook names to `harness-feedback/handled.md`; the hook moves the mark.
+line the hook names to `harness-feedback/handled.md`: `retro-<N>: rule written in FILE`, where FILE is a rule file changed
+this turn, or `retro-<N>: rejected: REASON` of 3 or more words that no other line uses. The hook moves the mark; with no
+mark yet, the window is every inbox item `handled.md` does not name. Write these files with Write or Edit, not the shell.
+`retro-mark` (in the project's `harness-feedback/`) and `retro-marker` (in the plugin data folder, touched in the last
+step) are different files.
 
 ## The ledger
 
@@ -42,24 +46,39 @@ Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_back
 6. **Check the tool turns.** Per role, from `tool_turns`: calls per turn, repeats per agent and the share of calls that are
    small reads, each beside the last retro's value. One-call turns alone prove nothing, since many need the previous
    result. A figure that got worse is a pattern; read two of its transcripts.
-7. **Propose changes.** One per pattern, in the form below.
+7. **Check the rules.** In the project's `AGENTS.md`, each rule has an enforcer in its rule-to-enforcer table (hook, test,
+   lint, review or none). A rule broken again whose enforcer is none is a repeat: raise it a level in the same change. A
+   rule whose mistake can no longer happen is dropped.
+8. **Find no-ops and bloat.** Steering lines that change no behaviour (no row, no reviewer finding, no hook ever tied to
+   them) and an `AGENTS.md` that grew since the last retro: propose deleting them. A line kept must earn its place.
+9. **Propose changes.** One per pattern, in the form below.
 
 ## Proposal form
 
 ```
 Pattern: <cause>, <role>, <n> rows (ids)
 Evidence: <quoted problem line> (<agent_id>)
+Level: <cause removed | types or lint | hook or test | text>, and why a higher one did not work
 Change: <hook | gate | rule | brief template | role | skill> in <file>
 Check: <how the same problem is caught next time, and how to show the check fails under a deliberate bug>
 ```
 
 ## Which kind of change
 
+Pick the highest level that fits, and say why a higher one did not work:
+
+1. Remove the cause: one owner for the fact, and delete the old way an agent would copy.
+2. Types or lint: make the mistake unrepresentable or a tool failure.
+3. A hook or a test.
+4. Text, last, and only for judgement calls no tool can check.
+
 - A problem seen twice gets a hook or a gate: something that refuses, not a sentence an agent may skip. Waste that is
   sometimes right, such as tool turns, gets a nudge and a figure in the ledger, not a refusal (`hooks/nudge.py`). A hook
   needs cases in `tests/run_cases.py` (in the plugin repo, not the project), shown to fail under a deliberate bug.
 - A rule is for what a tool cannot check; it must be checkable by a reviewer against code or a report.
 - A brief-caused problem changes the brief template or `harness:cold-read`, not the agent.
+- Missing information (the agent could not see a log, a service or a file outside its tree; filed as `environment`) is
+  fixed by access, a path in the brief or a tool, not by a rule.
 - An `environment` or `tool` cause gets no rule unless it was seen twice; then it is the project's: report it, do not
   write a plugin rule for it.
 - `the agent itself` repeated across one role is a role or model question: see `harness:models`.

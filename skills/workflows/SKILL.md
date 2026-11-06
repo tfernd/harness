@@ -37,8 +37,13 @@ Use when the job rests on facts nobody has checked.
 A fact one `rg` or one read settles is read here, without a scout.
 
 1. One `scout` per question, Haiku, all in one message. Each answers one narrow question with `path:line` evidence
-   (`harness:evidence`).
+   (`harness:evidence`). Cut the fan-out along an area, or along a kind of problem across a wider area (redefined
+   helpers, false comments, dead code, docs against code). A cell (`harness:review`) is one scout's slice; a **wave** is
+   the cells launched in one message, at most 20, never over files another agent is editing.
+   The brief is short: the question, the files and callers, a ready grep, "report; build and test nothing", a turn
+   budget. A question about a syntax pattern (every call, every decorator) is a parse of the syntax tree, never a regex.
 2. Check each answer against the tree before using it. Two scouts that disagree are re-asked with the other's claim.
+   Merge duplicates and hand the owner only the checked claims and how many were false.
 3. Write the settled facts into the brief or the spec.
 
 ## Bug fix: a failing test first
@@ -79,6 +84,11 @@ Use when units are independent.
 5. Check each unit's judges.
 6. Integrate: the main session wires the units together and owns the shared files.
 7. Run the product and the full check, then one reviewer reads the whole diff.
+
+## Hillclimb
+
+Use when a metric can judge each change: one change, one measurement, keep or revert, until a stop predicate holds.
+Steps and the log: `references/hillclimb.md`.
 
 ## Parallel Agent calls or the Workflow tool
 

@@ -112,7 +112,7 @@ Nothing needs it:
 
 ## Git
 
-- Before any commit, load `harness:git-commit`. No AI attribution, ever.
+- Before any commit, load `harness:git-commit`; it holds the AI-attribution ban.
 
 ## When a call is refused
 

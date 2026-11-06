@@ -35,5 +35,12 @@ Every sub-agent ends with the `harness:report` report, claims marked READ, DERIV
 - A line number in a brief goes stale while others edit: find it by its text.
 - An exit code after a pipe is the last command's: read `${PIPESTATUS[@]}` (bash) or `$pipestatus` (zsh).
 
-## 8. Working efficiently
+## 8. Rule enforcers
+Every rule above has an enforcer; a rule with none is the first to be broken again (`harness:retro`).
+
+| Rule | Enforced by (hook, test, lint, review, none) |
+|---|---|
+| <rule> | <enforcer> |
+
+## 9. Working efficiently
 Tool turns, reads, edits and checks: `harness:tool-habits`, which every session and sub-agent starts with.

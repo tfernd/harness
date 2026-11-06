@@ -34,9 +34,11 @@ not the reviewer's: see the last section.
 
 ## A finding
 
-One entry: `path:line` with the line's text (lines move), the severity, the input or sequence that shows it (or why no
-test would catch it), a one-line fix. Findings are sorted A, B, C. A suspicion without such an input is reported as
-unsure, not as a finding: unsure items go in a separate list after C. Agreement with another reviewer is not evidence (`harness:evidence`).
+One entry: `path:line` with the line's text (lines move), the severity, the command that shows it with its output (or why
+no test would catch it), a one-line fix. Findings are sorted A, B, C. A finding survives only with that command and
+output; a suspicion without them is reported as unsure, not as a finding: unsure items go in a separate list after C.
+"No findings" is a valid result; never pad a review to look thorough. The main session reruns a finding's command
+before relaying it (`harness:accept`).
 
 ## Lenses a brief may add
 
@@ -50,7 +52,7 @@ unsure, not as a finding: unsure items go in a separate list after C. Agreement 
 ## The layout survey
 
 After a big job, with no unit in progress, read-only agents each take a cell (a folder); nothing is edited. Per cell, read the
-outline (`grep -n '^def \|^class \|^function \|^export '` or the language's equivalent) and run the style tools. Every
+outline (`harness:evidence`) and run the style tools. Every
 type, function and constant sits in the module whose job it is: used only elsewhere, or a job another module names, is a
 move; so are a second job in a module and near-duplicates. Return a move list (name, `path:line` from, module to,
 rule), then splits and merges.

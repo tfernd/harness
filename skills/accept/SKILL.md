@@ -15,7 +15,7 @@ The main session accepts: it reads and judges, and makes the wiring, the fixes a
    are true of the code under them. If harder, the unit goes back to its writer.
 3. Gates follow the unit's tier in `harness:workflows`. Small: the project's own checks alone. Medium and large: the
    product run, the checks, then one `reviewer` at the end of the round (`harness:review`); an `auditor`
-   (`harness:audit`) only when a worker's report is the sole evidence of a claim. The main session applies each finding
+   (`harness:audit`) only when a worker's report is the sole evidence of a claim. The main session reruns each finding's command and drops one whose output does not show it, then applies the rest
    and compares the test count and deleted files with the baseline. A gate that could not run is accepted only as "not
    run" and listed.
 4. Update the plan: the unit's row leaves "Next", a decision it settled is recorded, a line it made
@@ -24,7 +24,7 @@ The main session accepts: it reads and judges, and makes the wiring, the fixes a
 
 ## 2. The commit proposal
 
-The owner commits, or the main session when the owner asks. A sub-agent never runs a git command that writes.
+The owner commits, or the main session when the owner asks (git rules: `harness:git-commit`).
 
 - One accepted unit per proposal (it passed section 1); two units are two proposals. Read state with `git status --short -- <paths>`,
   `git diff -- <paths>` and `git log -n 5 --pretty=format:'%s'` for the subject style.
