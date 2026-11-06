@@ -42,6 +42,7 @@ check: ## What the pre-push hook runs: cases, mutant check, skill form, leaks
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	uv run python tests/check_compaction.py
+	uv run python tests/check_port.py
 
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py

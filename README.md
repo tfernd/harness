@@ -10,8 +10,8 @@ how the parts fit, what it stops and what it does not.
 ## What it is for
 
 - **Stop damage.** No `rm`, no force push, no `git reset --hard`, in any project.
-- **Stop wasted turns** (in a project with `.harness.json`). Every agent starts knowing how to make cheap tool calls. Under zsh, globs that match nothing are refused in any project, as is `sleep`
-  polling, and an agent that reads one small thing at a time is nudged.
+- **Stop wasted turns** (in every project). Every agent starts knowing how to make cheap tool calls. Under zsh, globs that match nothing are refused in any project; a foreground `sleep` is removed or moved to the
+  background, with a note, and an agent that reads one small thing at a time is nudged.
 - **Make agent work checkable.** A sub-agent cannot end with "done": its report has fixed sections, and its claims (files
   changed, exit codes, `path:line` evidence) are checked against what it really did.
 - **Turn problems into rules.** What agents report piles up in an inbox, and a due retro turns it into changes.
@@ -51,26 +51,29 @@ two meet: a skill says what to write, a hook checks it.
 
 | Mode | When | What runs |
 |---|---|---|
-| **Safety only** | The project has no `.harness.json` | The always-on guard, nothing else |
-| **Strict** | The project has a `.harness.json` | The guard, plus start-up context, turn tracking, report and budget checks, and each rule you switch on |
+| **Everywhere** | The plugin is installed; no file needed | The safety guard, start-up context, turn tracking, the brief, skill, budget and report checks for `harness:` roles. Feedback goes to the plugin's data folder; nothing is written into the repo |
+| **Opted in** | The project has a `.harness.json` | All of the above, plus the guard's project rules (scratch, `/tmp`, packages, lock), the commit rule, retros, budgets and reports for the repo's own agents, and each rule its keys switch on |
+
+Settings come in three layers, each key over the one before: the plugin's defaults, the owner's file
+(`~/.config/harness/config.json`, or `$HARNESS_CONFIG`), then the project's `.harness.json`.
 
 ## The hooks and what they stop
 
 | Hook | When | What it does |
 |---|---|---|
 | `context.py` | Session or agent starts | Adds text agents would otherwise forget: load the orchestrator, the whole `tool-habits` skill, the report form owed, past lessons, open problems. Refuses nothing |
-| `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`; `rm` works inside a named scratch folder), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early, and `sleep` inside a `while` or `until` loop |
-| `guard.py`, configured | Before a command or edit | Asks you before package changes. Refuses writes under `/tmp`, shell writes outside the scratch folder, and Python run outside its lock wrapper |
+| `guard.py`, always | Before a command or edit | Refuses deletes (`rm`, `rmdir`, `unlink`, `shred`, `find -delete`, `git clean`; `rm` works inside a named scratch folder), pushes that rewrite remote history, `git reset --hard`, globs that match nothing or that the shell would expand too early. Lets a foreground `sleep` run changed (removed, or moved to the background) and says so |
+| `guard.py`, configured | Before a command or edit | Asks you before package changes and refuses Python run outside its lock wrapper. Lets writes under `/tmp` and shell writes outside the scratch folder run, with a note on where such files belong |
 | `commit_gate.py` | Before a command | Refuses a commit whose message `-m`, `-F` or a heredoc shows is not `type(scope): title` with `* ` bullets, and a commit or pull request whose text shows AI attribution. It cannot read a commit that opens an editor, or a message in a variable set by an earlier call |
-| `delegate.py` | Before a command or edit | With the `delegate` key, refuses edits and unlisted commands from the main session, so agents do the work |
-| `skill_gate.py` | Before a command or edit | With the `skill_gate` key, refuses an edit until the skill for that kind of file is loaded, including a shell write or a Python script that writes, and a commit or pull request until `git-commit` is loaded. The agent loads it and repeats the call |
-| `brief_lint.py` | Before an agent starts | With the `brief` key, refuses a brief with no `Goal:`, a worker brief with no `Write set:` and `Judge:`, and a budget in anything but turns |
+| `delegate.py` | Before a command or edit | With the `delegate` key, lets edits and unlisted commands from the main session run and adds a note that agents do the work here |
+| `skill_gate.py` | Before a command or edit | With the `skill_gate` key, lets an edit run and gives the agent the skill's own text when it has not seen it, for that kind of file, including a shell write or a Python script that writes, and for a commit or pull request the `git-commit` text. Once per agent; needs no Skill call |
+| `brief_lint.py` | Before an agent starts | In any project, refuses a generic agent (`general-purpose`, `Explore`, `Plan`, or no type) and names the harness role to use. With the `brief` key, lets the brief go and adds a note when it has no `Goal:`, when a worker brief has no `Write set:` and `Judge:`, or when the budget is in anything but turns |
 | `budget.py` | Before every call | Refuses every call but the handback from an agent past its turns, so it sends a partial report. Any agent type has a default |
 | `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent. Refuses nothing |
-| `report_gate.py` | An agent stops | Any agent type must end with a report: Answer, Not proven and a Verdict of done, partial or blocked, plus Problems, Next time, Open and Feedback when they have something to say. Sends back a malformed one, or one its transcript does not back, up to 3 times. Files problems and writes the ledger |
+| `report_gate.py` | An agent stops | Any agent type must end with a report: Answer, Not proven and a Verdict of done, partial or blocked, plus Problems, Next time, Open and Feedback when they have something to say. Sends back a malformed one, or one its transcript does not back, up to 3 times, naming only the sections that are wrong; the gate merges the sections the agent resends into the report it kept. Files problems and writes the ledger |
 | `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, a lesson with no rule changed, a bare "no lessons" after a refused call, or a due retro |
 
-A refusal says which rule fired and what to change.
+A refusal says which rule fired and what to change. A rule marked as letting the call run says so in a note with the result.
 
 Four more files in `hooks/` are not hooks. `common.py` holds what the hooks share. `shell.py` reads a command the way a
 shell does, so the guard judges real commands and a quoted `rm` is no delete. `replay.py` runs the guard over your past
@@ -92,7 +95,7 @@ ledger.
 - **Budgets count model turns, not time or tokens.**
 - **A retro can be answered badly.** The Stop hook checks that a rule file changed or that a rejection has its own reason,
   not that the decision was good.
-- **Nothing runs without `uv`**, and a project with no `.harness.json` gets the safety guard only.
+- **Nothing runs without `uv`.**
 
 ## Agents
 
@@ -129,9 +132,28 @@ ledger.
 4. The main session applies or rejects each one and names the result in `harness-feedback/handled.md`.
 5. Problems no rule fixes yet go in `harness-feedback/open.md`, and each agent of that role is told at its start.
 
+## Other tools
+
+`bin/harness-port` converts the skills, agents and hooks into the global folder of another tool, so one install serves
+every project there. Run it from a clone and rerun it after `git pull`: hook commands point at that checkout.
+
+```sh
+bin/harness-port --target kiro      # ~/.kiro: skills, agents, hooks/harness.json
+bin/harness-port --target cortex    # ~/.snowflake/cortex: skills, agents, hooks.json (merged, yours are kept)
+```
+
+`--dest DIR` writes elsewhere, `--dry-run` writes nothing, `--uninstall` removes exactly the files in
+`harness-port.json`. Everything installs as `harness-<name>`; a command prints what it did not port.
+
+- Kiro loses: `SubagentStart` and `SubagentStop` hooks (no trigger), the owner prompt (a guard "ask" becomes a block),
+  command rewrites (the `sleep` fix becomes a block with a note), hook context outside session start and prompt submit,
+  and agent models (pass `--model haiku=ID` for each). Agent prompts sit in `agents/harness-<name>.md` beside the JSON.
+- Cortex loses: `SubagentStart`, preloaded skills on agents (load them by name), agent models, tool ids it lacks, and
+  the report gate blocks nothing (advisory). An "ask" becomes a block.
+
 ## Configuration: `.harness.json`
 
-Every key is optional; `{}` turns on the report and turn checks alone.
+Every key is optional; the same keys work in the owner's file. `{}` opts a project in with the defaults.
 
 | Key | Effect |
 |---|---|

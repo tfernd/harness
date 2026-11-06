@@ -1,0 +1,2 @@
+#!/bin/sh
+exec uv run --script "$(dirname "$0")/../port/harness_port.py" "$@"
