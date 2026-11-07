@@ -196,7 +196,7 @@ def run_shim(
     home.mkdir(parents=True, exist_ok=True)
     project = base / "project"
     project.mkdir(exist_ok=True)
-    (project / ".harness.json").write_text(config or (ROOT / ".harness.json").read_text())
+    (project / ".harness.json").write_text(config or "{}")
     environment = {
         **os.environ,
         "HOME": str(home),
