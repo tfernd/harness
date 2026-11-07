@@ -606,144 +606,7 @@
       color: var(--tone-text);
     }
 
-    /* 3 and 4: the session and the crew side by side */
-    .split {
-      display: grid;
-      gap: var(--space-6);
-      align-items: start;
-    }
-
-    .legend {
-      list-style: none;
-      padding: 0;
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-1) var(--space-3);
-      font-size: var(--text-xs);
-      color: var(--muted);
-    }
-
-    .legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-1);
-    }
-
-    .legend-item::before {
-      content: "";
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      background: var(--tone);
-    }
-
-    .timeline {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      gap: var(--space-2);
-      counter-reset: step;
-    }
-
-    .timeline-step {
-      counter-increment: step;
-      position: relative;
-      padding: var(--space-2) var(--space-3) var(--space-2) 3rem;
-      display: grid;
-      gap: var(--space-1);
-    }
-
-    .timeline-step::before {
-      content: counter(step);
-      position: absolute;
-      inset-inline-start: var(--space-3);
-      inset-block-start: var(--space-2);
-      width: 1.5rem;
-      height: 1.5rem;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      color: var(--accent-text);
-      border: 2px solid var(--accent);
-    }
-
-    .timeline-title {
-      font-size: var(--text-md);
-    }
-
-    .timeline-text {
-      font-size: var(--text-sm);
-      color: var(--muted);
-    }
-
-    .hook-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: var(--space-1);
-    }
-
-    .hook-when {
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted);
-      min-width: 5.5rem;
-    }
-
-    .hook-pill {
-      --tone: var(--advice);
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-1);
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      line-height: 1;
-      padding: var(--space-1) var(--space-2);
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--surface);
-      white-space: nowrap;
-    }
-
-    .hook-pill::before {
-      content: "";
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      background: var(--tone);
-    }
-
-    /* Each hook script's tone; a script with no rule here keeps the neutral one. */
-    .hook-guard,
-    .hook-budget,
-    .hook-brief-lint,
-    .hook-commit-gate {
-      --tone: var(--refuse);
-    }
-
-    .hook-report-gate {
-      --tone: var(--back);
-    }
-
-    .hook-skill-gate,
-    .hook-delegate,
-    .hook-nudge {
-      --tone: var(--note);
-    }
-
-    .hook-context,
-    .hook-turn {
-      --tone: var(--info);
-    }
-
-    .hook-turn-stop {
-      --tone: var(--hold);
-    }
-
+    /* 3 and 4: the crew and the skills share one look */
     .crew {
       display: grid;
       gap: var(--space-3);
@@ -874,32 +737,6 @@
       cursor: help;
     }
 
-    .skill-index {
-      font-size: var(--text-sm);
-    }
-
-    .skill-index-summary {
-      cursor: pointer;
-      color: var(--accent-text);
-      font-weight: 600;
-    }
-
-    .skill-list {
-      margin-block-start: var(--space-2);
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-      gap: var(--space-2) var(--space-3);
-    }
-
-    .skill-entry {
-      display: grid;
-      gap: 2px;
-    }
-
-    .skill-entry-text {
-      color: var(--muted);
-    }
-
     /* 5. Gaps */
     .gaps {
       display: grid;
@@ -936,36 +773,6 @@
       font-size: var(--text-sm);
     }
 
-    .closed {
-      padding: var(--space-3);
-      display: grid;
-      gap: var(--space-2);
-    }
-
-    .closed-title {
-      font-size: var(--text-md);
-    }
-
-    .closed-list {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      gap: var(--space-2);
-      font-size: var(--text-sm);
-    }
-
-    .closed-item {
-      display: grid;
-      grid-template-columns: 1.25rem minmax(0, 1fr);
-      gap: var(--space-1);
-    }
-
-    .closed-item::before {
-      content: "✓";
-      color: var(--info-text);
-      font-weight: 700;
-    }
-
     .page-foot {
       font-size: var(--text-sm);
       color: var(--muted);
@@ -976,10 +783,6 @@
     @media (min-width: 52rem) {
       .strict {
         grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-      }
-
-      .split {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       }
     }
 
@@ -1247,130 +1050,69 @@
         </div>
       </section>
 
-      <div class="split">
-        <section class="section" aria-labelledby="session-title">
-          <div class="section-head">
-            <p class="section-kicker">3 · in what order</p>
-            <h2 class="section-title" id="session-title">One session, start to finish</h2>
-            <p class="section-intro">Hooks fire at fixed moments; at each, every matching hook runs side by side.</p>
-          </div>
-          <ul class="legend">
-            <li class="legend-item is-refuse">can stop a call</li>
-            <li class="legend-item is-back">sends a report back</li>
-            <li class="legend-item is-hold">holds the turn</li>
-            <li class="legend-item is-note">adds a note</li>
-            <li class="legend-item is-info">adds context or counts</li>
-          </ul>
-          <ol class="timeline">
-            <li class="card timeline-step">
-              <h3 class="timeline-title">Session starts</h3>
-              <p class="timeline-text">Claude Code opens in any repository. The model gets its working habits, the last lessons and the open problems.</p>
-              <div class="hook-row"><span class="hook-when">start</span><span class="hook-pill hook-context">context.py</span></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">You send a prompt</h3>
-              <p class="timeline-text">A new turn begins: the call count goes back to zero and the rule files are noted as they are.</p>
-              <div class="hook-row"><span class="hook-when">prompt</span><span class="hook-pill hook-turn hook-turn-reset">turn.py reset</span></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">The main session hires an agent</h3>
-              <p class="timeline-text">The agent must have a role; its brief is checked for the lines the role needs, and its turn budget is set.</p>
-              <div class="hook-row"><span class="hook-when">before</span><span class="hook-pill hook-brief-lint" title="on Agent, Task">brief_lint.py</span></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">An agent starts</h3>
-              <p class="timeline-text">Fresh context with its role's skills preloaded, plus the habits, the report form it owes and the open problems for its role.</p>
-              <div class="hook-row"><span class="hook-when">start</span><span class="hook-pill hook-context">context.py</span></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">Every tool call</h3>
-              <p class="timeline-text">Agent or main session, every command, edit and read. Before it, one refusal stops the call; after it come advice and a count of the turn's calls.</p>
-              <div class="hook-row"><span class="hook-when">before</span><span class="hook-pill hook-budget" title="on every tool">budget.py</span>
-<span class="hook-pill hook-guard" title="on Bash, Write, Edit, NotebookEdit">guard.py</span>
-<span class="hook-pill hook-delegate" title="on Bash, Write, Edit, NotebookEdit">delegate.py</span>
-<span class="hook-pill hook-skill-gate" title="on Bash, Edit, Write, NotebookEdit">skill_gate.py</span>
-<span class="hook-pill hook-commit-gate" title="on Bash">commit_gate.py</span></div>
-              <div class="hook-row"><span class="hook-when">after</span><span class="hook-pill hook-turn hook-turn-add" title="on Agent, Task, Edit, Write, NotebookEdit">turn.py add</span>
-<span class="hook-pill hook-nudge" title="on Read, Grep, Glob, Bash">nudge.py</span></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">The agent hands back</h3>
-              <p class="timeline-text">Its report is checked as it is handed back, so a bad one goes back while the agent can still fix it. The stop check catches the rest.</p>
-              <div class="hook-row"><span class="hook-when">hand-back</span><span class="hook-pill hook-report-gate hook-report-gate-handback" title="on SubagentHandback">report_gate.py handback</span></div>
-              <div class="hook-row"><span class="hook-when">stop</span><span class="hook-pill hook-report-gate">report_gate.py</span></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">Your turn ends</h3>
-              <p class="timeline-text">A long turn closes with a status and a line per agent run; lessons, and a retro when one is due. Background agents are waited for.</p>
-              <div class="hook-row"><span class="hook-when">stop</span><span class="hook-pill hook-turn hook-turn-stop">turn.py stop</span></div>
-            </li>
-            
-          </ol>
-        </section>
-
-        <section class="section" aria-labelledby="crew-title">
-          <div class="section-head">
-            <p class="section-kicker">4 · who does the work</p>
-            <h2 class="section-title" id="crew-title">The crew</h2>
-            <p class="section-intro">You decide; the main session works and hires an agent only when parallel work pays.</p>
-          </div>
-          <div class="crew" data-chooser>
-            <div class="crew-bands" role="group" aria-label="Roles by band">
-              <div class="crew-band">
-                <span class="crew-band-name">Decides</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="you" aria-pressed="false" aria-controls="role-you">You</button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Orchestrates</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="main" aria-pressed="false" aria-controls="role-main">Main session</button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Thinks</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="planner" aria-pressed="false" aria-controls="role-planner">planner <span class="crew-chip-model">sonnet</span></button>
+      <section class="section" aria-labelledby="crew-title">
+        <div class="section-head">
+          <p class="section-kicker">3 · who does the work</p>
+          <h2 class="section-title" id="crew-title">The crew</h2>
+          <p class="section-intro">You decide; the main session works and hires an agent only when parallel work pays.</p>
+        </div>
+        <div class="crew" data-chooser>
+          <div class="crew-bands" role="group" aria-label="Roles by band">
+            <div class="crew-band">
+              <span class="crew-band-name">Decides</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="you" aria-pressed="false" aria-controls="role-you">You</button></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Orchestrates</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="main" aria-pressed="false" aria-controls="role-main">Main session</button></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Thinks</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="planner" aria-pressed="false" aria-controls="role-planner">planner <span class="crew-chip-model">sonnet</span></button>
 <button type="button" class="crew-chip" data-choice="researcher" aria-pressed="false" aria-controls="role-researcher">researcher <span class="crew-chip-model">sonnet</span></button>
 <button type="button" class="crew-chip" data-choice="analyst" aria-pressed="false" aria-controls="role-analyst">analyst <span class="crew-chip-model">sonnet</span></button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Finds</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="scout" aria-pressed="false" aria-controls="role-scout">scout <span class="crew-chip-model">haiku</span></button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Builds</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="worker" aria-pressed="true" aria-controls="role-worker">worker <span class="crew-chip-model">sonnet</span></button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Checks</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="cold-reader" aria-pressed="false" aria-controls="role-cold-reader">cold-reader <span class="crew-chip-model">sonnet</span></button>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Finds</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="scout" aria-pressed="false" aria-controls="role-scout">scout <span class="crew-chip-model">haiku</span></button></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Builds</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="worker" aria-pressed="true" aria-controls="role-worker">worker <span class="crew-chip-model">sonnet</span></button></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Checks</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="cold-reader" aria-pressed="false" aria-controls="role-cold-reader">cold-reader <span class="crew-chip-model">sonnet</span></button>
 <button type="button" class="crew-chip" data-choice="runner" aria-pressed="false" aria-controls="role-runner">runner <span class="crew-chip-model">haiku</span></button>
 <button type="button" class="crew-chip" data-choice="reviewer" aria-pressed="false" aria-controls="role-reviewer">reviewer <span class="crew-chip-model">sonnet</span></button>
 <button type="button" class="crew-chip" data-choice="auditor" aria-pressed="false" aria-controls="role-auditor">auditor <span class="crew-chip-model">sonnet</span></button></div>
-              </div>
-              
             </div>
+            
+          </div>
 
-            <article class="card crew-card" id="role-you" data-choice-panel="you" aria-labelledby="role-you-name" hidden>
-              <div class="crew-card-head"><h3 class="crew-card-name" id="role-you-name">You</h3><span class="tag">owner</span></div>
-              <p>Set the direction, answer when Claude Code asks, and read the closing status.</p>
-              <p class="crew-card-use">The harness asks you only for what it cannot judge, such as a package change in a repo that wants that.</p>
-            </article>
-            <article class="card crew-card" id="role-main" data-choice-panel="main" aria-labelledby="role-main-name" hidden>
-              <div class="crew-card-head"><h3 class="crew-card-name" id="role-main-name">Main session</h3><span class="tag">your model</span><span class="tag">no budget</span><span class="tag">edits files</span></div>
-              <p>Does the work itself by default, scripts repetitive edits, and hires agents only where parallel work pays.</p>
-              <p class="crew-card-use">It already holds the context, so it is the cheapest worker for serial steps.</p>
-              <dl class="crew-card-facts">
-                <div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="Load at the start of every main session">orchestrator</span>
-<span class="skill-chip" title="Load when framing a job">workflows</span>
-<span class="skill-chip" title="Load to accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict,…">accept</span>
-<span class="skill-chip" title="How to make tool calls cheap and right">tool-habits</span></dd></div>
-              </dl>
-            </article>
-            <article class="card crew-card" id="role-analyst" data-choice-panel="analyst" aria-labelledby="role-analyst-name" hidden>
+          <article class="card crew-card" id="role-you" data-choice-panel="you" aria-labelledby="role-you-name" hidden>
+            <div class="crew-card-head"><h3 class="crew-card-name" id="role-you-name">You</h3><span class="tag">owner</span></div>
+            <p>Set the direction, answer when Claude Code asks, and read the closing status.</p>
+            <p class="crew-card-use">The harness asks you only for what it cannot judge, such as a package change in a repo that wants that.</p>
+          </article>
+          <article class="card crew-card" id="role-main" data-choice-panel="main" aria-labelledby="role-main-name" hidden>
+            <div class="crew-card-head"><h3 class="crew-card-name" id="role-main-name">Main session</h3><span class="tag">your model</span><span class="tag">no budget</span><span class="tag">edits files</span></div>
+            <p>Does the work itself by default, scripts repetitive edits, and hires agents only where parallel work pays.</p>
+            <p class="crew-card-use">It already holds the context, so it is the cheapest worker for serial steps.</p>
+            <dl class="crew-card-facts">
+              <div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The main session orchestrates - it plans, briefs, checks and commits, and hands changes to workers and wide reading to scouts">orchestrator</span>
+<span class="skill-chip" title="Picks the job shape (scout fan-out, bug fix, spec-first feature, spike, parallel build), the size tier (small, medium, large), and between parallel Agent calls and the…">workflows</span>
+<span class="skill-chip" title="Accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict, Done, Needs you, Next, Lessons, Agents)">accept</span>
+<span class="skill-chip" title="How to make tool calls cheap and right - one script per job, edits that assert, the whole check chain in one call, reads, quoting, long runs, refusals">tool-habits</span></dd></div>
+            </dl>
+          </article>
+          <article class="card crew-card" id="role-analyst" data-choice-panel="analyst" aria-labelledby="role-analyst-name" hidden>
 <div class="crew-card-head"><h3 class="crew-card-name" id="role-analyst-name">analyst</h3><span class="tag">sonnet</span><span class="tag">30 turns</span><span class="tag">read-only</span></div>
 <p>Reads the feedback inbox past the last retro and the ledger, groups the problems by meaning and proposes at most three rule changes.</p>
 <p class="crew-card-use">Use when the Stop hook says a retro is due, or for a retrospective.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="Turns the ledger of past agent reports into rule changes">retro</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
 </dl>
@@ -1381,7 +1123,7 @@
 <p class="crew-card-use">Use when a worker&#x27;s report is the sole evidence of a claim.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code> <code>Input:</code> <code>Judge:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How an auditor tests another agent&#x27;s report">audit</span>
 <span class="skill-chip" title="How a fact is settled and an area understood">evidence</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
@@ -1393,7 +1135,7 @@
 <p class="crew-card-use">Use before a worker starts on a large or public-contract job.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How a cold reader checks a brief or spec using only that text">cold-read</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
 </dl>
@@ -1404,7 +1146,7 @@
 <p class="crew-card-use">Use to plan before a brief; a scout settles one fact, the planner weighs a change.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How a spec is written for a large or public-contract job">spec</span>
 <span class="skill-chip" title="How a fact is settled and an area understood">evidence</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
@@ -1416,7 +1158,7 @@
 <p class="crew-card-use">Use when the answer is not in the repository; a scout answers from the repository&#x27;s code.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How a fact is settled and an area understood">evidence</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash, WebFetch, WebSearch</dd></div>
 </dl>
@@ -1427,7 +1169,7 @@
 <p class="crew-card-use">Use once at the end of a round, on the whole diff, after the product has run; the brief names the lens if one applies.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code> <code>Input:</code> <code>Tree:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How one unit of code, a design, a branch or a pull request is reviewed against its spec">review</span>
 <span class="skill-chip" title="How a fact is settled and an area understood">evidence</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
@@ -1439,7 +1181,7 @@
 <p class="crew-card-use">Use to run long or many checks off the main session.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code> <code>Runs:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span></dd></div>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
 </dl>
 </article>
@@ -1449,7 +1191,7 @@
 <p class="crew-card-use">Use to settle a fact, to locate code before a brief, or as one cell of a fan-out.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How a fact is settled and an area understood">evidence</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash</dd></div>
 </dl>
@@ -1460,42 +1202,186 @@
 <p class="crew-card-use">Use for a large, independent unit worth a cold start, not for a serial step or a small edit; the brief names the write set, the judge and the model step-up if one is needed.</p>
 <dl class="crew-card-facts">
 <div class="crew-card-fact"><dt class="crew-card-term">Brief needs</dt><dd class="crew-card-value"><code>Goal:</code> <code>Write set:</code> <code>Judge:</code></dd></div>
-<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with">report</span>
+<div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><span class="skill-chip" title="The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last">report</span>
 <span class="skill-chip" title="How a fact is settled and an area understood">evidence</span>
-<span class="skill-chip" title="What makes a judge (test, gate or check) good, how to prove a new judge can fail with a deliberate-bug…">testing</span>
+<span class="skill-chip" title="What makes a judge (test, gate or check) good, how to prove a new judge can fail with a deliberate-bug control, and the facts that keep tests cheap and true">testing</span>
 <span class="skill-chip" title="How to write comments and docstrings in any language">comments</span></dd></div>
 <div class="crew-card-fact"><dt class="crew-card-term">Tools</dt><dd class="crew-card-value">Read, Grep, Glob, Bash, Edit, Write, Skill</dd></div>
 </dl>
 </article>
-            <details class="skill-index">
-              <summary class="skill-index-summary">All 23 skills</summary>
-              <dl class="skill-list"><div class="skill-entry"><dt><code>accept</code></dt><dd class="skill-entry-text">Load to accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict,…</dd></div>
-<div class="skill-entry"><dt><code>audit</code></dt><dd class="skill-entry-text">How an auditor tests another agent&#x27;s report</dd></div>
-<div class="skill-entry"><dt><code>code-html-css</code></dt><dd class="skill-entry-text">HTML and CSS rules for any web repo, with or without a framework</dd></div>
-<div class="skill-entry"><dt><code>code-js</code></dt><dd class="skill-entry-text">General JavaScript and TypeScript rules</dd></div>
-<div class="skill-entry"><dt><code>code-python</code></dt><dd class="skill-entry-text">Python style and checkable rules</dd></div>
-<div class="skill-entry"><dt><code>code-shell</code></dt><dd class="skill-entry-text">Shell script rules for bash</dd></div>
-<div class="skill-entry"><dt><code>code-terraform</code></dt><dd class="skill-entry-text">Terraform style from HashiCorp&#x27;s published conventions</dd></div>
-<div class="skill-entry"><dt><code>cold-read</code></dt><dd class="skill-entry-text">How a cold reader checks a brief or spec using only that text</dd></div>
-<div class="skill-entry"><dt><code>comments</code></dt><dd class="skill-entry-text">How to write comments and docstrings in any language</dd></div>
-<div class="skill-entry"><dt><code>debug</code></dt><dd class="skill-entry-text">How to find a bug&#x27;s cause</dd></div>
-<div class="skill-entry"><dt><code>evidence</code></dt><dd class="skill-entry-text">How a fact is settled and an area understood</dd></div>
-<div class="skill-entry"><dt><code>git-commit</code></dt><dd class="skill-entry-text">How to write a commit</dd></div>
-<div class="skill-entry"><dt><code>init</code></dt><dd class="skill-entry-text">Load to set a project up for the harness plugin</dd></div>
-<div class="skill-entry"><dt><code>models</code></dt><dd class="skill-entry-text">Which Claude model each harness role runs on, and when a brief steps a role up</dd></div>
-<div class="skill-entry"><dt><code>orchestrator</code></dt><dd class="skill-entry-text">Load at the start of every main session</dd></div>
-<div class="skill-entry"><dt><code>refactor</code></dt><dd class="skill-entry-text">How to change structure without changing behaviour</dd></div>
-<div class="skill-entry"><dt><code>report</code></dt><dd class="skill-entry-text">The report every sub-agent ends with</dd></div>
-<div class="skill-entry"><dt><code>retro</code></dt><dd class="skill-entry-text">Turns the ledger of past agent reports into rule changes</dd></div>
-<div class="skill-entry"><dt><code>review</code></dt><dd class="skill-entry-text">How one unit of code, a design, a branch or a pull request is reviewed against its spec</dd></div>
-<div class="skill-entry"><dt><code>spec</code></dt><dd class="skill-entry-text">How a spec is written for a large or public-contract job</dd></div>
-<div class="skill-entry"><dt><code>testing</code></dt><dd class="skill-entry-text">What makes a judge (test, gate or check) good, how to prove a new judge can fail with a deliberate-bug…</dd></div>
-<div class="skill-entry"><dt><code>tool-habits</code></dt><dd class="skill-entry-text">How to make tool calls cheap and right</dd></div>
-<div class="skill-entry"><dt><code>workflows</code></dt><dd class="skill-entry-text">Load when framing a job</dd></div></dl>
-            </details>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="skills-title">
+        <div class="section-head">
+          <p class="section-kicker">4 · what they know</p>
+          <h2 class="section-title" id="skills-title">The skills</h2>
+          <p class="section-intro">Text a role reads before a kind of work, grouped by what it is for; pick one to see when to load it and who has it preloaded.</p>
+        </div>
+        <div class="crew" data-chooser>
+          <div class="crew-bands" role="group" aria-label="Skills by band">
+            <div class="crew-band"><span class="crew-band-name">Always on</span><div class="crew-chips"><button type="button" class="crew-chip" data-choice="tool-habits" aria-pressed="false" aria-controls="skill-tool-habits">tool-habits</button></div></div>
+<div class="crew-band"><span class="crew-band-name">Process</span><div class="crew-chips"><button type="button" class="crew-chip" data-choice="orchestrator" aria-pressed="false" aria-controls="skill-orchestrator">orchestrator</button>
+<button type="button" class="crew-chip" data-choice="workflows" aria-pressed="false" aria-controls="skill-workflows">workflows</button>
+<button type="button" class="crew-chip" data-choice="accept" aria-pressed="false" aria-controls="skill-accept">accept</button>
+<button type="button" class="crew-chip" data-choice="init" aria-pressed="false" aria-controls="skill-init">init</button>
+<button type="button" class="crew-chip" data-choice="report" aria-pressed="true" aria-controls="skill-report">report</button></div></div>
+<div class="crew-band"><span class="crew-band-name">Quality</span><div class="crew-chips"><button type="button" class="crew-chip" data-choice="spec" aria-pressed="false" aria-controls="skill-spec">spec</button>
+<button type="button" class="crew-chip" data-choice="cold-read" aria-pressed="false" aria-controls="skill-cold-read">cold-read</button>
+<button type="button" class="crew-chip" data-choice="review" aria-pressed="false" aria-controls="skill-review">review</button>
+<button type="button" class="crew-chip" data-choice="audit" aria-pressed="false" aria-controls="skill-audit">audit</button>
+<button type="button" class="crew-chip" data-choice="evidence" aria-pressed="false" aria-controls="skill-evidence">evidence</button>
+<button type="button" class="crew-chip" data-choice="testing" aria-pressed="false" aria-controls="skill-testing">testing</button>
+<button type="button" class="crew-chip" data-choice="debug" aria-pressed="false" aria-controls="skill-debug">debug</button>
+<button type="button" class="crew-chip" data-choice="refactor" aria-pressed="false" aria-controls="skill-refactor">refactor</button></div></div>
+<div class="crew-band"><span class="crew-band-name">Languages</span><div class="crew-chips"><button type="button" class="crew-chip" data-choice="code-python" aria-pressed="false" aria-controls="skill-code-python">code-python</button>
+<button type="button" class="crew-chip" data-choice="code-js" aria-pressed="false" aria-controls="skill-code-js">code-js</button>
+<button type="button" class="crew-chip" data-choice="code-html-css" aria-pressed="false" aria-controls="skill-code-html-css">code-html-css</button>
+<button type="button" class="crew-chip" data-choice="code-terraform" aria-pressed="false" aria-controls="skill-code-terraform">code-terraform</button>
+<button type="button" class="crew-chip" data-choice="code-shell" aria-pressed="false" aria-controls="skill-code-shell">code-shell</button></div></div>
+<div class="crew-band"><span class="crew-band-name">Writing</span><div class="crew-chips"><button type="button" class="crew-chip" data-choice="comments" aria-pressed="false" aria-controls="skill-comments">comments</button>
+<button type="button" class="crew-chip" data-choice="git-commit" aria-pressed="false" aria-controls="skill-git-commit">git-commit</button></div></div>
+<div class="crew-band"><span class="crew-band-name">Learning</span><div class="crew-chips"><button type="button" class="crew-chip" data-choice="models" aria-pressed="false" aria-controls="skill-models">models</button>
+<button type="button" class="crew-chip" data-choice="retro" aria-pressed="false" aria-controls="skill-retro">retro</button></div></div>
           </div>
-        </section>
-      </div>
+          <article class="card crew-card" id="skill-tool-habits" data-choice-panel="tool-habits" aria-labelledby="skill-tool-habits-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-tool-habits-name">tool-habits</h3><span class="tag">Always on</span></div>
+<p>How to make tool calls cheap and right - one script per job, edits that assert, the whole check chain in one call, reads, quoting, long runs, refusals</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-orchestrator" data-choice-panel="orchestrator" aria-labelledby="skill-orchestrator-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-orchestrator-name">orchestrator</h3><span class="tag">Process</span></div>
+<p>The main session orchestrates - it plans, briefs, checks and commits, and hands changes to workers and wide reading to scouts</p>
+<p class="crew-card-use">Load at the start of every main session.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-workflows" data-choice-panel="workflows" aria-labelledby="skill-workflows-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-workflows-name">workflows</h3><span class="tag">Process</span></div>
+<p>Picks the job shape (scout fan-out, bug fix, spec-first feature, spike, parallel build), the size tier (small, medium, large), and between parallel Agent calls and the…</p>
+<p class="crew-card-use">Load when framing a job.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-accept" data-choice-panel="accept" aria-labelledby="skill-accept-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-accept-name">accept</h3><span class="tag">Process</span></div>
+<p>Accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict, Done, Needs you, Next, Lessons, Agents)</p>
+<p class="crew-card-use">Main session only.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-init" data-choice-panel="init" aria-labelledby="skill-init-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-init-name">init</h3><span class="tag">Process</span></div>
+<p>Writes AGENTS.md (and .harness.json only when the project needs an override) from the plugin&#x27;s templates, adapted to the project&#x27;s languages, and never overwrites an…</p>
+<p class="crew-card-use">Load to set a project up for the harness plugin.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-report" data-choice-panel="report" aria-labelledby="skill-report-name">
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-report-name">report</h3><span class="tag">Process</span></div>
+<p>The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">analyst</span><span class="tag">auditor</span><span class="tag">cold-reader</span><span class="tag">planner</span><span class="tag">researcher</span><span class="tag">reviewer</span><span class="tag">runner</span><span class="tag">scout</span><span class="tag">worker</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-spec" data-choice-panel="spec" aria-labelledby="skill-spec-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-spec-name">spec</h3><span class="tag">Quality</span></div>
+<p>How a spec is written for a large or public-contract job</p>
+<p class="crew-card-use">Load before writing a spec, or before reviewing one or briefing workers from one.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">planner</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-cold-read" data-choice-panel="cold-read" aria-labelledby="skill-cold-read-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-cold-read-name">cold-read</h3><span class="tag">Quality</span></div>
+<p>How a cold reader checks a brief or spec using only that text</p>
+<p class="crew-card-use">Load when you are the cold reader, or when you judge a cold reader&#x27;s report.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">cold-reader</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-review" data-choice-panel="review" aria-labelledby="skill-review-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-review-name">review</h3><span class="tag">Quality</span></div>
+<p>How one unit of code, a design, a branch or a pull request is reviewed against its spec</p>
+<p class="crew-card-use">Load to review a unit or to fix a failure.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">reviewer</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-audit" data-choice-panel="audit" aria-labelledby="skill-audit-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-audit-name">audit</h3><span class="tag">Quality</span></div>
+<p>How an auditor tests another agent&#x27;s report</p>
+<p class="crew-card-use">Load when you are the auditor, or when you judge an audit.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">auditor</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-evidence" data-choice-panel="evidence" aria-labelledby="skill-evidence-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-evidence-name">evidence</h3><span class="tag">Quality</span></div>
+<p>How a fact is settled and an area understood</p>
+<p class="crew-card-use">Load before answering a question of fact, before changing code you have not read in this run, or before launching scouts.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">auditor</span><span class="tag">planner</span><span class="tag">researcher</span><span class="tag">reviewer</span><span class="tag">scout</span><span class="tag">worker</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-testing" data-choice-panel="testing" aria-labelledby="skill-testing-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-testing-name">testing</h3><span class="tag">Quality</span></div>
+<p>What makes a judge (test, gate or check) good, how to prove a new judge can fail with a deliberate-bug control, and the facts that keep tests cheap and true</p>
+<p class="crew-card-use">Load before writing or reviewing tests, or before trusting a passing run.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">worker</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-debug" data-choice-panel="debug" aria-labelledby="skill-debug-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-debug-name">debug</h3><span class="tag">Quality</span></div>
+<p>How to find a bug&#x27;s cause - reproduce, one hypothesis at a time, bisect, read the real error, fix the cause with a test that failed first</p>
+<p class="crew-card-use">Load when something fails and the cause is not yet known, or before a second attempt at a fix.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-refactor" data-choice-panel="refactor" aria-labelledby="skill-refactor-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-refactor-name">refactor</h3><span class="tag">Quality</span></div>
+<p>How to change structure without changing behaviour</p>
+<p class="crew-card-use">Load before moving, renaming, splitting or merging code.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-code-python" data-choice-panel="code-python" aria-labelledby="skill-code-python-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-code-python-name">code-python</h3><span class="tag">Languages</span></div>
+<p>Python style and checkable rules - names, signatures, types, function size, layout, dispatch, errors, the ruff and type-checker setup</p>
+<p class="crew-card-use">Load before writing, moving or reviewing any .py file.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-code-js" data-choice-panel="code-js" aria-labelledby="skill-code-js-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-code-js-name">code-js</h3><span class="tag">Languages</span></div>
+<p>General JavaScript and TypeScript rules - strict TS, named exports, no any/enum/casts, full-word names, parse at the boundary, errors with cause, module and DOM rules,…</p>
+<p class="crew-card-use">Load before writing, moving or reviewing any .js, .ts or .mjs file.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-code-html-css" data-choice-panel="code-html-css" aria-labelledby="skill-code-html-css-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-code-html-css-name">code-html-css</h3><span class="tag">Languages</span></div>
+<p>HTML and CSS rules for any web repo, with or without a framework</p>
+<p class="crew-card-use">Load before writing, moving or reviewing .html or .css.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-code-terraform" data-choice-panel="code-terraform" aria-labelledby="skill-code-terraform-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-code-terraform-name">code-terraform</h3><span class="tag">Languages</span></div>
+<p>Terraform style from HashiCorp&#x27;s published conventions</p>
+<p class="crew-card-use">Load before writing, moving or reviewing any .tf or .tfvars file.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-code-shell" data-choice-panel="code-shell" aria-labelledby="skill-code-shell-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-code-shell-name">code-shell</h3><span class="tag">Languages</span></div>
+<p>Shell script rules for bash - when shell fits, strict mode, quoting, arrays, bash against zsh differences, no parsing ls, mktemp and trap, shellcheck and shfmt</p>
+<p class="crew-card-use">Load before writing, moving or reviewing any .sh file or a script of more than a few lines.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-comments" data-choice-panel="comments" aria-labelledby="skill-comments-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-comments-name">comments</h3><span class="tag">Writing</span></div>
+<p>How to write comments and docstrings in any language</p>
+<p class="crew-card-use">Load when adding, editing or reviewing a comment or docstring.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">worker</span></dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-git-commit" data-choice-panel="git-commit" aria-labelledby="skill-git-commit-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-git-commit-name">git-commit</h3><span class="tag">Writing</span></div>
+<p>How to write a commit - a Conventional Commits subject, a body of bullets saying what and why, one unit per commit, no AI attribution</p>
+<p class="crew-card-use">Load before any git commit or commit proposal, and when a hook refuses a commit message.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-models" data-choice-panel="models" aria-labelledby="skill-models-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-models-name">models</h3><span class="tag">Learning</span></div>
+<p>Which Claude model each harness role runs on, and when a brief steps a role up</p>
+<p class="crew-card-use">Load before choosing a model for an agent or brief, or when a role&#x27;s model is questioned.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value">none</dd></div></dl>
+</article>
+<article class="card crew-card" id="skill-retro" data-choice-panel="retro" aria-labelledby="skill-retro-name" hidden>
+<div class="crew-card-head"><h3 class="crew-card-name" id="skill-retro-name">retro</h3><span class="tag">Learning</span></div>
+<p>Turns the ledger of past agent reports into rule changes</p>
+<p class="crew-card-use">Load for a retrospective, after a big job, or when the same problem comes back.</p>
+<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt><dd class="crew-card-value"><span class="tag">analyst</span></dd></div></dl>
+</article>
+        </div>
+      </section>
 
       <section class="section" aria-labelledby="gaps-title">
         <div class="section-head">
@@ -1506,7 +1392,7 @@
         <div class="gaps">
           <article class="card gap is-refuse">
             <p class="gap-severity">high</p>
-            <h3 class="gap-title">No live run of this round's rules</h3>
+            <h3 class="gap-title">Passing cases are not a live session</h3>
             <p class="gap-text">They pass 943 cases and 442 planted bugs, but no real session under <code>claude --plugin-dir .</code> has used them yet.</p>
             <p class="gap-next">Next: one live session in a fresh repo.</p>
           </article>
@@ -1541,14 +1427,6 @@
             <p class="gap-next">Accepted: probes need Bash.</p>
           </article>
         </div>
-        <aside class="card closed" aria-labelledby="closed-title">
-          <h3 class="closed-title" id="closed-title">Closed this round</h3>
-          <ul class="closed-list">
-            <li class="closed-item"><span>The report gate checks a report as the agent hands it back, so a bad report goes back while the agent can still fix it.</span></li>
-            <li class="closed-item"><span>The Stop hook sees background agents finish. It missed the app's newer notice, so the retro and the closing status never fired after one.</span></li>
-            <li class="closed-item"><span>The closing status names every agent run under <code>## Agents</code>, with its verdict.</span></li>
-          </ul>
-        </aside>
       </section>
     </main>
 

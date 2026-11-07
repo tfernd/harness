@@ -34,23 +34,36 @@ TEMPLATE = Path("docs") / "map.html.in"
 PAGE = Path("docs") / "index.html"
 # The role whose card shows before a reader picks one; the first agent stands in when it is gone.
 DEFAULT_ROLE = "worker"
-# The events whose hooks run on a tool call, so their matcher names tools.
-TOOL_EVENTS = frozenset({"PreToolUse", "PostToolUse"})
 # A hooks.json command's script under `hooks/` and its first argument, if any.
 HOOK_COMMAND = re.compile(r"hooks/([\w-]+\.py)\"?(?:\s+(\S+))?")
 SLOT = re.compile(r"<!-- @([a-z-]+)([^>]*?) -->")
 FACT = re.compile(r"\{\{(\w+)\}\}")
 LIST_ITEM = re.compile(r"\s+- (.+)")
 SENTENCE_END = re.compile(r"(?<=\.)\s+(?=[A-Z])")
-# Where a skill's description stops being its summary: a spaced dash, a colon or a sentence end.
+# Where a skill's job stops: a spaced dash, a colon or a sentence end.
 SUMMARY_END = re.compile(r" - |: |\. ")
-# Characters of a skill summary before it is cut at a word; longer, it reads as a paragraph in a tooltip.
-MAX_SUMMARY = 110
+# Characters of a skill's job before it is cut at a word; longer, it reads as a paragraph in a tooltip.
+MAX_SUMMARY = 170
+# A first sentence shorter than this says too little to be the job, so the skill's "Load" sentence stands in for it.
+MIN_JOB = 20
+# A clause cut from the job's sentence shorter than this reads as a fragment, so the whole sentence is kept.
+MIN_CLAUSE = 40
+# The skill whose card shows before a reader picks one; the first skill of the first band stands in when it is gone.
+DEFAULT_SKILL = "report"
+# The bands of the skills section, in the README skills table's groups; a skill folder in no band stops the build.
+SKILL_BANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Always on", ("tool-habits",)),
+    ("Process", ("orchestrator", "workflows", "accept", "init", "report")),
+    ("Quality", ("spec", "cold-read", "review", "audit", "evidence", "testing", "debug", "refactor")),
+    ("Languages", ("code-python", "code-js", "code-html-css", "code-terraform", "code-shell")),
+    ("Writing", ("comments", "git-commit")),
+    ("Learning", ("models", "retro")),
+)
 # Characters of each differing line the --check reason shows, from a little before the first changed character.
 SNIPPET = 60
 SNIPPET_LEAD = 20
 # The slots the template must hold exactly once.
-SINGLE_SLOTS = ("hooks-rest", "agents-rest", "agent-cards", "skills")
+SINGLE_SLOTS = ("agents-rest", "agent-cards", "skill-bands", "skill-cards")
 RULE_HOOK = re.compile(r'<span class="rule-hook">([\w-]+\.py)</span>')
 PORT_NOTES_MARKER = "<!-- port-notes -->"
 # The words a port badge says for each state.
@@ -72,6 +85,13 @@ class Agent(NamedTuple):
     use: str  # its sentence on when to use the agent, empty when it has none
 
 
+class Skill(NamedTuple):
+    """One skill's facts."""
+
+    job: str  # what the description says it is for
+    when: str  # the description's "Load" sentences, empty when it has none
+
+
 class Hook(NamedTuple):
     """One command of the hook list."""
 
@@ -85,7 +105,7 @@ class Facts(NamedTuple):
     """What the page shows from the repository."""
 
     agents: tuple[Agent, ...]
-    skills: dict[str, str]  # keys are data: a skill's name to its summary
+    skills: dict[str, Skill]  # keys are data: a skill's name to its facts
     hooks: tuple[Hook, ...]
     budgets: dict[str, int]  # keys are data: a role to its default turns, `*` for any other
     required: dict[str, list[str]]  # keys are data: a role to the lines its brief needs, `*` for any other
@@ -100,13 +120,12 @@ class Slot(NamedTuple):
 
 
 class Layout(NamedTuple):
-    """Where each fact goes: the facts, the hooks each hook slot holds, the leftovers and the role shown first."""
+    """Where each fact goes: the facts, the agents no band names and the role and skill shown first."""
 
     facts: Facts
-    placed_hooks: dict[Slot, list[Hook]]
-    rest_hooks: list[Hook]
     rest_agents: list[Agent]
     default_role: str
+    default_skill: str
 
 
 class Port(NamedTuple):
@@ -211,23 +230,38 @@ def get_agents(root: Path, /) -> tuple[Agent, ...]:
     return tuple(agents)
 
 
-def get_summary(description: str, /) -> str:
-    """A skill description's opening clause, cut at a word past MAX_SUMMARY characters."""
+def get_skill(description: str, /) -> Skill:
+    """A skill's job and when to load it, split from its description's sentences.
 
-    clause = SUMMARY_END.split(description, maxsplit=1)[0].rstrip(".")
-    if len(clause) <= MAX_SUMMARY:
-        return clause
+    The job is the first sentence that is not a "Load" sentence, cut at its first clause when that clause is long enough.
+    A description whose only other sentence is a few words long uses its "Load" sentence for the job and the rest as `when`.
+    """
 
-    return clause[:MAX_SUMMARY].rsplit(" ", 1)[0] + "…"
+    sentences = [sentence.strip().rstrip(".") for sentence in SENTENCE_END.split(description.strip())]
+    loads = [sentence for sentence in sentences if sentence.startswith("Load ")]
+    others = [sentence for sentence in sentences if not sentence.startswith("Load ")]
+
+    if others and len(others[0]) >= MIN_JOB:
+        clause = SUMMARY_END.split(others[0], maxsplit=1)[0]
+        job = clause if len(clause) >= MIN_CLAUSE else others[0]
+        when = ". ".join(loads)
+    else:
+        stripped = loads[0].removeprefix("Load ").removeprefix("to ")
+        job = SUMMARY_END.split(stripped[:1].upper() + stripped[1:], maxsplit=1)[0]
+        when = ". ".join(others)
+    if len(job) > MAX_SUMMARY:
+        job = job[:MAX_SUMMARY].rsplit(" ", 1)[0] + "…"
+
+    return Skill(job, when + "." if when else "")
 
 
-def get_skills(root: Path, /) -> dict[str, str]:  # keys are data
-    """Every skill's name and summary, in folder name order."""
+def get_skills(root: Path, /) -> dict[str, Skill]:  # keys are data
+    """Every skill's name and facts, in folder name order."""
 
     skills = {}
     for path in sorted((root / "skills").glob("*/SKILL.md")):
         fields = read_frontmatter(path)
-        skills[get_text(fields, "name", path)] = get_summary(get_text(fields, "description", path))
+        skills[get_text(fields, "name", path)] = get_skill(get_text(fields, "description", path))
 
     return skills
 
@@ -332,32 +366,6 @@ def get_facts(root: Path, /) -> Facts:
 # =========================================================================== #
 
 
-def make_hook_pill(hook: Hook, /) -> str:
-    """A hook's pill: its script and argument, a class per script and argument for its tone, its tools as a tooltip."""
-
-    stem = hook.script.removesuffix(".py").replace("_", "-")
-    classes = f"hook-pill hook-{stem}" + (f" hook-{stem}-{hook.argument}" if hook.argument else "")
-    tools = ", ".join(hook.matcher.split("|")) if hook.matcher else "every tool"
-    title = f' title="on {tools}"' if hook.event in TOOL_EVENTS else ""
-    label = f"{hook.script} {hook.argument}".strip()
-
-    return f'<span class="{html.escape(classes)}"{html.escape(title, quote=False)}>{html.escape(label)}</span>'
-
-
-def make_rest_step(hooks: list[Hook], /) -> str:
-    """A timeline step for the hooks no slot placed, empty when there are none."""
-
-    if not hooks:
-        return ""
-    pills = "\n".join(f'<span class="hook-when">{html.escape(hook.event)}</span>{make_hook_pill(hook)}' for hook in hooks)
-
-    return (
-        '<li class="card timeline-step"><h3 class="timeline-title">Other hooks</h3>'
-        '<p class="timeline-text">Hooks this map does not place in a step yet.</p>'
-        f'<div class="hook-row">{pills}</div></li>'
-    )
-
-
 def make_agent_chip(agent: Agent, /, *, is_default: bool) -> str:
     """An agent's chip in its band: the button that shows its card."""
 
@@ -369,14 +377,14 @@ def make_agent_chip(agent: Agent, /, *, is_default: bool) -> str:
     )
 
 
-def make_skill_chips(names: Iterable[str], skills: dict[str, str], /) -> str:
+def make_skill_chips(names: Iterable[str], skills: dict[str, Skill], /) -> str:
     """A chip per skill name with its summary as the tooltip; a name with no skill file is an error."""
 
     chips = []
     for name in names:
         if name not in skills:
             raise ValueError(f"the map names the skill {name!r}, which has no skills/{name}/SKILL.md")
-        chips.append(f'<span class="skill-chip" title="{html.escape(skills[name])}">{html.escape(name)}</span>')
+        chips.append(f'<span class="skill-chip" title="{html.escape(skills[name].job)}">{html.escape(name)}</span>')
 
     return "\n".join(chips)
 
@@ -441,31 +449,69 @@ def make_rest_band(layout: Layout, /) -> str:
     return f'<div class="crew-band"><span class="crew-band-name">Other</span><div class="crew-chips">{chips}</div></div>'
 
 
-def make_skill_list(skills: dict[str, str], /) -> str:
-    """The index of every skill: its name and summary."""
+def make_skill_chip(name: str, /, *, is_default: bool) -> str:
+    """A skill's chip in its band: the button that shows its card."""
+
+    escaped = html.escape(name)
+
+    return (
+        f'<button type="button" class="crew-chip" data-choice="{escaped}" aria-pressed="{str(is_default).lower()}" '
+        f'aria-controls="skill-{escaped}">{escaped}</button>'
+    )
+
+
+def make_skill_bands(layout: Layout, /) -> str:
+    """One band of chips per entry of SKILL_BANDS."""
 
     return "\n".join(
-        f'<div class="skill-entry"><dt><code>{html.escape(name)}</code></dt><dd class="skill-entry-text">{html.escape(summary)}</dd></div>'
-        for name, summary in skills.items()
+        f'<div class="crew-band"><span class="crew-band-name">{html.escape(band)}</span><div class="crew-chips">'
+        + "\n".join(make_skill_chip(name, is_default=name == layout.default_skill) for name in names)
+        + "</div></div>"
+        for band, names in SKILL_BANDS
     )
+
+
+def make_skill_card(name: str, band: str, layout: Layout, /) -> str:
+    """A skill's card: its band, its job, when to load it and the agents that preload it."""
+
+    skill = layout.facts.skills[name]
+    escaped = html.escape(name)
+    preloaders = [agent.name for agent in layout.facts.agents if name in agent.skills]
+    tags = "".join(f'<span class="tag">{html.escape(agent)}</span>' for agent in preloaders) or "none"
+    hidden = "" if name == layout.default_skill else " hidden"
+    when = f'<p class="crew-card-use">{html.escape(skill.when)}</p>\n' if skill.when else ""
+
+    return (
+        f'<article class="card crew-card" id="skill-{escaped}" data-choice-panel="{escaped}" aria-labelledby="skill-{escaped}-name"{hidden}>\n'
+        f'<div class="crew-card-head"><h3 class="crew-card-name" id="skill-{escaped}-name">{escaped}</h3><span class="tag">{html.escape(band)}</span></div>\n'
+        f"<p>{html.escape(skill.job)}</p>\n"
+        f"{when}"
+        '<dl class="crew-card-facts"><div class="crew-card-fact"><dt class="crew-card-term">Preloaded by</dt>'
+        f'<dd class="crew-card-value">{tags}</dd></div></dl>\n'
+        "</article>"
+    )
+
+
+def make_skill_cards(layout: Layout, /) -> str:
+    """The card of every skill, in band order."""
+
+    return "\n".join(make_skill_card(name, band, layout) for band, names in SKILL_BANDS for name in names)
 
 
 def make_slot(slot: Slot, layout: Layout, /) -> str:
     """The markup that replaces one slot of the template."""
 
     match slot.name:
-        case "hooks":
-            return "\n".join(make_hook_pill(hook) for hook in layout.placed_hooks[slot])
-        case "hooks-rest":
-            return make_rest_step(layout.rest_hooks)
         case "agents":
             return make_agent_chips(slot, layout)
         case "agents-rest":
             return make_rest_band(layout)
         case "agent-cards":
             return "\n".join(make_agent_card(agent, layout.facts, is_default=agent.name == layout.default_role) for agent in layout.facts.agents)
-        case "skills":
-            return make_skill_list(layout.facts.skills)
+        case "skill-bands":
+            return make_skill_bands(layout)
+        case "skill-cards":
+            return make_skill_cards(layout)
         case "skill-chips":
             return make_skill_chips(slot.arguments, layout.facts.skills)
         case _:
@@ -486,31 +532,37 @@ def get_fact(values: dict[str, str], name: str, /) -> str:
     return html.escape(values[name], quote=False)
 
 
-def get_hook_slot(hook: Hook, slots: list[Slot], /) -> Slot | None:
-    """The first hook slot of the hook's event that names one of its tools, else the first naming none, else None."""
+def check_skill_bands(skills: dict[str, Skill], /) -> None:
+    """Every skill folder sits in exactly one band and every band entry has a folder; else the build stops."""
 
-    tools = set(hook.matcher.split("|"))
-    same_event = [slot for slot in slots if slot.arguments[0] == hook.event]
-    named = [slot for slot in same_event if len(slot.arguments) > 1 and tools & set(slot.arguments[1].split("|"))]
-    plain = [slot for slot in same_event if len(slot.arguments) == 1]
+    banded = [name for _, names in SKILL_BANDS for name in names]
+    unbanded = [name for name in skills if name not in banded]
+    if unbanded:
+        raise ValueError(f"skills/{unbanded[0]} is in no band of SKILL_BANDS in docs/build_map.py")
+    missing = [name for name in banded if name not in skills]
+    if missing:
+        raise ValueError(f"SKILL_BANDS names the skill {missing[0]!r}, which has no skills/{missing[0]}/SKILL.md")
+    if len(set(banded)) != len(banded):
+        raise ValueError("SKILL_BANDS names a skill in two bands")
 
-    return next(iter(named + plain), None)
+
+def check_hooks_shown(page: str, hooks: tuple[Hook, ...], /) -> None:
+    """Every hook script is named in a rule row's badge; else the build stops."""
+
+    for hook in hooks:
+        if f'class="rule-hook">{hook.script}<' not in page:
+            raise ValueError(f"hooks/{hook.script} is named on no rule row of the page")
 
 
 def make_layout(slots: list[Slot], facts: Facts, /) -> Layout:
-    """Place each hook in its slot and find the agents no band names; a slot used wrongly is an error."""
+    """Find the agents no band names and check the skill bands; a slot used wrongly is an error."""
 
+    check_skill_bands(facts.skills)
     names = [slot.name for slot in slots]
     wrong = [name for name in SINGLE_SLOTS if names.count(name) != 1]
-    hook_slots = [slot for slot in slots if slot.name == "hooks"]
-    if wrong or any(not slot.arguments for slot in hook_slots) or len(set(hook_slots)) != len(hook_slots):
-        raise ValueError(f"the template must hold each of {', '.join(SINGLE_SLOTS)} once and each hook slot once, with its event")
+    if wrong:
+        raise ValueError(f"the template must hold each of {', '.join(SINGLE_SLOTS)} once")
 
-    placed: dict[Slot, list[Hook]] = {slot: [] for slot in hook_slots}
-    rest_hooks = []
-    for hook in facts.hooks:
-        slot = get_hook_slot(hook, hook_slots)
-        (placed[slot] if slot else rest_hooks).append(hook)
     banded = [name for slot in slots if slot.name == "agents" for name in slot.arguments]
     if len(set(banded)) != len(banded):
         raise ValueError("the template names an agent in two bands")
@@ -518,7 +570,9 @@ def make_layout(slots: list[Slot], facts: Facts, /) -> Layout:
     agent_names = [agent.name for agent in facts.agents]
     default_role = DEFAULT_ROLE if DEFAULT_ROLE in agent_names else next(iter(agent_names), "")
 
-    return Layout(facts, placed, rest_hooks, rest_agents, default_role)
+    default_skill = DEFAULT_SKILL if DEFAULT_SKILL in facts.skills else SKILL_BANDS[0][1][0]
+
+    return Layout(facts, rest_agents, default_role, default_skill)
 
 
 def get_port_states(root: Path, script: str, /) -> dict[str, str]:  # keys are data: the port keys
@@ -608,6 +662,7 @@ def make_page(template: str, facts: Facts, /) -> str:
     slots = [Slot(match.group(1), tuple(match.group(2).split())) for match in SLOT.finditer(with_facts)]
     layout = make_layout(slots, facts)
     page = SLOT.sub(lambda match: make_slot(Slot(match.group(1), tuple(match.group(2).split())), layout), with_facts)
+    check_hooks_shown(page, facts.hooks)
     for leftover in ("<!-- @", "{{"):
         if leftover in page:
             raise ValueError(f"the template holds a marker the build cannot read, near {page[page.index(leftover) :][:60]!r}")

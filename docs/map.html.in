@@ -606,144 +606,7 @@
       color: var(--tone-text);
     }
 
-    /* 3 and 4: the session and the crew side by side */
-    .split {
-      display: grid;
-      gap: var(--space-6);
-      align-items: start;
-    }
-
-    .legend {
-      list-style: none;
-      padding: 0;
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-1) var(--space-3);
-      font-size: var(--text-xs);
-      color: var(--muted);
-    }
-
-    .legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-1);
-    }
-
-    .legend-item::before {
-      content: "";
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      background: var(--tone);
-    }
-
-    .timeline {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      gap: var(--space-2);
-      counter-reset: step;
-    }
-
-    .timeline-step {
-      counter-increment: step;
-      position: relative;
-      padding: var(--space-2) var(--space-3) var(--space-2) 3rem;
-      display: grid;
-      gap: var(--space-1);
-    }
-
-    .timeline-step::before {
-      content: counter(step);
-      position: absolute;
-      inset-inline-start: var(--space-3);
-      inset-block-start: var(--space-2);
-      width: 1.5rem;
-      height: 1.5rem;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      color: var(--accent-text);
-      border: 2px solid var(--accent);
-    }
-
-    .timeline-title {
-      font-size: var(--text-md);
-    }
-
-    .timeline-text {
-      font-size: var(--text-sm);
-      color: var(--muted);
-    }
-
-    .hook-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: var(--space-1);
-    }
-
-    .hook-when {
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted);
-      min-width: 5.5rem;
-    }
-
-    .hook-pill {
-      --tone: var(--advice);
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-1);
-      font-family: var(--font-mono);
-      font-size: var(--text-xs);
-      line-height: 1;
-      padding: var(--space-1) var(--space-2);
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: var(--surface);
-      white-space: nowrap;
-    }
-
-    .hook-pill::before {
-      content: "";
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      background: var(--tone);
-    }
-
-    /* Each hook script's tone; a script with no rule here keeps the neutral one. */
-    .hook-guard,
-    .hook-budget,
-    .hook-brief-lint,
-    .hook-commit-gate {
-      --tone: var(--refuse);
-    }
-
-    .hook-report-gate {
-      --tone: var(--back);
-    }
-
-    .hook-skill-gate,
-    .hook-delegate,
-    .hook-nudge {
-      --tone: var(--note);
-    }
-
-    .hook-context,
-    .hook-turn {
-      --tone: var(--info);
-    }
-
-    .hook-turn-stop {
-      --tone: var(--hold);
-    }
-
+    /* 3 and 4: the crew and the skills share one look */
     .crew {
       display: grid;
       gap: var(--space-3);
@@ -874,32 +737,6 @@
       cursor: help;
     }
 
-    .skill-index {
-      font-size: var(--text-sm);
-    }
-
-    .skill-index-summary {
-      cursor: pointer;
-      color: var(--accent-text);
-      font-weight: 600;
-    }
-
-    .skill-list {
-      margin-block-start: var(--space-2);
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-      gap: var(--space-2) var(--space-3);
-    }
-
-    .skill-entry {
-      display: grid;
-      gap: 2px;
-    }
-
-    .skill-entry-text {
-      color: var(--muted);
-    }
-
     /* 5. Gaps */
     .gaps {
       display: grid;
@@ -936,36 +773,6 @@
       font-size: var(--text-sm);
     }
 
-    .closed {
-      padding: var(--space-3);
-      display: grid;
-      gap: var(--space-2);
-    }
-
-    .closed-title {
-      font-size: var(--text-md);
-    }
-
-    .closed-list {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      gap: var(--space-2);
-      font-size: var(--text-sm);
-    }
-
-    .closed-item {
-      display: grid;
-      grid-template-columns: 1.25rem minmax(0, 1fr);
-      gap: var(--space-1);
-    }
-
-    .closed-item::before {
-      content: "✓";
-      color: var(--info-text);
-      font-weight: 700;
-    }
-
     .page-foot {
       font-size: var(--text-sm);
       color: var(--muted);
@@ -976,10 +783,6 @@
     @media (min-width: 52rem) {
       .strict {
         grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-      }
-
-      .split {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       }
     }
 
@@ -1247,118 +1050,71 @@
         </div>
       </section>
 
-      <div class="split">
-        <section class="section" aria-labelledby="session-title">
-          <div class="section-head">
-            <p class="section-kicker">3 · in what order</p>
-            <h2 class="section-title" id="session-title">One session, start to finish</h2>
-            <p class="section-intro">Hooks fire at fixed moments; at each, every matching hook runs side by side.</p>
-          </div>
-          <ul class="legend">
-            <li class="legend-item is-refuse">can stop a call</li>
-            <li class="legend-item is-back">sends a report back</li>
-            <li class="legend-item is-hold">holds the turn</li>
-            <li class="legend-item is-note">adds a note</li>
-            <li class="legend-item is-info">adds context or counts</li>
-          </ul>
-          <ol class="timeline">
-            <li class="card timeline-step">
-              <h3 class="timeline-title">Session starts</h3>
-              <p class="timeline-text">Claude Code opens in any repository. The model gets its working habits, the last lessons and the open problems.</p>
-              <div class="hook-row"><span class="hook-when">start</span><!-- @hooks SessionStart --></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">You send a prompt</h3>
-              <p class="timeline-text">A new turn begins: the call count goes back to zero and the rule files are noted as they are.</p>
-              <div class="hook-row"><span class="hook-when">prompt</span><!-- @hooks UserPromptSubmit --></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">The main session hires an agent</h3>
-              <p class="timeline-text">The agent must have a role; its brief is checked for the lines the role needs, and its turn budget is set.</p>
-              <div class="hook-row"><span class="hook-when">before</span><!-- @hooks PreToolUse Agent|Task --></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">An agent starts</h3>
-              <p class="timeline-text">Fresh context with its role's skills preloaded, plus the habits, the report form it owes and the open problems for its role.</p>
-              <div class="hook-row"><span class="hook-when">start</span><!-- @hooks SubagentStart --></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">Every tool call</h3>
-              <p class="timeline-text">Agent or main session, every command, edit and read. Before it, one refusal stops the call; after it come advice and a count of the turn's calls.</p>
-              <div class="hook-row"><span class="hook-when">before</span><!-- @hooks PreToolUse --></div>
-              <div class="hook-row"><span class="hook-when">after</span><!-- @hooks PostToolUse --></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">The agent hands back</h3>
-              <p class="timeline-text">Its report is checked as it is handed back, so a bad one goes back while the agent can still fix it. The stop check catches the rest.</p>
-              <div class="hook-row"><span class="hook-when">hand-back</span><!-- @hooks PreToolUse SubagentHandback --></div>
-              <div class="hook-row"><span class="hook-when">stop</span><!-- @hooks SubagentStop --></div>
-            </li>
-            <li class="card timeline-step">
-              <h3 class="timeline-title">Your turn ends</h3>
-              <p class="timeline-text">A long turn closes with a status and a line per agent run; lessons, and a retro when one is due. Background agents are waited for.</p>
-              <div class="hook-row"><span class="hook-when">stop</span><!-- @hooks Stop --></div>
-            </li>
-            <!-- @hooks-rest -->
-          </ol>
-        </section>
-
-        <section class="section" aria-labelledby="crew-title">
-          <div class="section-head">
-            <p class="section-kicker">4 · who does the work</p>
-            <h2 class="section-title" id="crew-title">The crew</h2>
-            <p class="section-intro">You decide; the main session works and hires an agent only when parallel work pays.</p>
-          </div>
-          <div class="crew" data-chooser>
-            <div class="crew-bands" role="group" aria-label="Roles by band">
-              <div class="crew-band">
-                <span class="crew-band-name">Decides</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="you" aria-pressed="false" aria-controls="role-you">You</button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Orchestrates</span>
-                <div class="crew-chips"><button type="button" class="crew-chip" data-choice="main" aria-pressed="false" aria-controls="role-main">Main session</button></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Thinks</span>
-                <div class="crew-chips"><!-- @agents planner researcher analyst --></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Finds</span>
-                <div class="crew-chips"><!-- @agents scout --></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Builds</span>
-                <div class="crew-chips"><!-- @agents worker --></div>
-              </div>
-              <div class="crew-band">
-                <span class="crew-band-name">Checks</span>
-                <div class="crew-chips"><!-- @agents cold-reader runner reviewer auditor --></div>
-              </div>
-              <!-- @agents-rest -->
+      <section class="section" aria-labelledby="crew-title">
+        <div class="section-head">
+          <p class="section-kicker">3 · who does the work</p>
+          <h2 class="section-title" id="crew-title">The crew</h2>
+          <p class="section-intro">You decide; the main session works and hires an agent only when parallel work pays.</p>
+        </div>
+        <div class="crew" data-chooser>
+          <div class="crew-bands" role="group" aria-label="Roles by band">
+            <div class="crew-band">
+              <span class="crew-band-name">Decides</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="you" aria-pressed="false" aria-controls="role-you">You</button></div>
             </div>
-
-            <article class="card crew-card" id="role-you" data-choice-panel="you" aria-labelledby="role-you-name" hidden>
-              <div class="crew-card-head"><h3 class="crew-card-name" id="role-you-name">You</h3><span class="tag">owner</span></div>
-              <p>Set the direction, answer when Claude Code asks, and read the closing status.</p>
-              <p class="crew-card-use">The harness asks you only for what it cannot judge, such as a package change in a repo that wants that.</p>
-            </article>
-            <article class="card crew-card" id="role-main" data-choice-panel="main" aria-labelledby="role-main-name" hidden>
-              <div class="crew-card-head"><h3 class="crew-card-name" id="role-main-name">Main session</h3><span class="tag">your model</span><span class="tag">no budget</span><span class="tag">edits files</span></div>
-              <p>Does the work itself by default, scripts repetitive edits, and hires agents only where parallel work pays.</p>
-              <p class="crew-card-use">It already holds the context, so it is the cheapest worker for serial steps.</p>
-              <dl class="crew-card-facts">
-                <div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><!-- @skill-chips orchestrator workflows accept tool-habits --></dd></div>
-              </dl>
-            </article>
-            <!-- @agent-cards -->
-            <details class="skill-index">
-              <summary class="skill-index-summary">All {{skills}} skills</summary>
-              <dl class="skill-list"><!-- @skills --></dl>
-            </details>
+            <div class="crew-band">
+              <span class="crew-band-name">Orchestrates</span>
+              <div class="crew-chips"><button type="button" class="crew-chip" data-choice="main" aria-pressed="false" aria-controls="role-main">Main session</button></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Thinks</span>
+              <div class="crew-chips"><!-- @agents planner researcher analyst --></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Finds</span>
+              <div class="crew-chips"><!-- @agents scout --></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Builds</span>
+              <div class="crew-chips"><!-- @agents worker --></div>
+            </div>
+            <div class="crew-band">
+              <span class="crew-band-name">Checks</span>
+              <div class="crew-chips"><!-- @agents cold-reader runner reviewer auditor --></div>
+            </div>
+            <!-- @agents-rest -->
           </div>
-        </section>
-      </div>
+
+          <article class="card crew-card" id="role-you" data-choice-panel="you" aria-labelledby="role-you-name" hidden>
+            <div class="crew-card-head"><h3 class="crew-card-name" id="role-you-name">You</h3><span class="tag">owner</span></div>
+            <p>Set the direction, answer when Claude Code asks, and read the closing status.</p>
+            <p class="crew-card-use">The harness asks you only for what it cannot judge, such as a package change in a repo that wants that.</p>
+          </article>
+          <article class="card crew-card" id="role-main" data-choice-panel="main" aria-labelledby="role-main-name" hidden>
+            <div class="crew-card-head"><h3 class="crew-card-name" id="role-main-name">Main session</h3><span class="tag">your model</span><span class="tag">no budget</span><span class="tag">edits files</span></div>
+            <p>Does the work itself by default, scripts repetitive edits, and hires agents only where parallel work pays.</p>
+            <p class="crew-card-use">It already holds the context, so it is the cheapest worker for serial steps.</p>
+            <dl class="crew-card-facts">
+              <div class="crew-card-fact"><dt class="crew-card-term">Skills</dt><dd class="crew-card-value"><!-- @skill-chips orchestrator workflows accept tool-habits --></dd></div>
+            </dl>
+          </article>
+          <!-- @agent-cards -->
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="skills-title">
+        <div class="section-head">
+          <p class="section-kicker">4 · what they know</p>
+          <h2 class="section-title" id="skills-title">The skills</h2>
+          <p class="section-intro">Text a role reads before a kind of work, grouped by what it is for; pick one to see when to load it and who has it preloaded.</p>
+        </div>
+        <div class="crew" data-chooser>
+          <div class="crew-bands" role="group" aria-label="Skills by band">
+            <!-- @skill-bands -->
+          </div>
+          <!-- @skill-cards -->
+        </div>
+      </section>
 
       <section class="section" aria-labelledby="gaps-title">
         <div class="section-head">
@@ -1369,7 +1125,7 @@
         <div class="gaps">
           <article class="card gap is-refuse">
             <p class="gap-severity">high</p>
-            <h3 class="gap-title">No live run of this round's rules</h3>
+            <h3 class="gap-title">Passing cases are not a live session</h3>
             <p class="gap-text">They pass {{cases}} cases and {{mutants}} planted bugs, but no real session under <code>claude --plugin-dir .</code> has used them yet.</p>
             <p class="gap-next">Next: one live session in a fresh repo.</p>
           </article>
@@ -1404,14 +1160,6 @@
             <p class="gap-next">Accepted: probes need Bash.</p>
           </article>
         </div>
-        <aside class="card closed" aria-labelledby="closed-title">
-          <h3 class="closed-title" id="closed-title">Closed this round</h3>
-          <ul class="closed-list">
-            <li class="closed-item"><span>The report gate checks a report as the agent hands it back, so a bad report goes back while the agent can still fix it.</span></li>
-            <li class="closed-item"><span>The Stop hook sees background agents finish. It missed the app's newer notice, so the retro and the closing status never fired after one.</span></li>
-            <li class="closed-item"><span>The closing status names every agent run under <code>## Agents</code>, with its verdict.</span></li>
-          </ul>
-        </aside>
       </section>
     </main>
 
