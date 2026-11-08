@@ -165,7 +165,7 @@ Add `--uninstall` to remove it, then delete the clone it names (`~/.local/share/
 - Kiro loses: `SubagentStart` and `SubagentStop` hooks (no trigger), the owner prompt (a guard "ask" becomes a block),
   command rewrites (the `sleep` fix, a quoted pattern and a move to the trash each become a block with the note), hook context outside session start and prompt submit,
   and agent models (pass `--model haiku=ID` for each). Agent prompts sit in `agents/harness-<name>.md` beside the JSON.
-- Cortex loses: `SubagentStart`, preloaded skills on agents (load them by name), agent models, tool ids it lacks, and
+- Cortex loses: `SubagentStart`, agent models, tool ids it lacks, and
   the report gate blocks nothing (advisory). An "ask" becomes a block.
 
 ## Configuration: the owner file

@@ -26,9 +26,13 @@ WORK = ROOT / "__scratch__" / "port-check"
 FOREIGN_COMMAND = "echo foreign"
 FRONTMATTER_NAME = re.compile(r"^name:\s*(.+?)\s*$", re.MULTILINE)
 TOOLS_BLOCK = re.compile(r"^tools:\n((?:  - .+\n)+)", re.MULTILINE)
+AGENT_FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
+SKILL_LINE = re.compile(r"^\s+-\s+(\S+)\s*$")
+HARNESS_REF = re.compile(r"harness:([a-z][a-z0-9-]*)")
 SCRIPT_PATH = re.compile(r"(/[^\"\\\s]+\.py)")
 MIN_HOOK_PATHS = 10
 MIN_SKILLS = 20
+MIN_PRELOADS = 11
 
 
 def check(condition: bool, message: str) -> None:
@@ -49,6 +53,51 @@ def run_port(target: str, dest: Path, *flags: str) -> str:
         f"harness-port {target} {flags} exited {done.returncode}: {done.stderr[-300:]}",
     )
     return done.stdout
+
+
+def get_preloads(agent_file: Path) -> list[str]:
+    found = AGENT_FRONTMATTER.match(agent_file.read_text())
+    assert found is not None
+    names: list[str] = []
+    in_skills = False
+    for line in found.group(1).splitlines():
+        if line.startswith("skills:"):
+            in_skills = True
+        elif in_skills and SKILL_LINE.match(line):
+            names.append(SKILL_LINE.match(line).group(1))
+        else:
+            in_skills = False
+    return names
+
+
+def get_first_body_line(skill_file: Path) -> str:
+    found = AGENT_FRONTMATTER.match(skill_file.read_text())
+    assert found is not None
+    first = next(line for line in found.group(2).splitlines() if line.strip())
+    return HARNESS_REF.sub(r"harness-\1", first)
+
+
+def check_preloads(dest: Path, target: str) -> None:
+    checked = 0
+    for agent_file in sorted((ROOT / "agents").glob("*.md")):
+        skills = get_preloads(agent_file)
+        name = f"harness-{agent_file.stem}"
+        if target == "kiro":
+            prompt = (dest / "harness-prompts" / f"{name}.md").read_text()
+            resources = json.loads((dest / "agents" / f"{name}.json").read_text())["resources"]
+        else:
+            prompt = (dest / "agents" / f"{name}.md").read_text()
+            resources = []
+        for skill in skills:
+            first = get_first_body_line(ROOT / "skills" / skill / "SKILL.md")
+            check(f"# Skill harness-{skill}\n" in prompt, f"{target}: {name} lacks the heading of {skill}")
+            check(first in prompt, f"{target}: {name} prompt lacks the text of {skill}")
+            check(
+                not any(f"harness-{skill}/SKILL.md" in resource for resource in resources),
+                f"{target}: {name} resources still list skill://{skill}",
+            )
+            checked += 1
+    check(checked >= MIN_PRELOADS, f"{target}: only {checked} preloads checked")
 
 
 def check_texts(dest: Path, target: str) -> None:
@@ -78,17 +127,14 @@ def check_texts(dest: Path, target: str) -> None:
         check(not list((dest / "agents").glob("*.md")), "kiro agents folder holds a .md file")
         check(config["tools"] == ["read", "shell"], f"kiro agent tags {config['tools']}")
         check("model" not in config, "kiro agent has a model")
-        expected = f"skill://{dest / 'skills' / 'harness-report' / 'SKILL.md'}"
-        check(
-            expected in config["resources"],
-            "kiro agent resources lack the report skill",
-        )
         check(prompt_file.read_text().strip() != "", "kiro agent prompt file empty")
+        check_preloads(dest, target)
         return
 
     text = analyst.with_suffix(".md").read_text()
     check(get_cortex_tools(text) == ["read", "grep", "glob", "bash"], "cortex agent tools are not a YAML list")
     check("model:" not in text, "cortex agent has a model")
+    check_preloads(dest, target)
     for agent in (dest / "agents").glob("*.md"):
         tools = get_cortex_tools(agent.read_text())
         check(

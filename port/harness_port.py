@@ -139,6 +139,14 @@ def plan_skills(plan: Plan, dest: Path, /) -> None:
                 )
 
 
+def get_preload_sections(skills: list[str], /) -> str:
+    sections = ""
+    for skill in skills:
+        _, body = parse_frontmatter((CHECKOUT / "skills" / skill / "SKILL.md").read_text())
+        sections += f"\n# Skill harness-{skill}\n\n{rewrite_text(body.strip())}\n"
+    return sections
+
+
 def plan_agent(
     plan: Plan, dest: Path, target: Target, agent_file: Path, models: dict[str, str], /
 ) -> None:
@@ -147,7 +155,8 @@ def plan_agent(
     tools = split_tools(fields.get("tools", ""))
     skills = fields.get("skills", [])
     model = models.get(str(fields.get("model", "")))
-    prompt = rewrite_text(body.lstrip("\n"))
+    assert isinstance(skills, list)
+    prompt = rewrite_text(body.lstrip("\n")) + get_preload_sections(skills)
     prompt_path = dest / KIRO_PROMPTS_FOLDER / f"{name}.md"
 
     if target == "kiro":
@@ -158,10 +167,7 @@ def plan_agent(
             "tools": list(
                 dict.fromkeys(KIRO_TAGS[tool] for tool in tools if tool in KIRO_TAGS)
             ),
-            "resources": [
-                f"skill://{dest / 'skills' / f'harness-{skill}' / 'SKILL.md'}"
-                for skill in skills
-            ],
+            "resources": [],
         }
         if model:
             config["model"] = model
@@ -175,10 +181,6 @@ def plan_agent(
     if dropped:
         plan.not_ported.append(
             f"agent {name}: tools {', '.join(dropped)} (no Cortex id)"
-        )
-    if skills:
-        plan.not_ported.append(
-            f"agent {name}: preloaded skills {', '.join(skills)} (load them by name)"
         )
     ids = [CORTEX_TOOLS[tool] for tool in tools if tool in CORTEX_TOOLS]
     tool_lines = "".join(f"  - {tool_id}\n" for tool_id in ids)
