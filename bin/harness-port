@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Convert this plugin's skills, agents and hooks for Kiro CLI or Cortex Code.
+# Usage: bin/harness-port --target kiro|cortex [--dest DIR] [--dry-run] [--uninstall]
+set -euo pipefail
+exec uv run --script "$(dirname "$0")/../port/harness_port.py" "$@"

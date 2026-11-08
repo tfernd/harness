@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harness</title>
+  <meta name="description" content="What the harness plugin for Claude Code does: its agents, skills and hooks, and how hard each rule binds.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+  <script>
+    // The saved theme (else the system's) is set before the first paint, so a dark page never flashes light.
+    try {
+      const savedTheme = localStorage.getItem("harness-map-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (savedTheme === "dark" || (savedTheme === null && prefersDark)) document.documentElement.dataset.theme = "dark";
+    } catch (error) {
+      console.warn("The saved theme could not be read.", error);
+    }
+  </script>
+  <link rel="stylesheet" href="style.css?v={{style_hash}}">
+</head>
+<body>
+  <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+    <symbol id="i-model" viewBox="0 0 16 16"><path d="M4 4h8v8H4zM6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5H4M1.5 9.5H4M12 6.5h2.5M12 9.5h2.5"/></symbol>
+    <symbol id="i-tools" viewBox="0 0 16 16"><path d="M10.5 2.5a3 3 0 0 0-3.2 4L2.5 11.3 4.7 13.5 9.5 8.7a3 3 0 0 0 4-3.2L11.7 7.3 9.7 6.3 8.7 4.3z"/></symbol>
+    <symbol id="i-load" viewBox="0 0 16 16"><path d="M8 2v8M4.5 7 8 10.5 11.5 7M3 13h10"/></symbol>
+    <symbol id="i-when" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 7.5V11M8 5v.5"/></symbol>
+    <symbol id="i-events" viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"/></symbol>
+    <symbol id="i-levels" viewBox="0 0 16 16"><path d="M2 13V9M6 13V6M10 13V3M14 13V1.5"/></symbol>
+    <symbol id="i-ports" viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12"/></symbol>
+    <symbol id="i-kind" viewBox="0 0 16 16"><path d="M2.5 2.5h6l5 5-6 6-5-5z"/></symbol>
+  </svg>
+  <div class="page">
+    <header class="page-head">
+      <div class="page-intro">
+        <div class="page-title-row">
+          <h1 class="page-title">Harness</h1>
+          <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">Dark mode</button>
+        </div>
+        <p class="page-lede">A plugin for any coding agent (Claude Code, Cortex Code, Kiro): agents do the work, skills tell them how, and hooks enforce the rules.</p>
+        <ul class="stats" aria-label="What ships">
+          <li><span class="stats-value">{{agents}}</span> agents</li>
+          <li><span class="stats-value">{{skills}}</span> skills</li>
+          <li><span class="stats-value">{{hooks}}</span> hook scripts</li>
+        </ul>
+      </div>
+      <div class="card install" data-install>
+        <div class="install-bar">
+          <span class="install-label">Install</span>
+          <div class="install-tablist" role="tablist" aria-label="Install target">
+            <button type="button" class="install-tab" role="tab" id="install-tab-claude" aria-controls="install-panel-claude" aria-selected="true" tabindex="0">Claude Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-cortex" aria-controls="install-panel-cortex" aria-selected="false" tabindex="-1">Cortex Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-kiro" aria-controls="install-panel-kiro" aria-selected="false" tabindex="-1">Kiro</button>
+          </div>
+        </div>
+        <div class="install-panel" role="tabpanel" id="install-panel-claude" aria-labelledby="install-tab-claude">
+          <code class="install-command">claude plugin marketplace add tfernd/harness &amp;&amp; claude plugin install harness@harness --scope user</code>
+          <button type="button" class="install-copy" data-copy="claude plugin marketplace add tfernd/harness &amp;&amp; claude plugin install harness@harness --scope user">Copy</button>
+          <p class="install-note">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
+        </div>
+        <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
+          <code class="install-command">curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex</code>
+          <button type="button" class="install-copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex">Copy</button>
+          <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+        </div>
+        <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
+          <code class="install-command">curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro</code>
+          <button type="button" class="install-copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro">Copy</button>
+          <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-main">
+      <div class="core" data-core>
+        <section class="card binds" aria-labelledby="binds-title">
+          <h2 class="binds-title" id="binds-title">How hard each part binds</h2>
+          <p class="binds-intro">A level is how firmly a rule holds, from a hard stop at the top to written advice at the bottom.</p>
+          <p class="binds-intro">Hooks enforce the top four levels. A reminder never stops a call; advice is up to the model.</p>
+          <p class="pyramid-axis" aria-hidden="true"><span>Hardest on top</span><span>Parts</span></p>
+          <div class="pyramid-box" data-pyramid>
+            <!-- @pyramid -->
+          </div>
+        </section>
+
+        <section class="parts" aria-labelledby="parts-title">
+          <h2 class="visually-hidden" id="parts-title">Agents, skills and hooks</h2>
+          <div class="panels" data-panels>
+            <!-- @panels -->
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script defer src="script.js?v={{script_hash}}"></script>
+</body>
+</html>

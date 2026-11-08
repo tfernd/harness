@@ -1,0 +1,14 @@
+{
+  "name": "harness",
+  "description": "Spec-driven multi-agent work for Claude Code: safety guards, enforced sub-agent reports, and a learning loop",
+  "owner": {
+    "name": "tfernd"
+  },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./",
+      "description": "Spec-driven multi-agent work: safety guards, enforced sub-agent reports, and a learning loop"
+    }
+  ]
+}

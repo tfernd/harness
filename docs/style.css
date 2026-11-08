@@ -1,0 +1,913 @@
+:root {
+  color-scheme: light;
+  --bg: #eef0f3;
+  --surface: #ffffff;
+  --surface-soft: #f4f5f7;
+  --ink: #111827;
+  --muted: #4b5563;
+  --line: #dde1e6;
+  --line-strong: #8b94a1;
+  --focus: #2563eb;
+  --selected: #1c1917;
+  /* One colour per group, on the popover's strip; a ramp apart from them. */
+  --kind-agent: #1d4ed8;
+  --kind-skill: #0f766e;
+  --kind-hook: #6d28d9;
+  --on-kind: #ffffff;
+  /* Strong to soft, deep plum through berry and coral to sand: the pyramid's fills and the popover meter. Plum and berry sit beside the hook violet, sand carries on to the page's warm greys; none of them is blue or teal. */
+  --level-1: #6b1d5c;
+  --level-2: #912a70;
+  --level-3: #b3355f;
+  --level-4: #c4412f;
+  /* The light fills are the only band where 3:1 against the page and 4.5:1 for the dark ink both hold, so the ramp is tight. */
+  --level-5: #da5f18;
+  --level-6: #c6750d;
+  --level-7: #bd800a;
+  --level-ink-1: #ffffff;
+  --level-ink-2: #ffffff;
+  --level-ink-3: #ffffff;
+  --level-ink-4: #ffffff;
+  --level-ink-5: #1c1917;
+  --level-ink-6: #1c1917;
+  --level-ink-7: #1c1917;
+  --shadow-chip: 0 1px 0 rgb(28 25 23 / 0.08);
+  --shadow-pop: 0 10px 30px rgb(28 25 23 / 0.18), 0 2px 6px rgb(28 25 23 / 0.1);
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --space-half: 0.125rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --radius-small: 0.375rem;
+  --radius: 0.5rem;
+  --radius-large: 0.75rem;
+  --radius-pill: 999px;
+  --text-label: 0.75rem;
+  --text-meta: 0.75rem;
+  --text-chip: 0.8125rem;
+  --text-body: 0.875rem;
+  --text-panel: 1rem;
+  --text-kpi: 1.5rem;
+  --text-title: 2rem;
+  --chip-height: 1.75rem;
+  --chip-height-touch: 2.5rem;
+  --pyramid-column: 22rem;
+  --level-height: 2.25rem;
+  --brace-column: 5rem;
+  --tip-width: 22rem;
+  --meter-height: 0.5rem;
+  --dim: 0.28;
+  --dim-level: 0.45;
+  /* How much of its own colour a level bar, a panel head and a chip mix into the surface; dark mixes more so the hue still shows. */
+  --tint-level: 16%;
+  --tint-head: 10%;
+  --tint-chip: 11%;
+  --tint-chip-hover: 22%;
+  --grow: 1.03;
+  --z-tip: 10;
+  --duration: 140ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0f13;
+  --surface: #181b21;
+  --surface-soft: #21252d;
+  --ink: #eef1f5;
+  --muted: #a7b0bc;
+  --line: #313743;
+  --line-strong: #6f7885;
+  --focus: #8fbcff;
+  --selected: #f4f1ee;
+  --kind-agent: #9ec1ff;
+  --kind-skill: #5eead4;
+  --kind-hook: #c4b5fd;
+  --on-kind: #141518;
+  --level-1: #f7b2e0;
+  --level-2: #f2a0c2;
+  --level-3: #ec9186;
+  --level-4: #d09556;
+  --level-5: #a87a48;
+  --level-6: #b8895a;
+  --level-7: #c59a68;
+  --level-ink-1: #141518;
+  --level-ink-2: #141518;
+  --level-ink-3: #141518;
+  --level-ink-4: #141518;
+  --level-ink-5: #141518;
+  --level-ink-6: #141518;
+  --level-ink-7: #141518;
+  --shadow-chip: 0 1px 0 rgb(0 0 0 / 0.5);
+  --tint-head: 18%;
+  --tint-chip: 24%;
+  --tint-chip-hover: 34%;
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--ink);
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Level variants: a fill, the ink on it and the step's rank from the base (the pyramid reads it as its width), for the bars and the meter. */
+.is-stopped {
+  --level: var(--level-1);
+  --level-ink: var(--level-ink-1);
+  --rank: 7;
+}
+
+.is-asks {
+  --level: var(--level-2);
+  --level-ink: var(--level-ink-2);
+  --rank: 6;
+}
+
+.is-sent-back {
+  --level: var(--level-3);
+  --level-ink: var(--level-ink-3);
+  --rank: 5;
+}
+
+.is-turn {
+  --level: var(--level-4);
+  --level-ink: var(--level-ink-4);
+  --rank: 4;
+}
+
+.is-reminder {
+  --level: var(--level-5);
+  --level-ink: var(--level-ink-5);
+  --rank: 3;
+}
+
+.is-advice {
+  --level: var(--level-6);
+  --level-ink: var(--level-ink-6);
+  --rank: 2;
+}
+
+.is-written {
+  --level: var(--level-7);
+  --level-ink: var(--level-ink-7);
+  --rank: 1;
+}
+
+/* Page frame */
+
+.page {
+  max-inline-size: 80rem;
+  margin-inline: auto;
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-5);
+}
+
+.page-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3) var(--space-5);
+  align-items: start;
+}
+
+.page-intro {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.page-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.page-title {
+  font-size: var(--text-title);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.page-lede {
+  max-inline-size: 70ch;
+}
+
+.stats {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin-block-start: var(--space-2);
+  font-size: var(--text-meta);
+  color: var(--muted);
+}
+
+.stats > li {
+  display: grid;
+  align-content: start;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--line);
+}
+
+.stats-value {
+  font-size: var(--text-kpi);
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.theme-toggle {
+  min-block-size: var(--chip-height);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+/* The label already says the action; a filled pressed state made it the loudest thing on a dark page. */
+.theme-toggle[aria-pressed="true"] {
+  background: transparent;
+}
+
+.page-main {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
+}
+
+/* Install */
+
+.install {
+  display: grid;
+  align-content: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  padding: var(--space-4);
+}
+
+.install-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.install-label {
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.install-tablist {
+  display: flex;
+  gap: var(--space-half);
+  padding: var(--space-half);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.install-tab {
+  min-block-size: 1.5rem;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.install-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.install-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-half) var(--space-2);
+}
+
+.install-command {
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-meta);
+  background: var(--surface-soft);
+  border-radius: var(--radius-small);
+}
+
+.install-copy {
+  min-block-size: 1.5rem;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-chip);
+  cursor: pointer;
+}
+
+.install-note {
+  grid-column: 1 / -1;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+/* The core: the pyramid on the left, the parts on the right */
+
+.core {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.binds {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.binds-title {
+  font-size: var(--text-panel);
+  font-weight: 700;
+}
+
+.binds-intro {
+  font-size: var(--text-meta);
+  color: var(--muted);
+}
+
+.pyramid-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pyramid-box {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+/* The pyramid is a subgrid list of bars that widen downward; the brackets beside it span the bars' rows. */
+
+.pyramid-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--brace-column);
+  grid-template-rows: repeat(7, auto);
+  gap: var(--space-1) var(--space-2);
+}
+
+.pyramid {
+  list-style: none;
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: 1 / -1;
+  grid-column: 1;
+  gap: var(--space-1);
+}
+
+.pyramid-step {
+  display: grid;
+}
+
+.level {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  justify-self: center;
+  gap: var(--space-2);
+  inline-size: calc(72% + 28% * (7 - var(--rank)) / 6);
+  min-block-size: var(--level-height);
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  background: color-mix(in srgb, var(--level) var(--tint-level), var(--surface));
+  border: 0;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition:
+    opacity var(--duration),
+    transform var(--duration);
+}
+
+.level-text {
+  display: grid;
+}
+
+.level-name {
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.level-short {
+  font-size: var(--text-label);
+  line-height: 1.25;
+}
+
+.level-count {
+  min-inline-size: 1.75rem;
+  padding: 0 var(--space-1);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--level-ink);
+  background: var(--level);
+  border-radius: var(--radius-pill);
+}
+
+.level:hover,
+.level.is-active {
+  transform: scale(var(--grow));
+}
+
+.level[aria-pressed="true"] {
+  outline: 2px solid var(--selected);
+  outline-offset: 2px;
+}
+
+.pyramid.has-active .level:not(.is-active) {
+  opacity: var(--dim-level);
+}
+
+.brace {
+  position: relative;
+  display: grid;
+  align-content: center;
+  grid-column: 2;
+  padding-inline-start: var(--space-3);
+  font-size: var(--text-label);
+  line-height: 1.25;
+  color: var(--muted);
+}
+
+.brace::before {
+  content: "";
+  position: absolute;
+  inset-block: var(--space-1);
+  inset-inline-start: 0;
+  inline-size: var(--space-2);
+  border: 2px solid var(--brace);
+  border-inline-start: 0;
+  border-start-end-radius: var(--space-1);
+  border-end-end-radius: var(--space-1);
+}
+
+.brace-title {
+  font-size: var(--text-meta);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.brace-aside {
+  color: var(--muted);
+}
+
+.brace-hooks {
+  --brace: var(--level-1);
+  grid-row: 1 / 5;
+}
+
+.brace-reminder {
+  --brace: var(--level-5);
+  grid-row: 5 / 6;
+}
+
+.brace-model {
+  --brace: var(--line-strong);
+  grid-row: 6 / 8;
+}
+
+.level-notes {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-meta);
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border-radius: var(--radius);
+}
+
+/* Parts: one card per kind, its head tinted in that kind's colour */
+
+.parts {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.panels {
+  display: grid;
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+.panel {
+  display: grid;
+  align-content: start;
+  min-inline-size: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-half) var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--kind) var(--tint-head), var(--surface));
+  border-start-start-radius: calc(var(--radius-large) - 1px);
+  border-start-end-radius: calc(var(--radius-large) - 1px);
+}
+
+.panel-title {
+  font-size: var(--text-panel);
+  font-weight: 700;
+  color: var(--kind);
+}
+
+.panel-count {
+  padding: 0 var(--space-2);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-kind);
+  background: var(--kind);
+  border-radius: var(--radius-pill);
+}
+
+.panel-kicker {
+  flex: 1 1 100%;
+  font-size: var(--text-meta);
+}
+
+.bands {
+  display: grid;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.band {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+}
+
+.band-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.band-name {
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.band-text {
+  font-size: var(--text-label);
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip-item {
+  position: relative;
+  display: flex;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--chip-height);
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-chip);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--kind) var(--tint-chip), var(--surface));
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  transition: opacity var(--duration), background-color var(--duration);
+}
+
+.chip:hover,
+.chip.is-open,
+.panels.has-filter .chip.is-lit {
+  background: color-mix(in srgb, var(--kind) var(--tint-chip-hover), var(--surface));
+  border-color: var(--kind);
+}
+
+.panels.has-filter .chip:not(.is-lit) {
+  opacity: var(--dim);
+}
+
+/* The popover: a sheet at the foot of a narrow screen, beside its chip on a wider one. */
+.tip {
+  position: fixed;
+  inset-inline: var(--space-3);
+  inset-block-end: var(--space-3);
+  z-index: var(--z-tip);
+  max-inline-size: calc(100vw - 2 * var(--space-4));
+  max-block-size: calc(100dvh - 2 * var(--space-3));
+  overflow-y: auto;
+  font-size: var(--text-meta);
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+}
+
+/* A kind's colour, for its panel and for the popover of each of its parts. */
+.kind-agent,
+.panel.is-agents {
+  --kind: var(--kind-agent);
+}
+
+.kind-skill,
+.panel.is-skills {
+  --kind: var(--kind-skill);
+}
+
+.kind-hook,
+.panel.is-hooks {
+  --kind: var(--kind-hook);
+}
+
+/* The strip: the group's colour and word, then the part's name. */
+.tip-strip {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  color: var(--on-kind);
+  background: var(--kind);
+}
+
+.tip-kind {
+  font-size: var(--text-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tip-name {
+  font-size: var(--text-chip);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.tip-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.tip-job {
+  font-size: var(--text-chip);
+}
+
+.tip-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--line);
+}
+
+.tip-grid dt {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  font-weight: 700;
+}
+
+.tip-grid dd {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.tip-grid dd.is-ink {
+  color: var(--ink);
+}
+
+.icon {
+  flex: none;
+  margin-block-start: var(--space-half);
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sprite {
+  position: absolute;
+}
+
+.meter {
+  display: flex;
+  gap: var(--space-half);
+  margin-block-end: var(--space-1);
+}
+
+.meter-seg {
+  flex: 1;
+  block-size: var(--meter-height);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-small);
+}
+
+.meter-seg.is-on {
+  background: var(--level);
+  border: 1px solid color-mix(in srgb, var(--level) 55%, var(--ink));
+}
+
+.meter-sentence {
+  color: var(--ink);
+}
+
+.ports {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.port {
+  padding: 0 var(--space-1);
+  font-size: var(--text-label);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+}
+
+/* A port's state is documented on the badge as data-state: runs, advisory or off; the words say it too. */
+.port[data-state="advisory"] {
+  border-style: dashed;
+}
+
+.port[data-state="off"] {
+  color: var(--muted);
+  border-color: var(--line);
+  text-decoration: line-through;
+}
+
+@media (pointer: coarse) {
+  .chip {
+    min-block-size: var(--chip-height-touch);
+  }
+}
+
+@media (min-width: 40rem) {
+  .tip {
+    position: absolute;
+    inset-inline: 0 auto;
+    inset-block: calc(100% + var(--space-1)) auto;
+    inline-size: var(--tip-width);
+  }
+
+  .tip.is-end {
+    inset-inline: auto 0;
+  }
+
+  .tip.is-above {
+    inset-block: auto calc(100% + var(--space-1));
+  }
+}
+
+@media (min-width: 60rem) {
+  .page {
+    padding: var(--space-4) var(--space-5) var(--space-6);
+  }
+
+  .page-head {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 36rem);
+  }
+
+  .core {
+    grid-template-columns: var(--pyramid-column) minmax(0, 1fr);
+  }
+
+  /* Agents beside skills, hooks across the foot: the three cards end on one line, with no hole under any. */
+  .panels {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+
+  .panel.is-hooks {
+    grid-column: 1 / -1;
+  }
+
+  .panel.is-skills .bands {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel.is-hooks .bands {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

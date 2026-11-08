@@ -1,0 +1,147 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/budget.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "SubagentHandback",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\" handback",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/brief_lint.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/commit_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent|Task|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" add",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" reset",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

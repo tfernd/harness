@@ -1,0 +1,4 @@
+{
+  "name": "harness",
+  "description": "Spec-driven multi-agent work: safety guards, enforced sub-agent reports, and a learning loop"
+}

@@ -1,0 +1,61 @@
+#!/bin/sh
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+tool="$root/bin/strip-comments"
+[ -f "$tool" ] || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+run() {
+    if command -v uv >/dev/null 2>&1; then
+        uv run --no-project -q python "$tool" "$@"
+    else
+        python3 "$tool" "$@"
+    fi
+}
+
+failed=0
+git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR >"$tmp/staged"
+
+while IFS= read -r path; do
+    case "${path##*/}" in
+    *.py | *.sh | *.js | *.css | *.html | *.html.in) ;;
+    *.*) continue ;;
+    esac
+    mode=$(git ls-files -s -- "$path" | cut -d' ' -f1)
+    case "$mode" in
+    100644 | 100755) ;;
+    *) continue ;;
+    esac
+
+    git show ":$path" >"$tmp/in"
+    if ! run --stdin "$path" <"$tmp/in" >"$tmp/out"; then
+        echo "pre-commit: cannot strip comments from $path" >&2
+        failed=1
+        continue
+    fi
+
+    if [ -f "$root/$path" ] && ! run "$root/$path" </dev/null; then
+        echo "pre-commit: cannot strip comments from the working copy of $path" >&2
+        failed=1
+        continue
+    fi
+
+    if cmp -s "$tmp/in" "$tmp/out"; then
+        continue
+    fi
+    blob=$(git hash-object -w --path "$path" "$tmp/out")
+    git update-index --cacheinfo "$mode,$blob,$path"
+
+    if ! run --syntax --stdin "$path" <"$tmp/out"; then
+        echo "pre-commit: $path fails its syntax check after stripping" >&2
+        failed=1
+    fi
+done <"$tmp/staged"
+
+if [ "$failed" -ne 0 ]; then
+    echo "pre-commit: commit aborted" >&2
+    exit 1
+fi

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Every pushed commit reaches every project through auto-update, so a push must pass what `make check` lists.
+exec make -C "$(git rev-parse --show-toplevel)" --no-print-directory check
