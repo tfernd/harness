@@ -6,7 +6,7 @@ description: Code carries no comments, docstrings or doc comments, in any langua
 # No comments, no docstrings
 
 Language rules: `harness:code-python`, `harness:code-js`, `harness:code-html-css`, `harness:code-terraform`,
-`harness:code-shell`.
+`harness:code-shell`, `harness:code-sql`, `harness:code-yaml`, `harness:code-make`.
 
 ## The rule
 
@@ -22,7 +22,7 @@ Language rules: `harness:code-python`, `harness:code-js`, `harness:code-html-css
 
 Only text a machine reads: a shebang, an encoding line, a PEP 723 block, a license header the project requires, and a
 directive a tool needs (`# type: ignore[...]` only where a language skill allows it, `// @ts-expect-error`,
-`# shellcheck disable=`, `<!-- prettier-ignore -->`, `"use strict"`).
+`# shellcheck disable=`, `<!-- prettier-ignore -->`, `"use strict"`), and the version comment after a pinned SHA (`uses: owner/action@<sha> # v4.1.0`), which Dependabot and Renovate read.
 
 A docstring a program reads (`__doc__`, an argparse description) is replaced by a string literal in the code.
 
