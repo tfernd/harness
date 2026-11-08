@@ -58,6 +58,8 @@
   --level-height: 2.25rem;
   --brace-column: 5rem;
   --tip-width: 22rem;
+  --full-width: 46rem;
+  --measure: 72ch;
   --meter-height: 0.5rem;
   --dim: 0.28;
   --dim-level: 0.45;
@@ -731,9 +733,10 @@ a {
 
 /* The strip: the group's colour and word, then the part's name. */
 .tip-strip {
+  position: sticky;
+  inset-block-start: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
   color: var(--on-kind);
@@ -748,9 +751,166 @@ a {
 }
 
 .tip-name {
+  flex: 1;
+  min-inline-size: 0;
   font-size: var(--text-chip);
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+/* The switch sits on the strip, so it stays in view while the text scrolls beneath it. */
+.tip-switch {
+  flex: none;
+  min-block-size: var(--chip-height);
+  padding-inline: var(--space-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 700;
+  color: var(--on-kind);
+  background: transparent;
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.tip-switch:hover {
+  background: color-mix(in srgb, var(--on-kind) 18%, transparent);
+}
+
+.tip-switch:focus-visible,
+.tip-view:focus-visible,
+.full-code:focus-visible,
+.full-table:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tip-switch:focus-visible {
+  outline-color: var(--on-kind);
+}
+
+/* The whole text: a large sheet over the page on any width, so a long file has room to scroll inside it. */
+.tip.is-full {
+  position: fixed;
+  inset: var(--space-3) var(--space-3) auto;
+  inline-size: auto;
+  max-inline-size: var(--full-width);
+  margin-inline: auto;
+  max-block-size: calc(100dvh - 2 * var(--space-3));
+}
+
+.tip-view {
+  padding: var(--space-3) var(--space-4) var(--space-5);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.tip-view > * {
+  max-inline-size: var(--measure);
+}
+
+.tip-view > pre,
+.tip-view > .full-table {
+  max-inline-size: none;
+}
+
+.tip-view h3,
+.tip-view h4,
+.tip-view h5,
+.tip-view h6 {
+  margin-block: var(--space-5) var(--space-2);
+  line-height: 1.25;
+}
+
+.tip-view h3 {
+  font-size: var(--text-panel);
+  padding-block-end: var(--space-1);
+  border-block-end: 1px solid var(--line);
+}
+
+.tip-view h4 {
+  font-size: var(--text-body);
+}
+
+.tip-view h5,
+.tip-view h6 {
+  font-size: var(--text-chip);
+  color: var(--muted);
+}
+
+.tip-view :is(p, ul, ol, blockquote, pre, hr) {
+  margin-block: 0 var(--space-3);
+}
+
+.tip-view > :first-child {
+  margin-block-start: 0;
+}
+
+.tip-view :is(ul, ol) {
+  padding-inline-start: var(--space-5);
+}
+
+.tip-view li > :is(ul, ol) {
+  margin-block: var(--space-1) 0;
+}
+
+.tip-view blockquote {
+  padding-inline-start: var(--space-3);
+  color: var(--muted);
+  border-inline-start: 3px solid var(--line-strong);
+}
+
+.tip-view hr {
+  border: 0;
+  border-block-start: 1px solid var(--line);
+}
+
+.tip-view a {
+  color: var(--kind);
+  text-underline-offset: 0.2em;
+}
+
+.tip-view :not(pre) > code {
+  padding: var(--space-half) var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-soft);
+  border-radius: var(--radius-small);
+}
+
+.full-code {
+  padding: var(--space-3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  tab-size: 4;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.full-table {
+  overflow-x: auto;
+  margin-block: 0 var(--space-3);
+}
+
+.full-table table {
+  border-collapse: collapse;
+  font-size: var(--text-chip);
+}
+
+.full-table :is(th, td) {
+  padding: var(--space-1) var(--space-3);
+  text-align: start;
+  vertical-align: top;
+  border: 1px solid var(--line);
+  overflow-wrap: normal;
+}
+
+.full-table th {
+  background: var(--surface-soft);
 }
 
 .tip-body {

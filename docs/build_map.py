@@ -56,6 +56,17 @@ SNIPPET = 60
 SNIPPET_LEAD = 20
 # The slots the template must hold exactly once.
 SINGLE_SLOTS = ("pyramid", "panels")
+HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*#*")
+FENCE = re.compile(r"(`{3,}|~{3,})\s*([\w+-]*)\s*")
+BULLET = re.compile(r"([-*+]|\d{1,9}[.)])\s+(.*)")
+RULE = re.compile(r"([-*_])(?:\s*\1){2,}\s*")
+TABLE_DIVIDER = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*")
+CODE_SPAN = re.compile(r"(`+)(.+?)\1(?!`)")
+LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+BOLD = re.compile(r"\*\*(.+?)\*\*")
+ITALIC = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)")
+# The heading level a part's text starts at inside its popover: below the page's title and panel headings.
+HEADING_SHIFT = 2
 # The words a port's state reads as; a popover shows the words before the comma.
 PORT_STATES = {
     "runs": "runs",
@@ -102,6 +113,7 @@ class Facts(NamedTuple):
     budgets: dict[str, int]  # keys are data: a role to its default turns, `*` for any other
     ports: dict[str, dict[str, str]]  # keys are data: a hook script to each port's state
     values: dict[str, str]  # keys are data: a `{{fact}}` token's name to its text
+    full: dict[str, str]  # keys are data: `panel:name` to the part's whole text as markup
 
 
 class Slot(NamedTuple):
@@ -502,7 +514,258 @@ def get_facts(root: Path, /) -> Facts:
         "script_hash": get_fingerprint(root / ASSETS[1]),
     }
 
-    return Facts(agents, skills, hooks, budgets, get_ports(root, scripts), {key: str(value) for key, value in values.items()})
+    return Facts(
+        agents,
+        skills,
+        hooks,
+        budgets,
+        get_ports(root, scripts),
+        {key: str(value) for key, value in values.items()},
+        get_full_texts(root, agents, skills, scripts),
+    )
+
+
+# =========================================================================== #
+# Reading A Part's Whole Text
+# =========================================================================== #
+
+
+def make_inline(text: str, /) -> str:
+    """Markdown's inline marks as markup: code spans, links to the web, bold and italic. Everything else is escaped text."""
+
+    parts = []
+    last = 0
+    for span in CODE_SPAN.finditer(text):
+        parts.append(make_emphasis(text[last : span.start()]))
+        parts.append(f"<code>{html.escape(span.group(2).strip())}</code>")
+        last = span.end()
+    parts.append(make_emphasis(text[last:]))
+
+    return "".join(parts)
+
+
+def make_emphasis(text: str, /) -> str:
+    """Links, bold and italic over text with no code span in it; a link that does not lead to the web keeps only its words."""
+
+    def link(match: re.Match[str]) -> str:
+        words, target = html.escape(match.group(1)), match.group(2)
+        if not target.startswith(("http://", "https://")):
+            return words
+        return f'<a href="{html.escape(target)}" rel="noopener">{words}</a>'
+
+    pieces = []
+    last = 0
+    for match in LINK.finditer(text):
+        pieces.append(make_marks(text[last : match.start()]))
+        pieces.append(link(match))
+        last = match.end()
+    pieces.append(make_marks(text[last:]))
+
+    return "".join(pieces)
+
+
+def make_marks(text: str, /) -> str:
+    """Bold and italic over text with no link or code span in it."""
+
+    escaped = html.escape(text)
+    bold = BOLD.sub(r"<strong>\1</strong>", escaped)
+
+    return ITALIC.sub(lambda match: f"<em>{match.group(1) or match.group(2)}</em>", bold)
+
+
+def make_code_block(lines: Iterable[str], language: str, /) -> str:
+    """A fenced block as markup, its text escaped and its language named for the reader."""
+
+    label = f' data-language="{html.escape(language)}"' if language else ""
+
+    return f'<pre class="full-code"{label} tabindex="0"><code>{html.escape(chr(10).join(lines))}</code></pre>'
+
+
+def split_cells(line: str, /) -> list[str]:
+    """A table row's cells: split at each `|` that is not escaped and not inside a code span."""
+
+    cells = []
+    current = []
+    in_code = False
+    index = 0
+    stripped = line.strip().removeprefix("|")
+    while index < len(stripped):
+        char = stripped[index]
+        if char == "\\" and stripped[index + 1 : index + 2] == "|":
+            current.append("|")
+            index += 1
+        elif char == "`":
+            in_code = not in_code
+            current.append(char)
+        elif char == "|" and not in_code:
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    if current or not stripped.endswith("|"):
+        cells.append("".join(current).strip())
+
+    return cells
+
+
+def make_table(rows: list[str], /) -> str:
+    """A pipe table: the first row heads it, the divider row is dropped."""
+
+    head, *body = (split_cells(row) for row in (rows[0], *rows[2:]))
+    width = len(head)
+    header = "".join(f"<th>{make_inline(cell)}</th>" for cell in head)
+    lines = []
+    for cells in body:
+        padded = (cells + [""] * width)[:width]
+        lines.append("<tr>" + "".join(f"<td>{make_inline(cell)}</td>" for cell in padded) + "</tr>")
+
+    return f'<div class="full-table" tabindex="0"><table><thead><tr>{header}</tr></thead><tbody>{"".join(lines)}</tbody></table></div>'
+
+
+def is_block_start(line: str, next_line: str, /) -> bool:
+    """Whether a line begins something other than a paragraph's continuation."""
+
+    return bool(
+        HEADING.fullmatch(line)
+        or FENCE.match(line)
+        or BULLET.match(line.lstrip()) and len(line) - len(line.lstrip()) < 4
+        or RULE.fullmatch(line)
+        or line.startswith(">")
+        or "|" in line and TABLE_DIVIDER.fullmatch(next_line) and "-" in next_line
+    )
+
+
+def make_list(lines: list[str], start: int, /) -> tuple[str, int]:
+    """The list that begins at `lines[start]`, as markup, and the index after it."""
+
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    first = BULLET.match(lines[start].lstrip())
+    assert first is not None
+    ordered = first.group(1)[0].isdigit()
+    items = []
+    index = start
+    while index < len(lines):
+        match = BULLET.match(lines[index].lstrip())
+        line_indent = len(lines[index]) - len(lines[index].lstrip())
+        if match is None or line_indent != indent or match.group(1)[0].isdigit() != ordered:
+            break
+        content_indent = line_indent + len(lines[index].lstrip()) - len(match.group(2)) if match.group(2) else line_indent + 2
+        body = [match.group(2)]
+        index += 1
+        while index < len(lines):
+            line = lines[index]
+            if not line.strip():
+                ahead = next((later for later in lines[index + 1 :] if later.strip()), "")
+                if ahead and len(ahead) - len(ahead.lstrip()) >= content_indent:
+                    body.append("")
+                    index += 1
+                    continue
+                break
+            line_indent_here = len(line) - len(line.lstrip())
+            if line_indent_here >= content_indent:
+                body.append(line[content_indent:])
+            elif BULLET.match(line.lstrip()) and line_indent_here <= indent:
+                break
+            elif body[-1] and not is_block_start(line, ""):
+                body.append(line.strip())
+            else:
+                break
+            index += 1
+        ahead = next((later for later in lines[index:] if later.strip()), "")
+        while index < len(lines) and not lines[index].strip() and BULLET.match(ahead.lstrip()) and len(ahead) - len(ahead.lstrip()) == indent:
+            index += 1
+        inner = make_blocks(body)
+        if inner.startswith("<p>") and inner.count("<p>") == 1 and inner.endswith("</p>"):
+            inner = inner[3:-4]
+        items.append(f"<li>{inner}</li>")
+    tag = "ol" if ordered else "ul"
+
+    return f"<{tag}>{''.join(items)}</{tag}>", index
+
+
+def make_blocks(lines: list[str], /) -> str:
+    """Markdown's blocks as markup: headings, paragraphs, lists, fenced code, quotes, rules and pipe tables."""
+
+    out = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        next_line = lines[index + 1] if index + 1 < len(lines) else ""
+        stripped = line.strip()
+        fence = FENCE.fullmatch(stripped)
+        heading = HEADING.fullmatch(line)
+        if not stripped:
+            index += 1
+        elif fence:
+            mark, language = fence.group(1), fence.group(2)
+            body = []
+            index += 1
+            while index < len(lines) and not (lines[index].strip().startswith(mark) and set(lines[index].strip()) <= set(mark[0])):
+                body.append(lines[index])
+                index += 1
+            index += 1
+            out.append(make_code_block(body, language))
+        elif heading:
+            hashes, text = heading.groups()
+            level = min(len(hashes) + HEADING_SHIFT, 6)
+            out.append(f"<h{level}>{make_inline(text)}</h{level}>")
+            index += 1
+        elif RULE.fullmatch(stripped) and not BULLET.match(stripped):
+            out.append("<hr>")
+            index += 1
+        elif "|" in line and TABLE_DIVIDER.fullmatch(next_line) and "-" in next_line:
+            rows = [line, next_line]
+            index += 2
+            while index < len(lines) and lines[index].strip() and "|" in lines[index]:
+                rows.append(lines[index])
+                index += 1
+            out.append(make_table(rows))
+        elif BULLET.match(line.lstrip()) and len(line) - len(line.lstrip()) < 4:
+            markup, index = make_list(lines, index)
+            out.append(markup)
+        elif stripped.startswith(">"):
+            quoted = []
+            while index < len(lines) and lines[index].strip().startswith(">"):
+                quoted.append(lines[index].strip().removeprefix(">").removeprefix(" "))
+                index += 1
+            out.append(f"<blockquote>{make_blocks(quoted)}</blockquote>")
+        else:
+            paragraph = [stripped]
+            index += 1
+            while index < len(lines) and lines[index].strip() and not is_block_start(lines[index], lines[index + 1] if index + 1 < len(lines) else ""):
+                paragraph.append(lines[index].strip())
+                index += 1
+            out.append(f"<p>{make_inline(' '.join(paragraph))}</p>")
+
+    return "".join(out)
+
+
+def make_markdown(text: str, /) -> str:
+    """A markdown file's body as markup, its frontmatter dropped; every character from the file is escaped."""
+
+    lines = text.splitlines()
+    if lines and lines[0] == "---":
+        end = next((number for number, line in enumerate(lines[1:], start=1) if line == "---"), None)
+        if end is not None:
+            lines = lines[end + 1 :]
+
+    return make_blocks(lines)
+
+
+def get_full_texts(root: Path, agents: tuple[Agent, ...], skills: dict[str, Skill], scripts: Iterable[str], /) -> dict[str, str]:
+    """Each part's whole text as markup, keyed `panel:name`: a skill's or agent's body, a hook's source in one code block."""
+
+    full = {}
+    for agent in agents:
+        full[f"agent:{agent.name}"] = make_markdown((root / "agents" / f"{agent.name}.md").read_text(encoding="utf-8"))
+    for name in skills:
+        full[f"skill:{name}"] = make_markdown((root / "skills" / name / "SKILL.md").read_text(encoding="utf-8"))
+    for script in scripts:
+        source = (root / "hooks" / script).read_text(encoding="utf-8")
+        full[f"hook:{script}"] = make_code_block(source.splitlines(), "python")
+
+    return full
 
 
 # =========================================================================== #
@@ -604,8 +867,10 @@ def make_row(icon: str, term: str, value: str, /, *, is_markup: bool = False) ->
     return f"<dt>{icon_markup}{html.escape(term)}</dt><dd>{shown}</dd>"
 
 
-def make_chip(panel: str, name: str, job: str, rows: Iterable[str], /, *, levels: tuple[Level, ...] = ()) -> str:
-    """One chip and its popover: a strip in the group's colour with its word and the name, the job, then the icon `rows`.
+def make_chip(panel: str, name: str, job: str, rows: Iterable[str], full: str, /, *, levels: tuple[Level, ...] = ()) -> str:
+    """One chip and its popover: a strip in the group's colour with its word, the name and the button for the whole text, the job, then the icon `rows`.
+
+    `full` is the part's whole text as markup; it waits in an inert template until the button asks for it.
 
     `levels` are the levels the pyramid lights the chip for.
     """
@@ -618,9 +883,12 @@ def make_chip(panel: str, name: str, job: str, rows: Iterable[str], /, *, levels
     return (
         f'<li class="chip-item"><button type="button" class="chip" data-item="{panel}:{escaped}"{data_levels} aria-describedby="{tip_id}">'
         f"{escaped}</button>"
-        f'<div class="tip kind-{panel}" id="{tip_id}" role="tooltip" hidden>'
-        f'<p class="tip-strip"><span class="tip-kind">{panel}</span><span class="tip-name">{escaped}</span></p>'
-        f'<div class="tip-body"><p class="tip-job">{html.escape(job)}</p><dl class="tip-grid">{"".join(rows)}</dl></div></div></li>'
+        f'<div class="tip kind-{panel}" id="{tip_id}" role="group" aria-label="{escaped}" hidden>'
+        f'<p class="tip-strip"><span class="tip-kind">{panel}</span><span class="tip-name">{escaped}</span>'
+        f'<button type="button" class="tip-switch" data-full="{tip_id}-full" aria-expanded="false" aria-controls="{tip_id}-view">Full text</button></p>'
+        f'<div class="tip-body"><p class="tip-job">{html.escape(job)}</p><dl class="tip-grid">{"".join(rows)}</dl></div>'
+        f'<div class="tip-view" id="{tip_id}-view" role="region" aria-label="Full text of {escaped}" tabindex="0" hidden></div></div>'
+        f'<template id="{tip_id}-full">{full}</template></li>'
     )
 
 
@@ -635,7 +903,7 @@ def make_agent_chip(agent: Agent, facts: Facts, /) -> str:
         make_row("when", "Use", agent.use),
     )
 
-    return make_chip("agent", agent.name, agent.job, rows)
+    return make_chip("agent", agent.name, agent.job, rows, facts.full[f"agent:{agent.name}"])
 
 
 def make_skill_chip(name: str, layout: Layout, /) -> str:
@@ -652,7 +920,7 @@ def make_skill_chip(name: str, layout: Layout, /) -> str:
     rows = (make_row("kind", "Kind", "advice"), make_row("load", "Loaded", loaded), make_row("when", "Load", skill.when))
     levels = tuple(level for level in LEVELS if level.key == SKILL_LEVEL)
 
-    return make_chip("skill", name, skill.job, rows, levels=levels)
+    return make_chip("skill", name, skill.job, rows, layout.facts.full[f"skill:{name}"], levels=levels)
 
 
 def make_ports(states: dict[str, str], /) -> str:
@@ -715,7 +983,7 @@ def make_hook_chip(script: str, layout: Layout, /) -> str:
         make_row("ports", "Ported", make_ports(layout.facts.ports[script]), is_markup=True),
     )
 
-    return make_chip("hook", script, HOOK_JOBS[script], rows, levels=levels)
+    return make_chip("hook", script, HOOK_JOBS[script], rows, layout.facts.full[f"hook:{script}"], levels=levels)
 
 
 def make_panel(panel: str, title: str, kicker: str, bands: Iterable[tuple[Kind, list[str]]], /) -> str:
@@ -850,10 +1118,12 @@ def make_page(template: str, facts: Facts, /) -> str:
     with_facts = FACT.sub(lambda match: get_fact(facts.values, match.group(1)), template)
     slots = [Slot(match.group(1), tuple(match.group(2).split())) for match in SLOT.finditer(with_facts)]
     layout = make_layout(slots, facts)
-    page = SLOT.sub(lambda match: make_slot(Slot(match.group(1), tuple(match.group(2).split())), layout), with_facts)
+    # Only the template is searched: a part's own text may hold `{{` or `<!-- @` legitimately.
+    bare = SLOT.sub("", with_facts)
     for leftover in ("<!-- @", "{{"):
-        if leftover in page:
-            raise ValueError(f"the template holds a marker the build cannot read, near {page[page.index(leftover) :][:60]!r}")
+        if leftover in bare:
+            raise ValueError(f"the template holds a marker the build cannot read, near {bare[bare.index(leftover) :][:60]!r}")
+    page = SLOT.sub(lambda match: make_slot(Slot(match.group(1), tuple(match.group(2).split())), layout), with_facts)
 
     return page
 

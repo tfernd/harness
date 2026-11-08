@@ -38,16 +38,34 @@
 
     const place = (chip, tip) => {
       tip.classList.remove("is-end", "is-above");
-      if (!WIDE_QUERY.matches) return;
+      if (!WIDE_QUERY.matches || tip.classList.contains("is-full")) return;
       const tipBox = tip.getBoundingClientRect();
       if (tipBox.right > page.clientWidth - EDGE_PX) tip.classList.add("is-end");
       const chipBox = chip.getBoundingClientRect();
       if (tipBox.bottom > window.innerHeight - EDGE_PX && chipBox.top > tipBox.height + EDGE_PX) tip.classList.add("is-above");
     };
 
+    // The whole text is cloned from its template the first time it is asked for, so a closed page carries it inert.
+    const setFull = (tip, isFull) => {
+      const button = tip.querySelector(".tip-switch");
+      const view = tip.querySelector(".tip-view");
+      const template = document.getElementById(button?.dataset.full ?? "");
+      if (!button || !view || !(template instanceof HTMLTemplateElement)) throw new Error(`The full text of ${tip.id} is missing from the page.`);
+      if (isFull && view.childElementCount === 0) view.append(template.content.cloneNode(true));
+      view.hidden = !isFull;
+      view.scrollTop = 0;
+      for (const part of tip.querySelectorAll(".tip-body")) part.hidden = isFull;
+      tip.classList.toggle("is-full", isFull);
+      if (isFull) tip.classList.remove("is-end", "is-above");
+      button.setAttribute("aria-expanded", String(isFull));
+      button.textContent = isFull ? "Summary" : "Full text";
+    };
+
     const close = () => {
       clearTimeout(hoverTimer);
       if (!open) return;
+      if (open.tip.contains(document.activeElement)) open.chip.focus({ preventScroll: true });
+      setFull(open.tip, false);
       open.chip.classList.remove("is-open");
       open.tip.hidden = true;
       open = null;
@@ -88,6 +106,14 @@
       if (open && !isPinned && !open.chip.parentElement?.contains(event.relatedTarget)) close();
     });
     root.addEventListener("click", (event) => {
+      const switcher = findClosest(event, ".tip-switch");
+      if (switcher && open?.tip.contains(switcher)) {
+        isPinned = true;
+        const isFull = switcher.getAttribute("aria-expanded") !== "true";
+        setFull(open.tip, isFull);
+        if (!isFull) place(open.chip, open.tip);
+        return;
+      }
       const chip = findClosest(event, ".chip");
       if (!chip) return;
       if (open?.chip === chip && isPinned) close();
