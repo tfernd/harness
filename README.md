@@ -42,7 +42,7 @@ you ── ask ──> main session (follows the orchestrator skill)
  before each call   guard · delegate · skill_gate · brief_lint · budget
  after a read       nudge
  when an agent ends report_gate: checks the report before its handback, files problems in the inbox and the ledger
- when a turn ends   turn: status, each agent's outcome, lessons, and a retro when 20 items wait
+ when a turn ends   turn: holds for the status and a due retro; notes agents and lessons when 20 items wait
                  ▼
  inbox ──> analyst ──> a new rule in a hook, skill or brief template, or a line in open.md
 ```
@@ -77,7 +77,7 @@ off in the owner file, for example `"commit_style": false` or `"main_edits": {"m
 | Teacher | `context.py` | Session or agent starts | Adds text agents would otherwise forget: load the orchestrator, the whole `tool-habits` skill, the report form owed, past lessons, open problems. Refuses nothing |
 | Teacher | `skill_gate.py` | Before a command or edit | With the `skill_gate` key, lets an edit run and gives the agent the skill's own text when it has not seen it, for that kind of file, including a shell write or a Python script that writes, and for a commit or pull request the `git-commit` text. Once per agent; needs no Skill call |
 | Teacher | `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent, and once per agent after a test or build piped into `tail`/`head` without `pipefail`. Refuses nothing |
-| Closer | `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, a status that does not name each agent run under `## Agents`, a lesson with no rule changed, a bare "no lessons" after a refused call, or a due retro |
+| Closer | `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, an invalid handled line or a due retro; only notes (the turn ends) a status that does not name each agent run under `## Agents`, a lesson with no rule changed, or a bare "no lessons" after a refused call |
 
 A refusal says which rule fired and what to change. A rule marked as letting the call run says so in a note with the result.
 

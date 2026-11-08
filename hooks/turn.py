@@ -346,7 +346,8 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
     min_calls = settings.get("min_calls", MIN_CALLS)
     transcript = read_transcript(event.get("transcript_path") or "")
     message = get_closing_message(event, transcript)
-    problems: list[str] = []
+    hard: list[str] = []
+    soft: list[str] = []
     is_deferred = False
     if calls >= min_calls:
         found = {line.strip() for line in message.splitlines()}
@@ -355,34 +356,34 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
             is_deferred = True
             write_atomic(deferred_path, "1")
         elif missing:
-            problems.append(
+            hard.append(
                 f'the turn ran agents or edited files ({calls} calls), so the closing message needs the job status, as '
                 f'"## NAME" lines: {"; ".join(missing)}'
             )
         if not is_deferred:
-            problems += check_agents(message, call_lines)
+            soft += check_agents(message, call_lines)
     released = set(released_path.read_text().split()) if released_path.exists() else set()
     handled: set[str] = set()
     invalid: dict[str, str] = {}
     open_ids: list[str] = []
     if is_project_root(root):
-        problems += check_lessons(message, rules_path, root, config, transcript)
+        soft += check_lessons(message, rules_path, root, config, transcript)
         handled, invalid = get_handled(root, rules_path, config)
         open_ids = get_open_feedback(root, session, released, handled)
     if open_ids and count_running_agents(transcript) > 0:
         open_ids = []
     if open_ids:
-        problems.append(
+        hard.append(
             f"a retro is due: at least {RETRO_ITEMS} feedback items wait in {INBOX}. Run one `harness:analyst` on them, apply or reject its "
             f'proposals, then add "{open_ids[0]}: rule written in FILE" (FILE changed this turn) or "{open_ids[0]}: rejected: REASON" '
             f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}"
         )
-    problems += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
+    hard += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
     count = blocks_path.read_text().strip() if blocks_path.exists() else ""
     blocks = int(count) if count.isdecimal() and count.isascii() else 0
-    if problems and blocks < MAX_BLOCKS:
+    if hard and blocks < MAX_BLOCKS:
         write_atomic(blocks_path, str(blocks + 1))
-        listed = "\n".join(f"- {problem}" for problem in problems)
+        listed = "\n".join([*(f"- {problem}" for problem in hard), *(f"- note, does not hold the turn: {problem}" for problem in soft)])
         print(json.dumps({"decision": "block", "reason": f"This turn ends with open checks:\n{listed}\nFix each, then stop."}))
         return 0
     if calls >= min_calls and not is_deferred:
@@ -393,8 +394,10 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
     if open_ids:
         write_atomic(released_path, " ".join(sorted(released | set(open_ids))))
     write_atomic(blocks_path, "0")
-    if problems:
-        print(json.dumps({"systemMessage": f"The turn ends with open checks: {'; '.join(problems)}"}))
+    if hard:
+        print(json.dumps({"systemMessage": f"The turn ends with open checks: {'; '.join([*hard, *soft])}"}))
+    elif soft:
+        print(json.dumps({"systemMessage": f"Note, the turn is not held: {'; '.join(soft)}"}))
 
     return 0
 

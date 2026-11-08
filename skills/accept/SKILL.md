@@ -47,7 +47,7 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
    (Problem | Fix | State), where a fix is a rule, hook or gate named by its file, never "be careful".
 4. `## Agents`, required when the turn ran agents: one row per agent, its Task cell starting with the description it was
    given, and what happened to its problems (fixed in FILE, filed, rejected: why, or none); then a one-line model fit (was
-   each model right for its task). The Stop hook holds a turn whose section misses an agent.
+   each model right for its task). The Stop hook only notes a section that misses an agent; it does not hold the turn.
 
    | Agent (role, model) | Task | Result | Quality 1-5 | What went wrong | Brief fix |
    |---|---|---|---|---|---|
@@ -57,8 +57,9 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
 6. Optional: `## Not verified` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
    against a named baseline with its command).
 7. `## Next`: the one thing to do next, with its cost.
-8. `## Lessons`: each lesson and the rule file written this turn. A Lessons section needs a rule-file change made in the
-   turn; with none, the body of the `## Lessons` section is the single line `Lessons: none`.
+8. `## Lessons`: each lesson and the rule file written this turn. A Lessons section should show a rule-file change made in the
+   turn; with none, the body of the `## Lessons` section is the single line `Lessons: none`. The Stop hook only notes a
+   Lessons section that lacks a change; it does not hold the turn.
 
 Rules: say what a thing does before its jargon. Report failures and bent rules as plainly as successes. Mark each claim
 measured (ran, with the command) or read (seen, not run).
