@@ -19,7 +19,7 @@ from shell import Segment, Word, get_segments
 
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 DEFAULTS: dict = {
-    "guard": {"scratch": "__scratch__", "no_tmp": True, "ask_packages": True},
+    "guard": {"scratch": "__scratch__", "no_tmp": True, "ask_packages": True, "ask_cloud": True, "ask_installers": True},
     "brief": {},
     "progress": {"every": 10},
     "tests_kept": {"enabled": True},
@@ -41,6 +41,12 @@ DEFAULTS: dict = {
         "test_*.py": ["harness:testing"],
         "*.test.*": ["harness:testing"],
         "*.spec.*": ["harness:testing"],
+        "*.sql": ["harness:code-sql"],
+        "*.yaml": ["harness:code-yaml"],
+        "*.yml": ["harness:code-yaml"],
+        "Makefile": ["harness:code-make"],
+        "GNUmakefile": ["harness:code-make"],
+        "*.mk": ["harness:code-make"],
         "*.sh": ["harness:code-shell"],
         "*.bash": ["harness:code-shell"],
         "tests/*.py": ["harness:testing", "harness:code-python"],

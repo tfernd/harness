@@ -82,7 +82,10 @@ TRASH_HELPER = (
 )
 
 ASK_RULE = "packages"
-REMOTE_RULES = frozenset({"denied", "hidden", ASK_RULE})
+CLOUD_RULE = "cloud"
+INSTALLER_RULE = "installer"
+ASK_RULES = (ASK_RULE, CLOUD_RULE, INSTALLER_RULE)
+REMOTE_RULES = frozenset({"denied", "hidden", *ASK_RULES})
 MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Your own throwaway files go in `__scratch__/`, where `rm` works; "
     "a tracked file that must go uses `git rm`.",
@@ -93,6 +96,10 @@ MESSAGES = {
     "run and a package change is asked: write the command plainly as its own call.",
     ASK_RULE: "changing packages is the owner's to run, so they are asked first. `uvx`, `uv tool`, `npx`, `bunx` and `dlx` "
     "fetch a tool outside the lock: run the project's own as `uv run --frozen <tool>` or through a package.json script.",
+    CLOUD_RULE: "`{what}` writes to an AWS account, and that cannot be undone from this session, so the owner is asked first: run it "
+    "yourself, or have the owner approve it. Reads (`describe-`, `list-`, `get-`, `s3 ls`) run freely; see `harness:aws-cli`.",
+    INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `__scratch__/`, read it, "
+    "then run that file, or have the owner approve the pipe.",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
@@ -126,6 +133,8 @@ class Policy(NamedTuple):
     trash: str = ""
     no_tmp: bool = False
     ask_packages: bool = False
+    ask_cloud: bool = False
+    ask_installers: bool = False
 
 
 def get_policy(cwd: str, /) -> Policy:
@@ -139,6 +148,8 @@ def get_policy(cwd: str, /) -> Policy:
         trash=str(root / TRASH_FOLDER) if is_project_root(root) else "",
         no_tmp=bool(guard.get("no_tmp")),
         ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),
+        ask_cloud=bool(guard.get("ask_cloud")),
+        ask_installers=bool(guard.get("ask_installers")),
     )
 
 
@@ -290,6 +301,141 @@ def is_module_pip(arguments: list[str], /) -> bool:
         argument == "-mpip" or (argument == "-m" and arguments[index + 1 : index + 2] == ["pip"])
         for index, argument in enumerate(arguments)
     )
+
+
+AWS_VALUE_OPTIONS = frozenset({
+    "--profile", "--region", "--output", "--endpoint-url", "--query", "--color", "--ca-bundle", "--cli-read-timeout",
+    "--cli-connect-timeout", "--exclude", "--include",
+})
+AWS_READ_PREFIXES = ("describe-", "list-", "get-", "batch-get-", "head-", "lookup-", "search-")
+AWS_READ_OPERATIONS = frozenset({"filter-log-events", "wait", "help"})
+AWS_SERVICE_READS = {
+    "s3": frozenset({"ls", "presign"}),
+    "logs": frozenset({"tail"}),
+    "configure": frozenset({"list", "get"}),
+    "dynamodb": frozenset({"query", "scan"}),
+    "cloudformation": frozenset({"validate-template"}),
+    "resource-explorer-2": frozenset({"search"}),
+}
+AWS_TRANSFERS = frozenset({"cp", "sync"})
+AWS_INFORMATION_OPTIONS = frozenset({"--version", "--help"})
+INFRASTRUCTURE_WRITES = {
+    "sam": frozenset({"deploy", "delete", "sync", "publish", "bootstrap"}),
+    "cdk": frozenset({"deploy", "destroy", "bootstrap", "watch", "import"}),
+}
+S3_SCHEME = "s3://"
+CLOUD_TOOLS = frozenset({"aws", *INFRASTRUCTURE_WRITES})
+CLOUD_WRAPPERS = frozenset({"npx", "bunx", "pnpx", "uv", "uvx", "poetry", "pnpm", "npm", "yarn", "bun", "pipx"})
+FETCHERS = frozenset({"curl", "wget", "fetch"})
+CODE_READERS = frozenset({"node", "perl", "ruby"})
+SUBSTITUTION_READERS = frozenset({"eval", "source", "."})
+CODE_OPTION_LETTERS = frozenset("ceEmp")
+SUBSTITUTION_WORD = "$"
+
+
+def get_positionals(arguments: list[str], value_options: Set[str], /) -> list[str]:
+
+    positionals: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument.startswith("-") and argument != "-":
+            index += 2 if argument in value_options else 1
+        else:
+            positionals.append(argument)
+            index += 1
+
+    return positionals
+
+
+def is_aws_download(paths: list[str], /) -> bool:
+
+    return len(paths) == 2 and paths[0].startswith(S3_SCHEME) and not paths[1].startswith(S3_SCHEME)
+
+
+def is_aws_read(arguments: list[str], /) -> bool:
+
+    positionals = get_positionals(arguments, AWS_VALUE_OPTIONS)
+    if AWS_INFORMATION_OPTIONS & set(arguments) or not positionals:
+        return True
+    service = positionals[0]
+    operation = positionals[1] if len(positionals) > 1 else ""
+    if operation == "" and service == "configure":
+        return False
+    if operation == "" or "help" in positionals[:2] or (len(positionals) == 3 and positionals[2] == "help"):
+        return True
+    if service == "s3" and operation in AWS_TRANSFERS and is_aws_download(positionals[2:]):
+        return True
+
+    return operation in AWS_SERVICE_READS.get(service, frozenset()) or operation in AWS_READ_OPERATIONS or operation.startswith(AWS_READ_PREFIXES)
+
+
+def get_cloud_label(command: Command, /) -> str:
+
+    name = os.path.basename(command.name)
+    arguments = [word.text for word in command.arguments]
+    if name in CLOUD_WRAPPERS:
+        wrapped = next((index for index, argument in enumerate(arguments) if os.path.basename(argument) in CLOUD_TOOLS), -1)
+        return get_cloud_label(Command(arguments[wrapped], command.arguments[wrapped + 1 :])) if wrapped >= 0 else ""
+    if name == "aws":
+        return "" if is_aws_read(arguments) else " ".join(["aws", *get_positionals(arguments, AWS_VALUE_OPTIONS)[:2]])
+    writes = INFRASTRUCTURE_WRITES.get(name, frozenset()) & set(arguments)
+
+    return f"{name} {min(writes)}" if writes and "--help" not in arguments else ""
+
+
+def reads_stdin_as_code(name: str, arguments: list[str], /) -> bool:
+
+    if name in SHELLS:
+        return is_stdin_shell(arguments)
+    has_code_option = any(
+        argument.startswith("-") and not argument.startswith("--") and CODE_OPTION_LETTERS & set(argument[1:]) for argument in arguments
+    )
+    positionals = [argument for argument in arguments if not argument.startswith("-")]
+
+    return not has_code_option and not positionals
+
+
+def is_code_runner(name: str, /) -> bool:
+
+    return name in SHELLS or name in CODE_READERS or name.startswith("python")
+
+
+def is_substitution_fed(name: str, arguments: list[str], /) -> bool:
+
+    if not (is_code_runner(name) or name in SUBSTITUTION_READERS):
+        return False
+    operands = [argument for argument in arguments if not argument.startswith("-") or argument == "-"]
+
+    return operands[:1] == [SUBSTITUTION_WORD]
+
+
+def find_chain_fetcher(segments: list[Segment], index: int, /) -> str:
+
+    position = index - 1
+    while position >= 0 and segments[position].in_group:
+        name = os.path.basename(resolve(segments[position]).name)
+        if name in FETCHERS:
+            return name
+        position -= 1
+
+    return ""
+
+
+def find_installers(segments: list[Segment], /) -> list[str]:
+
+    labels: list[str] = []
+    for index, segment in enumerate(segments):
+        command = resolve(segment)
+        name = os.path.basename(command.name)
+        arguments = [word.text for word in command.arguments]
+        fetcher = find_chain_fetcher(segments, index)
+        if fetcher and segment.in_group and is_code_runner(name) and reads_stdin_as_code(name, arguments):
+            labels.append(f"{fetcher} ... | {name}")
+        elif fetcher and is_substitution_fed(name, arguments):
+            labels.append(f"{name} with the output of {fetcher}")
+
+    return labels
 
 
 
@@ -604,7 +750,7 @@ def get_hidden_command(command: Command, text: str, policy: Policy, /) -> str:
 
 def find_script_command(script: str, policy: Policy, /) -> str:
 
-    findings = Findings([], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [])
     find_breaches(get_segments(script), None, False, policy, findings, script)
 
     return next(iter(findings.denied + findings.hidden), "") or next(
@@ -1018,6 +1164,8 @@ class Findings(NamedTuple):
     trash_deletes: list[TrashDelete]
     denied: list[str]
     hidden: list[str]
+    cloud: list[str]
+    installer: list[str]
 
 
 def find_breaches(
@@ -1025,6 +1173,9 @@ def find_breaches(
 ) -> list[str]:
 
     breaches: list[str] = []
+    installers = find_installers(segments) if policy.ask_installers else []
+    findings.installer.extend(installers)
+    breaches.extend([INSTALLER_RULE] if installers else [])
     directory = cwd
     may_have_written = False
     for segment in segments:
@@ -1047,7 +1198,7 @@ def find_breaches(
 def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
-    collected = findings if findings is not None else Findings([], [], [], [], [])
+    collected = findings if findings is not None else Findings([], [], [], [], [], [], [])
 
     breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command, {}))
 
@@ -1072,6 +1223,8 @@ def get_command_breaches(
     findings.trash_deletes.extend([trash] if trash is not None else [])
     denied = get_denied(command, directory)
     hidden = get_hidden_command(command, text, policy)
+    cloud = get_cloud_label(command) if policy.ask_cloud else ""
+    findings.cloud.extend([cloud] if cloud else [])
     findings.denied.extend([denied] if denied else [])
     findings.hidden.extend([hidden] if hidden else [])
     checks = [
@@ -1079,6 +1232,7 @@ def get_command_breaches(
         ("denied", bool(denied)),
         ("hidden", bool(hidden)),
         (ASK_RULE, policy.ask_packages and is_package_change(command, policy.root)),
+        (CLOUD_RULE, bool(cloud)),
         ("glob", bool(missing)),
         ("pattern", bool(patterns)),
         ("trash", trash is not None),
@@ -1223,10 +1377,13 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     glob_text = MESSAGES["glob"].format(folder=missing.folder, pattern=missing.pattern)
     denied = MESSAGES["denied"].format(what=(findings.denied or ["this git command"])[0])
     hidden = MESSAGES["hidden"].format(what=(findings.hidden or ["this command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden}
-    lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule != ASK_RULE))
+    cloud = MESSAGES[CLOUD_RULE].format(what=(findings.cloud or ["this command"])[0])
+    installer = MESSAGES[INSTALLER_RULE].format(what=(findings.installer or ["this command"])[0])
+    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer}
+    lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
-        decision = {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": f"The harness guard: {MESSAGES[ASK_RULE]}"}
+        reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)
+        decision = {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": reason}
         print(json.dumps({"hookSpecificOutput": decision}))
         return 0
     print("\n".join(lines), file=sys.stderr)
@@ -1239,7 +1396,7 @@ def main() -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     policy = get_policy(cwd)
-    findings = Findings([], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [])
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, findings=findings)
