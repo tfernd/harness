@@ -174,7 +174,7 @@ Every key is optional and the file itself is not needed: the defaults apply with
 
 | Key | Effect |
 |---|---|
-| `guard` | `scratch` names `__scratch__/`, `no_tmp` notes writes under `/tmp`, `ask_packages` asks before package changes and tool runs (`uvx`, `npx`, `bunx`, `dlx`), `ask_cloud` asks before an `aws`, `sam` or `cdk` command that writes to an account, `ask_installers` asks before a fetcher piped into an interpreter, `commit_style: false` turns the commit rule off |
+| `guard` | `scratch` names `__scratch__/`, `no_tmp` notes writes under `/tmp`, `ask_packages` asks before package changes and tool runs (`uvx`, `npx`, `bunx`, `dlx`), except that `uvx`, `uv tool run`, `npx` and `bunx` run unasked with a release delay added (`--exclude-newer`, `--before`, `--minimum-release-age`; `tool_delay_days`, default 7, and 0 asks again; `pnpm dlx` and `yarn dlx` have no checked flag and still ask), `ask_cloud` asks before an `aws`, `sam` or `cdk` command that writes to an account, `ask_installers` asks before a fetcher piped into an interpreter, `commit_style: false` turns the commit rule off |
 | `main_edits` | `max` (default 3, 0 is off) and `allow` (globs; default `__harness__/*`, `__scratch__/*`): the main session's edits per turn outside `allow` before the hook refuses and the change goes to a worker |
 | `delegate` | Off until set. The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
 | `brief` | Briefs must hold the lines each role needs. `required` replaces the defaults |

@@ -19,7 +19,7 @@ from shell import Segment, Word, get_segments
 
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 DEFAULTS: dict = {
-    "guard": {"scratch": "__scratch__", "no_tmp": True, "ask_packages": True, "ask_cloud": True, "ask_installers": True},
+    "guard": {"scratch": "__scratch__", "no_tmp": True, "ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
     "brief": {},
     "progress": {"every": 10},
     "tests_kept": {"enabled": True},

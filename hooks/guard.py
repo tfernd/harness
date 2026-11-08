@@ -16,6 +16,7 @@ import re
 import shlex
 import sys
 from collections.abc import Callable, Mapping, Set
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -95,7 +96,10 @@ MESSAGES = {
     "string built at run time, or Python's os.system or subprocess). Rewriting history or discarding work is the owner's to "
     "run and a package change is asked: write the command plainly as its own call.",
     ASK_RULE: "changing packages is the owner's to run, so they are asked first. `uvx`, `uv tool`, `npx`, `bunx` and `dlx` "
-    "fetch a tool outside the lock: run the project's own as `uv run --frozen <tool>` or through a package.json script.",
+    "fetch a tool outside the lock: run the project's own as `uv run --frozen <tool>` or through a package.json script. "
+    "`uvx`, `uv tool run`, `npx` and `bunx` run unasked with a release delay (`tool_delay_days`) added.",
+    "delay": "this tool is fetched outside the lock, so the guard added a {days}-day release delay (no release newer than {days} days "
+    "is fetched) and let it run. Put the delay flag first yourself, or run the project's own tool, to skip this note.",
     CLOUD_RULE: "`{what}` writes to an AWS account, and that cannot be undone from this session, so the owner is asked first: run it "
     "yourself, or have the owner approve it. Reads (`describe-`, `list-`, `get-`, `s3 ls`) run freely; see `harness:aws-cli`.",
     INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `__scratch__/`, read it, "
@@ -117,7 +121,7 @@ PATTERN_REFUSAL = (
     "this unquoted glob is a pattern for the command, which zsh would expand first, and the guard could not quote it safely. "
     "Quote it (`--include='*.py'`), or use `rg -g '*.py'`."
 )
-SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep")
+SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay")
 NOTED_RULES = ("temporary", "repo")
 SLEEP_BACKGROUND_NOTE = (
     "this command waits with `sleep` (a polling loop, a wrapper or a nested string), so it now runs in the background and its exit "
@@ -135,6 +139,12 @@ class Policy(NamedTuple):
     ask_packages: bool = False
     ask_cloud: bool = False
     ask_installers: bool = False
+    tool_delay_days: int = 0
+
+
+def get_delay_days(value: object, /) -> int:
+
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
 def get_policy(cwd: str, /) -> Policy:
@@ -150,6 +160,7 @@ def get_policy(cwd: str, /) -> Policy:
         ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),
         ask_cloud=bool(guard.get("ask_cloud")),
         ask_installers=bool(guard.get("ask_installers")),
+        tool_delay_days=get_delay_days(guard.get("tool_delay_days")),
     )
 
 
@@ -217,6 +228,8 @@ TOOL_RUNNERS = frozenset({"uvx", "npx", "bunx", "pnpx"})
 LOCAL_RUNNERS = frozenset({"npx", "bunx", "pnpx"})
 MANAGER_RUNNERS = {"npm": frozenset({"exec", "x"}), "bun": frozenset({"x"}), "pnpm": frozenset({"dlx"}), "yarn": frozenset({"dlx"})}
 FETCHING_OPTIONS = frozenset({"-p", "--package", "-c", "--call"})
+DELAYED_RUNNERS = frozenset({"uvx", "npx", "bunx"})
+SECONDS_PER_DAY = 86400
 LOCAL_TOOL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 BARE_INSTALLERS = frozenset({"yarn", "bundle"})
 INFORMATION_OPTIONS = frozenset({"-v", "-V", "--version", "-h", "--help"})
@@ -257,6 +270,56 @@ def is_package_change(command: Command, root: str, /) -> bool:
         return is_manager_change(name, arguments)
 
     return name.startswith("python") and (is_module_pip(arguments) or is_setup_install(arguments))
+
+
+class DelayRun(NamedTuple):
+
+    lead: list[str]
+    words: list[str]
+    flag: str
+    is_flagged: bool
+
+
+def get_delay_flag(name: str, days: int, /) -> str:
+
+    if name == "npx":
+        return "--before=" + (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
+    if name == "bunx":
+        return f"--minimum-release-age={days * SECONDS_PER_DAY}"
+
+    return f"--exclude-newer={days} days"
+
+
+def get_delay_lead(command: Command, /) -> list[str]:
+
+    arguments = [word.text for word in command.arguments]
+    name = os.path.basename(command.name)
+    if name in DELAYED_RUNNERS and arguments:
+        return [command.name]
+    if name == "uv" and arguments[:2] == ["tool", "run"] and arguments[2:]:
+        return [command.name, "tool", "run"]
+
+    return []
+
+
+def get_delay_run(segment: Segment, command: Command, policy: Policy, /) -> DelayRun | None:
+
+    lead = get_delay_lead(command)
+    if not lead:
+        return None
+    texts = [word.text for word in segment.words]
+    start = next((index for index, text in enumerate(texts) if text not in LEADING_WORDS), len(texts))
+    words = texts[start:]
+    position = next((index for index in range(len(words)) if words[index : index + len(lead)] == lead), -1)
+    if position < 0:
+        return None
+    name = os.path.basename(command.name)
+    flag = get_delay_flag(name if name != "uv" else "uvx", policy.tool_delay_days)
+    option = flag.split("=")[0]
+    following = words[position + len(lead) : position + len(lead) + 1]
+    is_flagged = bool(following) and (following[0] == option or following[0].startswith(option + "="))
+
+    return DelayRun(lead, words, flag, is_flagged)
 
 
 def is_uv_change(words: list[Word], /) -> bool:
@@ -750,7 +813,7 @@ def get_hidden_command(command: Command, text: str, policy: Policy, /) -> str:
 
 def find_script_command(script: str, policy: Policy, /) -> str:
 
-    findings = Findings([], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [])
     find_breaches(get_segments(script), None, False, policy, findings, script)
 
     return next(iter(findings.denied + findings.hidden), "") or next(
@@ -1166,6 +1229,7 @@ class Findings(NamedTuple):
     hidden: list[str]
     cloud: list[str]
     installer: list[str]
+    delayed: list[DelayRun]
 
 
 def find_breaches(
@@ -1198,7 +1262,7 @@ def find_breaches(
 def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
-    collected = findings if findings is not None else Findings([], [], [], [], [], [], [])
+    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [])
 
     breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command, {}))
 
@@ -1227,11 +1291,15 @@ def get_command_breaches(
     findings.cloud.extend([cloud] if cloud else [])
     findings.denied.extend([denied] if denied else [])
     findings.hidden.extend([hidden] if hidden else [])
+    is_asked = policy.ask_packages and is_package_change(command, policy.root)
+    delay = get_delay_run(segment, command, policy) if is_asked and policy.tool_delay_days else None
+    findings.delayed.extend([delay] if delay is not None and not delay.is_flagged else [])
     checks = [
         ("delete", is_deleting and trash is None),
         ("denied", bool(denied)),
         ("hidden", bool(hidden)),
-        (ASK_RULE, policy.ask_packages and is_package_change(command, policy.root)),
+        (ASK_RULE, is_asked and delay is None),
+        ("delay", delay is not None and not delay.is_flagged),
         (CLOUD_RULE, bool(cloud)),
         ("glob", bool(missing)),
         ("pattern", bool(patterns)),
@@ -1334,6 +1402,21 @@ def get_trash_fix(command: str, deletes: list[TrashDelete], folder: str, policy:
     return spliced if is_spliced_alone(command, spliced, replacements) else ""
 
 
+def get_delay_fix(command: str, runs: list[DelayRun], /) -> str:
+
+    spliced = command
+    replacements: dict[tuple[str, ...], list[str]] = {}
+    for run in runs:
+        matches = list(re.finditer(get_words_pattern(run.lead), spliced))
+        if len(matches) != 1:
+            return ""
+        spliced = spliced[: matches[0].end()] + " " + shlex.join([run.flag]) + spliced[matches[0].end() :]
+        position = next(index for index in range(len(run.words)) if run.words[index : index + len(run.lead)] == run.lead) + len(run.lead)
+        replacements[tuple(run.words)] = [*run.words[:position], run.flag, *run.words[position:]]
+
+    return spliced if is_spliced_alone(command, spliced, replacements) else ""
+
+
 def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: str, call_id: str, policy: Policy, /) -> Rewrite:
 
     original = tool_input.get("command") or ""
@@ -1344,6 +1427,11 @@ def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: 
         if not command:
             return Rewrite(tool_input, [], ["pattern"])
         notes.append(f"The harness guard changed this call: {MESSAGES['pattern']}")
+    if "delay" in breaches:
+        command = get_delay_fix(command, findings.delayed)
+        if not command:
+            return Rewrite(tool_input, [], [ASK_RULE])
+        notes.append(f"The harness guard changed this call: {MESSAGES['delay'].format(days=policy.tool_delay_days)}")
     folder = get_trash_folder(call_id, policy) if "trash" in breaches else ""
     if "trash" in breaches:
         command = get_trash_fix(command, findings.trash_deletes, folder, policy) if folder else ""
@@ -1396,7 +1484,7 @@ def main() -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     policy = get_policy(cwd)
-    findings = Findings([], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [])
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, findings=findings)

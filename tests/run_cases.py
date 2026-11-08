@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -36,6 +37,8 @@ STRICT = {
     },
 }
 NO_ASKING = {"guard": {"ask_packages": False}}
+NO_DELAY = {"guard": {"tool_delay_days": 0}}
+WEEK_AGO = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
 OWNER_PROJECT_ENTRY = ("data/user.json", json.dumps({"projects": {ROOT + "/project": NO_ASKING}}))
 GIT_MARK = (".git/HEAD", "ref: refs/heads/main\n")
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": "case", "GIT_AUTHOR_EMAIL": "case@localhost", "GIT_COMMITTER_NAME": "case", "GIT_COMMITTER_EMAIL": "case@localhost"}
@@ -172,6 +175,14 @@ TRASH_HELPER = (
 SCRATCHPAD = f"/tmp/claude-{os.getuid()}/case-project/case-session/scratchpad"
 
 
+def delay(name: str, command: str, fixed: str, /, *, text: str = "release delay", config: dict = STRICT, **options: object) -> Case:
+
+    tool_input = {"command": command, "description": "d"}
+    event = {"tool_name": "Bash", "tool_input": tool_input}
+
+    return Case(name, ("guard.py",), event, False, text, config, updated={**tool_input, "command": fixed}, **options)
+
+
 def trash(name: str, command: str, spliced: str | None, /, *, text: str = "", **options: object) -> Case:
 
     tool_input = {"command": command, "description": "d"}
@@ -207,7 +218,7 @@ GUARD_CASES = (
     bash("an override turns the scratch rule off", "echo hi > AGENTS.md", False, config={"guard": {"scratch": ""}}, lacks=REPO),
     bash("a /tmp write is noted with no project file", "echo hi > /tmp/x", False, "__scratch__", config=None),
     bash("an override turns the /tmp note off", "echo hi > /tmp/x", False, config={"guard": {"no_tmp": False, "scratch": ""}}, is_unchanged=True),
-    bash("uvx asks the owner", "uvx ruff check src", True, '"permissionDecision": "ask"'),
+    bash("uvx asks the owner when the delay is off", "uvx ruff check src", True, '"permissionDecision": "ask"', config=NO_DELAY),
     bash("uv tool run asks the owner", "uv --quiet tool run ruff check src", True, '"permissionDecision": "ask"'),
     bash("uv tool install asks the owner", "uv tool install ruff", True, '"permissionDecision": "ask"'),
     bash("uv run of a pinned tool runs", "uv run --frozen ruff check src", False),
@@ -565,7 +576,7 @@ GUARD_CASES = (
     bash("a harmless alias passes", "alias ll='ls -l'", False, config=None),
     bash("a harmless git alias passes", "git config alias.st status", False, config=None),
     pattern("a pattern under watch is quoted once", "watch grep -rn x --include=*.py .", "watch grep -rn x --include='*.py' ."),
-    *(bash(f"asks: {command!r}", command, True, ASK, config=None) for command in (
+    *(bash(f"asks: {command!r}", command, True, ASK, config=NO_DELAY) for command in (
         "npm i x", "npm install", "npm ci", "npm uninstall x", "npm audit fix", "npm --prefix web install",
         "pnpm add x", "pnpm -C web install", "yarn add x", "yarn", "bun add x", "bun install", "bun remove x",
         "cargo add serde", "cargo install ripgrep", "go get x", "go install x@latest", "gem install x", "bundle install",
@@ -583,7 +594,7 @@ GUARD_CASES = (
     )),
     *(bash(f"local run passes: {command!r}", command, False, config=None, files=(("node_modules/.bin/tsc", ""),))
       for command in ("npx tsc", "npx --no-install tsc", "bunx tsc", "pnpx tsc", "bun x tsc", "pnpm dlx tsc", "yarn dlx tsc", "npm exec tsc", "npm exec -- tsc", "npm x tsc --noEmit")),
-    *(bash(f"local run asks: {command!r}", command, True, ASK, config=None, files=(("node_modules/.bin/tsc", ""),))
+    *(bash(f"local run asks: {command!r}", command, True, ASK, config=NO_DELAY, files=(("node_modules/.bin/tsc", ""),))
       for command in ("npx tsc@5", "npx other", "npx -p tsc tsc", "npx -c tsc", "uvx tsc", "npx @scope/tsc", "npx ../tsc", "npm exec other", "pnpm dlx tsc@latest", "npm install tsc")),
     *(bash(f"cloud asks: {command!r}", command, True, CLOUD, config=None) for command in (
         "aws ec2 run-instances --image-id ami-1", "aws s3 rm s3://b/k", "aws s3 mb s3://b", "aws s3 rb s3://b", "aws s3 mv s3://a/k s3://b/k",
@@ -611,6 +622,30 @@ GUARD_CASES = (
         "echo aws s3 rm s3://b/k", "grep aws README.md",
     )),
     bash("package question: the old key alone still asks", "pip install x", True, ASK, config={"guard": {"ask_packages": False, "deny_packages": True}}),
+    delay("delay: uvx gets the delay first", "uvx ruff check src", "uvx '--exclude-newer=7 days' ruff check src"),
+    delay("delay: uv tool run gets the delay after run", "uv tool run ruff check src", "uv tool run '--exclude-newer=7 days' ruff check src"),
+    delay("delay: npx gets a date a week back", "npx tsc --noEmit", f"npx --before={WEEK_AGO} tsc --noEmit"),
+    delay("delay: bunx gets seconds", "bunx tsc", "bunx --minimum-release-age=604800 tsc"),
+    delay("delay: a scoped package is rewritten", "npx @scope/tool run", f"npx --before={WEEK_AGO} @scope/tool run"),
+    delay("delay: a run in a chain is spliced in place", "cd sub && uvx ruff; echo done", "cd sub && uvx '--exclude-newer=7 days' ruff; echo done", files=(("sub/x", ""),)),
+    delay("delay: a flag after the tool name does not count", "uvx ruff --exclude-newer 2020-01-01", "uvx '--exclude-newer=7 days' ruff --exclude-newer 2020-01-01"),
+    delay("delay: the days come from the setting", "uvx ruff", "uvx '--exclude-newer=3 days' ruff", text="3-day release delay", config={"guard": {"deny_packages": True, "tool_delay_days": 3}}),
+    bash("delay: a run twice in one command asks", "uvx ruff && uvx ruff", True, ASK),
+    bash("delay: a run in a string asks", "bash -c 'uvx ruff'", True, ASK),
+    bash("delay: a run beside a package change asks", "uvx ruff && pip install x", True, ASK),
+    bash("delay: off asks again for npx", "npx tsc", True, ASK, config=NO_DELAY),
+    bash("delay: a negative setting asks", "uvx ruff", True, ASK, config={"guard": {"deny_packages": True, "tool_delay_days": -1}}),
+    bash("delay: uv tool install still asks", "uv tool install ruff", True, ASK),
+    bash("delay: npm install -g still asks", "npm install -g tsc", True, ASK),
+    bash("delay: pnpm dlx still asks", "pnpm dlx tsc", True, ASK),
+    bash("delay: pnpx still asks", "pnpx tsc", True, ASK),
+    bash("delay: uvx with no tool still asks", "uvx", True, ASK),
+    *(bash(f"delay: flag already first passes: {command!r}", command, False, is_unchanged=True, lacks="release delay") for command in (
+        "uvx --exclude-newer '7 days' ruff", "uvx --exclude-newer=2026-01-01 ruff", "uv tool run --exclude-newer '3 days' ruff",
+        "npx --before=2026-01-01 tsc", "npx --before 2026-01-01 tsc", "bunx --minimum-release-age 604800 tsc", "bunx --minimum-release-age=1 tsc",
+    )),
+    bash("delay: no rewrite when packages are not asked", "uvx ruff", False, config=NO_ASKING, is_unchanged=True),
+    bash("delay: a local npx bin runs untouched", "npx tsc", False, files=(("node_modules/.bin/tsc", ""),), is_unchanged=True, lacks="release delay"),
     bash("cloud: the ask reason names the command and the skill", "aws s3 rm s3://b/k", True, "`aws s3 rm`", config=None, lacks="Blocked"),
     bash("cloud: the ask reason points at the skill", "aws s3 rm s3://b/k", True, "harness:aws-cli", config=None),
     bash("cloud: an override lets aws writes run", "aws s3 rm s3://b/k", False, config={"guard": {"ask_cloud": False}}),
