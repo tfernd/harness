@@ -5,12 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Check bin/harness-port and port/shim.py: converted files, merge and uninstall, and the shim end to end.
-
-Writes under __scratch__/. `install.sh` runs against a sandbox home and a local clone of HEAD. Set HARNESS_PORT_SHIM to run the shim checks against another copy of the shim. The install checks
-for a broken hooks file and for a reinstall from another clone each run once on the real tool and once on a planted copy,
-which they must fail.
-"""
 
 from __future__ import annotations
 
@@ -33,20 +27,17 @@ FOREIGN_COMMAND = "echo foreign"
 FRONTMATTER_NAME = re.compile(r"^name:\s*(.+?)\s*$", re.MULTILINE)
 TOOLS_BLOCK = re.compile(r"^tools:\n((?:  - .+\n)+)", re.MULTILINE)
 SCRIPT_PATH = re.compile(r"(/[^\"\\\s]+\.py)")
-# Hook scripts hooks.json runs; fewer paths found means the converter dropped hooks.
 MIN_HOOK_PATHS = 10
 MIN_SKILLS = 20
 
 
 def check(condition: bool, message: str) -> None:
-    """Fail the run with a message when the condition is false."""
     if not condition:
         print(f"FAIL: {message}")
         sys.exit(1)
 
 
 def run_port(target: str, dest: Path, *flags: str) -> str:
-    """Run harness-port and return its output."""
     done = subprocess.run(
         [str(PORT_TOOL), "--target", target, "--dest", str(dest), *flags],
         capture_output=True,
@@ -61,7 +52,6 @@ def run_port(target: str, dest: Path, *flags: str) -> str:
 
 
 def check_texts(dest: Path, target: str) -> None:
-    """Skill names match folders, no Claude-only text is left, agent files carry the right fields."""
     skills = sorted((dest / "skills").glob("*/SKILL.md"))
     check(len(skills) >= MIN_SKILLS, f"{target}: only {len(skills)} skills")
     for skill in skills:
@@ -108,7 +98,6 @@ def check_texts(dest: Path, target: str) -> None:
 
 
 def get_cortex_tools(text: str) -> list[str]:
-    """The ids of a Cortex agent's `tools:` YAML list, empty when it is not a block list."""
     found = TOOLS_BLOCK.search(text)
     if found is None:
         return []
@@ -116,7 +105,6 @@ def get_cortex_tools(text: str) -> list[str]:
 
 
 def check_kiro_old_layout(base: Path) -> None:
-    """An install over the old Kiro layout removes the `.md` prompts the port wrote and keeps a foreign one."""
     dest = base / "kiro-old"
     agents = dest / "agents"
     agents.mkdir(parents=True)
@@ -134,7 +122,6 @@ def check_kiro_old_layout(base: Path) -> None:
 
 
 def load_legacy_name(script: Path) -> str:
-    """The old Kiro hooks file name, read from the converter under test."""
     spec = importlib.util.spec_from_file_location("harness_port_under_test", script)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -143,13 +130,11 @@ def load_legacy_name(script: Path) -> str:
 
 
 def plant_file(path: Path, text: str) -> None:
-    """Write a file, making its folder first."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
 
 
 def run_kiro_script(script: Path, dest: Path, *flags: str) -> None:
-    """Run a converter script for Kiro into a destination and fail the run unless it exits 0."""
     done = subprocess.run(
         ["uv", "run", "--script", str(script), "--target", "kiro", "--dest", str(dest), *flags],
         capture_output=True,
@@ -160,7 +145,6 @@ def run_kiro_script(script: Path, dest: Path, *flags: str) -> None:
 
 
 def check_kiro_legacy_hooks(base: Path, script: Path) -> None:
-    """Install and uninstall remove the old Kiro hooks file only when the port wrote it; a foreign file stays."""
     legacy_name = load_legacy_name(script)
     ours = json.dumps(
         {
@@ -218,7 +202,6 @@ def check_kiro_legacy_hooks(base: Path, script: Path) -> None:
 
 
 def check_hook_paths(text: str, target: str) -> None:
-    """Every script path in a hook command exists."""
     paths = SCRIPT_PATH.findall(text)
     check(len(paths) >= MIN_HOOK_PATHS, f"{target}: only {len(paths)} hook script paths")
     for path in paths:
@@ -226,7 +209,6 @@ def check_hook_paths(text: str, target: str) -> None:
 
 
 def check_kiro(base: Path) -> None:
-    """Kiro conversion, dry run and uninstall."""
     dest = base / "kiro"
     run_port("kiro", dest, "--dry-run")
     check(not dest.exists(), "dry run wrote files")
@@ -254,7 +236,6 @@ def check_kiro(base: Path) -> None:
 
 
 def check_cortex(base: Path) -> None:
-    """Cortex conversion, merge, rerun and uninstall."""
     dest = base / "cortex"
     dest.mkdir(parents=True)
     foreign = {
@@ -297,12 +278,10 @@ def check_cortex(base: Path) -> None:
 def run_shim(
     host: str, event: str, payload: dict, base: Path, hook: str = "", config: str = ""
 ) -> subprocess.CompletedProcess:
-    """Run a harness hook through the shim with the owner's files out of reach."""
     home = base / "home"
     home.mkdir(parents=True, exist_ok=True)
     project = base / "project"
     project.mkdir(exist_ok=True)
-    # Its own repository, so the walk to a git root stops here and not at this checkout.
     subprocess.run(["git", "init", "-q", str(project)], check=True)
     (base / "owner.json").write_text(config or "{}")
     environment = {
@@ -335,7 +314,6 @@ def run_shim(
 
 
 def make_clone(base: Path, name: str, edits: tuple[tuple[str, str], ...] = ()) -> Path:
-    """A copy of the converter that stands in for another checkout, with a planted bug when `edits` are given."""
     clone = base / name
     (clone / "port").mkdir(parents=True)
     text = PORT_SCRIPT.read_text()
@@ -349,7 +327,6 @@ def make_clone(base: Path, name: str, edits: tuple[tuple[str, str], ...] = ()) -
 
 
 def run_script(script: Path, dest: Path, *flags: str) -> subprocess.CompletedProcess:
-    """Run a converter script for Cortex into a destination and return the finished process."""
     command = [
         "uv",
         "run",
@@ -365,7 +342,6 @@ def run_script(script: Path, dest: Path, *flags: str) -> subprocess.CompletedPro
 
 
 def find_write_on_broken(script: Path, base: Path) -> str:
-    """Why a broken or non-object hooks file was not refused cleanly before any write, or an empty string."""
     for name, content in (("broken", "{not json"), ("array", "[]")):
         dest = base / name
         dest.mkdir(parents=True)
@@ -382,7 +358,6 @@ def find_write_on_broken(script: Path, base: Path) -> str:
 
 
 def find_doubled_groups(script: Path, base: Path) -> str:
-    """Why a reinstall from another clone did not replace the old groups, or an empty string."""
     other = make_clone(base, "other-clone")
     dest = base / "reinstalled"
     fresh = base / "fresh"
@@ -396,7 +371,6 @@ def find_doubled_groups(script: Path, base: Path) -> str:
 
 
 def check_install_guards(base: Path) -> None:
-    """A bad hooks file stops the install before any write; a reinstall from another clone does not double."""
     no_validation = (
         (
             "merge_cortex_hooks(load_json(hooks_path), plan.cortex_hooks) if merged else {}",
@@ -420,7 +394,6 @@ def check_install_guards(base: Path) -> None:
 
 
 def load_shim() -> object:
-    """The shim module, imported by path so a planted copy can stand in."""
 
     spec = importlib.util.spec_from_file_location("harness_shim", SHIM)
     assert spec and spec.loader
@@ -430,7 +403,6 @@ def load_shim() -> object:
 
 
 def check_shim(base: Path) -> None:
-    """The shim end to end on both hosts."""
     rm_input = {"command": "rm -rf build"}
     kiro_block = run_shim(
         "kiro",
@@ -503,7 +475,6 @@ def check_shim(base: Path) -> None:
 
 
 def run_install_sh(script: Path, home: Path, upstream: Path, *args: str) -> subprocess.CompletedProcess:
-    """Run an install script with a sandbox home and a local repository standing in for GitHub."""
     environment = {
         **os.environ,
         "HOME": str(home),
@@ -514,12 +485,10 @@ def run_install_sh(script: Path, home: Path, upstream: Path, *args: str) -> subp
 
 
 def hash_tree(folder: Path) -> list[tuple[str, str]]:
-    """Every file under a folder with its content, sorted by path."""
     return sorted((str(path.relative_to(folder)), path.read_text()) for path in folder.rglob("*") if path.is_file())
 
 
 def find_install_sh_fault(script: Path, base: Path) -> str:
-    """Why the install script misbehaves (install, rerun, failed pull, uninstall, usage), or an empty string."""
     home = base / "home"
     home.mkdir(parents=True)
     upstream = base / "upstream"
@@ -560,7 +529,6 @@ def find_install_sh_fault(script: Path, base: Path) -> str:
 
 
 def check_install_sh(base: Path) -> None:
-    """install.sh installs, reruns unchanged, stops on a failed pull, uninstalls, and rejects a bad target."""
     reason = find_install_sh_fault(INSTALL_SH, base / "install-real")
     check(reason == "", f"install.sh: {reason}")
     text = INSTALL_SH.read_text()
@@ -577,7 +545,6 @@ def check_install_sh(base: Path) -> None:
 
 
 def main() -> int:
-    """Run every check."""
     shutil.rmtree(WORK, ignore_errors=True)
     WORK.mkdir(parents=True)
     (WORK.parent / ".gitignore").write_text("*\n")

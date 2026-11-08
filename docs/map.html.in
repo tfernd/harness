@@ -9,7 +9,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
   <script>
-    // The saved theme (else the system's) is set before the first paint, so a dark page never flashes light.
     try {
       const savedTheme = localStorage.getItem("harness-map-theme");
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -80,14 +79,14 @@
           <p class="binds-intro">Hooks enforce the top four levels. A reminder never stops a call; advice is up to the model.</p>
           <p class="pyramid-axis" aria-hidden="true"><span>Hardest on top</span><span>Parts</span></p>
           <div class="pyramid-box" data-pyramid>
-            <!-- @pyramid -->
+            [[@pyramid]]
           </div>
         </section>
 
         <section class="parts" aria-labelledby="parts-title">
           <h2 class="visually-hidden" id="parts-title">Agents, skills and hooks</h2>
           <div class="panels" data-panels>
-            <!-- @panels -->
+            [[@panels]]
           </div>
         </section>
       </div>

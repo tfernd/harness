@@ -5,11 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Install this plugin's skills, agents and hooks into Kiro CLI or Snowflake Cortex Code.
-
-Run: `bin/harness-port --target kiro|cortex [--dest DIR] [--dry-run] [--uninstall]`. It converts to each tool's own
-formats, writes `harness-port.json` (every file written) in the destination and prints what it could not port.
-"""
 
 from __future__ import annotations
 
@@ -29,9 +24,7 @@ SHIM_SUFFIX = "port/shim.py"
 SHIM = CHECKOUT / SHIM_SUFFIX
 MANIFEST_NAME = "harness-port.json"
 KIRO_PROMPTS_FOLDER = "harness-prompts"
-# Old Kiro hooks file name; removed only when its content is this port's own hooks.
 LEGACY_KIRO_HOOKS = "hooks/harness.json"
-# Seconds a hook may run; the same limit hooks/hooks.json sets.
 HOOK_TIMEOUT_SECONDS = 10
 HARNESS_REF = re.compile(r"harness:([a-z][a-z0-9-]*)")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
@@ -42,11 +35,11 @@ KIRO_TAGS = {
     "Edit": "write", "Write": "write", "NotebookEdit": "write",
     "Bash": "shell", "WebFetch": "web", "WebSearch": "web",
     "Agent": "subagent", "Task": "subagent",
-}  # fmt: skip
+}
 CORTEX_TOOLS = {
     "Read": "read", "Write": "write", "Edit": "edit", "Grep": "grep", "Glob": "glob",
     "Bash": "bash", "WebFetch": "web_fetch", "WebSearch": "web_search",
-}  # fmt: skip
+}
 KIRO_MATCHER_IDS = {
     "Bash": ["execute_bash"],
     "Read": ["read_file"],
@@ -67,14 +60,12 @@ KIRO_TRIGGERS = (
 
 
 class Frontmatter(NamedTuple):
-    """A markdown file split in two."""
 
-    fields: dict[str, str | list[str]]  # keys are data
+    fields: dict[str, str | list[str]]
     body: str
 
 
 class Plan:
-    """Files to write, Cortex hook groups to merge and what could not be ported."""
 
     def __init__(self) -> None:
         self.files: dict[Path, str] = {}
@@ -83,7 +74,6 @@ class Plan:
 
 
 def parse_frontmatter(text: str, /) -> Frontmatter:
-    """Split a markdown file into its flat frontmatter (a list for a key with `- item` lines) and its body."""
     found = FRONTMATTER.match(text)
     if found is None:
         return Frontmatter({}, text)
@@ -104,34 +94,29 @@ def parse_frontmatter(text: str, /) -> Frontmatter:
 
 
 def rewrite_text(text: str, /) -> str:
-    """Rename `harness:<name>` to `harness-<name>` and point `${CLAUDE_PLUGIN_ROOT}` at this checkout."""
     return HARNESS_REF.sub(r"harness-\1", text).replace(
         "${CLAUDE_PLUGIN_ROOT}", str(CHECKOUT)
     )
 
 
 def split_tools(value: str | list[str], /) -> list[str]:
-    """The tool names of an agent's `tools:` line."""
     assert isinstance(value, str)
     return [name.strip() for name in value.split(",") if name.strip()]
 
 
 def get_kiro_matcher(names: list[str], /) -> str | None:
-    """An anchored regex of Kiro tool ids, or None when no named tool exists in Kiro."""
     ids = [tool_id for name in names for tool_id in KIRO_MATCHER_IDS.get(name, [])]
     unique = list(dict.fromkeys(ids))
     return f"^({'|'.join(unique)})$" if unique else None
 
 
 def get_cortex_matcher(names: list[str], /) -> str | None:
-    """A lowercase matcher of Cortex tool ids, or None when no named tool exists in Cortex."""
     ids = [CORTEX_TOOLS[name] for name in names if name in CORTEX_TOOLS]
     unique = list(dict.fromkeys(ids))
     return "|".join(unique) if unique else None
 
 
 def make_command(target: Target, event: str, hook_command: str, /) -> str:
-    """The shim command line for one Claude hook command (`uv run --script "<root>/hooks/x.py" [arg]`)."""
     tail = hook_command.replace("uv run --script ", "", 1).replace(
         "${CLAUDE_PLUGIN_ROOT}", str(CHECKOUT)
     )
@@ -139,7 +124,6 @@ def make_command(target: Target, event: str, hook_command: str, /) -> str:
 
 
 def plan_skills(plan: Plan, dest: Path, /) -> None:
-    """Add every skill and its references folder as `harness-<name>`."""
     for skill_file in sorted((CHECKOUT / "skills").glob("*/SKILL.md")):
         fields, body = parse_frontmatter(skill_file.read_text())
         name = f"harness-{skill_file.parent.name}"
@@ -158,14 +142,12 @@ def plan_skills(plan: Plan, dest: Path, /) -> None:
 def plan_agent(
     plan: Plan, dest: Path, target: Target, agent_file: Path, models: dict[str, str], /
 ) -> None:
-    """Add one agent in the target's own format."""
     fields, body = parse_frontmatter(agent_file.read_text())
     name = f"harness-{fields['name']}"
     tools = split_tools(fields.get("tools", ""))
     skills = fields.get("skills", [])
     model = models.get(str(fields.get("model", "")))
     prompt = rewrite_text(body.lstrip("\n"))
-    # Kiro reads any `.md` in `agents/` as an agent of its own, so its prompts live in a folder beside it.
     prompt_path = dest / KIRO_PROMPTS_FOLDER / f"{name}.md"
 
     if target == "kiro":
@@ -209,7 +191,6 @@ def plan_agent(
 def plan_hook_group(
     plan: Plan, target: Target, event: str, group: dict, kiro_entries: list[dict], /
 ) -> None:
-    """Convert one hooks.json group into Kiro entries or a Cortex group."""
     names = group["matcher"].split("|") if group.get("matcher") else []
     if target == "kiro":
         if event not in KIRO_TRIGGERS:
@@ -258,7 +239,6 @@ def plan_hook_group(
 
 
 def plan_hooks(plan: Plan, dest: Path, target: Target, /) -> None:
-    """Convert hooks/hooks.json into a Kiro hooks file or Cortex hook groups."""
     source = json.loads((CHECKOUT / "hooks" / "hooks.json").read_text())["hooks"]
     kiro_entries: list[dict] = []
     for event, groups in source.items():
@@ -274,14 +254,12 @@ def plan_hooks(plan: Plan, dest: Path, target: Target, /) -> None:
 
 
 def is_ours(group: dict, /) -> bool:
-    """True when a Cortex hook group runs a harness shim, whichever checkout it was installed from."""
     return any(
         SHIM_SUFFIX in hook.get("command", "") for hook in group.get("hooks", [])
     )
 
 
 def is_ours_kiro_hooks(text: str, /) -> bool:
-    """True when a Kiro hooks file is the port's own: version v1 and only harness shim hooks."""
     try:
         document = json.loads(text)
     except ValueError:
@@ -300,7 +278,6 @@ def is_ours_kiro_hooks(text: str, /) -> bool:
 
 
 def find_legacy_hooks(dest: Path, /) -> list[str]:
-    """The old Kiro hooks file as a one-item list when the port wrote it, else an empty list."""
     try:
         text = (dest / LEGACY_KIRO_HOOKS).read_text()
     except (OSError, UnicodeDecodeError):
@@ -310,11 +287,7 @@ def find_legacy_hooks(dest: Path, /) -> list[str]:
 
 def merge_cortex_hooks(
     existing: dict, ours: dict[str, list[dict]], /
-) -> dict:  # keys are data
-    """The existing hook document with the harness groups replaced by `ours`; every other group is kept.
-
-    Raises ValueError when the document's `hooks` is not an object of lists.
-    """
+) -> dict:
     hooks = existing.get("hooks", {})
     if not isinstance(hooks, dict) or not all(
         isinstance(groups, list) for groups in hooks.values()
@@ -334,11 +307,7 @@ def merge_cortex_hooks(
     return merged
 
 
-def load_json(path: Path, /) -> dict:  # keys are data
-    """A JSON object from a file, or an empty one when the file is missing.
-
-    Raises ValueError, naming the file, when it is not valid JSON, and TypeError when it is not an object.
-    """
+def load_json(path: Path, /) -> dict:
     if not path.exists():
         return {}
 
@@ -357,13 +326,11 @@ def load_json(path: Path, /) -> dict:  # keys are data
 
 
 def uninstall(dest: Path, /, *, dry_run: bool) -> list[str]:
-    """Remove exactly the files in the manifest and the harness Cortex hook groups."""
     manifest_path = dest / MANIFEST_NAME
     if not manifest_path.exists():
         return [f"nothing to remove: no {manifest_path}"]
 
     manifest = load_json(manifest_path)
-    # Validated before the first removal, so a broken hooks file leaves everything in place.
     documents = {
         name: merge_cortex_hooks(load_json(dest / name), {})
         for name in manifest.get("merged", [])
@@ -397,7 +364,6 @@ def uninstall(dest: Path, /, *, dry_run: bool) -> list[str]:
 def install(
     dest: Path, target: Target, models: dict[str, str], /, *, dry_run: bool
 ) -> list[str]:
-    """Write the converted files, merge Cortex hooks and write the manifest; returns the report lines."""
     plan = Plan()
     plan_skills(plan, dest)
     for agent_file in sorted((CHECKOUT / "agents").glob("*.md")):
@@ -411,7 +377,6 @@ def install(
     lines += [f"remove {name}" for name in legacy]
     lines += [f"not ported: {item}" for item in plan.not_ported]
 
-    # Everything read from the destination is validated here, before the first write.
     previous = dest / MANIFEST_NAME
     hooks_path = dest / "hooks.json"
     stale = (set(load_json(previous).get("files", [])) - set(names)) | set(legacy)
@@ -440,14 +405,12 @@ def install(
 
 
 def get_default_dest(target: Target, /) -> Path:
-    """The tool's global folder."""
     home = Path(os.path.expanduser("~"))
     return home / ".kiro" if target == "kiro" else home / ".snowflake" / "cortex"
 
 
 def main() -> int:
-    """Command line entry point."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Install this plugin's skills, agents and hooks into Kiro CLI or Snowflake Cortex Code.")
     parser.add_argument("--target", choices=TARGETS, required=True)
     parser.add_argument("--dest", type=Path)
     parser.add_argument("--dry-run", action="store_true")

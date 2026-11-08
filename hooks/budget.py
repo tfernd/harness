@@ -5,24 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on every tool: in every project, a sub-agent past its budget of model turns is refused every
-tool call but the handback and told to send its report now, as a partial one. A call without `agent_id` came from the main session and
-passes.
-
-A turn is one model message, however many tools it calls, so a slow machine or a long test costs nothing. The budget is the first
-`Budget: N` or `Budget: N turns` outside a fence and a backtick quote in the agent's brief (its transcript's first line), opening a line or a
-sentence, so prose such as `over budget: 20` does not count. Any other unit (`Budget: 5 files`, `Budget: 5 minutes`) does not count; the brief rule refuses it. Without one the role's default stands: the owner file's `budget` maps a role to turns and REPLACES the whole DEFAULT_BUDGET
-table (a role it does not list has no budget); DEFAULT_BUDGET stands when the key is absent. The handback
-always passes, so the agent is never trapped. A note, no refusal, says when about a fifth of the budget is left, so an agent can
-plan its report instead of meeting the refusal. Only that first line is read, since this runs on every call. The turns are counted from a saved byte offset, so a call reads only
-what the agent wrote since the last one (plus a bounded tail for its latest turn), never the whole transcript.
-
-Progress: the `progress` section's `every` (default 10, 0 turns it off) makes an agent whose turn count reaches a multiple of it append one JSON
-line (time, agent, role, turns, budget, tool, a short summary of the call) to `progress/<session>.jsonl` in the plugin's data folder, once per
-turn however many tools the turn calls. The main session's next call reads only the lines past a saved byte offset and gets them as one note,
-the latest line of each agent, so it sees what its agents are doing. Writing a line also deletes the progress files and
-offsets left unchanged for PROGRESS_KEEP_DAYS days. Nothing here refuses a call; a failure lets it run.
-"""
 
 from __future__ import annotations
 
@@ -37,36 +19,24 @@ from typing import NamedTuple
 
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_turns, get_unfenced_lines, make_note_output, read_tail, write_atomic
 
-# Turns meant to stop a runaway agent and no ordinary one. Defaults, not a measurement; a brief's `Budget:` line overrides them.
-# The fewest turns left when the note comes; a budget under this gets no note.
 MIN_TURNS_LEFT = 3
 DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70, "designer": 70, "releaser": 40, "analyst": 30, "planner": 30, "researcher": 30, "*": 40}
 BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
-# A line that labels a budget, as opposed to prose that opens with the word.
 LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + r"\**\s*:", re.I)
 BUDGET_LINE = re.compile(BUDGET_LABEL.pattern + r"[:*\s~]*([0-9]+)\s*(?:turns?\b|(?=\W*$))", re.I)
 QUOTED = re.compile(r"`[^`]*`")
-# Bytes of the transcript's end that hold an agent's latest turn; one model message is far smaller.
 TAIL_BYTES = 262144
-# Turns between two progress lines of one agent when the config names none.
 DEFAULT_PROGRESS_EVERY = 10
-# Characters of a call's input kept in a progress line.
 SUMMARY_CHARS = 80
-# Characters of an agent id shown in the note; the ids are long hex strings.
 SHORT_ID_CHARS = 6
-# Bytes of new progress lines read at once: a main-session call never reads more, whatever the file holds.
 PROGRESS_READ_BYTES = 65536
-# Agents named in one note.
 PROGRESS_SHOWN = 4
-# The input fields that say most about a call, in the order tried.
 SUMMARY_KEYS = ("command", "file_path", "notebook_path", "path", "pattern", "description", "prompt", "url", "query")
-# Days a session's progress file and its offset are kept after their last change; a week covers a paused session.
 PROGRESS_KEEP_DAYS = 7
 SECONDS_PER_DAY = 86400
 
 
-def get_agent_path(event: dict, /) -> Path | None:  # keys are data
-    """The agent's own transcript: `subagents/agent-<id>.jsonl` in the folder named like the session's, or the stop event's."""
+def get_agent_path(event: dict, /) -> Path | None:
 
     given = event.get("agent_transcript_path") or ""
     if os.path.isfile(given):
@@ -81,9 +51,7 @@ def get_agent_path(event: dict, /) -> Path | None:  # keys are data
 
 
 def parse_time(text: object, /) -> float | None:
-    """Epoch seconds of an ISO timestamp, None when it is not one."""
 
-    # Python 3.12 reads a fraction of exactly 3 or 6 digits only.
     clean = re.sub(r"\.([0-9]+)", lambda match: "." + match.group(1)[:6].ljust(6, "0"), str(text).replace("Z", "+00:00"))
     try:
         moment = datetime.fromisoformat(clean)
@@ -93,8 +61,7 @@ def parse_time(text: object, /) -> float | None:
     return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).timestamp()
 
 
-def get_brief(entry: dict, /) -> str:  # keys are data
-    """The text of a transcript's first line."""
+def get_brief(entry: dict, /) -> str:
 
     content = (entry.get("message") or {}).get("content")
     if isinstance(content, list):
@@ -104,7 +71,6 @@ def get_brief(entry: dict, /) -> str:  # keys are data
 
 
 def get_turn_limit(brief: str, /) -> int | None:
-    """The turns of the brief's `Budget:` line, None when it has none."""
 
     for line in get_unfenced_lines(brief):
         match = BUDGET_LINE.search(QUOTED.sub("", line))
@@ -114,8 +80,7 @@ def get_turn_limit(brief: str, /) -> int | None:
     return None
 
 
-def get_default(config: dict, role: str, /) -> int | None:  # keys are data
-    """The turns the owner file (or DEFAULT_BUDGET) gives a role, else its `*` entry, None when it gives none."""
+def get_default(config: dict, role: str, /) -> int | None:
 
     table = config.get("budget", DEFAULT_BUDGET)
     turns = table.get(role, table.get("*"))
@@ -124,7 +89,6 @@ def get_default(config: dict, role: str, /) -> int | None:  # keys are data
 
 
 def get_warning_text(num_turns: int, limit: int, /) -> str:
-    """The note due at this turn, empty at every other turn."""
 
     left = max(MIN_TURNS_LEFT, limit // 5)
     if num_turns != limit - left:
@@ -133,8 +97,7 @@ def get_warning_text(num_turns: int, limit: int, /) -> str:
     return f"Harness note, not a refusal: {left} of your {limit} turns are left. Plan your report now; waiting for a background check costs no turn."
 
 
-def get_progress_every(config: dict, /) -> int:  # keys are data
-    """The turns between progress lines, 0 when the rule is off or the value is no positive number."""
+def get_progress_every(config: dict, /) -> int:
 
     every = config.get("progress", {}).get("every", DEFAULT_PROGRESS_EVERY)
     if isinstance(every, bool) or not isinstance(every, (int, float)) or every < 1:
@@ -143,8 +106,7 @@ def get_progress_every(config: dict, /) -> int:  # keys are data
     return int(every)
 
 
-def get_progress_paths(event: dict, /) -> tuple[Path, Path] | None:  # keys are data
-    """The session's progress file and its offset file, None when the event names no session."""
+def get_progress_paths(event: dict, /) -> tuple[Path, Path] | None:
 
     session = event.get("session_id") or Path(event.get("transcript_path") or "").stem
     name = re.sub(r"[^A-Za-z0-9_-]", "", str(session))[:80]
@@ -156,7 +118,6 @@ def get_progress_paths(event: dict, /) -> tuple[Path, Path] | None:  # keys are 
 
 
 def get_input_summary(tool_input: object, /) -> str:
-    """The most telling field of a call's input, on one line, cut to SUMMARY_CHARS."""
 
     if isinstance(tool_input, dict):
         text = next((str(tool_input[key]) for key in SUMMARY_KEYS if tool_input.get(key)), json.dumps(tool_input))
@@ -167,7 +128,6 @@ def get_input_summary(tool_input: object, /) -> str:
 
 
 def prune_progress(folder: Path, /) -> None:
-    """Deletes the progress files and offsets in `folder` unchanged for PROGRESS_KEEP_DAYS days; never raises."""
 
     cutoff = time.time() - PROGRESS_KEEP_DAYS * SECONDS_PER_DAY
     try:
@@ -178,8 +138,7 @@ def prune_progress(folder: Path, /) -> None:
         pass
 
 
-def write_progress(event: dict, num_turns: int, limit: int | None, /) -> None:  # keys are data
-    """Appends one progress line for this agent to the session's progress file."""
+def write_progress(event: dict, num_turns: int, limit: int | None, /) -> None:
 
     paths = get_progress_paths(event)
     if paths is None:
@@ -199,8 +158,7 @@ def write_progress(event: dict, num_turns: int, limit: int | None, /) -> None:  
         file.write(json.dumps(line) + "\n")
 
 
-def read_new_progress(event: dict, /) -> list[dict]:  # keys are data
-    """The progress lines written since the saved offset, which moves past the whole lines read."""
+def read_new_progress(event: dict, /) -> list[dict]:
 
     paths = get_progress_paths(event)
     if paths is None or not paths[0].is_file():
@@ -215,7 +173,6 @@ def read_new_progress(event: dict, /) -> list[dict]:  # keys are data
         file.seek(offset)
         chunk = file.read(PROGRESS_READ_BYTES)
     end = chunk.rfind(b"\n") + 1
-    # A single line longer than the read cap is skipped whole; a short unfinished line waits for its newline.
     consumed = end or (len(chunk) if len(chunk) == PROGRESS_READ_BYTES else 0)
     if consumed:
         write_atomic(paths[1], str(offset + consumed))
@@ -231,8 +188,7 @@ def read_new_progress(event: dict, /) -> list[dict]:  # keys are data
     return lines
 
 
-def get_progress_text(lines: list[dict], /) -> str:  # keys are data
-    """One note from progress lines: the latest line of each agent, the last PROGRESS_SHOWN agents, empty with no line."""
+def get_progress_text(lines: list[dict], /) -> str:
 
     latest = {str(line.get("agent_id")): line for line in lines}
     parts = []
@@ -246,14 +202,12 @@ def get_progress_text(lines: list[dict], /) -> str:  # keys are data
 
 
 class TurnCount(NamedTuple):
-    """The model turns an agent's transcript holds and the tool calls of the latest one."""
 
     count: int
-    last: list[dict]  # keys are data
+    last: list[dict]
 
 
-def fold_turns(events: list[dict], count: int, last_id: str | None, /) -> tuple[int, str | None]:  # keys are data
-    """The turn count and last message id after `events`; lines of one message share an id and are one turn."""
+def fold_turns(events: list[dict], count: int, last_id: str | None, /) -> tuple[int, str | None]:
 
     for event in events:
         message = event.get("message")
@@ -269,8 +223,7 @@ def fold_turns(events: list[dict], count: int, last_id: str | None, /) -> tuple[
     return count, last_id
 
 
-def parse_lines(data: bytes, /) -> list[dict]:  # keys are data
-    """The lines of raw transcript bytes that parse to an object."""
+def parse_lines(data: bytes, /) -> list[dict]:
 
     events: list[dict] = []
     for line in data.decode(errors="replace").split("\n"):
@@ -285,11 +238,6 @@ def parse_lines(data: bytes, /) -> list[dict]:  # keys are data
 
 
 def count_turns(path: Path, agent_id: str, /) -> TurnCount:
-    """Counts the turns of an agent's transcript from the offset saved at its last call, and saves the new offset.
-
-    A transcript shorter than the offset, or a saved state that does not read, starts the count over. The last line,
-    when it has no newline yet, counts for this call but is not saved.
-    """
 
     name = re.sub(r"[^A-Za-z0-9_-]", "", agent_id)[:80]
     state_path = data_folder() / "budget" / f"{name}.turns" if name else None
@@ -320,7 +268,6 @@ def count_turns(path: Path, agent_id: str, /) -> TurnCount:
 
 
 def get_duration(path: Path | None, /) -> float | None:
-    """Seconds from an agent transcript's first timestamp to its last, None when unknown."""
 
     if path is None:
         return None
@@ -355,7 +302,6 @@ def main() -> int:
         return 0
     with open(path, errors="replace") as file:
         line = file.readline()
-    # An agent's transcript can be empty or torn at its first call; the role's default still stands.
     try:
         first = json.loads(line)
     except ValueError:
@@ -368,11 +314,9 @@ def main() -> int:
     if limit is None and not every:
         return 0
     turns = count_turns(path, str(event.get("agent_id")))
-    # The message of this very call may not have reached the transcript yet, as a live run showed; it counts all the same.
     call_id = event.get("tool_use_id")
     is_written = not call_id or any(call.get("id") == call_id for call in turns.last)
     num_turns = turns.count + (not is_written)
-    # Calls of one message share a turn; only its first call writes the line.
     is_first = not call_id or not is_written or turns.last[0].get("id") == call_id
     if every and num_turns % every == 0 and is_first:
         write_progress(event, num_turns, limit)
@@ -396,6 +340,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in the rule must not block every call
+    except Exception as error:
         print(f"the harness budget rule failed and let the call run: {error!r}", file=sys.stderr)
         sys.exit(1)

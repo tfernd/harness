@@ -5,13 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""SessionStart and SubagentStart hook: in every project, tells a session what it owes.
-
-Both get the `tool-habits` skill and the setup facts that cost past agents a refused call: which tools may be missing, the shell, and the scratch folder. SessionStart tells the main session to load `harness:orchestrator`. SubagentStart tells any agent
-the report form, the last lessons handled for its role and the open problems a retro kept. SessionStart also
-says when ten or more reports of the project are newer than the plugin data folder's `retro-marker` file (the `retro` skill
-writes it). The text reaches the model as `additionalContext`.
-"""
 
 from __future__ import annotations
 
@@ -45,7 +38,6 @@ HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
 HABITS_FALLBACK = "Use few tool turns; each one costs the owner time. Load the `harness:tool-habits` skill before shell work."
 TOOLS_TEXT = "If Grep or Glob is not among your tools, use `rg` and `find` through Bash."
 ZSH_TEXT = "The shell is zsh: quote every glob, and read exit codes from `$pipestatus`, not `$PIPESTATUS`."
-# An agent may lack the Skill tool, so the headings come in the text itself.
 FORM_TEXT = (
     "End with the `harness:report` report, each section under its exact ## heading, in this order: Answer, Not proven, then "
     "only if they have something to say Problems, Next time, Open and Feedback, then Verdict, which opens with done, partial or "
@@ -60,14 +52,11 @@ PROBLEMS_HEADING = (
     "or name one under Problems if you hit it:"
 )
 MAX_PROBLEMS = 2
-# Characters of an inbox text kept in a lesson line.
 MAX_LESSON_TEXT = 140
 AUTO_PREFIX = "[auto]"
 MAX_LESSONS = 5
-# Characters of the lessons text, heading included.
 MAX_LESSONS_CHARS = 600
 RETRO_ROWS = 10
-# Name the plugin versions before this layout gave the project folders.
 OLD_SCRATCH = "scratch"
 RETRO_MARKER = "retro-marker"
 INBOX_LINE = re.compile(r"^- id=([0-9a-f]{8}) session=\S+ agent=(\S+) (?:time=\S+ )?(.+)$", re.M)
@@ -76,8 +65,7 @@ RULE_LINE = re.compile(r"^([0-9a-f]{8}): rule written in[ \t]*(\S+)", re.M)
 LEDGER_TIME = "%Y-%m-%dT%H:%M:%S%z"
 
 
-def get_setup_text(config: dict, /) -> str:  # config keys
-    """The facts of this machine and project that a first call would otherwise learn from a refusal."""
+def get_setup_text(config: dict, /) -> str:
 
     guard = config.get("guard", {})
     lines = [TOOLS_TEXT]
@@ -92,10 +80,6 @@ def get_setup_text(config: dict, /) -> str:  # config keys
 
 
 def prepare_folders(root: Path, /) -> list[str]:
-    """Moves an old feedback folder into `__harness__/`, makes both folders self-ignoring, and returns the notes for the session.
-
-    Nothing runs in a start folder that is no project root. An old `scratch/` folder is only mentioned, never touched.
-    """
 
     if not is_project_root(root):
         return []
@@ -118,7 +102,6 @@ def prepare_folders(root: Path, /) -> list[str]:
 
 
 def get_habits_text() -> str:
-    """The body of the `tool-habits` skill, so every session and sub-agent starts with it; a short pointer when it cannot be read."""
 
     plugin = Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
     try:
@@ -131,7 +114,6 @@ def get_habits_text() -> str:
 
 
 def get_lessons(root: Path, agent_type: str, /) -> str:
-    """The role's last handled lessons (no auto items, no vanished rule file), newest last, within the character limit; empty when there are none or a file fails."""
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)
     feedback = get_feedback_root(root)
@@ -156,7 +138,6 @@ def get_lessons(root: Path, agent_type: str, /) -> str:
 
 
 def get_open_problems(root: Path, agent_type: str, /) -> str:
-    """The first problems a retro kept for this role or for all, at most MAX_PROBLEMS; empty when there are none."""
 
     role = agent_type.removeprefix(PLUGIN_PREFIX)
     try:
@@ -170,7 +151,6 @@ def get_open_problems(root: Path, agent_type: str, /) -> str:
 
 
 def get_retro_line(root: Path, /) -> str:
-    """The line telling a retro is due when ten reports of the project are newer than the retro marker, else empty."""
 
     folder = data_folder()
     ledger = folder / "ledger.jsonl"
@@ -215,6 +195,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in a context hook must not stop a session
+    except Exception as error:
         print(f"the harness context hook failed: {error!r}", file=sys.stderr)
         sys.exit(1)

@@ -5,12 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PostToolUse hook on Read, Grep, Glob and Bash: in every project, adds one line of context at the moment an
-agent wastes tool turns, and never refuses. It fires on an exact repeat of a small read with no edit since, and on
-every RUN_LENGTH single small reads in a row, at most MAX_NUDGES times per agent, and stays silent past MAX_BYTES of transcript.
-It also notes, once per agent, a test, lint or build piped into `tail` or `head` with no `pipefail`, which hides the failure. A call in the agent's own transcript counts,
-so no state is kept. `report_gate.py` and `import_reports.py` write the same counts to the ledger for `harness:retro`.
-"""
 
 from __future__ import annotations
 
@@ -27,25 +21,19 @@ from common import EDIT_TOOLS, find_project, get_turns, read_events
 READ_TOOLS = frozenset({"Read", "Grep", "Glob"})
 SMALL_COMMANDS = frozenset({"cat", "bat", "sed", "head", "tail", "grep", "rg", "ls", "wc", "find"})
 LEADING_CD = re.compile(r"^cd\s+\S+\s*(?:&&|;)\s*")
-# A command that batches several steps, or that writes, is not a small read.
 BATCHED_OR_WRITING = re.compile(r";|&&|\|\||\n|>|^sed\s(.*\s)?-i|\s-delete\b|\s-exec")
-# Three single small reads in a row could have been one call; MAX_NUDGES keeps the note from turning into noise.
 RUN_LENGTH = 3
 MAX_NUDGES = 2
-# A longer transcript gets no nudge: this runs on every read, and only a whole transcript can count the cap.
 MAX_BYTES = 1048576
-# A pipe splits at one `|` (not `||`); a list splits at `;`, `&&`, `||` and a newline. Quoted text is blanked first.
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 LIST_SPLIT = re.compile(r"&&|\|\||[;\n]")
 PIPE_SPLIT = re.compile(r"(?<!\|)\|(?!\|)&?")
-# A heredoc body is text, not commands: the command is read up to its operator.
 HEREDOC = re.compile(r"<<(?!<)")
 PIPEFAIL = re.compile(r"\bpipefail\b")
 ZSH_STATUS = re.compile(r"\$\{?pipestatus")
 BASH_STATUS = re.compile(r"\$\{?PIPESTATUS")
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 PIPE_SINKS = frozenset({"tail", "head"})
-# Programs that are a gate alone, and those that are one with a subcommand (`cargo test`, `go test`).
 GATE_PROGRAMS = frozenset({"pytest", "make", "ruff", "tsc"})
 GATE_SUBCOMMANDS = {"cargo": {"test"}, "go": {"test"}, "npm": {"test", "run"}, "bun": {"test", "run"}, "pnpm": {"test", "run"}}
 SCRIPT_RUNNERS = frozenset({"python", "python3", "bash", "sh", "zsh"})
@@ -66,7 +54,6 @@ RUN_TEXT = (
 
 
 class Waste(NamedTuple):
-    """What a run of turns wasted; `nudges` holds (call id, text) in the order they fell due."""
 
     nudges: list[tuple[str, str]]
     longest_run: int
@@ -74,8 +61,7 @@ class Waste(NamedTuple):
     repeats: int
 
 
-def is_small_read(call: dict, /) -> bool:  # keys are data
-    """Whether a call only reads, and reads one thing: a read tool, or one shell command that a script could have joined."""
+def is_small_read(call: dict, /) -> bool:
 
     name = call.get("name")
     if name in READ_TOOLS:
@@ -89,7 +75,6 @@ def is_small_read(call: dict, /) -> bool:  # keys are data
 
 
 def is_gate(piece: str, /) -> bool:
-    """Whether one command of a pipe runs a test, lint or build."""
 
     words = piece.split()
     while words and ASSIGNMENT.match(words[0]):
@@ -108,7 +93,6 @@ def is_gate(piece: str, /) -> bool:
 
 
 def get_pipe_note(command: str, /) -> str:
-    """The note for a shell command that hides a gate's failure behind `tail` or `head`; empty when it does not."""
 
     if PIPEFAIL.search(command):
         return ""
@@ -127,14 +111,12 @@ def get_pipe_note(command: str, /) -> str:
 
 
 class PipeNudge(NamedTuple):
-    """The id of a Bash call that hides a failure and the note to send."""
 
     call_id: str
     note: str
 
 
 def get_pipe_nudge(turns: list[list[dict]], /) -> PipeNudge | None:
-    """The first Bash call of the run that hides a failure, with its note; one per agent."""
 
     for turn in turns:
         for call in turn:
@@ -147,8 +129,7 @@ def get_pipe_nudge(turns: list[list[dict]], /) -> PipeNudge | None:
     return None
 
 
-def get_waste(turns: list[list[dict]], /) -> Waste:  # keys are data
-    """Walks the turns in order. An edit forgets the reads before it; a command may change a file too, which the nudge's text allows for."""
+def get_waste(turns: list[list[dict]], /) -> Waste:
 
     nudges: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -174,8 +155,7 @@ def get_waste(turns: list[list[dict]], /) -> Waste:  # keys are data
     return Waste(nudges, longest_run, small_reads, repeats)
 
 
-def get_turn_stats(events: list[dict], /) -> dict:  # keys are data
-    """The ledger's `tool_turns` field for one agent's transcript."""
+def get_turn_stats(events: list[dict], /) -> dict:
 
     turns = get_turns(events)
     waste = get_waste(turns)
@@ -213,6 +193,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in a nudge must not touch the call
+    except Exception as error:
         print(f"the harness nudge hook failed: {error!r}", file=sys.stderr)
         sys.exit(1)

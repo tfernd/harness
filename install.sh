@@ -1,6 +1,4 @@
 #!/bin/sh
-# Install, update or uninstall the harness port for Cortex Code or Kiro CLI.
-# Usage: install.sh <cortex|kiro> [--uninstall] [--dry-run] [--model NAME=ID]
 set -eu
 
 usage() {

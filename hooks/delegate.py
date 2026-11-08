@@ -5,23 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""PreToolUse hook on Bash, Write, Edit and NotebookEdit: where the owner file has a `delegate` key, the main
-session hands its edits and runs to agents. The call always runs; one that breaks the rule gets a note in
-`additionalContext`. A call that carries `agent_id` came from a sub-agent and passes unchecked.
-
-`delegate.write_allow` holds globs relative to the project root, matched with fnmatch (its `*` also matches `/`, so `docs/*` covers `docs/a/b.md`); a file outside them is noted,
-apart from `__harness__/feedback/handled.md`. `delegate.bash_allow` adds prefixes to DEFAULT_BASH_ALLOW; each simple command of
-a Bash call should start with one, whole word by whole word, so `git status && make x` is noted. A shell redirect into
-a file is noted too, since it would be an edit. `$(cat <<'EOF' ...)`, the form of a commit message, reads no file: a
-bare `cat` (the word `cat` alone, with no argument) is allowed.
-
-The `main_edits` section is separate and on in every project: the main session's Edit, Write or NotebookEdit calls on files
-inside the project and outside `main_edits.allow` (globs relative to the project root) are counted before they run, in the
-session's edits file under a lock, so edits sent in one message are counted one by one; the call after `main_edits.max` of them is
-refused (exit 2); `max` 0 turns it off. The rule does not apply where the project root is the home folder, one of its parents
-or `/`. Edits made through Bash (a redirect, `sed -i`) are out of its scope: nothing counts them. The prompt and the Stop hook
-empty the edits file with the calls file.
-"""
 
 from __future__ import annotations
 
@@ -48,7 +31,6 @@ DEFAULT_BASH_ALLOW = (
     "head",
     "wc",
 )
-# The redirect target that writes no file.
 NULL_DEVICE = "/dev/null"
 DEFAULT_MAX_EDITS = 3
 DEFAULT_EDIT_ALLOW = (f"{HARNESS_FOLDER}/*", f"{SCRATCH_FOLDER}/*")
@@ -56,7 +38,6 @@ ADVICE = "the main session delegates edits and runs in this project (`harness:or
 
 
 def is_allowed_segment(segment: Segment, prefixes: list[list[str]], /) -> bool:
-    """Whether a simple command starts with an allowed prefix, whole words, and writes no file through a redirect."""
 
     words = [word.text for word in segment.words]
     if any(target != NULL_DEVICE for target in segment.redirects):
@@ -64,15 +45,13 @@ def is_allowed_segment(segment: Segment, prefixes: list[list[str]], /) -> bool:
     if words == ["cat"]:
         return True
 
-    # `git -C dir status` runs the same command as `git status`.
     while words[:1] == ["git"] and words[1:2] in (["-C"], ["-c"]):
         words = ["git", *words[3:]]
 
     return any(words[: len(prefix)] == prefix for prefix in prefixes)
 
 
-def check_bash(command: str, settings: dict, /) -> str:  # keys are data
-    """The first simple command that is not allowed, or an empty string."""
+def check_bash(command: str, settings: dict, /) -> str:
 
     allowed = [*DEFAULT_BASH_ALLOW, *settings.get("bash_allow", ())]
     prefixes = [prefix.split() for prefix in allowed if prefix.split()]
@@ -83,8 +62,7 @@ def check_bash(command: str, settings: dict, /) -> str:  # keys are data
     return ""
 
 
-def is_allowed_path(path: str, root: Path, settings: dict, cwd: str, /) -> bool:  # keys are data
-    """Whether a file lies in the project and matches `write_allow`, or is the handled file."""
+def is_allowed_path(path: str, root: Path, settings: dict, cwd: str, /) -> bool:
 
     resolved = Path(os.path.realpath(os.path.join(cwd, path)))
     if root not in resolved.parents:
@@ -97,10 +75,6 @@ def is_allowed_path(path: str, root: Path, settings: dict, cwd: str, /) -> bool:
 
 
 def is_counted_edit(path: str, root: Path, allow: list[str], cwd: str, /) -> bool:
-    """Whether an edit of `path` counts toward the cap: it lies in the project and matches no `allow` glob.
-
-    A file outside the project root (a memory file, a scratchpad) is not the project's change and never counts.
-    """
 
     resolved = Path(os.path.realpath(os.path.join(cwd, path)))
     if root not in resolved.parents:
@@ -111,10 +85,6 @@ def is_counted_edit(path: str, root: Path, allow: list[str], cwd: str, /) -> boo
 
 
 def record_edit(session: str, edited: str, maximum: int, root: Path, allow: list[str], cwd: str, /) -> int:
-    """Counts one more edit in the session's edits file unless `maximum` are there; returns how many were there before.
-
-    The count and the append happen under one lock, since the calls of one message run their hooks at once.
-    """
 
     folder = data_folder() / "turns"
     folder.mkdir(exist_ok=True)
@@ -128,8 +98,7 @@ def record_edit(session: str, edited: str, maximum: int, root: Path, allow: list
     return count
 
 
-def check_main_edits(event: dict, root: Path, config: dict, cwd: str, /) -> tuple[str, str]:  # keys are data
-    """The refusal and the note for a main-session edit under `main_edits`; both are empty when the rule does not apply."""
+def check_main_edits(event: dict, root: Path, config: dict, cwd: str, /) -> tuple[str, str]:
 
     settings = config.get("main_edits") or {}
     maximum = settings.get("max", DEFAULT_MAX_EDITS)
@@ -156,8 +125,7 @@ def check_main_edits(event: dict, root: Path, config: dict, cwd: str, /) -> tupl
     return "", note
 
 
-def check_delegate(event: dict, root: Path, config: dict, cwd: str, /) -> str:  # keys are data
-    """The note of the `delegate` rule for a call that breaks it, or an empty string."""
+def check_delegate(event: dict, root: Path, config: dict, cwd: str, /) -> str:
 
     if "delegate" not in config:
         return ""
@@ -197,6 +165,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in the rule must not block every call
+    except Exception as error:
         print(f"the harness delegate rule failed and let the call run: {error!r}", file=sys.stderr)
         sys.exit(1)

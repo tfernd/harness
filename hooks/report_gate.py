@@ -5,37 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""SubagentStop hook: in every project, every sub-agent of this plugin (`harness:*`) stops only with a report in the `report`
-skill's form, whose claims its own transcript backs. An agent of another kind (a built-in helper, another plugin's agent) is
-never judged or sent back.
-
-Answer, Not proven and Verdict are required; Problems, Next time, Open and Feedback appear when they have something to say.
-Each heading comes once, in the form's order, with Verdict last. Each section has the shape the skill gives it. The report is
-the agent's last block, handback or text, holding `## Answer`, else its last message.
-
-The claims come from the agent's transcript, never from git, since parallel agents share a tree: each file it changed
-through Edit, Write or NotebookEdit is named in the report by its absolute or project-relative path (`guard.scratch` is
-exempt), a claim that a check passed needs a Bash call, each `exit <N>` is the result of a Bash call (the transcript shows a
-code only for a failed call, `Exit code N`; a call that did not fail is 0) or a code a Bash call printed (`rg exit 1`, `rc=2`,
-make's `Error 2`), and a READ `path:line` names an existing file with that many lines, by its path from the project root or by
-an end of path that only one project file has; a text quoted after it must lie within 3 lines of that line.
-
-A bad report goes back to the agent, up to MAX_SEND_BACKS times; then the agent may stop and the orchestrator is warned.
-The send-back names only the sections that are wrong and asks for only those. The gate keeps the report it judged; on the
-next stop it merges: a section of the new message replaces the sections of the same heading, a section not resent is kept,
-a section whose heading is not the form's is dropped, and the sections come in the form's order. A whole new report works as
-before. The merged report is what is judged and what is filed: once the agent stops, one row goes to `ledger.jsonl` in the
-plugin's data folder, and each Feedback item goes to the project's `__harness__/feedback/inbox.md`, where it waits for a retro
-(`turn.py`).
-
-`report_gate.py handback` runs on PreToolUse of the handback tool, where an agent of the app ends: a send-back at its stop
-would reach nobody. It runs the same checks on the report the call carries, reading the claims from the agent's transcript,
-and refuses a bad one (exit 2) so the agent calls again with the whole report fixed. Its refusals and the stop's send-backs
-share one count. It also refuses a handback while a Bash command the agent started in the background has no finished
-notification in its transcript: the report would describe a run that is not over.
-
-The owner file may set, under `report`: `causes` (more causes a problem may name).
-"""
 
 from __future__ import annotations
 
@@ -54,72 +23,56 @@ from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, ensure_harness_folder, PLUG
 from nudge import get_turn_stats
 from turn import FINISHED_STATUSES, NOTIFICATION, get_notice_text
 
-# The form's sections in order; the rest are left out when they have nothing to say.
 ORDER = ("Answer", "Not proven", "Problems", "Next time", "Open", "Feedback", "Verdict")
 REQUIRED = ("Answer", "Not proven", "Verdict")
 PLACEHOLDER = re.compile(r"\b(pending|tbd|not yet known)\b", re.I)
 CAUSES = ("brief", "tool", "rule", "environment", "other agent", "the agent itself")
-# A bare "nothing" under Not proven says no more than an empty section.
 MIN_NOT_PROVEN_WORDS = 3
 VERDICT = re.compile(r"^\W*(done|partial|blocked)\b\W*(\S.*)", re.I | re.S)
-# A path with a folder, or a file name with an extension.
 FILE_NAME = re.compile(r"[\w.-]+/[\w./-]+|\b[\w-]+\.[A-Za-z]\w*\b")
-# A statement that a check succeeded, which only a run can back.
 PASS_CLAIM = re.compile(r"\b(tests?|lint|checks?|gates?|build)\b[^.\n]{0,40}\b(pass(?:es|ed)?|clean|green)\b", re.I)
 CLOSING_TAGS = re.compile(r"(</[A-Za-z][A-Za-z0-9_-]*>|\s)*$")
 EXIT_CODE = re.compile(r"exit\s+[0-9]+", re.I)
 ANSWER_HEADING = re.compile(r"^## Answer\s*$", re.M)
-# After a send-back the new message may hold any section of the form.
 SECTION_HEADING = re.compile(rf"^## ({'|'.join(ORDER)})\s*$", re.M)
 READ_CLAIM = re.compile(r"READ `([^`:]+):([0-9]+)(?:-([0-9]+))?`")
-# The text a READ claim quotes: right after the claim, in double quotes or backticks.
 READ_QUOTE = re.compile(r'[\s:,;\u2013\u2014-]*(?:"([^"\n]+)"|`([^`\n]+)`)')
 PATH_LINE = re.compile(r"[^\s:]+:[0-9]+(-[0-9]+)?")
 QUOTE_WINDOW = 3
 EXIT_CLAIM = re.compile(r"exit\s+([0-9]+)", re.I)
 EXIT_RESULT = re.compile(r"\s*Exit code ([0-9]+)")
 REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
-# What a FEEDBACK item says when it holds no feedback.
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
 NO_PROBLEM = re.compile(r"(- +)?no problem", re.I)
 MAX_SEND_BACKS = 3
-# An exit code a command printed rather than ended with: `rg exit 1`, `rc=2`, make's `Error 2`, `returncode: 1`.
 PRINTED_EXIT = r"\b(?:exit|code|rc|status|returncode|returned|error)\b\D{{0,12}}\b{code}\b"
-# The project's files, for a READ path given by its end: git's list, else a walk of this many files at most.
 GIT_TIMEOUT_S = 3
 MAX_WALK_FILES = 20000
 SKIPPED_FOLDERS = frozenset({"node_modules", "__pycache__"})
-# Characters a report may hold outside fenced blocks, which are evidence the reader skips. Every character of a report stays
-# in the main session's context; the owner file's `report.max_chars` overrides it.
 MAX_REPORT_CHARS = 6000
-# Seconds this hook waits for a report to reach the transcript, and between looks; well under the hook's timeout of 10.
 REPORT_WAIT_S = 3
 REPORT_POLL_S = 0.25
 
 
 class Problem(NamedTuple):
-    """One way a report breaks the form, with the section the agent must send again to fix it."""
 
     section: str
     text: str
 
 
 class Kept(NamedTuple):
-    """What the gate keeps between a send-back and the next stop: the message judged and the merged report."""
 
     raw: str
     merged: str
 
 
 class SplitReport(NamedTuple):
-    """A report cut at its `## ` headings: the lines before the first, and each section as its heading and lines."""
 
     preamble: list[str]
     sections: list[tuple[str, list[str]]]
 
 
 def split_report(report: str, /) -> SplitReport:
-    """The lines before the first `## ` heading, and each section as its heading and all its lines, heading line first."""
 
     lines = report.splitlines()
     fenced = get_fenced_indices(lines)
@@ -137,11 +90,6 @@ def split_report(report: str, /) -> SplitReport:
 
 
 def merge_reports(previous: str, new: str, /) -> str:
-    """The previous report with the sections of the new message in place of those of the same heading.
-
-    A section not resent stays; a section whose heading is not the form's is dropped; the result is in the form's order.
-    The title is the new message's when it has one.
-    """
 
     old_preamble, old_sections = split_report(previous)
     new_preamble, new_sections = split_report(new)
@@ -154,7 +102,6 @@ def merge_reports(previous: str, new: str, /) -> str:
 
 
 def get_section_at(report: str, position: int, /) -> str:
-    """The form's section holding this character position of the report, Answer when it lies in none."""
 
     sections = read_sections(report[:position])
     heading = sections[-1][0] if sections else ""
@@ -163,7 +110,6 @@ def get_section_at(report: str, position: int, /) -> str:
 
 
 def read_sections(report: str, /) -> list[tuple[str, list[str]]]:
-    """The `## ` sections in order, each with its non-blank lines; a fenced block is an example, so holds no heading."""
 
     sections: list[tuple[str, list[str]]] = []
     for line in get_unfenced_lines(report):
@@ -176,7 +122,6 @@ def read_sections(report: str, /) -> list[tuple[str, list[str]]]:
 
 
 def get_items(lines: list[str], /) -> list[str]:
-    """One string per item: a bullet or an unindented line; indented continuation lines join their item."""
 
     items: list[str] = []
     for line in lines:
@@ -189,7 +134,6 @@ def get_items(lines: list[str], /) -> list[str]:
 
 
 def item_text(item: str, /) -> str:
-    """An item without its bullet, trailing closing tags and trailing blanks."""
 
     return CLOSING_TAGS.sub("", re.sub(r"^- +", "", item))
 
@@ -199,7 +143,6 @@ def is_none(lines: list[str], /) -> bool:
 
 
 def check_headings(sections: list[tuple[str, list[str]]], /) -> list[Problem]:
-    """The required headings are there, each heading is the form's and comes once, in order, with Verdict last."""
 
     names = [name for name, _ in sections]
     problems = [Problem(heading, f"missing: {heading}") for heading in REQUIRED if heading not in names]
@@ -214,7 +157,6 @@ def check_headings(sections: list[tuple[str, list[str]]], /) -> list[Problem]:
 
 
 def check_problems(lines: list[str], cause_pattern: re.Pattern[str], /) -> list[str]:
-    """Each Problems item names a cause from the list and what would have helped."""
 
     if len(lines) == 1 and NO_PROBLEM.match(lines[0]):
         return []
@@ -229,7 +171,6 @@ def check_problems(lines: list[str], cause_pattern: re.Pattern[str], /) -> list[
 
 
 def check_feedback(lines: list[str], /) -> list[str]:
-    """Each Feedback item names a file to change."""
 
     texts = [item_text(item) for item in get_items(lines)]
 
@@ -237,7 +178,6 @@ def check_feedback(lines: list[str], /) -> list[str]:
 
 
 def check_section(heading: str, lines: list[str], cause_pattern: re.Pattern[str], /) -> list[str]:
-    """Why one section's body breaks the form."""
 
     text = " ".join(lines)
     match heading:
@@ -258,11 +198,10 @@ def check_section(heading: str, lines: list[str], cause_pattern: re.Pattern[str]
 
 
 def check_report(report: str, cause_pattern: re.Pattern[str], /) -> list[Problem]:
-    """Every way a report breaks its form."""
 
     sections = read_sections(report)
     problems = check_headings(sections)
-    bodies = dict(reversed(sections))  # a dict keeps the last pair of a repeated key: reversed, the FIRST occurrence wins
+    bodies = dict(reversed(sections))
     for heading in ORDER:
         if heading not in bodies:
             continue
@@ -274,8 +213,7 @@ def check_report(report: str, cause_pattern: re.Pattern[str], /) -> list[Problem
     return problems
 
 
-def result_text(block: dict, /) -> str:  # keys are data
-    """The text of a tool_result block, whether its content is a string or a list of text blocks."""
+def result_text(block: dict, /) -> str:
 
     content = block.get("content")
     if isinstance(content, list):
@@ -285,19 +223,14 @@ def result_text(block: dict, /) -> str:  # keys are data
 
 
 class AssistantBlocks(NamedTuple):
-    """What a transcript holds of the assistant: its content blocks, each error result's text by call id, the model, each result's text by call id."""
 
-    blocks: list[dict]  # keys are data
+    blocks: list[dict]
     failed: dict[str, str]
     model: str | None
     outputs: dict[str, str]
 
 
-def read_assistant_blocks(path: str, /) -> AssistantBlocks:  # keys are data
-    """The content blocks of a transcript's assistant lines, the text of each error result by tool call id, the model.
-
-    The transcript carries an exit code only for a failed call, as the first line `Exit code N` of its error result.
-    """
+def read_assistant_blocks(path: str, /) -> AssistantBlocks:
 
     blocks: list[dict] = []
     failed: dict[str, str] = {}
@@ -325,11 +258,7 @@ def read_assistant_blocks(path: str, /) -> AssistantBlocks:  # keys are data
     return AssistantBlocks(blocks, failed, model, outputs)
 
 
-def get_report(event: dict, blocks: list[dict], /, *, is_resend: bool = False) -> str:  # keys are data
-    """The agent's last block, handback or text, holding `## Answer`, else its last message. User lines never count.
-
-    After a send-back (`is_resend`) a heading of any section of the form will do, since the agent sends only the sections asked for.
-    """
+def get_report(event: dict, blocks: list[dict], /, *, is_resend: bool = False) -> str:
 
     heading = SECTION_HEADING if is_resend else ANSWER_HEADING
     last = event.get("last_assistant_message") or ""
@@ -349,12 +278,7 @@ def count_lines(text: object, /) -> int:
     return len(text.splitlines()) if isinstance(text, str) else 0
 
 
-def get_file_changes(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> dict[str, int]:  # keys are data
-    """The resolved path of each file changed through the edit tools, with an estimate of the lines it gained.
-
-    A call whose result was an error changed nothing. The estimate sums the lines of each call's new text (`new_string`,
-    `content` or `new_source`); it ignores the lines a call removed, so a rewrite counts in full.
-    """
+def get_file_changes(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> dict[str, int]:
 
     changes: dict[str, int] = {}
     for block in blocks:
@@ -369,14 +293,12 @@ def get_file_changes(blocks: list[dict], failed: dict[str, str], cwd: str, /) ->
     return changes
 
 
-def get_changed_files(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> list[str]:  # keys are data
-    """The resolved paths the agent changed through the edit tools; a call whose result was an error changed nothing."""
+def get_changed_files(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> list[str]:
 
     return sorted(get_file_changes(blocks, failed, cwd))
 
 
 def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
-    """Whether a report holds a path whole: absolute, or relative to one of the folders (`./` allowed)."""
 
     spellings = [path, *(os.path.relpath(path, folder) for folder in folders if path.startswith(folder + os.sep))]
     pattern = "|".join(re.escape(spelling) for spelling in spellings)
@@ -385,7 +307,6 @@ def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
 
 
 def get_project_files(root: str, /) -> list[str]:
-    """The project's files relative to its root: git's tracked and unignored ones, else a walk of MAX_WALK_FILES at most."""
 
     try:
         run = subprocess.run(
@@ -411,7 +332,6 @@ def get_project_files(root: str, /) -> list[str]:
 
 
 def find_by_end(path: str, files: list[str], /) -> list[str]:
-    """The project files whose path is `path` or ends with it after a folder."""
 
     end = path.removeprefix("./")
 
@@ -419,11 +339,6 @@ def find_by_end(path: str, files: list[str], /) -> list[str]:
 
 
 def check_read_claims(report: str, root: str, /) -> list[Problem]:
-    """Each READ `path:line` names an existing file with at least that many lines; `path:a-b` checks `b`.
-
-    A path not found from the root is looked up by its end: one project file ending with it is that file. A claim followed
-    by a quoted text needs that text on its lines or within QUOTE_WINDOW lines of them.
-    """
 
     problems: list[Problem] = []
     files: list[str] | None = None
@@ -466,8 +381,7 @@ def check_read_claims(report: str, root: str, /) -> list[Problem]:
     return problems
 
 
-def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], outputs: dict[str, str], /) -> list[Problem]:  # keys are data
-    """Each `exit N` of the report is the result of a Bash call: a failed call's `Exit code N`, 0 for a call that did not fail, or a code a call printed."""
+def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], outputs: dict[str, str], /) -> list[Problem]:
 
     seen: set[int] = set()
     for block in blocks:
@@ -493,7 +407,6 @@ def check_exit_claims(report: str, blocks: list[dict], failed: dict[str, str], o
 
 
 def get_max_chars(settings: object, /) -> int:
-    """The report length limit: `report.max_chars` when it is a positive integer, else the default."""
 
     value = settings.get("max_chars") if isinstance(settings, dict) else None
 
@@ -501,7 +414,6 @@ def get_max_chars(settings: object, /) -> int:
 
 
 def check_length(report: str, limit: int, /) -> list[Problem]:
-    """One problem when the report, outside its fenced blocks, is over the limit; it names the longest section."""
 
     count = len("\n".join(get_unfenced_lines(report)))
     if count <= limit:
@@ -518,8 +430,7 @@ def check_length(report: str, limit: int, /) -> list[Problem]:
 
 def check_claims(
     report: str, event: dict, root: str, scratch: str, blocks: list[dict], failed: dict[str, str], outputs: dict[str, str], /
-) -> list[Problem]:  # keys are data
-    """What the report claims against what its transcript shows; no transcript leaves only the READ claims."""
+) -> list[Problem]:
 
     problems = check_read_claims(report, root)
     if not os.path.isfile(event.get("agent_transcript_path") or ""):
@@ -530,7 +441,6 @@ def check_claims(
         is_exempt = scratch and (path == scratch or path.startswith(scratch + os.sep))
         if not is_exempt and not is_named(path, report, folders):
             problems.append(Problem("Answer", f"the report does not name a file the agent changed: {path}"))
-    # No Bash call at all is its own message; with some, each `exit N` is matched to a result.
     has_bash = any(block.get("type") == "tool_use" and block.get("name") == "Bash" for block in blocks)
     pass_claim = PASS_CLAIM.search(report)
     exit_claim = EXIT_CODE.search(report)
@@ -545,7 +455,6 @@ def check_claims(
 
 
 def get_feedback(report: str, /) -> list[str]:
-    """The items of Feedback that are not "none"."""
 
     lines = dict(reversed(read_sections(report))).get("Feedback", [])
     texts = [item_text(item) for item in get_items(lines)]
@@ -554,7 +463,6 @@ def get_feedback(report: str, /) -> list[str]:
 
 
 def get_task_title(report: str, /) -> str:
-    """The task text of the title line `# Report: <role>, <task>`, empty when there is none."""
 
     match = REPORT_TITLE.search(report)
 
@@ -562,7 +470,6 @@ def get_task_title(report: str, /) -> str:
 
 
 def file_feedback(root: str, session: str, role: str, items: list[str], /) -> list[str]:
-    """Appends each item new to this session to the project's inbox; returns the ids of all the items."""
 
     inbox = os.path.join(root, INBOX)
     known = open(inbox, errors="replace").read() if os.path.exists(inbox) else ""
@@ -579,8 +486,7 @@ def file_feedback(root: str, session: str, role: str, items: list[str], /) -> li
     return ids
 
 
-def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:  # keys are data
-    """The turns budget.py gives this agent: its brief's `Budget:` line, else the role's default; None if neither."""
+def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:
 
     path = get_agent_path(event)
     turns = None
@@ -596,11 +502,7 @@ def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:  # 
 
 def write_ledger(
     event: dict, root: str, role: str, report: str, send_backs: int, problems: list[str], ids: list[str], extra: dict, /
-) -> None:  # keys are data
-    """Appends one row for the stopped agent to the plugin's ledger, which the `retro` skill reads.
-
-    `extra` holds the fields read from the transcript and the config: model, budget_turns, files_changed.
-    """
+) -> None:
 
     sections = dict(reversed(read_sections(report)))
     verdict = VERDICT.match(" ".join(sections.get("Verdict", [])))
@@ -636,8 +538,7 @@ def write_ledger(
         file.write(json.dumps(row) + "\n")
 
 
-def get_send_backs_path(event: dict, /) -> Path:  # keys are data
-    """The file counting how many times this agent has been sent back."""
+def get_send_backs_path(event: dict, /) -> Path:
 
     folder = data_folder() / "send-backs"
     folder.mkdir(exist_ok=True)
@@ -645,7 +546,7 @@ def get_send_backs_path(event: dict, /) -> Path:  # keys are data
     return folder / f"{event.get('agent_id') or 'unknown'}.count"
 
 
-def get_send_backs(event: dict, /) -> int:  # keys are data
+def get_send_backs(event: dict, /) -> int:
     path = get_send_backs_path(event)
 
     try:
@@ -654,14 +555,12 @@ def get_send_backs(event: dict, /) -> int:  # keys are data
         return 0
 
 
-def get_kept_path(event: dict, /) -> Path:  # keys are data
-    """The file holding the report the gate judged at the last send-back."""
+def get_kept_path(event: dict, /) -> Path:
 
     return get_send_backs_path(event).with_suffix(".report")
 
 
-def get_kept(event: dict, tries: int, /) -> Kept | None:  # keys are data
-    """The report kept at the last send-back, None before any send-back or when the file is unreadable."""
+def get_kept(event: dict, tries: int, /) -> Kept | None:
 
     path = get_kept_path(event)
     if not tries or not path.exists():
@@ -675,10 +574,6 @@ def get_kept(event: dict, tries: int, /) -> Kept | None:  # keys are data
 
 
 def make_send_back(problems: list[Problem], /, *, is_handback: bool = False) -> str:
-    """The reason of a send-back: the sections that are wrong with what is wrong in each, and the form of those sections only.
-
-    A refused handback asks for the whole report again, since the main session gets only what the handback carries.
-    """
 
     hints = {
         "Problems": f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped, for example: '
@@ -699,8 +594,7 @@ def make_send_back(problems: list[Problem], /, *, is_handback: bool = False) -> 
     return ("Your report breaks the report skill's form in these sections only:\n" + "\n".join(lines) + "\n" + ask + advice).strip()
 
 
-def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: str | None, config: dict, role: str, root: str, /) -> dict:  # keys are data
-    """The ledger fields that come from the transcript and the config."""
+def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: str | None, config: dict, role: str, root: str, /) -> dict:
 
     cwd = event.get("cwd") or root
     changes = get_file_changes(blocks, failed, cwd)
@@ -709,8 +603,7 @@ def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: st
     return {"model": model, "budget_turns": get_budget_turns(event, config, role), "files_changed": files}
 
 
-def finish(event: dict, root: str, role: str, report: str, problems: list[str], extra: dict, /) -> None:  # keys are data
-    """The agent stops: its feedback and its ledger row are filed, and its send-back count is dropped."""
+def finish(event: dict, root: str, role: str, report: str, problems: list[str], extra: dict, /) -> None:
 
     path = get_send_backs_path(event)
     send_backs = get_send_backs(event)
@@ -722,20 +615,13 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
 
 
 def is_awaited(report: str, kept: Kept | None, /) -> bool:
-    """Whether the report is not there yet: it holds no heading, or it is the message already judged."""
 
     heading = ANSWER_HEADING if kept is None else SECTION_HEADING
 
     return not heading.search(report) or (kept is not None and report == kept.raw)
 
 
-def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> AssistantBlocks:  # keys are data
-    """The transcript's blocks, read again until a new report holds a heading: a handback can reach the file after this hook starts.
-
-    After a send-back the message judged then does not count as new.
-
-    REPORT_WAIT_S is not defended by a case, since none can write the file late; past it the agent counts as ended with no report.
-    """
+def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> AssistantBlocks:
 
     found = read_assistant_blocks(path)
     waited = 0.0
@@ -747,12 +633,9 @@ def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> AssistantBl
     return found
 
 
-def get_problems(report: str, event: dict, root: Path, config: dict, found: AssistantBlocks, /) -> list[Problem]:  # keys are data
-    """Everything wrong with a report: its form, its length and the claims its transcript does not back."""
+def get_problems(report: str, event: dict, root: Path, config: dict, found: AssistantBlocks, /) -> list[Problem]:
 
     settings = config.get("report", {})
-    # A cause counts as a whole word, and not when a `|` follows it: the skill's template lists the causes as
-    # `brief | tool | ...`, and a copied list is not a choice.
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
     cause_pattern = re.compile(rf"cause:\s*({causes})(?![a-z]|\s*\|)", re.I)
     problems = check_report(report, cause_pattern)
@@ -762,12 +645,7 @@ def get_problems(report: str, event: dict, root: Path, config: dict, found: Assi
     return problems
 
 
-def count_running_jobs(path: Path, outputs: dict[str, str], /) -> int:  # keys are data
-    """The Bash commands the agent started in the background whose finished notification is not in its transcript.
-
-    A launch is a Bash call with `run_in_background` true whose result says it runs in the background; its end is a task
-    notification naming the call's id with a finished status, the wording `turn.py` reads for agents.
-    """
+def count_running_jobs(path: Path, outputs: dict[str, str], /) -> int:
 
     launched: set[str] = set()
     finished: set[str] = set()
@@ -782,12 +660,7 @@ def count_running_jobs(path: Path, outputs: dict[str, str], /) -> int:  # keys a
     return len(launched - finished)
 
 
-def check_handback(event: dict, /) -> int:  # keys are data
-    """PreToolUse on the handback: a bad report is refused while the agent can still fix it.
-
-    The count is the one the stop reads, so the two send back MAX_SEND_BACKS times at most between them; past it the
-    handback goes through and the stop files the report with its problems.
-    """
+def check_handback(event: dict, /) -> int:
 
     root, config = find_project(event.get("cwd") or os.getcwd())
     report = (event.get("tool_input") or {}).get("message")
@@ -796,7 +669,6 @@ def check_handback(event: dict, /) -> int:  # keys are data
         return 0
     path = get_agent_path(event)
     found = read_assistant_blocks(str(path)) if path is not None else AssistantBlocks([], {}, None, {})
-    # A PreToolUse event names only the session's transcript; the claims are read from the agent's own.
     judged = {**event, "agent_transcript_path": str(path)} if path is not None else event
     problems = get_problems(report, judged, root, config, found)
     running = count_running_jobs(path, found.outputs) if path is not None else 0
@@ -810,8 +682,7 @@ def check_handback(event: dict, /) -> int:  # keys are data
     return 2
 
 
-def is_judged(event: dict, /) -> bool:  # keys are data
-    """Whether the agent is one of this plugin's: its type opens with the plugin prefix."""
+def is_judged(event: dict, /) -> bool:
 
     return str(event.get("agent_type") or "").startswith(PLUGIN_PREFIX)
 
@@ -837,7 +708,6 @@ def main() -> int:
         finish(event, str(root), name, report, [], extra)
         return 0
     listed = "; ".join(texts)
-    # An agent that handed back has ended, so a send-back would reach nobody and lose its row and feedback.
     has_ended = bool(found.blocks) and found.blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
     if has_ended or tries >= MAX_SEND_BACKS:
         finish(event, str(root), name, report, texts, extra)
@@ -856,6 +726,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in the gate must not trap an agent
+    except Exception as error:
         print(f"the harness report gate failed and let the agent stop: {error!r}", file=sys.stderr)
         sys.exit(1)

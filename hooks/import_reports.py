@@ -5,20 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Imports past sub-agent report cards from Claude Code transcripts into the plugin's ledger.
-
-Reads `agent-*.jsonl` files under `<source>/*/*/subagents/` (default source `~/.claude/projects`), never writes there.
-An agent's final report is its last `SubagentHandback` message, else its last assistant text; only a report with a
-`## REPORT CARD` section becomes a row. The row has the shape `write_ledger` in `hooks/report_gate.py` writes, with
-`accepted` true, `send_backs` 0, no open problems or feedback ids, and `imported` true. `scores` is null unless the
-Task value is `1`-`5` or `N/5`; only the causes of `hooks/report_gate.py` are kept. `role` is the `agentType` of the
-sibling `.meta.json`, else `unknown`. An agent already in the ledger (same `agent_id`) is skipped, so a rerun adds nothing.
-
-A `--source` that is not a folder is warned about and skipped. `--dry-run` needs no ledger: with none it counts every
-report as new and adds nothing.
-
-    bin/harness-import [--ledger PATH] [--source DIR ...] [--dry-run]
-"""
 
 from __future__ import annotations
 
@@ -41,8 +27,7 @@ CAUSE = re.compile(rf"cause:\s*({'|'.join(CAUSES)})", re.I)
 TASK = re.compile(r"[1-5](/5)?")
 
 
-def get_scores(lines: list[str], /) -> dict[str, str]:  # keys are data
-    """The Value cell of each row of an old report's card, by the row's name."""
+def get_scores(lines: list[str], /) -> dict[str, str]:
 
     scores: dict[str, str] = {}
     for line in lines:
@@ -55,14 +40,12 @@ def get_scores(lines: list[str], /) -> dict[str, str]:  # keys are data
 
 
 class FoundReport(NamedTuple):
-    """An agent's final report text and the transcript event holding it."""
 
     text: str
-    event: dict  # keys are data
+    event: dict
 
 
-def find_report(events: list[dict], /) -> FoundReport:  # keys are data
-    """The agent's final report and the event holding it, or ("", {}) when it ended with none."""
+def find_report(events: list[dict], /) -> FoundReport:
 
     for event in reversed(events):
         if event.get("type") != "assistant":
@@ -84,7 +67,6 @@ def find_report(events: list[dict], /) -> FoundReport:  # keys are data
 
 
 def read_role(path: Path, /) -> str:
-    """The `agentType` of the transcript's `.meta.json`, else "unknown"."""
 
     try:
         return str(json.loads(path.with_suffix(".meta.json").read_text()).get("agentType") or "unknown")
@@ -92,8 +74,7 @@ def read_role(path: Path, /) -> str:
         return "unknown"
 
 
-def make_row(path: Path, /) -> dict | None:  # keys are data
-    """The ledger row for one transcript, or None when its final report has no REPORT CARD section."""
+def make_row(path: Path, /) -> dict | None:
 
     events = read_events(path)
     report, last = find_report(events)
@@ -124,7 +105,6 @@ def make_row(path: Path, /) -> dict | None:  # keys are data
 
 
 def read_known(ledger: Path, /) -> set[str]:
-    """The agent ids the ledger already holds."""
 
     known: set[str] = set()
     if ledger.is_file():

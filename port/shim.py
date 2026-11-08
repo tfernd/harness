@@ -5,11 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Run a harness hook script for Kiro CLI or Snowflake Cortex Code and translate its answer.
-
-Use: `shim.py --host kiro|cortex [--event NAME] <hook script> [arg ...]`, with the host's event JSON on stdin.
-It never fails a call by its own bug: any exception ends in exit 0 with a note on stderr.
-"""
 
 from __future__ import annotations
 
@@ -31,7 +26,6 @@ KIRO_TOOLS = {
     "file_search": "Glob",
     "invoke_sub_agent": "Agent",
 }
-# Fields a host may name the sub-agent in, in the order they are tried.
 AGENT_FIELDS = ("agent_name", "agent", "name", "subagent", "agent_type")
 CORTEX_TOOLS = {
     "bash": "Bash",
@@ -49,11 +43,6 @@ BLOCK_EXIT = 2
 
 
 def get_agent_type(tool_input: dict, /) -> str:
-    """The sub-agent's type in Claude's form: an installed `harness-<role>` becomes `harness:<role>`.
-
-    The host's field name is not settled, so the known candidates are tried in order; with none, the type is
-    `host-agent`, which the brief check treats as another tool's agent rather than a generic one it refuses.
-    """
     for field in AGENT_FIELDS:
         value = tool_input.get(field)
         if isinstance(value, str) and value:
@@ -65,8 +54,7 @@ def get_agent_type(tool_input: dict, /) -> str:
     return "host-agent"
 
 
-def map_event(event: dict, host: str, event_name: str, /) -> dict:  # keys are data
-    """The host's event JSON in Claude's shape."""
+def map_event(event: dict, host: str, event_name: str, /) -> dict:
     tools = KIRO_TOOLS if host == "kiro" else CORTEX_TOOLS
     mapped = dict(event)
     name = event_name or str(event.get("hook_event_name", ""))
@@ -92,8 +80,7 @@ def map_event(event: dict, host: str, event_name: str, /) -> dict:  # keys are d
     return mapped
 
 
-def get_hook_output(stdout: str, /) -> dict:  # keys are data
-    """The JSON object a hook printed, with `hookSpecificOutput` merged on top; empty when it printed none."""
+def get_hook_output(stdout: str, /) -> dict:
     try:
         parsed = json.loads(stdout)
     except ValueError:
@@ -105,7 +92,6 @@ def get_hook_output(stdout: str, /) -> dict:  # keys are data
 
 
 def translate_kiro(stdout: str, stderr: str, event_name: str, /) -> int:
-    """Print what Kiro understands for a hook's JSON answer and return the exit code."""
     output = get_hook_output(stdout)
     reason = str(
         output.get("permissionDecisionReason") or output.get("reason") or stderr.strip()
@@ -132,7 +118,6 @@ def translate_kiro(stdout: str, stderr: str, event_name: str, /) -> int:
 
 
 def translate_cortex(stdout: str, /) -> int:
-    """Print a hook's JSON answer for Cortex, turning `ask` into a block, and return the exit code."""
     output = get_hook_output(stdout)
     if output.get("permissionDecision") == "ask":
         reason = str(
@@ -145,7 +130,6 @@ def translate_cortex(stdout: str, /) -> int:
 
 
 def run(argv: list[str], /) -> int:
-    """Parse the options, run the hook script and translate its answer."""
     options = {"--host": "", "--event": ""}
     position = 0
     while position < len(argv) and argv[position] in options:
@@ -194,10 +178,9 @@ def run(argv: list[str], /) -> int:
 
 
 def main() -> int:
-    """Entry point; fails open."""
     try:
         return run(sys.argv[1:])
-    except Exception as error:  # fail open: a shim bug must not stop the host's call
+    except Exception as error:
         print(f"harness shim: {type(error).__name__}: {error}", file=sys.stderr)
         return 0
 

@@ -5,15 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Build the Harness page from the repository's own files, so it changes when an agent, a skill or a hook does.
-
-The template holds the layout and the hand-written prose; this script fills its `<!-- @slot -->` markers and `{{fact}}`
-tokens from the agent files, the skills, the hook list, a few hook constants and the test files. Stdlib only.
-
-uv run python docs/build_map.py [--root FOLDER] [--check]
-
-`--check` writes nothing and exits 1 with a one-line reason when the committed page differs from a fresh build.
-"""
 
 from __future__ import annotations
 
@@ -33,28 +24,19 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path("docs") / "map.html.in"
 PAGE = Path("docs") / "index.html"
-# The hand-written stylesheet and script the page links; the page carries a hash of each so `--check` sees an edit.
 ASSETS = (Path("docs") / "style.css", Path("docs") / "script.js")
-# Hex digits of an asset's hash in its link.
 FINGERPRINT_LENGTH = 10
-# A hooks.json command's script under `hooks/` and its first argument, if any.
 HOOK_COMMAND = re.compile(r"hooks/([\w-]+\.py)\"?(?:\s+(\S+))?")
-SLOT = re.compile(r"<!-- @([a-z-]+)([^>]*?) -->")
+SLOT = re.compile(r"\[\[@([a-z-]+)([^\]]*?)\]\]")
 FACT = re.compile(r"\{\{(\w+)\}\}")
 LIST_ITEM = re.compile(r"\s+- (.+)")
 SENTENCE_END = re.compile(r"(?<=\.)\s+(?=[A-Z])")
-# Where a skill's job stops: a spaced dash, a colon or a sentence end.
 SUMMARY_END = re.compile(r" - |: |\. ")
-# Characters of a skill's job before it is cut at a word; longer, it reads as a paragraph in a popover.
 MAX_SUMMARY = 170
-# A first sentence shorter than this says too little to be the job, so the skill's "Load" sentence stands in for it.
 MIN_JOB = 20
-# A clause cut from the job's sentence shorter than this reads as a fragment, so the whole sentence is kept.
 MIN_CLAUSE = 40
-# Characters of each differing line the --check reason shows, from a little before the first changed character.
 SNIPPET = 60
 SNIPPET_LEAD = 20
-# The slots the template must hold exactly once.
 SINGLE_SLOTS = ("pyramid", "panels")
 HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*#*")
 FENCE = re.compile(r"(`{3,}|~{3,})\s*([\w+-]*)\s*")
@@ -65,66 +47,57 @@ CODE_SPAN = re.compile(r"(`+)(.+?)\1(?!`)")
 LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 BOLD = re.compile(r"\*\*(.+?)\*\*")
 ITALIC = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)")
-# The heading level a part's text starts at inside its popover: below the page's title and panel headings.
 HEADING_SHIFT = 2
-# The words a port's state reads as; a popover shows the words before the comma.
 PORT_STATES = {
     "runs": "runs",
     "advisory": "advisory, warns but blocks nothing",
     "off": "not ported",
 }
-# The events whose hooks run on a tool call; their popover names the tools after the moment.
 TOOL_EVENTS = ("PreToolUse", "PostToolUse")
 
 
 class Agent(NamedTuple):
-    """One agent file's facts."""
 
     name: str
     model: str
     tools: tuple[str, ...]
     skills: tuple[str, ...]
-    job: str  # the description's first sentence
-    use: str  # its sentence on when to use the agent, empty when it has none
+    job: str
+    use: str
 
 
 class Skill(NamedTuple):
-    """One skill's facts."""
 
-    job: str  # what the description says it is for
-    when: str  # the description's "Load" sentences, empty when it has none
+    job: str
+    when: str
 
 
 class Hook(NamedTuple):
-    """One command of the hook list."""
 
     event: str
-    matcher: str  # the tools it runs on, `|`-separated; empty for every tool
+    matcher: str
     script: str
-    argument: str  # empty when the command passes none
+    argument: str
 
 
 class Facts(NamedTuple):
-    """What the page shows from the repository."""
 
     agents: tuple[Agent, ...]
-    skills: dict[str, Skill]  # keys are data: a skill's name to its facts
+    skills: dict[str, Skill]
     hooks: tuple[Hook, ...]
-    budgets: dict[str, int]  # keys are data: a role to its default turns, `*` for any other
-    ports: dict[str, dict[str, str]]  # keys are data: a hook script to each port's state
-    values: dict[str, str]  # keys are data: a `{{fact}}` token's name to its text
-    full: dict[str, str]  # keys are data: `panel:name` to the part's whole text as markup
+    budgets: dict[str, int]
+    ports: dict[str, dict[str, str]]
+    values: dict[str, str]
+    full: dict[str, str]
 
 
 class Slot(NamedTuple):
-    """A `<!-- @name arguments -->` marker of the template."""
 
     name: str
     arguments: tuple[str, ...]
 
 
 class Kind(NamedTuple):
-    """A band of one panel: its name, the plain sentence its members share, and the members."""
 
     name: str
     text: str
@@ -132,24 +105,21 @@ class Kind(NamedTuple):
 
 
 class Level(NamedTuple):
-    """One step of the pyramid, from the hardest bind down."""
 
     key: str
     name: str
-    short: str  # a few words on the pyramid
-    text: str  # what happens at this level; `{fact}` fields take the page's facts
-    can: str  # the phrase a hook's popover sentence uses after "Can"
+    short: str
+    text: str
+    can: str
 
 
 class Event(NamedTuple):
-    """A moment Claude Code runs hooks at."""
 
     key: str
-    moment: str  # a hook popover's words; a tool event's tools follow them
+    moment: str
 
 
 class Rule(NamedTuple):
-    """One rule: what it does in a few words, the level it binds at and the hook script that acts."""
 
     text: str
     level: str
@@ -157,30 +127,26 @@ class Rule(NamedTuple):
 
 
 class Layout(NamedTuple):
-    """The facts and the hook scripts each level's rules name."""
 
     facts: Facts
-    level_hooks: dict[str, list[str]]  # keys are data: a level's key to its hook scripts, in rule order
+    level_hooks: dict[str, list[str]]
 
 
 class Port(NamedTuple):
-    """A tool a hook is ported to: its key in port/harness_port.py and its label on the page."""
 
     key: str
     label: str
 
 
 class PortNote(NamedTuple):
-    """A port fact the mapping cannot show: the state it sets for one hook script on one tool, and the README phrase it rests on."""
 
     script: str
     target: str
     state: str
     note: str
-    phrase: str  # text that must appear in README.md, so the note cannot outlive its source
+    phrase: str
 
 
-# Each agent, skill and hook sits in one band of its panel; a file in no band stops the build.
 AGENT_KINDS = (
     Kind("Thinkers", "Work out what to do; write no files.", ("planner", "cold-reader", "analyst")),
     Kind("Finders", "Look things up and answer with sources.", ("scout", "researcher")),
@@ -205,7 +171,6 @@ HOOK_KINDS = (
     Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "nudge.py")),
     Kind("Closers", "Hold the turn until it is recorded.", ("turn.py",)),
 )
-# What each hook script does, in plain words; a script with no entry stops the build.
 HOOK_JOBS = {
     "guard.py": "Refuses deletes, history rewrites and wildcards the shell would get wrong; asks you before a package is added or removed.",
     "commit_gate.py": "Refuses a commit message out of form or crediting an AI, and a commit that drops tests without saying why.",
@@ -227,14 +192,11 @@ LEVELS = (
     Level("advice", "Advice", "read, not checked", "Text the model reads before a kind of work. Nothing checks it was followed; a reviewer or a retro catches what slips.", "give the model advice"),
     Level("written", "Written down", "your AGENTS.md", "Your project's own rules in AGENTS.md, written once by /harness:init; they bind as far as the model reads them.", "write the rule into AGENTS.md"),
 )
-# The brackets beside the pyramid, top to bottom: the style class, its title and a note. The page's CSS gives each its rows
-# (hooks 1 to 4, hook notes 5, model 6 to 7), so they follow the order of LEVELS above.
 BRACES = (
     ("hooks", "Hooks enforce", "the call waits"),
     ("reminder", "Hook notes", ""),
     ("model", "Model decides", "nothing checks"),
 )
-# The level every skill sits at, and the one that names a file of the project instead of a part of the plugin.
 SKILL_LEVEL = "advice"
 FILE_LEVEL = "written"
 EVENTS = (
@@ -246,8 +208,6 @@ EVENTS = (
     Event("SubagentStop", "when an agent stops"),
     Event("Stop", "when the turn ends"),
 )
-# Each rule the harness enforces or advises, the level it binds at and the hook script that acts; the pyramid's counts
-# and each hook's levels come from this table, and a hook script with no rule here stops the build.
 RULES = (
     Rule("Deleting files is refused, except named files inside the scratch folder", "stopped", "guard.py"),
     Rule("Rewriting shared history is refused", "stopped", "guard.py"),
@@ -282,13 +242,9 @@ PORT_NOTES = (
 )
 
 
-# =========================================================================== #
-# Reading The Repository
-# =========================================================================== #
 
 
-def read_frontmatter(path: Path, /) -> dict[str, str | list[str]]:  # keys are data
-    """The `key: value` lines and `- item` lists between a file's opening `---` and the next one."""
+def read_frontmatter(path: Path, /) -> dict[str, str | list[str]]:
 
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0] != "---":
@@ -314,7 +270,6 @@ def read_frontmatter(path: Path, /) -> dict[str, str | list[str]]:  # keys are d
 
 
 def get_text(fields: dict[str, str | list[str]], key: str, path: Path, /) -> str:
-    """A frontmatter field that must be one line of text."""
 
     value = fields.get(key)
     if not isinstance(value, str):
@@ -324,7 +279,6 @@ def get_text(fields: dict[str, str | list[str]], key: str, path: Path, /) -> str
 
 
 def get_items(fields: dict[str, str | list[str]], key: str, path: Path, /) -> list[str]:
-    """A frontmatter list, empty when the key is absent."""
 
     value = fields.get(key, [])
     if not isinstance(value, list):
@@ -334,7 +288,6 @@ def get_items(fields: dict[str, str | list[str]], key: str, path: Path, /) -> li
 
 
 def get_agents(root: Path, /) -> tuple[Agent, ...]:
-    """Every agent file's facts, in file name order."""
 
     agents = []
     for path in sorted((root / "agents").glob("*.md")):
@@ -355,11 +308,6 @@ def get_agents(root: Path, /) -> tuple[Agent, ...]:
 
 
 def get_skill(description: str, /) -> Skill:
-    """A skill's job and when to load it, split from its description's sentences.
-
-    The job is the first sentence that is not a "Load" sentence, cut at its first clause when that clause is long enough.
-    A description whose only other sentence is a few words long uses its "Load" sentence for the job and the rest as `when`.
-    """
 
     sentences = [sentence.strip().rstrip(".") for sentence in SENTENCE_END.split(description.strip())]
     loads = [sentence for sentence in sentences if sentence.startswith("Load ")]
@@ -379,8 +327,7 @@ def get_skill(description: str, /) -> Skill:
     return Skill(job, when + "." if when else "")
 
 
-def get_skills(root: Path, /) -> dict[str, Skill]:  # keys are data
-    """Every skill's name and facts, in folder name order."""
+def get_skills(root: Path, /) -> dict[str, Skill]:
 
     skills = {}
     for path in sorted((root / "skills").glob("*/SKILL.md")):
@@ -391,7 +338,6 @@ def get_skills(root: Path, /) -> dict[str, Skill]:  # keys are data
 
 
 def get_hooks(root: Path, /) -> tuple[Hook, ...]:
-    """Every command of the hook list, in the file's order."""
 
     events = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
     hooks = []
@@ -407,7 +353,6 @@ def get_hooks(root: Path, /) -> tuple[Hook, ...]:
 
 
 def get_constant[T](path: Path, name: str, kind: type[T], /) -> T:
-    """The literal a module assigns to `name` at its top level, read without running the module."""
 
     for node in ast.parse(path.read_text(encoding="utf-8")).body:
         match node:
@@ -423,7 +368,6 @@ def get_constant[T](path: Path, name: str, kind: type[T], /) -> T:
 
 
 def import_path(path: Path, /) -> ModuleType:
-    """The module at `path`, run under a name of its own with its folder on the import path."""
 
     spec = importlib.util.spec_from_file_location(f"map_source_{path.stem}", path)
     if spec is None or spec.loader is None:
@@ -438,8 +382,7 @@ def import_path(path: Path, /) -> ModuleType:
     return module
 
 
-def get_port_states(port: ModuleType, events: dict[str, list[dict]], script: str, /) -> dict[str, str]:  # keys are data: the port keys
-    """Each port's state for one hook script: runs or off, from the hook list and harness_port's own conversion, then PORT_NOTES."""
+def get_port_states(port: ModuleType, events: dict[str, list[dict]], script: str, /) -> dict[str, str]:
 
     marker = f"hooks/{script}"
     groups = [
@@ -469,8 +412,7 @@ def get_port_states(port: ModuleType, events: dict[str, list[dict]], script: str
     return states
 
 
-def get_ports(root: Path, scripts: Iterable[str], /) -> dict[str, dict[str, str]]:  # keys are data: hook scripts, then port keys
-    """Each hook script's state on each port, with port/harness_port.py imported once."""
+def get_ports(root: Path, scripts: Iterable[str], /) -> dict[str, dict[str, str]]:
 
     port = import_path(root / "port" / "harness_port.py")
     events = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
@@ -479,13 +421,11 @@ def get_ports(root: Path, scripts: Iterable[str], /) -> dict[str, dict[str, str]
 
 
 def get_fingerprint(path: Path, /) -> str:
-    """A short hash of a hand-written asset, so the page's link to it goes stale when the file changes."""
 
     return hashlib.sha256(path.read_bytes()).hexdigest()[:FINGERPRINT_LENGTH]
 
 
 def get_facts(root: Path, /) -> Facts:
-    """Everything the page shows, read from the repository at `root`."""
 
     hooks_folder = root / "hooks"
     turn = hooks_folder / "turn.py"
@@ -525,13 +465,9 @@ def get_facts(root: Path, /) -> Facts:
     )
 
 
-# =========================================================================== #
-# Reading A Part's Whole Text
-# =========================================================================== #
 
 
 def make_inline(text: str, /) -> str:
-    """Markdown's inline marks as markup: code spans, links to the web, bold and italic. Everything else is escaped text."""
 
     parts = []
     last = 0
@@ -545,7 +481,6 @@ def make_inline(text: str, /) -> str:
 
 
 def make_emphasis(text: str, /) -> str:
-    """Links, bold and italic over text with no code span in it; a link that does not lead to the web keeps only its words."""
 
     def link(match: re.Match[str]) -> str:
         words, target = html.escape(match.group(1)), match.group(2)
@@ -565,7 +500,6 @@ def make_emphasis(text: str, /) -> str:
 
 
 def make_marks(text: str, /) -> str:
-    """Bold and italic over text with no link or code span in it."""
 
     escaped = html.escape(text)
     bold = BOLD.sub(r"<strong>\1</strong>", escaped)
@@ -574,7 +508,6 @@ def make_marks(text: str, /) -> str:
 
 
 def make_code_block(lines: Iterable[str], language: str, /) -> str:
-    """A fenced block as markup, its text escaped and its language named for the reader."""
 
     label = f' data-language="{html.escape(language)}"' if language else ""
 
@@ -582,7 +515,6 @@ def make_code_block(lines: Iterable[str], language: str, /) -> str:
 
 
 def split_cells(line: str, /) -> list[str]:
-    """A table row's cells: split at each `|` that is not escaped and not inside a code span."""
 
     cells = []
     current = []
@@ -610,7 +542,6 @@ def split_cells(line: str, /) -> list[str]:
 
 
 def make_table(rows: list[str], /) -> str:
-    """A pipe table: the first row heads it, the divider row is dropped."""
 
     head, *body = (split_cells(row) for row in (rows[0], *rows[2:]))
     width = len(head)
@@ -624,7 +555,6 @@ def make_table(rows: list[str], /) -> str:
 
 
 def is_block_start(line: str, next_line: str, /) -> bool:
-    """Whether a line begins something other than a paragraph's continuation."""
 
     return bool(
         HEADING.fullmatch(line)
@@ -637,7 +567,6 @@ def is_block_start(line: str, next_line: str, /) -> bool:
 
 
 def make_list(lines: list[str], start: int, /) -> tuple[str, int]:
-    """The list that begins at `lines[start]`, as markup, and the index after it."""
 
     indent = len(lines[start]) - len(lines[start].lstrip())
     first = BULLET.match(lines[start].lstrip())
@@ -685,7 +614,6 @@ def make_list(lines: list[str], start: int, /) -> tuple[str, int]:
 
 
 def make_blocks(lines: list[str], /) -> str:
-    """Markdown's blocks as markup: headings, paragraphs, lists, fenced code, quotes, rules and pipe tables."""
 
     out = []
     index = 0
@@ -742,7 +670,6 @@ def make_blocks(lines: list[str], /) -> str:
 
 
 def make_markdown(text: str, /) -> str:
-    """A markdown file's body as markup, its frontmatter dropped; every character from the file is escaped."""
 
     lines = text.splitlines()
     if lines and lines[0] == "---":
@@ -754,7 +681,6 @@ def make_markdown(text: str, /) -> str:
 
 
 def get_full_texts(root: Path, agents: tuple[Agent, ...], skills: dict[str, Skill], scripts: Iterable[str], /) -> dict[str, str]:
-    """Each part's whole text as markup, keyed `panel:name`: a skill's or agent's body, a hook's source in one code block."""
 
     full = {}
     for agent in agents:
@@ -768,13 +694,9 @@ def get_full_texts(root: Path, agents: tuple[Agent, ...], skills: dict[str, Skil
     return full
 
 
-# =========================================================================== #
-# Checking The Places
-# =========================================================================== #
 
 
 def check_kinds(kinds: tuple[Kind, ...], names: Iterable[str], where: str, /) -> None:
-    """Every name sits in exactly one kind and every member is a real name; else the build stops, naming `where`."""
 
     members = [member for kind in kinds for member in kind.members]
     real = list(names)
@@ -789,7 +711,6 @@ def check_kinds(kinds: tuple[Kind, ...], names: Iterable[str], where: str, /) ->
 
 
 def check_places(facts: Facts, /) -> None:
-    """Every agent, skill and hook has a band, every hook a job and every hook event words for its popover."""
 
     check_kinds(AGENT_KINDS, (agent.name for agent in facts.agents), "agents/{}.md")
     check_kinds(SKILL_KINDS, facts.skills, "skills/{}")
@@ -803,8 +724,7 @@ def check_places(facts: Facts, /) -> None:
         raise ValueError(f"hooks/hooks.json runs a hook at {unplaced[0]}, which EVENTS in docs/build_map.py does not place")
 
 
-def get_level_hooks(hooks: tuple[Hook, ...], /) -> dict[str, list[str]]:  # keys are data: level keys
-    """The hook scripts the rules of each level name, in RULES order; a hook with no rule, or a rule naming an unknown level or script, stops the build."""
+def get_level_hooks(hooks: tuple[Hook, ...], /) -> dict[str, list[str]]:
 
     keys = [level.key for level in LEVELS]
     scripts = {hook.script for hook in hooks}
@@ -822,7 +742,6 @@ def get_level_hooks(hooks: tuple[Hook, ...], /) -> dict[str, list[str]]:  # keys
 
 
 def check_port_notes(root: Path, /) -> None:
-    """Every port note rests on a README phrase found on exactly one line; else the build stops."""
 
     readme_lines = (root / "README.md").read_text(encoding="utf-8").splitlines()
     for note in PORT_NOTES:
@@ -831,25 +750,19 @@ def check_port_notes(root: Path, /) -> None:
             raise ValueError(f"README.md must hold the phrase {note.phrase!r} on one line, found it on {found}")
 
 
-# =========================================================================== #
-# Rendering
-# =========================================================================== #
 
 
 def get_tip_id(panel: str, name: str, /) -> str:
-    """The id of a chip's popover."""
 
     return f"tip-{panel}-{re.sub(r'[^a-z0-9-]', '-', name)}"
 
 
 def get_hook_levels(layout: Layout, script: str, /) -> tuple[Level, ...]:
-    """The levels a hook script acts at, hardest first."""
 
     return tuple(level for level in LEVELS if script in layout.level_hooks[level.key])
 
 
 def get_access(tools: tuple[str, ...], /) -> str:
-    """What an agent's tools let it do, in a few words."""
 
     access = "edits files" if {"Edit", "Write"} & set(tools) else "read-only"
 
@@ -857,7 +770,6 @@ def get_access(tools: tuple[str, ...], /) -> str:
 
 
 def make_row(icon: str, term: str, value: str, /, *, is_markup: bool = False) -> str:
-    """One icon row of a popover: the icon and `term`, then the value (escaped unless it is markup). An empty value makes no row."""
 
     if not value:
         return ""
@@ -868,12 +780,6 @@ def make_row(icon: str, term: str, value: str, /, *, is_markup: bool = False) ->
 
 
 def make_chip(panel: str, name: str, job: str, rows: Iterable[str], full: str, /, *, levels: tuple[Level, ...] = ()) -> str:
-    """One chip and its popover: a strip in the group's colour with its word, the name and the button for the whole text, the job, then the icon `rows`.
-
-    `full` is the part's whole text as markup; it waits in an inert template until the button asks for it.
-
-    `levels` are the levels the pyramid lights the chip for.
-    """
 
     tip_id = get_tip_id(panel, name)
     escaped = html.escape(name)
@@ -893,7 +799,6 @@ def make_chip(panel: str, name: str, job: str, rows: Iterable[str], full: str, /
 
 
 def make_agent_chip(agent: Agent, facts: Facts, /) -> str:
-    """An agent's chip: its name and job; the popover adds its model, access and budget, when to use it and its skills."""
 
     turns = facts.budgets.get(agent.name, facts.budgets.get("*"))
     rows = (
@@ -907,7 +812,6 @@ def make_agent_chip(agent: Agent, facts: Facts, /) -> str:
 
 
 def make_skill_chip(name: str, layout: Layout, /) -> str:
-    """A skill's chip; the popover adds its kind, the roles that preload it and when to load it."""
 
     skill = layout.facts.skills[name]
     preloaders = [agent.name for agent in layout.facts.agents if name in agent.skills]
@@ -924,7 +828,6 @@ def make_skill_chip(name: str, layout: Layout, /) -> str:
 
 
 def make_ports(states: dict[str, str], /) -> str:
-    """A hook's port badges, each state in words as well as in its style."""
 
     badges = "".join(f'<span class="port" data-state="{states[port.key]}">{port.label} {PORT_STATES[states[port.key]].split(",")[0]}</span>' for port in PORTS)
 
@@ -932,7 +835,6 @@ def make_ports(states: dict[str, str], /) -> str:
 
 
 def get_moments(script: str, hooks: tuple[Hook, ...], /) -> str:
-    """When Claude Code runs a hook script, in plain words, in the hook list's order."""
 
     moments: list[str] = []
     for hook in hooks:
@@ -947,7 +849,6 @@ def get_moments(script: str, hooks: tuple[Hook, ...], /) -> str:
 
 
 def get_enforcement_sentence(levels: tuple[Level, ...], /) -> str:
-    """One plain sentence on what a hook can do at its levels, hardest first; empty when it has none."""
 
     phrases = [level.can for level in LEVELS if level in levels]
     if not phrases:
@@ -960,7 +861,6 @@ def get_enforcement_sentence(levels: tuple[Level, ...], /) -> str:
 
 
 def make_meter(levels: tuple[Level, ...], /) -> str:
-    """A hook's levels as a meter, a segment per level a hook can act at and the ones it acts at lit, then one sentence on them."""
 
     keys = {level.key for level in levels}
     segments = "".join(
@@ -974,7 +874,6 @@ def make_meter(levels: tuple[Level, ...], /) -> str:
 
 
 def make_hook_chip(script: str, layout: Layout, /) -> str:
-    """A hook's chip; the popover adds when it runs, its enforcement levels and its ports."""
 
     levels = get_hook_levels(layout, script)
     rows = (
@@ -987,7 +886,6 @@ def make_hook_chip(script: str, layout: Layout, /) -> str:
 
 
 def make_panel(panel: str, title: str, kicker: str, bands: Iterable[tuple[Kind, list[str]]], /) -> str:
-    """One panel: a band per kind, its name and sentence in the left column and its chips on the right."""
 
     rows = []
     count = 0
@@ -1007,7 +905,6 @@ def make_panel(panel: str, title: str, kicker: str, bands: Iterable[tuple[Kind, 
 
 
 def make_panels(layout: Layout, /) -> str:
-    """The three panels: agents, skills and hooks, each sorted by kind."""
 
     facts = layout.facts
     by_name = {agent.name: agent for agent in facts.agents}
@@ -1025,7 +922,6 @@ def make_panels(layout: Layout, /) -> str:
 
 
 def get_lit(level: Level, layout: Layout, /) -> tuple[int, str]:
-    """How many panel parts a level lights, and a sentence naming them."""
 
     scripts = layout.level_hooks[level.key]
     names = ", ".join(scripts)
@@ -1039,7 +935,6 @@ def get_lit(level: Level, layout: Layout, /) -> tuple[int, str]:
 
 
 def make_pyramid(layout: Layout, /) -> str:
-    """The pyramid, hardest bind on top: a bar per level with its count, brackets for who holds the levels, and the note each level shows when pointed at."""
 
     steps = []
     notes = ['<p class="level-note" data-level-note="none">Point at a level to light its parts on the right; click to keep it lit.</p>']
@@ -1075,7 +970,6 @@ def make_pyramid(layout: Layout, /) -> str:
 
 
 def make_slot(slot: Slot, layout: Layout, /) -> str:
-    """The markup that replaces one slot of the template."""
 
     match slot.name:
         case "pyramid":
@@ -1086,13 +980,9 @@ def make_slot(slot: Slot, layout: Layout, /) -> str:
             raise ValueError(f"the template holds an unknown slot: {slot.name}")
 
 
-# =========================================================================== #
-# Building The Page
-# =========================================================================== #
 
 
 def get_fact(values: dict[str, str], name: str, /) -> str:
-    """A `{{fact}}` token's text, escaped for the page; an unknown name is an error."""
 
     if name not in values:
         raise ValueError(f"the template names an unknown fact: {{{{{name}}}}}")
@@ -1101,7 +991,6 @@ def get_fact(values: dict[str, str], name: str, /) -> str:
 
 
 def make_layout(slots: list[Slot], facts: Facts, /) -> Layout:
-    """Check the slots and every part's place, and find which hooks each level's rules name."""
 
     check_places(facts)
     names = [slot.name for slot in slots]
@@ -1113,14 +1002,12 @@ def make_layout(slots: list[Slot], facts: Facts, /) -> Layout:
 
 
 def make_page(template: str, facts: Facts, /) -> str:
-    """The page: the template with its fact tokens and then its slots filled."""
 
     with_facts = FACT.sub(lambda match: get_fact(facts.values, match.group(1)), template)
     slots = [Slot(match.group(1), tuple(match.group(2).split())) for match in SLOT.finditer(with_facts)]
     layout = make_layout(slots, facts)
-    # Only the template is searched: a part's own text may hold `{{` or `<!-- @` legitimately.
     bare = SLOT.sub("", with_facts)
-    for leftover in ("<!-- @", "{{"):
+    for leftover in ("[[@", "{{"):
         if leftover in bare:
             raise ValueError(f"the template holds a marker the build cannot read, near {bare[bare.index(leftover) :][:60]!r}")
     page = SLOT.sub(lambda match: make_slot(Slot(match.group(1), tuple(match.group(2).split())), layout), with_facts)
@@ -1129,7 +1016,6 @@ def make_page(template: str, facts: Facts, /) -> str:
 
 
 def get_difference(committed: str, fresh: str, /) -> str:
-    """Where the committed page first differs from a fresh build, in a few words for one line."""
 
     committed_lines, fresh_lines = committed.splitlines(), fresh.splitlines()
     for number, (old, new) in enumerate(zip(committed_lines, fresh_lines, strict=False), start=1):
@@ -1142,11 +1028,10 @@ def get_difference(committed: str, fresh: str, /) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Build the plugin map page.")
     parser.add_argument("--root", type=Path, default=ROOT, help="the repository to read, whose docs/index.html is the page (default: this one)")
     parser.add_argument("--check", action="store_true", help="write nothing; exit 1 when the committed page differs from a fresh build")
     arguments = parser.parse_args()
-    # Importing the case runner must leave no bytecode cache in the repository.
     sys.dont_write_bytecode = True
     root = arguments.root.resolve()
     target = root / PAGE

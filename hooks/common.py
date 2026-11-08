@@ -4,8 +4,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""What the hooks share: the project and its config layers, the roles the plugin judges, the data folder, fences, and
-the command a shell segment runs past its prefixes and wrappers."""
 
 from __future__ import annotations
 
@@ -19,10 +17,8 @@ from typing import NamedTuple
 
 from shell import Segment, Word, get_segments
 
-# The variable that points at the owner's config file; tests point it away.
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
-# The plugin's default settings: every section is a rule that runs in every project; the owner's file only overrides.
-DEFAULTS: dict = {  # keys are data
+DEFAULTS: dict = {
     "guard": {"scratch": "__scratch__", "no_tmp": True, "ask_packages": True},
     "brief": {},
     "progress": {"every": 10},
@@ -55,16 +51,11 @@ DEFAULTS: dict = {  # keys are data
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
 EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
-# The kind of a session's file that counts the main session's edits, written before each edit runs.
 EDITS_KIND = "edits"
-# The folder of the harness's own state in a project, ignored by git through its own `.gitignore`.
 HARNESS_FOLDER = "__harness__"
-# The folder of a project's throwaway files, ignored the same way.
 SCRATCH_FOLDER = "__scratch__"
 FEEDBACK_FOLDER = f"{HARNESS_FOLDER}/feedback"
-# The folder the guard moves deleted paths into, one subfolder per call, for the owner to empty.
 TRASH_FOLDER = f"{HARNESS_FOLDER}/trash"
-# The feedback folder of the plugin versions that kept it at the project root, moved at session start.
 OLD_FEEDBACK_FOLDER = "harness-feedback"
 IGNORE_FILE = ".gitignore"
 IGNORE_TEXT = "*\n"
@@ -85,28 +76,21 @@ Per-machine data (the ledger of reports, turn counters, send-backs, progress) li
 else `~/.cache/harness`), not here.
 """
 INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
-# The path of the handled file; `turn.py` imports it as HANDLED_NAME, since it names its own line pattern HANDLED.
 HANDLED = f"{FEEDBACK_FOLDER}/handled.md"
-# How many inbox items the last retro covered, which the Stop hook keeps.
 RETRO_MARK = f"{FEEDBACK_FOLDER}/retro-mark"
-# Lines `- <role or all>: <problem>` the main session keeps from a retro, told to agents at their start.
 OPEN_PROBLEMS = f"{FEEDBACK_FOLDER}/open.md"
-# The characters a file named in the handled file may carry around it, such as a closing period or backticks.
 FILE_EDGES = "`'\".,;:()"
-def read_sections(path: Path, /) -> dict:  # keys are data
-    """The sections of a JSON config file, {} when it is missing. A broken file raises."""
+def read_sections(path: Path, /) -> dict:
 
     if not path.is_file():
         return {}
     config = json.loads(path.read_text())
-    # A section of the wrong type counts as empty, so one bad key can't crash a hook and drop every rule.
     sections = config.items() if isinstance(config, dict) else ()
 
     return {key: value if isinstance(value, dict) else {} for key, value in sections}
 
 
-def merge_sections(*layers: dict) -> dict:  # keys are data
-    """The layers' sections, a later layer's keys over an earlier one's, key by key inside each section."""
+def merge_sections(*layers: dict) -> dict:
 
     merged: dict = {}
     for layer in layers:
@@ -117,17 +101,14 @@ def merge_sections(*layers: dict) -> dict:  # keys are data
 
 
 class Project(NamedTuple):
-    """A project's folder and its merged config."""
 
     root: Path
-    config: dict  # keys are data: the user's config sections
+    config: dict
 
 
 def find_git_root(start: Path, /) -> Path | None:
-    """The nearest folder from `start` upward that holds a `.git` entry, None when there is none below the home folder."""
 
     for candidate in (start, *start.parents):
-        # The home folder and its parents are no project, so a repository kept there does not swallow the folders under it.
         if not is_project_root(candidate):
             return None
         if (candidate / ".git").exists():
@@ -136,8 +117,7 @@ def find_git_root(start: Path, /) -> Path | None:
     return None
 
 
-def get_project_entries(projects: object, root: Path, /) -> dict:  # keys are data
-    """The sections of every `projects` entry of the owner's file whose path or glob matches the project root."""
+def get_project_entries(projects: object, root: Path, /) -> dict:
 
     layers: list[dict] = []
     if isinstance(projects, dict):
@@ -148,16 +128,7 @@ def get_project_entries(projects: object, root: Path, /) -> dict:  # keys are da
     return merge_sections(*layers)
 
 
-def find_project(cwd: str, /) -> Project:  # keys are data: the dict holds keys of the user's config, not names in code
-    """The project folder and its config: the defaults, then the owner's file, then its `projects` entry for this folder.
-
-    The project folder is the git work-tree root of `CLAUDE_PROJECT_DIR` (else `cwd`), found by walking up to a `.git`
-    entry; with none it is the start folder itself, so a `cd` in a session does not change its project.
-    The owner's file is `$HARNESS_CONFIG`, else `~/.config/harness/config.json`; its optional `projects` maps an absolute
-    path or glob to sections that apply to a matching folder. No file inside a project is read. Every section of `DEFAULTS` is a
-    default, so every rule runs in every project; a file only overrides (`delegate` stays off until it names it).
-    A broken owner file counts as empty, so the hard rules stay on.
-    """
+def find_project(cwd: str, /) -> Project:
 
     start = Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()
     root = find_git_root(start) or start
@@ -172,7 +143,6 @@ def find_project(cwd: str, /) -> Project:  # keys are data: the dict holds keys 
 
 
 def is_project_root(root: Path, /) -> bool:
-    """Whether the folder may take project rules that write into it or walk it: not `/`, the home folder or a parent of it."""
 
     home = Path.home().resolve()
 
@@ -180,10 +150,6 @@ def is_project_root(root: Path, /) -> bool:
 
 
 def ensure_ignored_folder(folder: Path, readme: str = "", /) -> None:
-    """Creates `folder` with a `.gitignore` holding `*` (and `readme` when given) if they are missing; never raises.
-
-    Called whenever a hook creates or writes into one of the harness's folders, so git never sees it.
-    """
 
     try:
         folder.mkdir(parents=True, exist_ok=True)
@@ -198,7 +164,6 @@ def ensure_ignored_folder(folder: Path, readme: str = "", /) -> None:
 
 
 def ensure_harness_folder(base: Path, /) -> Path:
-    """Creates `base/__harness__` as an ignored folder with its README; returns it."""
 
     folder = base / HARNESS_FOLDER
     ensure_ignored_folder(folder, HARNESS_README)
@@ -207,8 +172,6 @@ def ensure_harness_folder(base: Path, /) -> Path:
 
 
 def get_feedback_root(root: Path, /) -> Path:
-    """The folder that holds `__harness__/`: the project itself, else one in the data folder
-    when the start folder is no project root (`/` or the home folder), so no inbox lands there."""
 
     if is_project_root(root):
         return root
@@ -216,9 +179,7 @@ def get_feedback_root(root: Path, /) -> Path:
     return data_folder() / "projects" / (re.sub(r"[^A-Za-z0-9]+", "-", str(root)).strip("-") or "root")
 
 
-def get_scratch(root: Path, config: dict, /) -> str:  # config keys
-    """The resolved absolute folder of `guard.scratch` (`__scratch__/` and `./__scratch__` are `__scratch__`), empty when not set
-    or when the root is no project root, where a scratch rule would cover the whole home folder."""
+def get_scratch(root: Path, config: dict, /) -> str:
 
     scratch = config.get("guard", {}).get("scratch")
     if not is_project_root(root):
@@ -227,17 +188,12 @@ def get_scratch(root: Path, config: dict, /) -> str:  # config keys
     return os.path.realpath(root / scratch) if scratch else ""
 
 
-def make_note_output(note: str, /) -> dict:  # keys are data
-    """The PreToolUse output that lets the call run and gives the agent a note with the result.
-
-    Never carries a `permissionDecision`: the owner's permission prompts still apply to the call.
-    """
+def make_note_output(note: str, /) -> dict:
 
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}
 
 
 def get_fenced_indices(lines: list[str], /) -> set[int]:
-    """The indices of the lines inside a fenced block, fences included. A fence that never closes hides nothing."""
 
     fenced: set[int] = set()
     opened = -1
@@ -253,7 +209,6 @@ def get_fenced_indices(lines: list[str], /) -> set[int]:
 
 
 def get_unfenced_lines(text: str, /) -> list[str]:
-    """The lines of a message outside its fenced blocks, which hold examples. A fence that never closes hides nothing."""
 
     lines = text.splitlines()
     fenced = get_fenced_indices(lines)
@@ -261,8 +216,7 @@ def get_unfenced_lines(text: str, /) -> list[str]:
     return [line for index, line in enumerate(lines) if index not in fenced]
 
 
-def read_events(path: Path, /) -> list[dict]:  # keys are data
-    """A transcript's lines that parse to an object; a torn line or any other JSON value is skipped."""
+def read_events(path: Path, /) -> list[dict]:
 
     events: list[dict] = []
     for line in path.read_bytes().decode(errors="replace").split("\n"):
@@ -276,8 +230,7 @@ def read_events(path: Path, /) -> list[dict]:  # keys are data
     return events
 
 
-def get_turns(events: list[dict], /) -> list[list[dict]]:  # keys are data
-    """The tool calls of each model turn; a transcript line holds one block, and the lines of a turn share a message id."""
+def get_turns(events: list[dict], /) -> list[list[dict]]:
 
     turns: list[list[dict]] = []
     last_id = None
@@ -298,7 +251,6 @@ def get_turns(events: list[dict], /) -> list[list[dict]]:  # keys are data
 
 
 def read_tail(path: Path, size: int, /) -> bytes:
-    """The last `size` bytes of a file, from its first whole line, so a long transcript is never read whole."""
 
     with open(path, "rb") as file:
         end = file.seek(0, os.SEEK_END)
@@ -310,7 +262,6 @@ def read_tail(path: Path, size: int, /) -> bytes:
 
 
 def data_folder() -> Path:
-    """The plugin's data folder, which survives plugin updates, created if missing."""
 
     folder = Path(os.environ.get("CLAUDE_PLUGIN_DATA") or Path.home() / ".cache" / "harness")
     folder.mkdir(parents=True, exist_ok=True)
@@ -319,11 +270,6 @@ def data_folder() -> Path:
 
 
 def write_atomic(path: Path, text: str, /) -> None:
-    """Write `text` to `path` so a reader sees the old file or the whole new one, never an empty or partial one.
-
-    The text goes to a sibling file first and `os.replace` swaps it in. Appends stay plain appends: one short write
-    in append mode lands whole on Linux.
-    """
 
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
@@ -333,12 +279,7 @@ def write_atomic(path: Path, text: str, /) -> None:
         temporary.unlink(missing_ok=True)
 
 
-# ===========================================================================
-# Commands
-# ===========================================================================
 
-# The words after which the next word is the command, with no option of their own: wrappers (`command`, `exec`, `nohup`,
-# `time`, `builtin`, `noglob`) and shell keywords or punctuation (`then`, `do`, `else`, `elif`, `if`, `while`, `until`, `!`, `{`, `}`).
 PREFIXES = frozenset({
     "command",
     "exec",
@@ -357,7 +298,6 @@ PREFIXES = frozenset({
     "{",
     "}",
 })
-# The prefixes with options, each with the options that take a value in the next word.
 OPTION_PREFIXES = {
     "sudo": {"-u", "-g", "-h", "-p", "-C", "-r", "-t", "-T", "-U", "-D", "-R", "--user", "--group", "--host", "--prompt", "--chdir", "--chroot"},
     "doas": {"-u", "-C"},
@@ -369,39 +309,29 @@ OPTION_PREFIXES = {
     "ionice": {"-c", "-n"},
     "setsid": set(),
 }
-# The shells whose -c string is a command, and their options that take a value in the next word, before that string.
 SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})
 SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
-# The options of find that run the words after them, up to a `;` or a `+`.
 FIND_RUNNERS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 FIND_RUNNER_ENDS = frozenset({";", "+"})
-# The options of git before its subcommand that take a value in the next word.
 GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"})
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
-# The commands that run the rest of their words, joined, as a shell command, each with its options that take a value in
-# the next word: `watch`, `parallel` up to its `:::` arguments, and `ssh` after its host, on that host.
 JOINING_RUNNERS = {
     "watch": frozenset({"-n", "--interval"}),
     "parallel": frozenset({"-j", "--jobs", "-P", "--max-procs", "-S", "--sshlogin", "-a", "--arg-file", "--delay", "--timeout", "-n", "-N", "--max-args", "--joblog", "--results", "--colsep", "-C", "-d", "--delimiter", "-E", "-I", "-L", "--workdir", "--wd", "--tmpdir", "--retries", "--halt", "-l", "--load", "-s", "--tagstring", "--env"}),
     "ssh": frozenset({"-b", "-B", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L", "-l", "-m", "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w"}),
 }
-# The runner whose command runs on another machine, where only the rules about git and packages apply.
 REMOTE_RUNNERS = frozenset({"ssh"})
-# The words of `parallel` that end its command and start its arguments.
 PARALLEL_ARGUMENTS = frozenset({":::", "::::", ":::+", "::::+"})
-# The commands that run the value of their `-c` (or `--command`) option as a shell command.
 OPTION_RUNNERS = frozenset({"su", "script"})
 
 
 class Command(NamedTuple):
-    """A simple command resolved past its prefixes: the command word and its arguments."""
 
     name: str
     arguments: list[Word]
 
 
 def skip_options(words: list[Word], index: int, value_options: Set[str], /) -> int:
-    """The index of the first word from `index` that is not an option or an option's value."""
 
     while index < len(words) and words[index].text.startswith("-"):
         index += 2 if words[index].text in value_options else 1
@@ -410,7 +340,6 @@ def skip_options(words: list[Word], index: int, value_options: Set[str], /) -> i
 
 
 def resolve(segment: Segment, policy: object = None, /) -> Command:
-    """The command a segment runs, past assignments and prefixes; `policy` is not read, and kept for callers that pass one."""
 
     words = segment.words
     index = 0
@@ -421,7 +350,7 @@ def resolve(segment: Segment, policy: object = None, /) -> Command:
         elif word in OPTION_PREFIXES:
             index = skip_options(words, index + 1, OPTION_PREFIXES[word])
             if word == "timeout":
-                index += 1  # skip its duration, the first non-option word
+                index += 1
         else:
             break
     if index >= len(words):
@@ -431,13 +360,11 @@ def resolve(segment: Segment, policy: object = None, /) -> Command:
 
 
 def is_cluster(argument: str, /) -> bool:
-    """Whether an argument is a cluster of short options, such as `-xf`."""
 
     return argument.startswith("-") and not argument.startswith("--")
 
 
 def get_git_index(arguments: list[str], /) -> int:
-    """The index of a git call's subcommand among its arguments, past its global options; the length when there is none."""
 
     index = 0
     while index < len(arguments) and arguments[index].startswith("-"):
@@ -447,7 +374,6 @@ def get_git_index(arguments: list[str], /) -> int:
 
 
 def get_git_subcommand(arguments: list[str], /) -> str:
-    """The subcommand of a git call, past its global options."""
 
     index = get_git_index(arguments)
 
@@ -455,7 +381,6 @@ def get_git_subcommand(arguments: list[str], /) -> str:
 
 
 def get_shell_string(arguments: list[str], /) -> str:
-    """The string a shell runs with -c, in any cluster (`-lc`, `-ec`), or nothing when it runs a script."""
 
     has_string_option = False
     index = 0
@@ -473,7 +398,6 @@ def get_shell_string(arguments: list[str], /) -> str:
 
 
 def get_find_runs(arguments: list[Word], /) -> list[Segment]:
-    """The commands a find runs: the words after each `-exec`, `-execdir`, `-ok` or `-okdir`, up to a `;` or a `+`."""
 
     segments: list[Segment] = []
     start = -1
@@ -490,7 +414,6 @@ def get_find_runs(arguments: list[Word], /) -> list[Segment]:
 
 
 def get_joined_run(name: str, arguments: list[Word], /) -> str:
-    """The shell command a joining runner runs: its words past its options (and the host of `ssh`), up to `parallel`'s `:::`."""
 
     index = skip_options(arguments, 0, JOINING_RUNNERS[name])
     index += 1 if name in REMOTE_RUNNERS else 0
@@ -501,7 +424,6 @@ def get_joined_run(name: str, arguments: list[Word], /) -> str:
 
 
 def get_option_run(arguments: list[str], /) -> str:
-    """The value of a `-c` or `--command` option, in a cluster ending in `c` (`-qc`) too; "" when there is none."""
 
     for index, argument in enumerate(arguments):
         following = arguments[index + 1] if index + 1 < len(arguments) else ""
@@ -514,8 +436,6 @@ def get_option_run(arguments: list[str], /) -> str:
 
 
 def get_alias_runs(name: str, arguments: list[str], /) -> list[Segment]:
-    """The commands an alias definition stands for: a shell `alias n=value`, or a git alias set by `git config alias.n value`
-    or `git -c alias.n=value`, a value starting with `!` being a shell command."""
 
     if name == "alias":
         return [segment for argument in arguments if "=" in argument for segment in get_segments(argument.split("=", 1)[1])]
@@ -533,8 +453,6 @@ def get_alias_runs(name: str, arguments: list[str], /) -> list[Segment]:
 
 
 def get_inner_segments(command: Command, /) -> list[Segment]:
-    """The commands a command runs from its arguments: a shell's -c string, an `eval`'s words, a find's -exec, the words of
-    `watch`, `parallel` and `ssh`, the `-c` of `su` and `script`, and what a shell or git alias it defines stands for."""
 
     name = os.path.basename(command.name)
     arguments = [word.text for word in command.arguments]

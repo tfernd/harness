@@ -5,12 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Fail when a skill or an agent leaves the form AGENTS.md demands.
-
-Checks frontmatter keys, name against folder, description and body length, every
-`harness:<name>` reference and every `references/<file>` a skill names. Run it with
-`--root FOLDER` to check another copy of the tree.
-"""
 
 from __future__ import annotations
 
@@ -34,14 +28,12 @@ ITEM_LINE = re.compile(r"^\s+-\s+(.*?)\s*$")
 
 
 class Frontmatter(NamedTuple):
-    """A file's frontmatter keys with their values, and the body lines after it."""
 
-    fields: dict[str, str | list[str]]  # keys are data
+    fields: dict[str, str | list[str]]
     body: list[str]
 
 
 def split_frontmatter(text: str, /) -> Frontmatter | None:
-    """Return the frontmatter keys with their values and the body lines, or None when there is none."""
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None
@@ -142,7 +134,7 @@ def check_tree(root: Path, /) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Fail when a skill or an agent leaves the form AGENTS.md demands.")
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="tree to check")
     root = parser.parse_args().root.resolve()
     problems = check_tree(root)

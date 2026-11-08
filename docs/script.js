@@ -1,8 +1,6 @@
 {
   const THEME_KEY = "harness-map-theme";
-  // A pointer that only crosses a chip on its way elsewhere opens nothing.
   const HOVER_DELAY_MS = 90;
-  // The room a popover keeps from the window's edge before it flips to the chip's other side.
   const EDGE_PX = 12;
   const WIDE_QUERY = window.matchMedia("(min-width: 40rem)");
   const page = document.documentElement;
@@ -45,7 +43,6 @@
       if (tipBox.bottom > window.innerHeight - EDGE_PX && chipBox.top > tipBox.height + EDGE_PX) tip.classList.add("is-above");
     };
 
-    // The whole text is cloned from its template the first time it is asked for, so a closed page carries it inert.
     const setFull = (tip, isFull) => {
       const button = tip.querySelector(".tip-switch");
       const view = tip.querySelector(".tip-view");
@@ -140,7 +137,6 @@
       for (const note of notes) note.hidden = note.dataset.levelNote !== (level || "none");
       for (const chip of chips) chip.classList.toggle("is-lit", lit.includes(chip));
       pyramid?.classList.toggle("has-active", level !== "");
-      // Only a panel on screen with a lit part dims the rest; a level that lights nothing here leaves the panel as it is.
       panels.classList.toggle("has-filter", lit.some((chip) => chip.offsetParent !== null));
     };
 

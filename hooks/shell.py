@@ -4,13 +4,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""The shell reader of the hooks: cuts a command into the simple commands it runs, as a shell reads it, word by word.
-
-A heredoc's body, a quoted string, a `$((...))` and a `[[ ... ]]` hold no separator. What runs inside a word is read as
-commands too: `$(...)`, backticks, `<(...)`, `>(...)`, and the substitutions in a `${...}`, a `$((...))` or the body of
-an unquoted heredoc. A substitution is read by the same scanner as the text around it, so its closing parenthesis is
-found past quotes, heredocs, comments and `case` arms.
-"""
 
 from __future__ import annotations
 
@@ -19,33 +12,23 @@ from typing import NamedTuple
 
 GLOB_CHARACTERS = "*?["
 SEPARATORS = ";&|()\n"
-# The operators a separator character starts, the longest first.
 SEPARATOR_OPERATOR = re.compile(r";;&|;;|;&|&&|\|\||\|&|[;&|()\n]")
 REDIRECT_OPERATOR = re.compile(r"<<<|<<-|<<|<>|<&|<|&>>|&>|>>|>&|>\||>")
 PIPES = frozenset({"|", "|&"})
-# The characters that, after a `$`, name a special parameter (`$?`, `$*`, `$#`): the pair is one word, so the `?` or `*` is
-# not a glob and the `#` does not start a comment.
 SPECIAL_PARAMETERS = "?*@#$!-"
-# The keywords that open a loop. A sleep in a while or until loop waits for a result; one in a for loop waits a fixed
-# count, so only the two polling keywords count as polling.
 LOOP_KEYWORDS = frozenset({"for", "select", "until", "while"})
 POLLING_LOOPS = frozenset({"until", "while"})
-# The reserved words that may stand before a keyword in the same segment (`do while`, `then until`).
 LEADING_WORDS = frozenset({"!", "{", "do", "elif", "else", "if", "then"})
-# The words after which a `[[` or a `((` still starts a command.
 OPENING_WORDS = LEADING_WORDS | POLLING_LOOPS
 
 
 class Word(NamedTuple):
-    """One shell word after quote removal, and whether it held an unquoted glob character."""
 
     text: str
     is_glob: bool
 
 
 class Segment(NamedTuple):
-    """One simple command: its words, its output redirect targets, whether a polling loop is open around it, whether
-    it runs in a subshell (a group, a substitution, a pipeline or the background), where a `cd` does not persist."""
 
     words: list[Word]
     redirects: list[str]
@@ -54,8 +37,6 @@ class Segment(NamedTuple):
 
 
 class Heredoc(NamedTuple):
-    """A heredoc opened on the current line: its delimiter, whether `<<-` strips tabs, whether the delimiter is quoted,
-    which leaves its body plain text."""
 
     delimiter: str
     is_dash: bool
@@ -63,8 +44,6 @@ class Heredoc(NamedTuple):
 
 
 def find_arithmetic_end(text: str, start: int, /) -> int:
-    """The index after the `))` of the arithmetic opened just before `start`, or -1 when the two parentheses do not close
-    together, which makes them nested subshells (`$((a) && (b))`) and no arithmetic."""
 
     depth = 2
     for index in range(start, len(text)):
@@ -76,7 +55,6 @@ def find_arithmetic_end(text: str, start: int, /) -> int:
 
 
 def find_backtick_end(text: str, start: int, /) -> int:
-    """The index of the backtick that closes the one before `start`, or the end of the text."""
 
     index = start
     while index < len(text) and text[index] != "`":
@@ -86,10 +64,6 @@ def find_backtick_end(text: str, start: int, /) -> int:
 
 
 class Scanner:
-    """Cuts a shell command into simple commands, reading quotes, substitutions, redirects and heredocs.
-
-    A nested scanner reads the inside of a `$(`: it starts at `start` and stops at the parenthesis that closes it.
-    """
 
     def __init__(
         self, text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False, start: int = 0, is_nested: bool = False
@@ -99,20 +73,20 @@ class Scanner:
         self.is_nested = is_nested
         self.is_closed = False
         self.segments: list[Segment] = []
-        self.in_group = in_group  # the text is a substitution, so its commands run in a subshell
-        self.depth = 0  # the parenthesized groups open at the index
-        self.case_depth = 0  # the `case` commands open at the index, whose arms hold an unmatched `)`
-        self.in_pipeline = False  # a `|` was seen and the pipeline it belongs to has not ended
-        self.list_start = 0  # the first segment of the list a `&` would send to the background
+        self.in_group = in_group
+        self.depth = 0
+        self.case_depth = 0
+        self.in_pipeline = False
+        self.list_start = 0
         self.words: list[Word] = []
         self.redirects: list[str] = []
         self.characters: list[str] = []
         self.is_word = False
         self.is_glob = False
         self.is_quoted = False
-        self.target = ""  # "", "redirect", "duplicate", "heredoc" or "herestring": what the next word is
+        self.target = ""
         self.heredocs: list[Heredoc] = []
-        self.loops = list(open_loops)  # the loop keywords still open, the innermost last
+        self.loops = list(open_loops)
 
     def end_word(self) -> None:
         if not self.is_word:
@@ -122,20 +96,18 @@ class Scanner:
             case "redirect":
                 self.redirects.append(word.text)
             case "duplicate":
-                # A `>&` word that is a descriptor number or `-` names no file (`2>&1`, `>&-`).
                 if not (word.text.isdigit() or word.text == "-"):
                     self.redirects.append(word.text)
             case "heredoc":
                 self.heredocs[-1] = self.heredocs[-1]._replace(delimiter=word.text, is_quoted=self.is_quoted)
             case "herestring":
-                pass  # the input of a command, not one of its words
+                pass
             case _:
                 self.track_keyword(word.text)
                 self.words.append(word)
         self.characters, self.is_word, self.is_glob, self.is_quoted, self.target = [], False, False, False, ""
 
     def track_keyword(self, word: str, /) -> None:
-        """Opens a loop or a `case` at the keyword that starts a command, and closes it at `done` or `esac`."""
 
         if any(earlier.text not in LEADING_WORDS for earlier in self.words):
             return
@@ -149,7 +121,6 @@ class Scanner:
             self.case_depth = max(self.case_depth - 1, 0)
 
     def end_segment(self) -> bool:
-        """Ends the simple command at the index; returns whether it held anything."""
 
         self.end_word()
         self.target = ""
@@ -163,7 +134,6 @@ class Scanner:
         return has_command
 
     def read_substitution(self, start: int, /) -> int:
-        """Reads `$(...)`, `$((...))`, `<(...)` or a backtick string at `start`; returns the index after it."""
 
         text = self.text
         if text[start] == "`":
@@ -182,7 +152,6 @@ class Scanner:
         return nested.index + 1
 
     def read_expansions(self, start: int, end: int, /) -> None:
-        """Reads the substitutions in text that is otherwise no command: an arithmetic or a heredoc's body."""
 
         index = start
         while index < end:
@@ -194,7 +163,6 @@ class Scanner:
                 index += 1
 
     def substitute(self, start: int, /) -> int:
-        """Reads a substitution as a piece of the current word; returns the index after it."""
 
         end = self.read_substitution(start)
         self.characters.append("$")
@@ -203,7 +171,6 @@ class Scanner:
         return end
 
     def read_parameter(self, start: int, is_double_quoted: bool, /) -> int:
-        """Reads a `${...}` as a piece of the current word, its substitutions as commands; returns the index after it."""
 
         text = self.text
         depth, index = 1, start + 2
@@ -229,7 +196,6 @@ class Scanner:
         return index
 
     def skip_heredocs(self) -> None:
-        """Skips the bodies of the heredocs opened on the line just ended; an unquoted body still runs its substitutions."""
 
         for heredoc in self.heredocs:
             start = self.index
@@ -287,14 +253,12 @@ class Scanner:
             self.target = "herestring"
 
     def read_process_substitution(self) -> None:
-        """Reads `<(...)` or `>(...)`; as a redirect's target it names no file (`> >(tee x)`)."""
 
         if self.target == "redirect":
             self.target = "herestring"
         self.index = self.substitute(self.index)
 
     def read_escape(self) -> None:
-        """Reads a backslash and the character it escapes; a backslash before a newline joins the lines."""
 
         if self.text[self.index + 1 : self.index + 2] not in ("\n", ""):
             self.characters.append(self.text[self.index + 1])
@@ -311,7 +275,6 @@ class Scanner:
         self.index = end + 1
 
     def read_ansi_quoted(self) -> None:
-        """Reads `$'...'`, where a backslash escapes a quote."""
 
         index = self.index + 2
         while index < len(self.text) and self.text[index] != "'":
@@ -326,7 +289,6 @@ class Scanner:
         self.index = len(self.text) if end < 0 else end
 
     def read_separator(self, character: str, /) -> None:
-        """Ends the simple command at a separator, tracks groups and pipelines, and skips the heredocs a newline starts."""
 
         has_command = self.end_segment()
         if character == ")" and self.is_nested and self.depth == 0 and self.case_depth == 0:
@@ -340,8 +302,6 @@ class Scanner:
                 self.segments[-1] = self.segments[-1]._replace(in_group=True)
             self.in_pipeline = True
         elif has_command or operator != "\n":
-            # The pipeline ends at a separator that follows a command, or at any separator but a newline; a newline with no
-            # command before it (`a |` then `b` on the next line) continues the pipeline.
             self.in_pipeline = False
         if operator == "&":
             for index in range(self.list_start, len(self.segments)):
@@ -362,17 +322,14 @@ class Scanner:
         self.index += 1
 
     def is_command_start(self) -> bool:
-        """Whether a word at the index would be the command word of its segment."""
 
         return not self.is_word and all(word.text in OPENING_WORDS for word in self.words)
 
     def is_arithmetic_start(self) -> bool:
-        """Whether a `((` at the index is a command or the head of a `for ((...))`."""
 
         return self.is_command_start() or (not self.is_word and [word.text for word in self.words] == ["for"])
 
     def read_test(self) -> None:
-        """Reads `[[ ... ]]` as one unit: its operators separate nothing, and its patterns are no globs."""
 
         text = self.text
         self.words.append(Word("[[", False))
@@ -399,7 +356,6 @@ class Scanner:
                 self.index += 1
 
     def read_dollar(self) -> None:
-        """Reads what starts with a `$` or a backtick: a substitution, a parameter, an ANSI quote, or a plain `$`."""
 
         text, following = self.text, self.text[self.index + 1 : self.index + 2]
         if following == "(" or text[self.index] == "`":
@@ -416,7 +372,6 @@ class Scanner:
             self.read_plain("$")
 
     def read_arithmetic_command(self) -> bool:
-        """Reads a `(( ... ))` command or the head of a `for ((...))`; returns False when the parentheses are subshells."""
 
         end = find_arithmetic_end(self.text, self.index + 2)
         if end < 0:
@@ -427,7 +382,6 @@ class Scanner:
         return True
 
     def read_next(self) -> None:
-        """Reads the token at the index: a quote, a substitution, a redirect, a separator, a blank or a plain character."""
 
         text, character = self.text, self.text[self.index]
         if character == "\\":
@@ -465,9 +419,5 @@ class Scanner:
 
 
 def get_segments(text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False) -> list[Segment]:
-    """The simple commands of a shell command in the order they run, substitutions included.
-
-    `open_loops` are the loops around the text; `in_group` says the text is itself a subshell.
-    """
 
     return Scanner(text, open_loops=open_loops, in_group=in_group).scan()

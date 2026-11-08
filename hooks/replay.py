@@ -5,16 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Replay judge: run every Bash command of the owner's past sessions through the guard's always-on rules.
-
-Why: those rules run in every project, so a false refusal costs the most. This reads `~/.claude/projects/**/*.jsonl`,
-read-only, runs the guard in-process with the defaults each command's folder gets (the template, the owner's file, its `projects` entry for the folder), and prints the total, the refusals by rule and a sample of each,
-so a person can judge which class is false. A soft rule (the call runs with a note) is listed apart from the refusals. A command runs from the folder its transcript line names, and a glob is
-matched against today's files there. A command in one folder is counted once however many sessions hold it, and prints cut
-to 120 characters on one line. It writes nothing. Stdlib only.
-
-uv run --script hooks/replay.py [--root FOLDER] [--sample N] [--rule RULE] [--find TEXT]
-"""
 
 from __future__ import annotations
 
@@ -31,12 +21,10 @@ from pathlib import Path
 from guard import SOFT_RULES, Policy, find_command_breaches, get_policy
 
 MAX_SHOWN = 120
-# A line holds a Bash call only if it holds this text, which saves parsing most of the bytes.
 BASH_MARK = '"name":"Bash"'
 
 
 def get_commands(path: Path, /) -> Iterator[tuple[str, str | None, bool]]:
-    """The Bash commands of one transcript's assistant lines with their folders and whether each ran in the background; other lines replay the same calls."""
 
     with open(path, errors="replace") as file:
         for line in file:
@@ -58,13 +46,12 @@ def get_commands(path: Path, /) -> Iterator[tuple[str, str | None, bool]]:
 
 
 def show(command: str, /) -> str:
-    """A command on one line, cut to MAX_SHOWN characters."""
 
     return json.dumps(command, ensure_ascii=False)[1:-1][:MAX_SHOWN]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Replay judge: run every Bash command of the owner's past sessions through the guard's always-on rules.")
     parser.add_argument("--root", type=Path, default=Path.home() / ".claude" / "projects", help="the folder of transcripts")
     parser.add_argument("--sample", type=int, default=15, help="the commands shown per rule")
     parser.add_argument("--rule", default="", help="show only this rule")

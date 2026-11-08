@@ -5,28 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""The main session's turn, in every project: `reset` at its start, `add` per call, `stop` at its end.
-
-`turn.py reset` (UserPromptSubmit) empties the call count and saves a hash of each rule file. A task notification also
-fires UserPromptSubmit (probed in a headless run); while a status is still due (a `deferred` mark exists), `reset` keeps the
-count and the saved hashes, and so it does for any notification or sub-agent's message, which are not the owner's new turn. `turn.py add`
-(PostToolUse on Agent, Task, Edit, Write) counts a call of the main session; a call that carries `agent_id` came from a
-sub-agent. `turn.py stop` (Stop) holds the turn, up to MAX_BLOCKS times, on three checks:
-  - a turn with `min_calls` calls or more ends with the headings, unless a background agent of the session still runs:
-    then the turn is a progress note, the count is kept, and the status is due once the last agent has finished;
-  - a status of a turn that ran agents has an `## Agents` section naming each one by the description it was given, which
-    `add` keeps beside the tool's name;
-  - a closing Lessons section needs a rule file changed this turn: its hash now differs from the one saved at `reset` (contents only, no git); a section that
-    defers its lessons fails the same way, and "Lessons: none" on a line of its own is the only way to have none. A rule
-    file edited before the turn's start and committed in it is no change, since only contents are compared;
-  - when RETRO_ITEMS items wait in the project's `__harness__/feedback/inbox.md` past `retro-mark`, and this session filed one, a retro is due: it needs a line for its key `retro-<items>` in
-    `__harness__/feedback/handled.md`: `rule written in FILE`, where FILE exists and differs from its hash saved at `reset` (a file
-    outside the project needs only to exist), or `rejected: REASON` of at least 3 words. Once MAX_BLOCKS blocks are spent, the ids still open are released: one warning lists them and they no longer hold this session.
-
-The owner file (or its `projects` entry) may set, under `stop`: `min_calls` (3), `headings`, `rule_paths` (files or folders whose change counts as
-a rule change; relative to the project, or absolute for rules kept outside it, such as this plugin's own checkout). `.claude/worktrees/` is no rule
-path.
-"""
 
 from __future__ import annotations
 
@@ -38,28 +16,19 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-# HANDLED_NAME is the path of the handled file; HANDLED below is the pattern of its lines.
 from common import EDIT_TOOLS, EDITS_KIND, FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, ensure_harness_folder, find_project, get_unfenced_lines, is_project_root, write_atomic
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
 RULE_PATHS = ("AGENTS.md", "CLAUDE.md", ".claude")
-# The files in a rule folder that hold no rule.
 NOT_RULES = frozenset({"settings.local.json"})
-# The folders under a rule path that hold no rule.
 NOT_RULE_FOLDERS = frozenset({"__pycache__", ".git"})
-# Read by index: [0] is the folder that holds worktrees, [1] the worktrees folder skipped inside it.
 WORKTREES = (".claude", "worktrees")
 MAX_BLOCKS = 3
-# The line that starts the Lessons section: a heading or a bold label, or a plain "Lessons:" label.
 LESSONS = re.compile(r"^\s*((#+\s+|\*\*)Lessons?|Lessons?:)", re.I)
-# "Lessons: none" on a line of its own, with the colon inside or outside the bold markers.
 LESSONS_NONE = re.compile(r"^\s*(#+\s+)?\*{0,2}Lessons?\*{0,2}:\*{0,2}\s*none\b", re.I | re.M)
 SECTION_END = re.compile(r"^(#+[ \t]|\s*\*\*[^*]+\*\*)")
-# Words that put the lessons off to a later turn; a "unit" is one accepted piece of work, such as a worker's change.
 DEFERS = re.compile(r"next unit|next turn|next session|will add|to be written|will be written", re.I)
-# A tool id and the first status after it, which is its own notification's.
-# A prompt the app sends, not the owner; the head alone is read, so a pasted one further down does not count.
 APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
 APP_PROMPT_HEAD = 600
 NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([^<]+)</status>")
@@ -68,16 +37,13 @@ AGENT_TOOLS = frozenset({"Agent", "Task"})
 AGENTS_HEADING = "## Agents"
 HANDLED = re.compile(r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
 MIN_REASON_WORDS = 3
-# Inbox items waiting before a session that filed one owes a retro: often enough to act, rare enough to be read.
 RETRO_ITEMS = 20
 RETRO_KEY = re.compile(r"retro-([0-9]+)")
-# A hook's refusal as a tool result; a failed command that only quotes the wording is no refusal.
 REFUSAL = re.compile(r"PreToolUse:\w+ hook error:.*?Blocked by the harness", re.S)
 ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+) ", re.M)
 
 
 class StatePaths(NamedTuple):
-    """A session's state files: its call count, its rule state at the turn's start, its blocks this turn."""
 
     calls: Path
     rules: Path
@@ -85,7 +51,6 @@ class StatePaths(NamedTuple):
 
 
 def get_state_paths(session: str, /) -> StatePaths:
-    """The session's call count, its rule state at the turn's start, and its blocks this turn."""
 
     folder = data_folder() / "turns"
     folder.mkdir(exist_ok=True)
@@ -94,13 +59,11 @@ def get_state_paths(session: str, /) -> StatePaths:
 
 
 def get_state_path(session: str, kind: str, /) -> Path:
-    """A session's file of another kind: `deferred` marks a status still due, `released` lists the ids that stopped holding."""
 
     return data_folder() / "turns" / f"{session}.{kind}"
 
 
 def get_rule_files(path: Path, /) -> list[Path]:
-    """The rule files at a path: the file, or the files under the folder, past the folders that hold no rule."""
 
     if path.is_file():
         return [path]
@@ -113,8 +76,7 @@ def get_rule_files(path: Path, /) -> list[Path]:
     return sorted(files)
 
 
-def get_rule_state(root: Path, config: dict, /) -> dict[str, str]:  # keys are data
-    """A hash of each rule file, whitespace removed, so a re-indent or a blank line is no change to a rule."""
+def get_rule_state(root: Path, config: dict, /) -> dict[str, str]:
 
     state: dict[str, str] = {}
     for name in config.get("stop", {}).get("rule_paths", RULE_PATHS):
@@ -125,7 +87,7 @@ def get_rule_state(root: Path, config: dict, /) -> dict[str, str]:  # keys are d
     return state
 
 
-def read_transcript(path: str, /) -> list[dict]:  # keys are data
+def read_transcript(path: str, /) -> list[dict]:
     if not path or not os.path.isfile(path):
         return []
     lines = []
@@ -135,14 +97,13 @@ def read_transcript(path: str, /) -> list[dict]:  # keys are data
                 event = json.loads(line)
             except ValueError:
                 continue
-            # A line that is valid JSON but no object (a number, a list) is skipped like a torn one.
             if isinstance(event, dict):
                 lines.append(event)
 
     return lines
 
 
-def get_user_text(line: dict, /) -> str:  # keys are data
+def get_user_text(line: dict, /) -> str:
     content = line.get("message", {}).get("content")
     if isinstance(content, str):
         return content
@@ -152,11 +113,7 @@ def get_user_text(line: dict, /) -> str:  # keys are data
     return ""
 
 
-def get_notice_text(line: dict, /) -> str:  # keys are data
-    """The text of a transcript line that may carry a task notification.
-
-    The app has delivered one as a user line, as a queued command's attachment and as a queue operation's content.
-    """
+def get_notice_text(line: dict, /) -> str:
 
     attachment = line.get("attachment")
     if line.get("type") == "attachment" and isinstance(attachment, dict) and isinstance(attachment.get("prompt"), str):
@@ -167,12 +124,10 @@ def get_notice_text(line: dict, /) -> str:  # keys are data
     return get_user_text(line) if line.get("type") == "user" else ""
 
 
-def count_running_agents(transcript: list[dict], /) -> int:  # keys are data
-    """The background Agent or Task calls with no final task notification yet."""
+def count_running_agents(transcript: list[dict], /) -> int:
 
     launched: set[str] = set()
     finished: set[str] = set()
-    # Only a result of an Agent or Task call can be a launch: a Bash call that printed the text is not one.
     agent_calls: set[str] = set()
     for line in transcript:
         content = line.get("message", {}).get("content")
@@ -186,7 +141,6 @@ def count_running_agents(transcript: list[dict], /) -> int:  # keys are data
                     launched.add(block.get("id"))
         elif line.get("type") == "user":
             for block in blocks:
-                # A background launch is told by the text of its tool result, which is the host's wording, not a field.
                 is_result = isinstance(block, dict) and block.get("type") == "tool_result"
                 if is_result and block.get("tool_use_id") in agent_calls and "Async agent launched" in json.dumps(block.get("content")):
                     launched.add(block.get("tool_use_id"))
@@ -196,8 +150,7 @@ def count_running_agents(transcript: list[dict], /) -> int:  # keys are data
     return len(launched - finished)
 
 
-def get_closing_message(event: dict, transcript: list[dict], /) -> str:  # keys are data
-    """The turn's closing message; a fenced block holds an example, not the turn's own headings."""
+def get_closing_message(event: dict, transcript: list[dict], /) -> str:
 
     message = event.get("last_assistant_message") or ""
     if not message:
@@ -211,7 +164,6 @@ def get_closing_message(event: dict, transcript: list[dict], /) -> str:  # keys 
 
 
 def get_agents_section(message: str, /) -> str:
-    """The closing message's `## Agents` section, up to the next `## ` heading; empty when there is none."""
 
     lines: list[str] = []
     is_inside = False
@@ -225,7 +177,6 @@ def get_agents_section(message: str, /) -> str:
 
 
 def check_agents(message: str, call_lines: list[str], /) -> list[str]:
-    """A turn that ran agents names each one, by the description it was given, in the status's `## Agents` section."""
 
     agent_lines = [line.split("\t", 1) for line in call_lines if line.split("\t", 1)[0] in AGENT_TOOLS and "\t" in line]
     names = list(dict.fromkeys(parts[1] for parts in agent_lines))
@@ -242,7 +193,6 @@ def check_agents(message: str, call_lines: list[str], /) -> list[str]:
 
 
 def get_lessons(message: str, /) -> str:
-    """The closing message from its Lessons line to the next heading or bold label line."""
 
     section: list[str] = []
     is_inside = False
@@ -258,8 +208,7 @@ def get_lessons(message: str, /) -> str:
     return "\n".join(section)
 
 
-def has_refusal(transcript: list[dict], /) -> bool:  # keys are data
-    """Whether a hook refused a call since the owner's last prompt."""
+def has_refusal(transcript: list[dict], /) -> bool:
 
     for line in reversed(transcript):
         if line.get("type") != "user":
@@ -275,8 +224,7 @@ def has_refusal(transcript: list[dict], /) -> bool:  # keys are data
     return False
 
 
-def check_lessons(message: str, rules_path: Path, root: Path, config: dict, transcript: list[dict], /) -> list[str]:  # keys are data
-    """A closing Lessons section needs a rule file changed this turn, unless its line says none."""
+def check_lessons(message: str, rules_path: Path, root: Path, config: dict, transcript: list[dict], /) -> list[str]:
 
     section = get_lessons(message)
     none = LESSONS_NONE.search(section)
@@ -286,8 +234,6 @@ def check_lessons(message: str, rules_path: Path, root: Path, config: dict, tran
             return ['a call was refused this turn, so a bare "Lessons: none" does not hold: write the lesson, or say why it teaches nothing, as "Lessons: none: REASON"']
     if not section or none:
         return []
-    # Skipped when no state was saved (no `reset` ran in this session), or when a rule file differs from it: that is the
-    # change the lessons need.
     saved = get_saved_rules(rules_path)
     if saved is None or saved != get_rule_state(root, config):
         return []
@@ -300,8 +246,7 @@ def check_lessons(message: str, rules_path: Path, root: Path, config: dict, tran
     ]
 
 
-def get_saved_rules(rules_path: Path, /) -> dict | None:  # keys are data
-    """The rule state saved at the turn's start, None when the file is missing, empty or not a JSON object."""
+def get_saved_rules(rules_path: Path, /) -> dict | None:
 
     try:
         saved = json.loads(rules_path.read_text())
@@ -311,8 +256,7 @@ def get_saved_rules(rules_path: Path, /) -> dict | None:  # keys are data
     return saved if isinstance(saved, dict) else None
 
 
-def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /) -> str:  # keys are data
-    """Why a `rule written in FILE` line does not count, or an empty string when FILE was written this turn."""
+def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /) -> str:
 
     if not name:
         return "it names no file after `rule written in`"
@@ -322,7 +266,6 @@ def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /)
         return f"{name} does not exist: write the rule into an existing file, then name it"
     if not path.is_relative_to(root):
         return ""
-    # Skipped when no state was saved (no `reset` ran in this session): only the file's existence counts.
     saved = get_saved_rules(rules_path)
     if saved is None:
         return ""
@@ -336,14 +279,12 @@ def check_handled_file(name: str, root: Path, rules_path: Path, config: dict, /)
 
 
 class Handled(NamedTuple):
-    """The ids the handled file closes, and the reason each id with a failing line is not closed."""
 
     handled: set[str]
-    invalid: dict[str, str]  # keys are data
+    invalid: dict[str, str]
 
 
-def get_handled(root: Path, rules_path: Path, config: dict, /) -> Handled:  # keys are data
-    """The ids with a valid line in the handled file, and the reason the last line fails for each id with none."""
+def get_handled(root: Path, rules_path: Path, config: dict, /) -> Handled:
 
     path = root / HANDLED_NAME
     handled: set[str] = set()
@@ -369,16 +310,11 @@ def get_handled(root: Path, rules_path: Path, config: dict, /) -> Handled:  # ke
 
 
 def get_covered(keys: set[str], /) -> int:
-    """The most inbox items a retro key among `keys` covers, 0 with none."""
 
     return max((int(match.group(1)) for key in keys if (match := RETRO_KEY.fullmatch(key))), default=0)
 
 
 def get_open_feedback(root: Path, session: str, released: set[str], handled: set[str], /) -> list[str]:
-    """The retro key due now, when RETRO_ITEMS inbox items wait past the mark and this session filed one; else empty.
-
-    A valid line for a key moves the mark. An item only ever waits for one retro, so nothing asks for a verdict per item.
-    """
 
     inbox = root / INBOX
     if not inbox.exists():
@@ -386,7 +322,6 @@ def get_open_feedback(root: Path, session: str, released: set[str], handled: set
     items = ITEM_ID.findall(inbox.read_text(errors="replace"))
     mark = root / RETRO_MARK
     text = mark.read_text().strip() if mark.exists() else ""
-    # A mark past the inbox means the inbox was reset, and a line cannot cover items not yet filed.
     seen = int(text) if text.isdecimal() and text.isascii() and int(text) <= len(items) else 0
     closed = min(get_covered(handled), len(items))
     if closed > seen:
@@ -401,7 +336,7 @@ def get_open_feedback(root: Path, session: str, released: set[str], handled: set
     return [f"retro-{len(items)}"]
 
 
-def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
+def stop(event: dict, root: Path, config: dict, /) -> int:
     session = event.get("session_id") or "unknown"
     calls_path, rules_path, blocks_path = get_state_paths(session)
     deferred_path, released_path = get_state_path(session, "deferred"), get_state_path(session, "released")
@@ -430,12 +365,10 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
     handled: set[str] = set()
     invalid: dict[str, str] = {}
     open_ids: list[str] = []
-    # Lessons and retros read the repo's rule files and write its inbox, so they skip a start folder that is no project root.
     if is_project_root(root):
         problems += check_lessons(message, rules_path, root, config, transcript)
         handled, invalid = get_handled(root, rules_path, config)
         open_ids = get_open_feedback(root, session, released, handled)
-    # A retro may be the agent that runs: it is due again at the stop after the agents have finished.
     if open_ids and count_running_agents(transcript) > 0:
         open_ids = []
     if open_ids:
@@ -445,7 +378,6 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
             f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}"
         )
     problems += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
-    # A write cut short leaves this empty, and an empty count must not drop the Stop checks.
     count = blocks_path.read_text().strip() if blocks_path.exists() else ""
     blocks = int(count) if count.isdecimal() and count.isascii() else 0
     if problems and blocks < MAX_BLOCKS:
@@ -467,8 +399,7 @@ def stop(event: dict, root: Path, config: dict, /) -> int:  # keys are data
     return 0
 
 
-def get_call_line(event: dict, /) -> str:  # keys are data
-    """A counted call's line: the tool's name, and after a tab the description of an agent or the path of an edit."""
+def get_call_line(event: dict, /) -> str:
 
     name = event.get("tool_name") or "tool"
     tool_input = event.get("tool_input") or {}
@@ -489,7 +420,6 @@ def main() -> int:
     calls_path, rules_path, blocks_path = get_state_paths(event.get("session_id") or "unknown")
     if mode == "add":
         if not event.get("agent_id"):
-            # One short append is not torn on Linux, so the counter needs no temporary file.
             with open(calls_path, "a") as file:
                 file.write(f"{get_call_line(event)}\n")
     elif mode == "reset":
@@ -497,7 +427,6 @@ def main() -> int:
         if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
             write_atomic(calls_path, "")
             write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")
-            # Rule hashes serve only the lessons and retro checks; in the home folder the walk could be huge.
             if is_project_root(root):
                 write_atomic(rules_path, json.dumps(get_rule_state(root, config)))
         write_atomic(blocks_path, "0")
@@ -510,6 +439,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as error:  # a bug in the gate must not trap the session
+    except Exception as error:
         print(f"the harness turn hook failed and let the call run: {error!r}", file=sys.stderr)
         sys.exit(1)

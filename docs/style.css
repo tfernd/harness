@@ -9,17 +9,14 @@
   --line-strong: #8b94a1;
   --focus: #2563eb;
   --selected: #1c1917;
-  /* One colour per group, on the popover's strip; a ramp apart from them. */
   --kind-agent: #1d4ed8;
   --kind-skill: #0f766e;
   --kind-hook: #6d28d9;
   --on-kind: #ffffff;
-  /* Strong to soft, deep plum through berry and coral to sand: the pyramid's fills and the popover meter. Plum and berry sit beside the hook violet, sand carries on to the page's warm greys; none of them is blue or teal. */
   --level-1: #6b1d5c;
   --level-2: #912a70;
   --level-3: #b3355f;
   --level-4: #c4412f;
-  /* The light fills are the only band where 3:1 against the page and 4.5:1 for the dark ink both hold, so the ramp is tight. */
   --level-5: #da5f18;
   --level-6: #c6750d;
   --level-7: #bd800a;
@@ -63,7 +60,6 @@
   --meter-height: 0.5rem;
   --dim: 0.28;
   --dim-level: 0.45;
-  /* How much of its own colour a level bar, a panel head and a chip mix into the surface; dark mixes more so the hue still shows. */
   --tint-level: 16%;
   --tint-head: 10%;
   --tint-chip: 11%;
@@ -164,7 +160,6 @@ a {
   white-space: nowrap;
 }
 
-/* Level variants: a fill, the ink on it and the step's rank from the base (the pyramid reads it as its width), for the bars and the meter. */
 .is-stopped {
   --level: var(--level-1);
   --level-ink: var(--level-ink-1);
@@ -207,7 +202,6 @@ a {
   --rank: 1;
 }
 
-/* Page frame */
 
 .page {
   max-inline-size: 80rem;
@@ -285,7 +279,6 @@ a {
   cursor: pointer;
 }
 
-/* The label already says the action; a filled pressed state made it the loudest thing on a dark page. */
 .theme-toggle[aria-pressed="true"] {
   background: transparent;
 }
@@ -301,7 +294,6 @@ a {
   border-radius: var(--radius-large);
 }
 
-/* Install */
 
 .install {
   display: grid;
@@ -389,7 +381,6 @@ a {
   color: var(--muted);
 }
 
-/* The core: the pyramid on the left, the parts on the right */
 
 .core {
   display: grid;
@@ -429,7 +420,6 @@ a {
   gap: var(--space-2);
 }
 
-/* The pyramid is a subgrid list of bars that widen downward; the brackets beside it span the bars' rows. */
 
 .pyramid-split {
   display: grid;
@@ -570,7 +560,6 @@ a {
   border-radius: var(--radius);
 }
 
-/* Parts: one card per kind, its head tinted in that kind's colour */
 
 .parts {
   display: grid;
@@ -697,7 +686,6 @@ a {
   opacity: var(--dim);
 }
 
-/* The popover: a sheet at the foot of a narrow screen, beside its chip on a wider one. */
 .tip {
   position: fixed;
   inset-inline: var(--space-3);
@@ -715,7 +703,6 @@ a {
   box-shadow: var(--shadow-pop);
 }
 
-/* A kind's colour, for its panel and for the popover of each of its parts. */
 .kind-agent,
 .panel.is-agents {
   --kind: var(--kind-agent);
@@ -731,7 +718,6 @@ a {
   --kind: var(--kind-hook);
 }
 
-/* The strip: the group's colour and word, then the part's name. */
 .tip-strip {
   position: sticky;
   inset-block-start: 0;
@@ -758,7 +744,6 @@ a {
   overflow-wrap: anywhere;
 }
 
-/* The switch sits on the strip, so it stays in view while the text scrolls beneath it. */
 .tip-switch {
   flex: none;
   min-block-size: var(--chip-height);
@@ -789,7 +774,6 @@ a {
   outline-color: var(--on-kind);
 }
 
-/* The whole text: a large sheet over the page on any width, so a long file has room to scroll inside it. */
 .tip.is-full {
   position: fixed;
   inset: var(--space-3) var(--space-3) auto;
@@ -998,7 +982,6 @@ a {
   border-radius: var(--radius-small);
 }
 
-/* A port's state is documented on the badge as data-state: runs, advisory or off; the words say it too. */
 .port[data-state="advisory"] {
   border-style: dashed;
 }
@@ -1045,7 +1028,6 @@ a {
     grid-template-columns: var(--pyramid-column) minmax(0, 1fr);
   }
 
-  /* Agents beside skills, hooks across the foot: the three cards end on one line, with no hole under any. */
   .panels {
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }

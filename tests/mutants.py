@@ -5,16 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""The control of the hook cases: each mutant breaks one rule in a copy of the hooks, and some case must then fail.
-
-Why: a case that cannot fail proves nothing. A mutant that stays green is a rule no case guards. A mutant whose old text
-is gone from its hook is an error, so the list cannot rot. A row prints per mutant as it finishes; the exit code is 1 when
-any mutant survives. Copies go under `__scratch__/hook-mutants`. Stdlib only.
-
-uv run python tests/mutants.py [--only SUBSTRING[,SUBSTRING...]] [--jobs N] [--check]
-
-`--check` runs nothing and only finds the mutants whose text is gone, in a second, so the pre-push hook and CI can run it.
-"""
 
 from __future__ import annotations
 
@@ -33,21 +23,16 @@ HOOKS = HARNESS / "hooks"
 RUN_CASES = HARNESS / "tests" / "run_cases.py"
 WORK = HARNESS / "__scratch__" / "hook-mutants"
 TIMEOUT = 170
-# Each case starts `uv` and a hook, so jobs times threads is what the machine carries: 6 on 24 cores. Six jobs of eight froze one.
 CASE_THREADS = 2
 DEFAULT_JOBS = max(1, (os.cpu_count() or 8) // 8)
 LOW_PRIORITY = 10
-# Returned in place of an exit code when the cases on a mutant ran past TIMEOUT: the mutant is neither killed nor survived.
 TIMED_OUT = -1
-# Name, file, the text to break, what it becomes.
 MUTANTS = (
-    # A package change asks.
     ("packages-refused", "guard.py", "    if not lines:\n        decision", "    if False:\n        decision"),
     ("packages-pass-silently", "guard.py", '"permissionDecision": "ask"', '"permissionDecision": "allow"'),
     ("packages-old-key-dropped", "guard.py", 'guard.get("ask_packages") or guard.get("deny_packages")', 'guard.get("ask_packages")'),
     ("packages-new-key-dropped", "guard.py", 'guard.get("ask_packages") or guard.get("deny_packages")', 'guard.get("deny_packages")'),
     ("packages-other-rule-asks", "guard.py", 'for rule in rules if rule != ASK_RULE)', 'for rule in rules if rule not in (ASK_RULE, "delete"))'),
-    # What the sub-agents' feedback asked for.
     ("context-no-tools-text", "context.py", "lines = [TOOLS_TEXT]", "lines = []"),
     ("context-zsh-always", "context.py", 'if os.path.basename(os.environ.get("SHELL") or "") == "zsh":', "if True:"),
     ("context-no-setup-for-session", "context.py", "get_setup_text(config), notes, get_retro_line(root))", "notes, get_retro_line(root))"),
@@ -58,14 +43,12 @@ MUTANTS = (
     ("budget-note-every-turn", "budget.py", "if num_turns != limit - left:", "if num_turns > limit - left:"),
     ("budget-note-no-floor", "budget.py", "left = max(MIN_TURNS_LEFT, limit // 5)", "left = limit // 5"),
     ("budget-note-not-context", "budget.py", '"additionalContext": warning', '"note": warning'),
-    # State files are never read half-written.
     ("torn-blocks-count-raises", "turn.py", "blocks = int(count) if count.isdecimal() and count.isascii() else 0", "blocks = int(count)"),
     ("torn-rules-raise", "turn.py", "    except (OSError, ValueError):\n        return None\n\n    return saved if", "    except OSError:\n        return None\n\n    return saved if"),
     ("torn-rules-not-object-raise", "turn.py", "return saved if isinstance(saved, dict) else None", "return saved"),
     ("torn-send-back-count-raises", "report_gate.py", "    except (OSError, ValueError):\n        return 0\n", "    except OSError:\n        return 0\n"),
     ("torn-kept-report-raises", "report_gate.py", "    except (ValueError, KeyError, TypeError):\n        return None", "    except (KeyError, TypeError):\n        return None"),
     ("torn-temporary-file-left", "common.py", "os.replace(temporary, path)\n    finally:\n        temporary.unlink(missing_ok=True)", "path.write_text(text)\n    finally:\n        pass"),
-    # The independent review's nine.
     ("herestring-word-kept-as-argument", "shell.py", 'if operator.startswith("<<<"):\n            self.target = "herestring"', 'if operator.startswith("<<<"):\n            self.target = ""'),
     ("heredoc-bodies-read-as-commands", "shell.py", 'if operator == "\\n" and self.heredocs:\n            self.skip_heredocs()', 'if operator == "\\n" and self.heredocs:\n            self.heredocs = []'),
     ("python-c-read-as-shell", "common.py", 'SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh"})', 'SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "python3"})'),
@@ -74,7 +57,6 @@ MUTANTS = (
     ("count-never-emptied", "turn.py", 'if calls >= min_calls and not is_deferred:\n        write_atomic(calls_path, "")', "if False:\n        pass"),
     ('git-reset-any', 'guard.py', '"reset": get_flag_denial("reset", "", "--hard"),', '"reset": lambda parsed, directory: "git reset",'),
     ("blocks-not-reset-at-pass", "turn.py", 'write_atomic(blocks_path, "0")\n    if problems:', "if problems:"),
-    # The shell reader.
     ("arithmetic-read-as-commands", "shell.py", 'if text.startswith("$((", start):', 'if False:'),
     ("arithmetic-substitution-not-read", "shell.py", "self.read_expansions(start + 3, end - 2)", "pass"),
     ("nested-subshells-read-as-arithmetic", "shell.py", 'return index + 2 if text[index + 1 : index + 2] == ")" else -1', "return index + 2"),
@@ -92,7 +74,6 @@ MUTANTS = (
     ("one-pipe-marks-the-whole-command", "shell.py", 'elif has_command or operator != "\\n":', "elif False:"),
     ("pipeline-first-command-not-grouped", "shell.py", "self.segments[-1] = self.segments[-1]._replace(in_group=True)", "pass"),
     ("background-not-grouped", "shell.py", 'if operator == "&":', "if False:"),
-    # The guard.
     ("sleep-allowed", "guard.py", '("sleep", os.path.basename(command.name) == "sleep"),', '("sleep", False),'),
     ("sleep-path-not-reduced", "guard.py", '("sleep", os.path.basename(command.name) == "sleep"),', '("sleep", command.name == "sleep"),'),
     ("sleep-refused-in-background", "guard.py", 'if rule != "sleep" or not is_background]', 'if rule != "sleep" or True]'),
@@ -140,7 +121,6 @@ MUTANTS = (
     ("absolute-glob-not-judged", "guard.py", "(directory is None and not is_absolute(text))", "directory is None"),
     ("glob-pattern-option-not-refused", "guard.py", "is_pattern = index > 0 and command.arguments[index - 1].text in pattern_options", "is_pattern = False"),
     ("glob-pattern-options-of-any-command", "guard.py", "pattern_options = GLOB_PATTERN_OPTIONS.get(name, set())", 'pattern_options = {"-name"}'),
-    # The project.
     ("project-follows-the-cwd", "common.py", 'Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()', "Path(cwd).resolve()"),
     ("project-ignores-the-cwd", "common.py", 'Path(os.environ.get("CLAUDE_PROJECT_DIR") or cwd).resolve()', 'Path(os.environ.get("CLAUDE_PROJECT_DIR") or "/").resolve()'),
     ("retro-stale-mark-kept", "turn.py", "if text.isdecimal() and text.isascii() and int(text) <= len(items) else 0", "if text.isdecimal() and text.isascii() else 0"),
@@ -165,7 +145,6 @@ MUTANTS = (
     ("feedback-same-reason-allowed", "turn.py", 'if owner != item_id else ""', 'if False else ""'),
     ("feedback-problems-not-told", "context.py", ", get_open_problems(root, agent_type))", ")"),
     ("unterminated-fence-hides", "common.py", 'return [line for index, line in enumerate(lines) if index not in fenced]', 'return [line for index, line in enumerate(lines) if index not in fenced and (opened < 0 or index < opened)]'),
-    # The report form.
     ("report-length-not-checked", "report_gate.py", "    if count <= limit:\n        return []", "    if True:\n        return []"),
     ("report-length-counts-fences", "report_gate.py", 'count = len("\\n".join(get_unfenced_lines(report)))', "count = len(report)"),
     ("report-length-limit-ignored", "report_gate.py", "check_length(report, get_max_chars(settings))", "check_length(report, MAX_REPORT_CHARS)"),
@@ -238,7 +217,6 @@ MUTANTS = (
     ("commit-bug-blocks", "commit_gate.py", 'sys.exit(1)', 'sys.exit(2)'),
     ("report-agent-prefix-kept", "report_gate.py", 'name = (event.get("agent_type") or "").removeprefix(PLUGIN_PREFIX)', 'name = (event.get("agent_type") or "")'),
     ("report-missing-form-only-for-workers", "report_gate.py", "problems = check_headings(sections)", 'problems = check_headings(sections) if name == "worker" else []'),
-    # The report gate.
     ("user-lines-count", "report_gate.py", 'if entry.get("type") == "assistant":\n                    blocks.append(block)', "if True:\n                    blocks.append(block)"),
     ("any-heading-is-the-report", "report_gate.py", "if heading.search(last):", 'if "## " in last:'),
     ("first-report-wins", "report_gate.py", "if isinstance(text, str) and heading.search(text):\n            report = text", "if isinstance(text, str) and heading.search(text) and not report:\n            report = text"),
@@ -255,14 +233,12 @@ MUTANTS = (
     ("no-feedback-words-filed", "report_gate.py", 'NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)', 'NO_FEEDBACK = re.compile(r"(none)[ .]*", re.I)'),
     ("inbox-line-without-session", "report_gate.py", '"- id={item_id} session={session} agent=', '"- id={item_id} agent='),
     ("known-item-across-sessions", "report_gate.py", 'if f"id={item_id} session={session} " not in known:', 'if f"id={item_id} " not in known:'),
-    # The turn.
     ("released-ids-not-saved", "turn.py", 'write_atomic(released_path, " ".join(sorted(released | set(open_ids))))', "pass"),
     ("worktree-counts-as-a-rule", "turn.py", "and not (is_claude and name == WORKTREES[1])", ""),
     ("any-status-after-the-id-finishes", "turn.py", "for tool_id, status in found if status in FINISHED_STATUSES", "for tool_id, status in found"),
     ("reset-empties-a-deferred-count", "turn.py", 'if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():', "if not is_app_prompt:"),
     ("deferred-mark-not-written", "turn.py", 'write_atomic(deferred_path, "1")', "pass"),
     ("deferred-mark-not-cleared", "turn.py", "if not is_deferred and deferred_path.exists():\n        deferred_path.unlink()", "if False:\n        pass"),
-    # The main_edits cap.
     ("main-edits-cap-off-by-one", "delegate.py", "if count >= maximum:", "if count > maximum:"),
     ("progress-every-ignored", "budget.py", "if every and num_turns % every == 0 and is_first:", "if every and is_first:"),
     ("progress-first-call-ignored", "budget.py", "if every and num_turns % every == 0 and is_first:", "if every and num_turns % every == 0:"),
@@ -276,7 +252,7 @@ MUTANTS = (
     ("progress-no-budget-silent", "budget.py", "    if limit is None and not every:\n        return 0\n", "    if limit is None:\n        return 0\n"),
     ("progress-offset-ignored", "budget.py", "        file.seek(offset)\n        chunk = file.read(PROGRESS_READ_BYTES)", "        file.seek(0)\n        chunk = file.read(PROGRESS_READ_BYTES)"),
     ("progress-offset-not-saved", "budget.py", "        write_atomic(paths[1], str(offset + consumed))", "        pass"),
-    ("progress-partial-line-consumed", "budget.py", 'end = chunk.rfind(b"\\n") + 1\n    # A single line', "end = len(chunk)\n    # A single line"),
+    ("progress-partial-line-consumed", "budget.py", 'end = chunk.rfind(b"\\n") + 1\n    consumed', "end = len(chunk)\n    consumed"),
     ("progress-offset-past-end-kept", "budget.py", "offset = offset if 0 <= offset <= size else 0", "offset = offset"),
     ("progress-torn-line-crashes", "budget.py", "        except ValueError:\n            continue\n        if isinstance(line, dict):", "        except KeyError:\n            continue\n        if isinstance(line, dict):"),
     ("progress-every-agent-listed", "budget.py", 'latest = {str(line.get("agent_id")): line for line in lines}', "latest = {str(index): line for index, line in enumerate(lines)}"),
@@ -318,7 +294,6 @@ MUTANTS = (
     ("add-drops-notebook-path", "turn.py", 'path = tool_input.get("file_path") or tool_input.get("notebook_path")', 'path = tool_input.get("file_path")'),
     ("check-agents-reads-every-tab-line", "turn.py", 'if line.split("\\t", 1)[0] in AGENT_TOOLS and "\\t" in line]', 'if "\\t" in line]'),
     ("launch-text-from-any-result", "turn.py", 'block.get("tool_use_id") in agent_calls and "Async agent launched"', 'True and "Async agent launched"'),
-    # The delegate rule.
     ("delegate-judges-sub-agents", "delegate.py", '    if event.get("agent_id"):\n        return 0\n', ""),
     ("delegate-without-its-key", "delegate.py", 'if "delegate" not in config:', "if False:"),
     ("delegate-first-command-only", "delegate.py", "for segment in get_segments(command):", "for segment in get_segments(command)[:1]:"),
@@ -334,7 +309,6 @@ MUTANTS = (
     ("delegate-handled-refused", "delegate.py", "if relative == HANDLED:", "if False:"),
     ("delegate-outside-allowed", "delegate.py", "if root not in resolved.parents:\n        return False\n    relative = resolved.relative_to(root).as_posix()\n    if relative", "if root not in resolved.parents:\n        return True\n    relative = resolved.relative_to(root).as_posix()\n    if relative"),
     ("delegate-write-allow-ignored", "delegate.py", 'return any(fnmatch.fnmatch(relative, pattern) for pattern in settings.get("write_allow", ()))', "return False"),
-    # The budget rule.
     ("budget-judges-the-main-session", "budget.py", "            print(json.dumps(make_note_output(note)))\n        return 0\n    if event.get(", "            print(json.dumps(make_note_output(note)))\n    if event.get("),
     ("budget-never-refuses", "budget.py", "if num_turns <= limit:", "if True:"),
     ("budget-always-refuses", "budget.py", "if num_turns <= limit:", "if False:"),
@@ -359,7 +333,6 @@ MUTANTS = (
     ("budget-bug-blocks", "budget.py", "sys.exit(1)", "sys.exit(2)"),
     ("ledger-duration-dropped", "report_gate.py", '"duration_s": duration,', '"duration_s": None,'),
     ("ledger-duration-from-first-only", "budget.py", "round(last - first, 1)", "0.0"),
-    # The brief rule.
     ("feedback-written-into-home", "common.py", "    if is_project_root(root):\n        return root\n\n    return data_folder()", "    return root\n\n    return data_folder()"),
     ("feedback-kept-out-of-repo", "common.py", "    if is_project_root(root):\n        return root\n\n    return data_folder()", "    return data_folder()"),
     ("repo-agent-handback-skipped", "report_gate.py", "not isinstance(report, str) or tries >= MAX_SEND_BACKS", 'not isinstance(report, str) or not (event.get("agent_type") or "").startswith(PLUGIN_PREFIX) or tries >= MAX_SEND_BACKS'),
@@ -400,7 +373,6 @@ MUTANTS = (
     ("brief-worker-needs-no-judge", "brief_lint.py", '"worker": ["Goal:", "Write set:", "Judge:"]', '"worker": ["Goal:", "Write set:"]'),
     ("brief-label-anywhere", "brief_lint.py", "any(line.startswith(label) for line in lines)", "any(label in line for line in lines)"),
     ("brief-bold-label-refused", "brief_lint.py", 'LINE_MARKS = " \\t-*#"', 'LINE_MARKS = " \\t"'),
-    # The handback and the glob rule's exceptions.
     ("gate-sends-back-an-ended-agent", "report_gate.py", 'bool(found.blocks) and found.blocks[-1].get("name") == HANDBACK_TOOL or ', ""),
     ("gate-no-report-sent-back", "report_gate.py", ' or (os.path.isfile(path) and not sent)', ""),
     ("gate-every-agent-has-ended", "report_gate.py", "if has_ended or tries >= MAX_SEND_BACKS:", "if True:"),
@@ -420,7 +392,6 @@ MUTANTS = (
     ("brief-quote-read", "brief_lint.py", '[QUOTED.sub("", line) for', "[line for"),
     ("nudge-cd-semicolon-missed", "nudge.py", "(?:&&|;)", "&&"),
     ("import-tool-turns-lost", "import_reports.py", '"tool_turns": get_turn_stats(events),', '"tool_turns": None,'),
-    # The import and replay tools.
     ("import-known-ledger-ignored", "import_reports.py", "    if ledger.is_file():\n        for line", "    if False:\n        for line"),
     ("import-known-agent-added-again", "import_reports.py", 'if row["agent_id"] in known:', "if False:"),
     ("import-report-card-optional", "import_reports.py", '    if "REPORT CARD" not in sections:\n        return None\n    scores = get_scores(sections["REPORT CARD"])', '    scores = get_scores(sections.get("REPORT CARD", []))'),
@@ -430,7 +401,6 @@ MUTANTS = (
     ("replay-command-counted-per-session", "replay.py", "distinct.add(call)", 'distinct.add((call[0], f"{call[1]}{path}", call[2]))'),
     ("replay-glob-folder-unknown", "replay.py", "find_command_breaches(command, cwd, policies[cwd], is_background=is_background)", "find_command_breaches(command, None, policies[cwd], is_background=is_background)"),
     ("replay-glob-judged-in-the-root", "replay.py", "find_command_breaches(command, cwd, policies[cwd], is_background=is_background)", 'find_command_breaches(command, "/", policies[cwd], is_background=is_background)'),
-    # The tool-turn nudge.
     ("nudge-run-long", "nudge.py", "RUN_LENGTH = 3", "RUN_LENGTH = 4"),
     ("nudge-run-never", "nudge.py", "if run and run % RUN_LENGTH == 0:", "if False:"),
     ("nudge-two-calls-count-as-one", "nudge.py", "is_small_turn = len(turn) == 1 and is_small_read(turn[0])", "is_small_turn = is_small_read(turn[0])"),
@@ -455,26 +425,22 @@ MUTANTS = (
     ("pipe-bash-status-unread", "nudge.py", "or BASH_STATUS.search(command):\n        return", "or False:\n        return"),
     ("nudge-bug-blocks", "nudge.py", "sys.exit(1)", "sys.exit(2)"),
     ("ledger-tool-turns-lost", "report_gate.py", "get_turn_stats(read_events(path)) if path else None", "None"),
-    # The context hook.
     ("context-session-silent", "context.py", "(SESSION_TEXT, habits,", '("", habits,'),
     ("context-tool-turns-not-for-session", "context.py", "(SESSION_TEXT, habits,", "(SESSION_TEXT,"),
     ("context-form-silent", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", '("", habits, get_setup_text(config), get_lessons'),
     ("context-form-only-for-workers", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", '(FORM_TEXT if agent_type == "harness:worker" else "", habits, get_setup_text(config), get_lessons'),
     ("context-form-for-session", "context.py", "(SESSION_TEXT, habits,", "(SESSION_TEXT, FORM_TEXT, habits,"),
     ("context-tool-turns-not-for-agents", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", "(FORM_TEXT, get_setup_text(config), get_lessons"),
-    # The report gate's claim and auto-item rules.
     ("exit-claim-matches-any-code", "report_gate.py", "if code not in seen and not re.search(PRINTED_EXIT", "if False and not re.search(PRINTED_EXIT"),
     ("failed-call-counts-as-exit-zero", "report_gate.py", "            if call_id not in failed:\n                seen.add(0)", "            if True:\n                seen.add(0)"),
     ("read-quote-not-checked", "report_gate.py", "if not all(part in window for part in parts if part):", "if False:"),
     ("read-quote-searches-the-whole-file", "report_gate.py", "lines[first_line : line + QUOTE_WINDOW]", "lines"),
-    # The turn's handled-line check.
     ("handled-file-missing-accepted", "turn.py", "if not path.is_file():", "if False:"),
     ("handled-file-unchanged-accepted", "turn.py", "if saved.get(str(path)) == state[str(path)]:", "if False:"),
     ("handled-file-not-a-rule-accepted", "turn.py", "if str(path) not in state:", "if False:"),
     ("handled-no-file-named-accepted", "turn.py", "if not name:\n        return", "if False:\n        return"),
     ("rejected-reason-length-ignored", "turn.py", "is_short = len(reason.split()) < MIN_REASON_WORDS", "is_short = False"),
     ("rejected-two-words-pass", "turn.py", "MIN_REASON_WORDS = 3", "MIN_REASON_WORDS = 2"),
-    # The skill gate.
     ("skill-gate-commit-unseen", "skill_gate.py", '            needs[COMMIT_SKILL] = "committing"', "            pass"),
     ("skill-gate-git-options-missed", "skill_gate.py", 'get_git_subcommand(arguments) == "commit"', 'arguments[:1] == ["commit"]'),
     ("skill-gate-pr-unseen", "skill_gate.py", ' or (name == "gh" and arguments[:1] == ["pr"] and arguments[1:2] in (["create"], ["edit"]))', ""),
@@ -506,7 +472,6 @@ MUTANTS = (
     ("skill-gate-scratch-not-exempt", "skill_gate.py", "is_scratch = scratch and (absolute == scratch", "is_scratch = False and (absolute == scratch"),
     ("skill-gate-bare-name-refused", "skill_gate.py", "return skill.removeprefix(PLUGIN_PREFIX)", "return skill"),
     ('skill-gate-reads-the-session-transcript', "skill_gate.py", 'if event.get("agent_id"):\n        return get_agent_path(event)', 'if False:\n        return get_agent_path(event)'),
-    # The report gate after a send-back.
     ("report-merge-drops-a-section-not-resent", "report_gate.py", "    kept = [(heading, lines) for heading, lines in old_sections if heading in ORDER and heading not in resent]", "    kept = []"),
     ("report-merge-keeps-old-over-new", "report_gate.py", "if heading in ORDER and heading not in resent]", "if heading in ORDER]"),
     ("report-merge-keeps-the-new-over-nothing", "report_gate.py", "    merged = sorted([*kept, *new_sections]", "    merged = sorted([*kept]"),
@@ -521,9 +486,7 @@ MUTANTS = (
     ("report-kept-stays-after-stop", "report_gate.py", "for stale in (path, get_kept_path(event)):", "for stale in (path,):"),
     ("report-kept-used-without-a-send-back", "report_gate.py", "if not tries or not path.exists():", "if not path.exists():"),
     ("report-judged-message-awaited-no-more", "report_gate.py", "or (kept is not None and report == kept.raw)", ""),
-    # The folders.
     ("feedback-in-the-dot-folder", "common.py", 'FEEDBACK_FOLDER = f"{HARNESS_FOLDER}/feedback"', 'FEEDBACK_FOLDER = ".harness"'),
-    # The layout: git root, owner entries, self-ignoring folders, migration.
     ("layout-git-root-ignored", "common.py", "root = find_git_root(start) or start", "root = start"),
     ("layout-projects-entry-ignored", "common.py", "merge_sections(DEFAULTS, owner, entries)", "merge_sections(DEFAULTS, owner)"),
     ("layout-projects-glob-exact", "common.py", "fnmatch.fnmatch(str(root), os.path.expanduser(str(pattern)))", "str(root) == os.path.expanduser(str(pattern))"),
@@ -540,7 +503,6 @@ MUTANTS = (
     ("layout-old-scratch-unsaid", "context.py", "    if (root / OLD_SCRATCH).is_dir() and", "    if False and"),
     ("layout-retro-mark-not-ignored", "turn.py", "        ensure_harness_folder(root)\n", ""),
     ("layout-home-repo-is-a-project", "common.py", "        if not is_project_root(candidate):\n            return None\n", ""),
-    # A READ path given by its end, and an exit code a command printed.
     ("read-end-not-looked-up", "report_gate.py", "            found = find_by_end(path, files)\n", "            found = []\n"),
     ("read-end-shared-taken", "report_gate.py", "if len(found) > 1:", "if False:"),
     ("read-end-line-unchecked", "report_gate.py", "            full = os.path.join(root, found[0])\n", "            continue\n"),
@@ -548,14 +510,12 @@ MUTANTS = (
     ("printed-exit-any-number", "report_gate.py", "returned|error)", "returned|error|)"),
     ("printed-exit-no-make-error", "report_gate.py", "returned|error)", "returned)"),
     ("send-back-no-example", "report_gate.py", "A Runs: line naming the fixture would have helped.", "Name the fix."),
-    # The report is judged before the handback, while the agent can still fix it.
     ("handback-mode-ignored", "report_gate.py", 'if sys.argv[1:2] == ["handback"]:', "if False:"),
     ("handback-never-refused", "report_gate.py", "    print(make_send_back(problems, is_handback=True), file=sys.stderr)\n\n    return 2", "    print(make_send_back(problems, is_handback=True), file=sys.stderr)\n\n    return 0"),
     ("handback-not-counted", "report_gate.py", "    write_atomic(get_send_backs_path(event), str(tries + 1))\n    print(make_send_back(problems, is_handback=True)", "    print(make_send_back(problems, is_handback=True)"),
     ("handback-no-cap", "report_gate.py", "not isinstance(report, str) or tries >= MAX_SEND_BACKS:", "not isinstance(report, str):"),
     ("handback-asks-for-sections", "report_gate.py", "print(make_send_back(problems, is_handback=True), file=sys.stderr)", "print(make_send_back(problems), file=sys.stderr)"),
     ("handback-claims-unread", "report_gate.py", 'judged = {**event, "agent_transcript_path": str(path)} if path is not None else event', "judged = event"),
-    # The app's notices of a finished agent, and the Agents section of the status.
     ("notice-attachment-unread", "turn.py", 'if line.get("type") == "attachment" and isinstance(attachment, dict) and isinstance(attachment.get("prompt"), str):', "if False:"),
     ("notice-queue-unread", "turn.py", 'if line.get("type") == "queue-operation" and isinstance(line.get("content"), str):', "if False:"),
     ("agents-not-checked", "turn.py", "        if not is_deferred:\n            problems += check_agents(message, call_lines)\n", ""),
@@ -564,7 +524,6 @@ MUTANTS = (
     ("agents-description-dropped", "turn.py", "if name in AGENT_TOOLS and isinstance(description, str) and description.strip():", "if False:"),
     ("agents-description-not-joined", "turn.py", "' '.join(description.split())", "description"),
     ("context-tmp-said-refused", "context.py", "A write under `/tmp` runs, with a note", "A write under `/tmp` is refused"),
-    # Globs in a pattern position are quoted in place; one that matches nothing names its folder and pattern.
     ("pattern-refused-always", "guard.py", "command = get_glob_fix(command, findings.pattern_globs, cwd, policy)", 'command = ""'),
     ("pattern-count-unchecked", "guard.py", '        if len(re.findall(pattern, fixed)) != words.count(text):\n            return ""', '        if False:\n            return ""'),
     ("pattern-note-dropped", "guard.py", "        notes.append(f\"The harness guard changed this call: {MESSAGES['pattern']}\")\n", ""),
@@ -575,7 +534,6 @@ MUTANTS = (
     ("nomatch-pattern-unfilled", "guard.py", "format(folder=missing.folder, pattern=missing.pattern)", 'format(folder=missing.folder, pattern="*")'),
     ("nomatch-last-glob-named", "guard.py", "missing = findings.missing_globs[0] if", "missing = findings.missing_globs[-1] if"),
     ("repo-message-old", "guard.py", '"repo": "the guard lets this call pass, but project files change', '"repo": "this write went through. Project files change'),
-    # Deletes in the project go to the trash; what the trash may not take stays refused.
     ("trash-never", "guard.py", "trash = get_trash_delete(segment, directory, scope, policy) if is_deleting else None", "trash = None"),
     ("trash-force-dropped", "guard.py", '"-f": "f", ', '"-f": "", '),
     ("trash-path-from-the-folder", "guard.py", "os.path.join(folder, os.path.relpath(path, policy.root))", "os.path.join(folder, os.path.basename(path))"),
@@ -596,7 +554,6 @@ MUTANTS = (
     ("owner-trash-trashed", "guard.py", "and not is_under(path, policy.trash) and", "and"),
     ("owner-outside-trashed", "guard.py", " or not is_under(path, policy.root):", ":"),
     ("owner-dot-trashed", "guard.py", 'if last in ("", ".", "..") or', 'if last in ("",) or'),
-    # rm works on throwaway files: the scratch folder, a variable set to a literal, and the Claude scratchpad.
     ("scratchpad-refused", "guard.py", "return is_scratch or bool(SCRATCHPAD.match(path))", "return is_scratch"),
     ("scratchpad-itself-deleted", "guard.py", 'scratchpad/[^/]")', 'scratchpad")'),
     ("scratchpad-of-any-user", "guard.py", "/claude-{USER_ID}/", "/claude-[0-9]+/"),
@@ -605,7 +562,6 @@ MUTANTS = (
     ("variable-rebound-trusted", "guard.py", "and len(uses) == 1:", ":"),
     ("variable-never-learned", "guard.py", "            scope.values[name] = value", "            pass"),
     ('variable-crosses-into-bash-c', 'guard.py', 'inner_judges, policy, findings, text)', 'inner_judges, policy, findings, text, scope=scope)'),
-    # The owner's git commands, hidden commands, wrappers, package managers, and the commit gate's reading.
     ('joined-runners-not-read', 'common.py', 'if name in JOINING_RUNNERS:\n        return get_segments(get_joined_run(name, command.arguments))', 'if False:\n        pass'),
     ('ssh-host-run-as-command', 'common.py', 'index += 1 if name in REMOTE_RUNNERS else 0', 'index += 0'),
     ('option-runners-not-read', 'common.py', 'if name in OPTION_RUNNERS:\n        return get_segments(get_option_run(arguments))', 'if False:\n        pass'),
@@ -723,13 +679,11 @@ MUTANTS = (
     ('kept-rust-uncounted', 'commit_gate.py', 'return len(RUST_TEST.findall(text))', 'return 0'),
     ('kept-rust-file-not-test', 'commit_gate.py', '"*.spec.*", "*.rs")', '"*.spec.*")'),
     ("guard-bug-blocks", "guard.py", 'failed and let the call run: {error!r}", file=sys.stderr)\n        sys.exit(1)', 'failed and let the call run: {error!r}", file=sys.stderr)\n        sys.exit(2)'),
-    # The budget names the handback; a new progress line prunes the files of a week ago.
     ("budget-handback-line-dropped", "budget.py", 'f"Call {HANDBACK_TOOL} now with your partial report.",', '"",'),
     ("budget-prune-never", "budget.py", "    prune_progress(paths[0].parent)\n", ""),
     ("budget-prune-everything", "budget.py", "path.stat().st_mtime < cutoff", "True"),
     ("budget-prune-offsets-kept", "budget.py", 'path.suffix in (".jsonl", ".offset", ".turns")', 'path.suffix == ".jsonl"'),
     ("budget-prune-on-every-call", "budget.py", "    if every and num_turns % every == 0 and is_first:\n", "    if get_progress_paths(event) is not None:\n        prune_progress(get_progress_paths(event)[0].parent)\n    if every and num_turns % every == 0 and is_first:\n"),
-    # The agent-facing hooks: what each judges, and what it reads.
     ("skill-gate-read-counts-as-edit", "skill_gate.py", 'elif event.get("tool_name") in EDIT_TOOLS:', "elif True:"),
     ("skill-gate-unresolved-names-kept", "skill_gate.py", "if not name or any(character in name for character in UNRESOLVED):", "if not name:"),
     ("skill-gate-reads-whole-transcript", "skill_gate.py", "read_tail(path, LOADED_TAIL_BYTES).split", "path.read_bytes().split"),
@@ -761,7 +715,6 @@ MUTANTS = (
 
 
 class MutantRun(NamedTuple):
-    """One mutant's name, the exit code of the cases run on it, and the cases that failed."""
 
     name: str
     code: int
@@ -769,9 +722,7 @@ class MutantRun(NamedTuple):
 
 
 def run_mutant(name: str, script: str, old: str, new: str, /) -> MutantRun:
-    """Breaks a copy of the hooks and runs the cases on it; returns the name, the exit code and the failed cases."""
 
-    # The folder ignores itself, so git never sees the copies.
     WORK.parent.mkdir(exist_ok=True)
     (WORK.parent / ".gitignore").write_text("*\n")
     base = WORK / name
@@ -794,8 +745,6 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> MutantRun:
 
 
 def get_rotted_names() -> list[str]:
-    """The mutants that would prove nothing: their text to break is gone or occurs twice, the broken hook no longer
-    parses (every case would fail for that reason alone), or another mutant makes the same change."""
 
     rotted = []
     seen = set()
@@ -814,7 +763,7 @@ def get_rotted_names() -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="The control of the hook cases: each mutant breaks one rule in a copy of the hooks, and some case must then fail.")
     parser.add_argument("--only", default="", help="run the mutants whose name holds one of these texts, comma-separated")
     parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help="mutants at once; each runs its cases on CASE_THREADS threads")
     parser.add_argument("--check", action="store_true", help="only find the mutants whose text is gone")

@@ -5,13 +5,6 @@
 # [tool.uv]
 # exclude-newer = "7 days"
 # ///
-"""Fail when a tracked or trackable file names a person, a machine or a private project.
-
-Checks every file git would track for absolute home paths, email addresses and
-the words of a private list. The list is read from $HARNESS_PRIVATE_WORDS, else
-~/.config/harness/private-words when it exists. It is never in the repo and its
-path is never printed.
-"""
 
 from __future__ import annotations
 
@@ -26,7 +19,6 @@ PLACEHOLDERS = frozenset({"user", "you", "name", "username", "me", "yourname", "
 HOME = re.compile(r"(?:/ho" r"me/|/Us" r"ers/|[A-Za-z]:\\Us" r"ers\\)([^/\\\s\"'`)]+)")
 EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
 EMAIL_OK = frozenset({"anthropic.com", "users.noreply.github.com", "example.com", "example.org"})
-# The places a handle may appear: the repo's own install path, its GitHub Pages address, and the marketplace's owner, who publishes it.
 REPO_PATH = "tfernd/harness"
 PAGES_URL = "{0}.github.io/{1}".format(*REPO_PATH.split("/"))
 OWNER_FILE = ".claude-plugin/marketplace.json"
