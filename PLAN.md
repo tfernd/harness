@@ -13,7 +13,7 @@ what order. Each step lands as its own commits, with `make check` green, before 
 - **Why:** the owner wants to read a part without leaving the page.
 - **Done:** built from the files by `docs/build_map.py`; works from `file://`, light and dark, at 320px.
 
-### 2. No comments, everywhere
+### 2. No comments, everywhere (done)
 
 - **What:** `harness:comments` becomes the no-comments skill, loaded before every code edit in every project:
   - no comments and no docstrings; names, types and small functions carry the meaning;
@@ -84,7 +84,10 @@ Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives be
 - **Retro:** over 100 reports wait; run `harness:retro`.
 - **Small fixes:** scoped tools (`npx @scope/tool`) always ask; `is_skipped` in the commit gate misses class-level
   skips and `pytest.skip()`; a worktree's own `__scratch__/` counts as outside scratch; worktree agents start from
-  the last pushed commit, so push first; the mutant runner should warn when the tree changes under it.
+  the last pushed commit, so push first; the mutant runner should warn when the tree changes under it;
+  `bin/strip-comments` runs under the system `python3` (3.10 here) and fails on 3.12 syntax, so `make strip` should
+  call it through `uv run`; the stripper removed the page template's `<!-- @slot -->` markers, so `tests/check_strip.py`
+  needs a case that a marker a program reads survives, and the stripper should keep or refuse such a comment.
 
 ## Test by hand
 
