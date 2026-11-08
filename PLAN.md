@@ -77,7 +77,8 @@ Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives be
   a path-like name, or drop them; `mutants.py --only` should print how many mutants it matched;
   the installer rule reads a pipeline from grouped segments, so it can cross a `;` (`curl x | jq .; echo y | python3`
   asks): give `Segment` in `hooks/shell.py` a pipe flag; `python -W ignore -` is not seen as reading stdin;
-  `hooks/skill_gate.py` has a dead scratch clause; the `Makefile` `clean` target hides errors (`|| true`, `2>/dev/null`);
+  `tests/check_skills.py` should refuse an unquoted ` #` in a frontmatter value (YAML reads it as a comment and cut
+  the code-make description short); `hooks/skill_gate.py` has a dead scratch clause; the `Makefile` `clean` target hides errors (`|| true`, `2>/dev/null`);
   `bin/strip-comments` runs under the system `python3` (3.10 here) and fails on 3.12 syntax, so `make strip` should
   call it through `uv run`; the stripper removed the page template's `<!-- @slot -->` markers, so `tests/check_strip.py`
   needs a case that a marker a program reads survives, and the stripper should keep or refuse such a comment.
