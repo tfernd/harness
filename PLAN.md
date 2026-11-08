@@ -30,7 +30,7 @@ what order. Each step lands as its own commits, with `make check` green, before 
   clearer.
 - **Done:** the skill says it; `bin/strip-comments --check` passes on this repo; the pre-commit hook is on.
 
-### 3. Guard: AWS read-only, and no piped installers
+### 3. Guard: AWS read-only, and no piped installers (done)
 
 - **What:**
   - `aws`: read-only by default. `describe-*`, `list-*`, `get-*`, `s3 ls`, `sts get-caller-identity`, `logs tail` and
@@ -40,7 +40,7 @@ what order. Each step lands as its own commits, with `make check` green, before 
 - **Why:** a write to an AWS account cannot be undone from the session; a piped installer runs unseen code.
 - **Done:** cases and planted bugs for each, a replay over past transcripts with the count of new asks.
 
-### 4. Skills for the work stack
+### 4. Skills for the work stack (done)
 
 Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives before the first edit of that kind of file.
 
@@ -54,18 +54,6 @@ Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives be
 
 - **Why:** the owner's work runs on Snowflake, AWS, Harness.io pipelines and Makefiles; none has a skill today.
 - **Done:** `tests/check_skills.py` passes; the page lists them; each skill_gate kind has a case.
-
-### 5. Plugin state out of the project
-
-- **What:** move `__harness__/` and `__scratch__/` to `${XDG_STATE_HOME:-~/.local/state}/harness/projects/<slug>/`
-  (`feedback/`, `trash/`, `scratch/`), with a one-time migration at session start.
-- **Why:** the owner wants no plugin folders inside a project.
-- **Start from:** ``state-move.patch` in this project's state folder under `~/.local/state/harness/projects/``, cut from the old
-  history; it conflicts in `README.md`, `hooks/common.py`, `hooks/delegate.py`, `hooks/guard.py`, `hooks/turn.py`,
-  `tests/mutants.py` and `tests/run_cases.py`. Also move the `Makefile` `clean` target, `tests/check_port.py`
-  `WORK` and the mutant work folder out; refuse an `XDG_STATE_HOME` inside a project; drop the dead scratch clause
-  in `hooks/skill_gate.py`.
-- **Done:** no hook run creates a folder inside a project (a case shows it).
 
 ## Later
 
@@ -85,6 +73,11 @@ Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives be
 - **Small fixes:** scoped tools (`npx @scope/tool`) always ask; `is_skipped` in the commit gate misses class-level
   skips and `pytest.skip()`; a worktree's own `__scratch__/` counts as outside scratch; worktree agents start from
   the last pushed commit, so push first; the mutant runner should warn when the tree changes under it;
+  mutants `skill-name-with-a-path-read` and `skill-unprefixed-name-read` survive: add a case with a real SKILL.md under
+  a path-like name, or drop them; `mutants.py --only` should print how many mutants it matched;
+  the installer rule reads a pipeline from grouped segments, so it can cross a `;` (`curl x | jq .; echo y | python3`
+  asks): give `Segment` in `hooks/shell.py` a pipe flag; `python -W ignore -` is not seen as reading stdin;
+  `hooks/skill_gate.py` has a dead scratch clause; the `Makefile` `clean` target hides errors (`|| true`, `2>/dev/null`);
   `bin/strip-comments` runs under the system `python3` (3.10 here) and fails on 3.12 syntax, so `make strip` should
   call it through `uv run`; the stripper removed the page template's `<!-- @slot -->` markers, so `tests/check_strip.py`
   needs a case that a marker a program reads survives, and the stripper should keep or refuse such a comment.
