@@ -5,7 +5,7 @@ description: Python style and checkable rules - names, signatures, types, functi
 
 # Python
 
-Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
+No comments or docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Procedure
 
@@ -37,7 +37,7 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
   an `int`, checked once where it enters.
 - No `typing.cast` and no checker ignore comment (`# type: ignore`, `# noqa`, `# pyright:`). Narrow with
   `isinstance`, `assert`, `match` or a lookup table typed to the `Literal`; if a third-party stub forces one, narrow
-  with `isinstance` or `assert` and say why in a comment.
+  with `isinstance` or `assert` and say why in the report.
 - A fixed group of results is a `NamedTuple` or a frozen `dataclass`, never a `dict` and never optional fields filled
   by convention. A function returning a dict because its keys are data says so on its signature's closing line.
 - No `.0` on a whole number unless it is a float on purpose.
@@ -47,12 +47,12 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
 - One job each. The ruff complexity limit fails a function that branches more: split it, never raise the limit.
 - A function reads in phases separated by blank lines: checks, preparation, compute, return. Every intermediate has a
   name.
-- Two functions that differ by one step become one with an optional parameter whose docstring says what `None` means,
+- Two functions that differ by one step become one with an optional parameter whose name or type says what `None` means,
   or a function-valued parameter.
 - Public entry points (called from outside the module) raise `ValueError` or `TypeError` for bad caller input, once,
   where it enters. Internal invariants use `assert` (stripped under `-O`, so never for input).
 - Dispatch over a closed set is one `match`; `case _: raise` only over an unchecked outside value. Ties go by order
-  and the docstring says so.
+  and the function's name says so.
 - No `global`, no module-level mutable state (a list, dict, set or cache changed at run time; frozen constants such as
   a tuple, a `frozenset` or a number are fine). No `_private` functions (a leading underscore hides a helper that
   should be shared or deleted), aliases (`old = new`), re-exports or one-line wrappers: change the callers.
@@ -60,7 +60,7 @@ Comments and docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Layout
 
-- One job per module, the one its name says, stated in its docstring.
+- One job per module, the one its name says.
 - A module with more than one topic has sections: a divider line, a Title Case title, a divider line; a section
   holds its types, then its functions, a helper before its first caller. Divider: `# ` plus 75 `=`.
 - A call or signature that fits the line limit is one line, however many arguments. One that does not gets one

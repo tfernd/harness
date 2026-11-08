@@ -11,7 +11,7 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
 
 - **It fails on a plausible bug,** named before writing it (a swapped argument, a lost sign, an off-by-one, a missing
   guard). A test you cannot name a bug for goes. Keep few tests, each asserting strictly.
-- **One property,** named in the test's name and its one-line docstring. No test of a private helper, of an ordinary
+- **One property,** named in the test's name. No test of a private helper, of an ordinary
   input check of a public entry, or of a property another test implies. What defines the public contract is tested.
 - **An oracle by a different route:** comparing a function with another defined from it (an encoder against its own
   decoder) checks nothing. Use an independent computation: a plain loop, a trusted library, hand-built expected bytes
@@ -19,13 +19,12 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
 - **Never true by construction:** an inequality that also holds when the feature is missing (a `<=` met by a fallback
   to the worse method) is asserted strictly, or the equality that is the claim is.
 - **A judge of a guard runs the guarded branch.** One that clears a cache also runs the warm path; one that warms up
-  before it measures also has a cold case, or says in its docstring that the cold path is not judged. Example: a judge of `if cache_is_full: evict()` fills the
+  before it measures also has a cold case, or its name says the cold path is not judged. Example: a judge of `if cache_is_full: evict()` fills the
   cache past its limit and asserts the evicted entry is gone; a judge that only inserts one item never runs the branch.
 - **Named edge cases,** each its own case: empty, one element, the boundary values of the type or range (minimum,
   maximum, zero, a value just past a limit), one of each sign or kind.
 - **Tunable constants defended:** a constant someone could change for speed (a chunk size, a tolerance, a timeout) has a
-  test that runs the real value and fails when the value breaks a property. One no test can defend is marked in the code
-  and listed as open work.
+  test that runs the real value and fails when the value breaks a property. One no test can defend is listed as open work in the plan.
 - **Tolerances are measured:** a bound is measured at the test's own sizes and seeds before it is asserted, and its
   constant says what it counts and its margin. Never loosen one to make a run pass.
 - **Deterministic:** seeded inputs, no clock, no network, no order dependence, no test that reads another's output.

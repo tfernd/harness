@@ -50,6 +50,8 @@ The lists the main session uses before a brief goes out, and when it accepts. Ea
 - A visual fix brief says what to do with a layout fault outside its items (an overflow, a cut-off popover): fix it or
   list it under Open.
 - A page brief says whether the page must work opened from `file://`; a module script does not run there.
+- A brief that asks for a browser render names the command that drives one here (`uv run --with playwright` and the
+  system Chrome), and says that embedded text may hold the page template's own markers (`{{`).
 - A layout judge is checked against the reference screenshot before the brief goes out: it must not assert a row or
   edge the reference does not have.
 

@@ -6,7 +6,7 @@ description: Terraform style from HashiCorp's published conventions - file layou
 # Terraform
 
 Every rule here is HashiCorp's published style guide
-(`https://developer.hashicorp.com/terraform/language/style`, read for this skill). Comments: `harness:comments`.
+(`https://developer.hashicorp.com/terraform/language/style`, read for this skill). No comments or docstrings: `harness:comments`.
 
 ## Format
 
@@ -14,7 +14,7 @@ Every rule here is HashiCorp's published style guide
   only this: it aligns and indents.
 - Arguments first, nested blocks after, a blank line between; the order inside a resource is under "Naming and order".
 - Blank line between top-level blocks. Repeated nested blocks of one type stay together without gaps.
-- Comments use `#`, never `//` or `/* */`, and only where the logic is genuinely complex.
+- No comments (`harness:comments`); variable and output `description` arguments stay, they are data.
 
 ## Files
 
@@ -28,7 +28,7 @@ Every rule here is HashiCorp's published style guide
 | `outputs.tf` | outputs, in one stable order (alphabetical by default) |
 | `locals.tf` | shared locals; file-only locals sit at the top of that file |
 
-Split a large `main.tf` by domain (`network.tf`, `storage.tf`, `compute.tf`). `override.tf` is rare and commented.
+Split a large `main.tf` by domain (`network.tf`, `storage.tf`, `compute.tf`). `override.tf` is rare.
 Local modules live in `./modules/<module_name>`.
 
 ## Naming and order
@@ -39,7 +39,7 @@ Local modules live in `./modules/<module_name>`.
 - Data sources before the resources that use them. Inside a resource: `count`/`for_each` (then a blank line),
   plain arguments, block arguments, `lifecycle`, `depends_on`.
 - `count` for nearly identical copies and for optional creation (`count = var.enabled ? 1 : 0`); `for_each` when each
-  instance needs distinct values. Comment them when the effect is not obvious.
+  instance needs distinct values.
 
 ## Variables, outputs, locals
 
@@ -70,6 +70,6 @@ Local modules live in `./modules/<module_name>`.
 ## What no tool checks
 
 `terraform fmt` aligns and indents only. The reviewer reads the rest: argument order, blank lines between blocks,
-comment style, the stable order of variables and outputs, descriptions on variables and outputs, descriptive names,
-not repeating the type in a name, file split by domain, whether a variable should be exposed at all, and whether a
-comment is needed.
+the stable order of variables and outputs, descriptions on variables and outputs, descriptive names,
+not repeating the type in a name, file split by domain, whether a variable should be exposed at all, and whether a name
+says enough.

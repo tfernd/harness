@@ -5,7 +5,7 @@ description: Shell script rules for bash - when shell fits, strict mode, quoting
 
 # Shell
 
-Comments: `harness:comments`. One-off commands in a tool call: `harness:tool-habits`.
+No comments or docstrings: `harness:comments`. One-off commands in a tool call: `harness:tool-habits`.
 
 ## When shell fits
 
@@ -13,8 +13,7 @@ Comments: `harness:comments`. One-off commands in a tool call: `harness:tool-hab
 - Move to a script in another language when the script needs any of: arrays of records or maps, JSON or other
   structured data, arithmetic beyond integers, more than about 100 lines, a branch you cannot read in one screen, or
   tests of its own logic.
-- A script in the repo that others run has a `#!/usr/bin/env bash` first line, the executable bit, and a header
-  comment of 1 to 3 lines saying its job and its usage.
+- A script in the repo that others run has a `#!/usr/bin/env bash` first line, the executable bit, and a name that says its job; usage is printed by `--help`.
 
 ## Strict mode
 

@@ -40,7 +40,7 @@ Every claim in it is backed by a command you ran. No AI attribution.
 ## CI basics
 
 - Run the project's own check target (`make check`), so CI and a laptop agree; no second copy of the commands.
-- Pin every third-party action to a full commit SHA, with the tag in a trailing comment.
+- Pin every third-party action to a full commit SHA, with the tag named in the commit message.
 - Give the workflow the least permission it needs (`permissions:` at the top, read-only by default).
 - No secret is printed: no `echo` of one, no `set -x` near one, no secret in an argument that logs.
 - A slow job caches what is slow and cancels a superseded run (`concurrency`):

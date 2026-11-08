@@ -8,7 +8,7 @@ description: General JavaScript and TypeScript rules - strict TS, named exports,
 Goal: code a reader checks by eye or a tool checks for them: types that cannot lie, errors that surface, modules with
 one job. Long lists and tool starters: `references/rules.md`, `references/biome-tsconfig.md`.
 
-Comments: `harness:comments`. Web pages: `harness:code-html-css`.
+No comments or docstrings: `harness:comments`. Web pages: `harness:code-html-css`.
 
 ## Runtime and form
 
@@ -59,7 +59,7 @@ Comments: `harness:comments`. Web pages: `harness:code-html-css`.
 
 - One job per function and per module; the same code is never written twice. A helper a second module needs moves to
   a shared folder.
-- Size: a function over about 30 lines, or one that needs a comment to separate its steps, is split into named helpers
+- Size: a function over about 30 lines, or one whose steps need separating, is split into named helpers
   (biome `noExcessiveCognitiveComplexity` flags complexity). A file over about 500 lines is split by job.
 - Dependency direction: shared code imports nothing from features; a feature never imports a sibling feature; a
   low-level folder never imports a higher one. Check with the project's import rule or a script.

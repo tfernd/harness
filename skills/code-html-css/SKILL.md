@@ -5,7 +5,7 @@ description: HTML and CSS rules for any web repo, with or without a framework - 
 
 # HTML and CSS
 
-Script side: `harness:code-js`. Comments: `harness:comments`. Long lists and examples: `references/html.md`,
+Script side: `harness:code-js`. No comments or docstrings: `harness:comments`. Long lists and examples: `references/html.md`,
 `references/css.md`. A rule marked (if) applies only when the project has the thing it names.
 
 ## HTML
@@ -52,8 +52,7 @@ Script side: `harness:code-js`. Comments: `harness:comments`. Long lists and exa
 - Motion honours `@media (prefers-reduced-motion: reduce)`; animate `opacity` and `transform`, short durations.
 - Text colour against its background meets WCAG AA (4.5:1 body, 3:1 large text and controls); state is never colour
   alone.
-- One component per CSS file; split by component, not by line count. A comment explains a trap or why a value is what
-  it is, one line above the rule.
+- One component per CSS file; split by component, not by line count. A value's meaning goes in its custom property's name.
 
 ## Order of work for a new fragment
 
