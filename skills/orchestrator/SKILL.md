@@ -22,6 +22,7 @@ refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/c
 | **Agents in parallel where it pays** | Independent, large units get one worker each, disjoint write sets; the shared plumbing goes first, to one worker |
 | **Tight briefs** | Exact files, the contract and the done check, so an agent re-reads little |
 | **One round, one goal** | Never renames, contracts and clean-up together; small commits, each one usable |
+| **Mocks before building** | Before building anything visual or interactive, offer mocks first (`harness:explore`) |
 | **Run it first** | Start the product (a headless smoke test in the gate) before any review; polish waits until it runs |
 | **One reviewer at the end** | One read of the whole diff, a branch or a pull request, high severity only (`harness:review`); a worker applies each fix |
 | **Three rounds, then rethink** | A unit still failing review after 3 rounds stops; rethink the approach with the owner (`harness:review`) |

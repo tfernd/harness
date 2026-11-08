@@ -182,7 +182,7 @@ AGENT_KINDS = (
     Kind("Checkers", "Test someone else's work, claim by claim.", ("reviewer", "auditor")),
 )
 SKILL_KINDS = (
-    Kind("Run the job", "Plan, brief, accept, set up.", ("orchestrator", "workflows", "models", "accept", "init")),
+    Kind("Run the job", "Plan, brief, accept, set up.", ("orchestrator", "workflows", "explore", "models", "accept", "init")),
     Kind("Think", "Settle facts and causes first.", ("evidence", "debug", "spec", "cold-read")),
     Kind(
         "Build",

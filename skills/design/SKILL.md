@@ -80,7 +80,7 @@ loading keeps the final layout (a skeleton of the real geometry); disabled stays
 
 ## A mock-up round
 
-When the owner wants options, make N variants, each a different idea named by it (for example "one dense table",
+The process around a round (offer, brief, pick, freeze, build) is `harness:explore`. When the owner wants options, make N variants, each a different idea named by it (for example "one dense table",
 "cards by audience", "a guided path"), not N palettes of one layout. Each opens on the same real content, so the
 difference is the design. End with one line per variant: the idea, what it does best, what it gives up. Recommend one
 and say why; the owner chooses.

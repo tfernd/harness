@@ -61,6 +61,10 @@ A bug claim is probed before any fix (`harness:evidence`).
 3. Build against the judges, with workers (in parallel where units are independent). Run the product, then one reviewer reads against
    the spec (`harness:review`).
 
+## Visual or interactive build
+
+A game, page, dashboard or UI: offer mocks and choose the look before any build (`harness:explore`).
+
 ## Spike
 
 Use when the way is unknown.
