@@ -54,6 +54,8 @@ The lists the main session uses before a brief goes out, and when it accepts. Ea
 - A page brief says whether the page must work opened from `file://`; a module script does not run there.
 - A brief that asks for a browser render names the command that drives one here (`uv run --with playwright` and the
   system Chrome), and says that embedded text may hold the page template's own markers (`{{`).
+- A page brief that adds a colour state asks for its contrast in both themes and on hover before the first full check,
+  and says the full check runs once, last, and is never stopped to hand off sooner.
 - A layout judge is checked against the reference screenshot before the brief goes out: it must not assert a row or
   edge the reference does not have.
 

@@ -31,6 +31,8 @@ costs no turn.
 - One exact change: the Edit tool. A new file: the Write tool. Several changes, or the last edit of a unit: one script.
 - The script asserts that each target occurs once, so a missing text fails loudly and never edits nothing in silence.
 - A failed step must stop the rest: join with `&&`, never `;`. A failed edit must not feed a test, a build or a commit.
+- Run the project's Python through `uv run python` and its linter through `uvx ruff` when `ruff` is not on PATH: the
+  system `python3` may be older than the project's.
 - One-off Python in a tool call takes no PEP 723 header and no dependencies: `python3 -` and the standard library.
 - Before editing a kind of file, load its language skill when you can; if you have not, a hook lets the edit run and gives you the skill's text with the result. Read it as the rules for the next edit.
 

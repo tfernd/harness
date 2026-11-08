@@ -73,6 +73,8 @@ Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives be
 - **Small fixes:** scoped tools (`npx @scope/tool`) always ask; `is_skipped` in the commit gate misses class-level
   skips and `pytest.skip()`; a worktree's own `__scratch__/` counts as outside scratch; worktree agents start from
   the last pushed commit, so push first; the mutant runner should warn when the tree changes under it;
+  `port/harness_port.py` drops Kiro tools outside `KIRO_TAGS` without a not_ported note, so the page cannot mark
+  those agents; decide whether a dropped matcher name makes a hook "partly ported" on the page or only a lost event;
   mutants `skill-name-with-a-path-read` and `skill-unprefixed-name-read` survive: add a case with a real SKILL.md under
   a path-like name, or drop them; `mutants.py --only` should print how many mutants it matched;
   the installer rule reads a pipeline from grouped segments, so it can cross a `;` (`curl x | jq .; echo y | python3`
