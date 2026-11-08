@@ -13,8 +13,10 @@
       const savedTheme = localStorage.getItem("harness-map-theme");
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       if (savedTheme === "dark" || (savedTheme === null && prefersDark)) document.documentElement.dataset.theme = "dark";
+      const savedTarget = localStorage.getItem("harness-map-target");
+      if (savedTarget === "cortex" || savedTarget === "kiro") document.documentElement.dataset.target = savedTarget;
     } catch (error) {
-      console.warn("The saved theme could not be read.", error);
+      console.warn("The saved theme or install target could not be read.", error);
     }
   </script>
   <link rel="stylesheet" href="style.css?v={{style_hash}}">
@@ -35,7 +37,10 @@
       <div class="page-intro">
         <div class="page-title-row">
           <h1 class="page-title">Harness</h1>
-          <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">Dark mode</button>
+          <button type="button" class="theme-switch" role="switch" aria-checked="false" data-theme-toggle>
+            <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+            <span class="theme-switch-label">Dark</span>
+          </button>
         </div>
         <p class="page-lede">A plugin for any coding agent (Claude Code, Cortex Code, Kiro): agents do the work, skills tell them how, and hooks enforce the rules.</p>
         <ul class="stats" aria-label="What ships">
@@ -48,25 +53,27 @@
         <div class="install-bar">
           <span class="install-label">Install</span>
           <div class="install-tablist" role="tablist" aria-label="Install target">
-            <button type="button" class="install-tab" role="tab" id="install-tab-claude" aria-controls="install-panel-claude" aria-selected="true" tabindex="0">Claude Code</button>
-            <button type="button" class="install-tab" role="tab" id="install-tab-cortex" aria-controls="install-panel-cortex" aria-selected="false" tabindex="-1">Cortex Code</button>
-            <button type="button" class="install-tab" role="tab" id="install-tab-kiro" aria-controls="install-panel-kiro" aria-selected="false" tabindex="-1">Kiro</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-claude" data-install-target="claude" aria-controls="install-panel-claude" aria-selected="true" tabindex="0">Claude Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-cortex" data-install-target="cortex" aria-controls="install-panel-cortex" aria-selected="false" tabindex="-1">Cortex Code</button>
+            <button type="button" class="install-tab" role="tab" id="install-tab-kiro" data-install-target="kiro" aria-controls="install-panel-kiro" aria-selected="false" tabindex="-1">Kiro</button>
           </div>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-claude" aria-labelledby="install-tab-claude">
-          <code class="install-command">claude plugin marketplace add tfernd/harness &amp;&amp; claude plugin install harness@harness --scope user</code>
-          <button type="button" class="install-copy" data-copy="claude plugin marketplace add tfernd/harness &amp;&amp; claude plugin install harness@harness --scope user">Copy</button>
+          <code class="install-command">[[@install-command claude]]</code>
+          <button type="button" class="install-copy" data-copy="[[@install-copy claude]]">Copy</button>
           <p class="install-note">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
-          <code class="install-command">curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex</code>
-          <button type="button" class="install-copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex">Copy</button>
+          <code class="install-command">[[@install-command cortex]]</code>
+          <button type="button" class="install-copy" data-copy="[[@install-copy cortex]]">Copy</button>
           <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+          <p class="install-note">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
-          <code class="install-command">curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro</code>
-          <button type="button" class="install-copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro">Copy</button>
+          <code class="install-command">[[@install-command kiro]]</code>
+          <button type="button" class="install-copy" data-copy="[[@install-copy kiro]]">Copy</button>
           <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+          <p class="install-note">Below, <span class="install-mark is-off">struck</span> parts are not ported to Kiro and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
         </div>
       </div>
     </header>

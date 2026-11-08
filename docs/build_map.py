@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 import hashlib
 import html
 import importlib.util
+import io
 import json
+import keyword
 import re
 import sys
+import tokenize
 from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType
@@ -50,10 +54,27 @@ ITALIC = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)(.
 HEADING_SHIFT = 2
 PORT_STATES = {
     "runs": "runs",
+    "partial": "partly ported",
     "advisory": "advisory, warns but blocks nothing",
     "off": "not ported",
 }
 TOOL_EVENTS = ("PreToolUse", "PostToolUse")
+TARGETS = ("cortex", "kiro")
+STATE_RANK = {"runs": 0, "partial": 1, "advisory": 2, "off": 3}
+PORT_DEST = Path("port-dest")
+INSTALL_COMMANDS = {
+    "claude": "claude plugin marketplace add tfernd/harness && claude plugin install harness@harness --scope user",
+    "cortex": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex",
+    "kiro": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro",
+}
+SHELL_TOKEN = re.compile(r"""(?P<space>\s+)|(?P<comment>#.*)|(?P<string>'[^']*'|"(?:\\.|[^"\\])*")|(?P<operator>&&|\|\||[|;<>()])|(?P<word>[^\s'"|&;<>()]+|.)""")
+SHELL_STARTERS = ("&&", "||", "|", ";", "(")
+HEREDOC = re.compile(r"""<<-?\s*(['"]?)(\w+)\1""")
+JSON_TOKEN = re.compile(r"""(?P<string>"(?:\\.|[^"\\])*")(?P<colon>\s*:)?|(?P<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(?P<keyword>\b(?:true|false|null)\b)""")
+PYTHON_STRINGS = {tokenize.STRING, tokenize.FSTRING_START, tokenize.FSTRING_MIDDLE, tokenize.FSTRING_END}
+PYTHON_QUIET = {tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT, tokenize.ENDMARKER}
+BUILTIN_NAMES = frozenset(name for name in dir(builtins) if not name.startswith("_"))
+LANGUAGES = {"python": "python", "py": "python", "bash": "shell", "sh": "shell", "shell": "shell", "json": "json"}
 
 
 class Agent(NamedTuple):
@@ -80,6 +101,12 @@ class Hook(NamedTuple):
     argument: str
 
 
+class Reach(NamedTuple):
+
+    state: str
+    missing: tuple[str, ...]
+
+
 class Facts(NamedTuple):
 
     agents: tuple[Agent, ...]
@@ -87,6 +114,7 @@ class Facts(NamedTuple):
     hooks: tuple[Hook, ...]
     budgets: dict[str, int]
     ports: dict[str, dict[str, str]]
+    reach: dict[str, dict[str, Reach]]
     values: dict[str, str]
     full: dict[str, str]
 
@@ -383,42 +411,64 @@ def import_path(path: Path, /) -> ModuleType:
     return module
 
 
-def get_port_states(port: ModuleType, events: dict[str, list[dict]], script: str, /) -> dict[str, str]:
+def get_port_label(target: str, /) -> str:
+
+    return next(item.label for item in PORTS if item.key == target)
+
+
+def get_hook_reach(port: ModuleType, events: dict[str, list[dict]], script: str, target: str, /) -> Reach:
 
     marker = f"hooks/{script}"
-    groups = [
-        (event, group)
-        for event, event_groups in events.items()
-        for group in event_groups
-        if any(marker in command["command"] for command in group["hooks"])
-    ]
-
-    states = {"claude": "runs"}
-    for target in ("cortex", "kiro"):
-        converted = False
-        for event, group in groups:
+    known = port.KIRO_MATCHER_IDS if target == "kiro" else port.CORTEX_TOOLS
+    converted = 0
+    missing: list[str] = []
+    for event, event_groups in events.items():
+        for group in event_groups:
+            if not any(marker in command["command"] for command in group["hooks"]):
+                continue
             plan = port.Plan()
             kiro_entries: list[dict] = []
             port.plan_hook_group(plan, target, event, group, kiro_entries)
             commands = [entry["action"]["command"] for entry in kiro_entries]
-            for cortex_group in plan.cortex_hooks.get(event, []):
-                commands.extend(hook["command"] for hook in cortex_group["hooks"])
-            converted = converted or any(marker in command for command in commands)
-        states[target] = "runs" if converted else "off"
-
+            commands.extend(hook["command"] for cortex_group in plan.cortex_hooks.get(event, []) for hook in cortex_group["hooks"])
+            if not any(marker in command for command in commands):
+                missing.extend(note.removeprefix("hook ") for note in plan.not_ported)
+                continue
+            converted += 1
+            dropped = [name for name in group.get("matcher", "").split("|") if name and name not in known]
+            if dropped:
+                missing.append(f"{event}: no {get_port_label(target)} id for {', '.join(dropped)}")
+    state = "off" if not converted else "partial" if missing else "runs"
     for note in PORT_NOTES:
-        if note.script == script:
-            states[note.target] = note.state
+        if note.script == script and note.target == target:
+            missing.append(note.note)
+            state = note.state if STATE_RANK[note.state] > STATE_RANK[state] else max(state, "partial", key=STATE_RANK.__getitem__)
 
-    return states
+    return Reach(state, tuple(dict.fromkeys(missing)))
 
 
-def get_ports(root: Path, scripts: Iterable[str], /) -> dict[str, dict[str, str]]:
+def get_agent_reach(port: ModuleType, root: Path, name: str, target: str, /) -> Reach:
 
-    port = import_path(root / "port" / "harness_port.py")
+    plan = port.Plan()
+    port.plan_agent(plan, PORT_DEST, target, root / "agents" / f"{name}.md", {})
+    missing = tuple(note.removeprefix(f"agent harness-{name}: ") for note in plan.not_ported)
+
+    return Reach("off" if not plan.files else "partial" if missing else "runs", missing)
+
+
+def get_reach(port: ModuleType, root: Path, agents: tuple[Agent, ...], skills: Iterable[str], scripts: Iterable[str], /) -> dict[str, dict[str, Reach]]:
+
     events = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+    plan = port.Plan()
+    port.plan_skills(plan, PORT_DEST)
+    written = {path.parent.name for path in plan.files if path.name == "SKILL.md"}
+    reach = {f"agent:{agent.name}": {target: get_agent_reach(port, root, agent.name, target) for target in TARGETS} for agent in agents}
+    for name in skills:
+        reach[f"skill:{name}"] = dict.fromkeys(TARGETS, Reach("runs" if f"harness-{name}" in written else "off", ()))
+    for script in scripts:
+        reach[f"hook:{script}"] = {target: get_hook_reach(port, events, script, target) for target in TARGETS}
 
-    return {script: get_port_states(port, events, script) for script in scripts}
+    return reach
 
 
 def get_fingerprint(path: Path, /) -> str:
@@ -437,6 +487,8 @@ def get_facts(root: Path, /) -> Facts:
     scripts = list(dict.fromkeys(hook.script for hook in hooks))
     budgets = get_constant(hooks_folder / "budget.py", "DEFAULT_BUDGET", dict)
     required = get_constant(hooks_folder / "brief_lint.py", "DEFAULT_REQUIRED", dict)
+    port = import_path(root / "port" / "harness_port.py")
+    reach = get_reach(port, root, agents, skills, scripts)
     budget_values = {f"budget_{'default' if role == '*' else role.replace('-', '_')}": turns for role, turns in budgets.items()}
 
     values = {
@@ -460,7 +512,8 @@ def get_facts(root: Path, /) -> Facts:
         skills,
         hooks,
         budgets,
-        get_ports(root, scripts),
+        {script: {"claude": "runs", **{target: reach[f"hook:{script}"][target].state for target in TARGETS}} for script in scripts},
+        reach,
         {key: str(value) for key, value in values.items()},
         get_full_texts(root, agents, skills, scripts),
     )
@@ -508,11 +561,133 @@ def make_marks(text: str, /) -> str:
     return ITALIC.sub(lambda match: f"<em>{match.group(1) or match.group(2)}</em>", bold)
 
 
+def make_token(kind: str, value: str, /) -> str:
+
+    escaped = html.escape(value, quote=False)
+
+    return f'<span class="tok-{kind}">{escaped}</span>' if kind and value else escaped
+
+
+def make_shell(text: str, /) -> str:
+
+    lines = []
+    continued = False
+    heredoc_end = ""
+    for line in text.split("\n"):
+        if heredoc_end:
+            lines.append(html.escape(line, quote=False))
+            heredoc_end = "" if line.strip() == heredoc_end else heredoc_end
+            continue
+        at_command = not continued
+        parts = []
+        for match in SHELL_TOKEN.finditer(line):
+            kind, value = match.lastgroup or "", match.group()
+            if kind == "space":
+                parts.append(value)
+                continue
+            if kind == "word":
+                kind = "command" if at_command and "=" not in value else "flag" if value.startswith("-") else ""
+                at_command = at_command and "=" in value
+            elif kind == "operator":
+                at_command = value in SHELL_STARTERS
+            else:
+                at_command = False
+            parts.append(make_token(kind, value))
+        continued = line.rstrip().endswith("\\")
+        heredoc = HEREDOC.search(line)
+        heredoc_end = heredoc.group(2) if heredoc else ""
+        lines.append("".join(parts))
+
+    return "\n".join(lines)
+
+
+def make_json(text: str, /) -> str:
+
+    parts = []
+    last = 0
+    for match in JSON_TOKEN.finditer(text):
+        parts.append(html.escape(text[last : match.start()], quote=False))
+        if match.group("string") is not None:
+            colon = match.group("colon") or ""
+            parts.append(make_token("key" if colon else "string", match.group("string")) + html.escape(colon, quote=False))
+        else:
+            kind = match.lastgroup or ""
+            parts.append(make_token(kind, match.group()))
+        last = match.end()
+    parts.append(html.escape(text[last:], quote=False))
+
+    return "".join(parts)
+
+
+def get_python_kind(token: tokenize.TokenInfo, previous: tokenize.TokenInfo | None, /) -> str:
+
+    if token.type in PYTHON_STRINGS:
+        return "string"
+    if token.type == tokenize.NUMBER:
+        return "number"
+    if token.type == tokenize.COMMENT:
+        return "comment"
+    if token.type != tokenize.NAME:
+        return ""
+    if keyword.iskeyword(token.string):
+        return "keyword"
+    after_dot = previous is not None and previous.string == "."
+    after_definition = previous is not None and previous.string in {"def", "class"}
+
+    return "builtin" if token.string in BUILTIN_NAMES and not after_dot and not after_definition else ""
+
+
+def make_python(text: str, /) -> str:
+
+    starts = [0]
+    for line in text.splitlines(keepends=True):
+        starts.append(starts[-1] + len(line))
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return html.escape(text, quote=False)
+    parts = []
+    last = 0
+    previous = None
+    in_decorator = False
+    for token in tokens:
+        start = starts[min(token.start[0], len(starts)) - 1] + token.start[1]
+        end = starts[min(token.end[0], len(starts)) - 1] + token.end[1]
+        if start < last or end <= start:
+            continue
+        if token.string == "@" and not token.line[: token.start[1]].strip():
+            in_decorator = True
+        elif in_decorator and not (token.type == tokenize.NAME or token.string == "."):
+            in_decorator = False
+        kind = "decorator" if in_decorator else get_python_kind(token, previous)
+        parts.append(html.escape(text[last:start], quote=False))
+        parts.append(make_token(kind, text[start:end]))
+        last = end
+        if token.type not in PYTHON_QUIET:
+            previous = token
+    parts.append(html.escape(text[last:], quote=False))
+
+    return "".join(parts)
+
+
+def make_code(text: str, language: str, /) -> str:
+
+    match LANGUAGES.get(language.lower(), ""):
+        case "python":
+            return make_python(text)
+        case "shell":
+            return make_shell(text)
+        case "json":
+            return make_json(text)
+        case _:
+            return html.escape(text, quote=False)
+
+
 def make_code_block(lines: Iterable[str], language: str, /) -> str:
 
     label = f' data-language="{html.escape(language)}"' if language else ""
 
-    return f'<pre class="full-code"{label} tabindex="0"><code>{html.escape(chr(10).join(lines))}</code></pre>'
+    return f'<pre class="full-code"{label} tabindex="0"><code>{make_code(chr(10).join(lines), language)}</code></pre>'
 
 
 def split_cells(line: str, /) -> list[str]:
@@ -780,16 +955,40 @@ def make_row(icon: str, term: str, value: str, /, *, is_markup: bool = False) ->
     return f"<dt>{icon_markup}{html.escape(term)}</dt><dd>{shown}</dd>"
 
 
-def make_chip(panel: str, name: str, job: str, rows: Iterable[str], full: str, /, *, levels: tuple[Level, ...] = ()) -> str:
+def get_reach_text(reach: Reach, target: str, /) -> str:
+
+    head = "Not ported" if reach.state == "off" else "Partly ported"
+    missing = f": {'; '.join(reach.missing)}" if reach.missing else ""
+
+    return f"{head} to {get_port_label(target)}{missing}."
+
+
+def make_reach(reach: dict[str, Reach], /) -> tuple[str, str, str]:
+
+    gaps = [(target, reach[target]) for target in TARGETS if reach[target].state != "runs"]
+    attributes = "".join(f' data-port-{target}="{"off" if gap.state == "off" else "partial"}"' for target, gap in gaps)
+    notes = "".join(
+        f'<span class="visually-hidden chip-port is-{target}">, {"not" if gap.state == "off" else "partly"} ported to {get_port_label(target)}</span>' for target, gap in gaps
+    )
+    rows = "".join(
+        f'<div class="tip-port is-{target}">{make_row("ports", f"On {get_port_label(target)}", get_reach_text(gap, target))}</div>' for target, gap in gaps
+    )
+
+    return attributes, notes, rows
+
+
+def make_chip(panel: str, name: str, job: str, rows: Iterable[str], full: str, reach: dict[str, Reach], /, *, levels: tuple[Level, ...] = ()) -> str:
 
     tip_id = get_tip_id(panel, name)
     escaped = html.escape(name)
     keys = " ".join(level.key for level in levels)
     data_levels = f' data-levels="{keys}"' if keys else ""
+    port_attributes, port_notes, port_rows = make_reach(reach)
+    rows = (*rows, port_rows)
 
     return (
-        f'<li class="chip-item"><button type="button" class="chip" data-item="{panel}:{escaped}"{data_levels} aria-describedby="{tip_id}">'
-        f"{escaped}</button>"
+        f'<li class="chip-item"><button type="button" class="chip" data-item="{panel}:{escaped}"{data_levels}{port_attributes} aria-describedby="{tip_id}">'
+        f"{escaped}{port_notes}</button>"
         f'<div class="tip kind-{panel}" id="{tip_id}" role="group" aria-label="{escaped}" hidden>'
         f'<p class="tip-strip"><span class="tip-kind">{panel}</span><span class="tip-name">{escaped}</span>'
         f'<button type="button" class="tip-switch" data-full="{tip_id}-full" aria-expanded="false" aria-controls="{tip_id}-view">Full text</button></p>'
@@ -809,7 +1008,7 @@ def make_agent_chip(agent: Agent, facts: Facts, /) -> str:
         make_row("when", "Use", agent.use),
     )
 
-    return make_chip("agent", agent.name, agent.job, rows, facts.full[f"agent:{agent.name}"])
+    return make_chip("agent", agent.name, agent.job, rows, facts.full[f"agent:{agent.name}"], facts.reach[f"agent:{agent.name}"])
 
 
 def make_skill_chip(name: str, layout: Layout, /) -> str:
@@ -825,7 +1024,7 @@ def make_skill_chip(name: str, layout: Layout, /) -> str:
     rows = (make_row("kind", "Kind", "advice"), make_row("load", "Loaded", loaded), make_row("when", "Load", skill.when))
     levels = tuple(level for level in LEVELS if level.key == SKILL_LEVEL)
 
-    return make_chip("skill", name, skill.job, rows, layout.facts.full[f"skill:{name}"], levels=levels)
+    return make_chip("skill", name, skill.job, rows, layout.facts.full[f"skill:{name}"], layout.facts.reach[f"skill:{name}"], levels=levels)
 
 
 def make_ports(states: dict[str, str], /) -> str:
@@ -883,7 +1082,7 @@ def make_hook_chip(script: str, layout: Layout, /) -> str:
         make_row("ports", "Ported", make_ports(layout.facts.ports[script]), is_markup=True),
     )
 
-    return make_chip("hook", script, HOOK_JOBS[script], rows, layout.facts.full[f"hook:{script}"], levels=levels)
+    return make_chip("hook", script, HOOK_JOBS[script], rows, layout.facts.full[f"hook:{script}"], layout.facts.reach[f"hook:{script}"], levels=levels)
 
 
 def make_panel(panel: str, title: str, kicker: str, bands: Iterable[tuple[Kind, list[str]]], /) -> str:
@@ -977,6 +1176,9 @@ def make_slot(slot: Slot, layout: Layout, /) -> str:
             return make_pyramid(layout)
         case "panels":
             return make_panels(layout)
+        case "install-command" | "install-copy" if slot.arguments and slot.arguments[0] in INSTALL_COMMANDS:
+            command = INSTALL_COMMANDS[slot.arguments[0]]
+            return make_shell(command) if slot.name == "install-command" else html.escape(command)
         case _:
             raise ValueError(f"the template holds an unknown slot: {slot.name}")
 

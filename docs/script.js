@@ -18,8 +18,7 @@
   const bindTheme = (button) => {
     const applyTheme = (theme) => {
       page.dataset.theme = theme;
-      button.setAttribute("aria-pressed", String(theme === "dark"));
-      button.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+      button.setAttribute("aria-checked", String(theme === "dark"));
     };
     button.addEventListener("click", () => {
       const theme = page.dataset.theme === "dark" ? "light" : "dark";
@@ -175,6 +174,17 @@
   const SELECTED_LABEL = "Selected: press Ctrl+C";
   const LABEL_RESET_MS = 1600;
   const KEY_STEPS = { ArrowRight: 1, ArrowLeft: -1 };
+  const TARGET_KEY = "harness-map-target";
+
+  const setTarget = (tab) => {
+    const target = tab.dataset.installTarget ?? "claude";
+    document.documentElement.dataset.target = target;
+    try {
+      localStorage.setItem(TARGET_KEY, target);
+    } catch (error) {
+      console.warn(`The choice ${TARGET_KEY} could not be saved.`, error);
+    }
+  };
 
   const showTab = (root, tab) => {
     for (const other of root.querySelectorAll("[role='tab']")) {
@@ -192,6 +202,7 @@
     const tabs = [...root.querySelectorAll("[role='tab']")];
     const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
     showTab(root, next);
+    setTarget(next);
     next.focus();
   };
 
@@ -221,10 +232,15 @@
   };
 
   const bindInstall = (root) => {
+    const savedTab = root.querySelector(`[data-install-target="${document.documentElement.dataset.target ?? "claude"}"]`);
+    if (savedTab) showTab(root, savedTab);
     root.addEventListener("click", (event) => {
       if (!(event.target instanceof Element)) return;
       const tab = event.target.closest("[role='tab']");
-      if (tab) showTab(root, tab);
+      if (tab) {
+        showTab(root, tab);
+        setTarget(tab);
+      }
       const copyButton = event.target.closest("[data-copy]");
       if (copyButton) void copyCommand(copyButton);
     });
