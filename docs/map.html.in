@@ -41,6 +41,11 @@
             <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
             <span class="theme-switch-label">Dark</span>
           </button>
+          <a class="band-link" href="band.html">
+            <span class="band-link-dot" aria-hidden="true"></span>
+            See the agent band
+            <span aria-hidden="true">&rarr;</span>
+          </a>
         </div>
         <p class="page-lede">A plugin for any coding agent (Claude Code, Cortex Code, Kiro): agents do the work, skills tell them how, and hooks enforce the rules.</p>
         <ul class="stats" aria-label="What ships">

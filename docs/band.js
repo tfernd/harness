@@ -1,0 +1,519 @@
+{
+  const THEME_KEY = "harness-map-theme";
+  const SPEED = 4;
+  const TICK_MS = 125;
+  const MAX_STEP_MS = 1000;
+  const SECOND = 1000;
+  const MINUTE = 60 * SECOND;
+  const HOUR = 60 * MINUTE;
+  const WORK_MS = 5 * MINUTE;
+  const IDLE_MS = MINUTE;
+  const SEED_START_MS = -(18 * MINUTE + 74 * SECOND);
+  const CACHE_LIFETIME_MS = HOUR;
+  const MAX_ROWS = 6;
+  const MIN_LIVE = 3;
+  const MAX_LIVE = 5;
+  const FAIL_CHANCE = 0.15;
+  const KEEP_ENDED_MS = 2 * HOUR;
+  const TOOL_LABELS = [
+    "uv run pytest -q",
+    "make check",
+    'rg -n "budget" hooks',
+    "git diff --stat",
+    "uvx ruff check",
+    "node --check band.js",
+    "make map",
+    "sed -n 1,80p SPEC.md",
+  ];
+  const ROLES = ["worker", "scout", "reviewer", "designer"];
+  const GROUPS = [
+    { key: "workflow", tag: "WORKFLOW", name: "workflow: review pass" },
+    { key: "direct", tag: "DIRECT", name: "direct agents" },
+  ];
+  const PILL_TEXT = { thinking: "THINKING", tool: "TOOL", finished: "FINISHED", failed: "FAILED" };
+
+  const createRandom = (seed) => {
+    let state = seed >>> 0;
+    return () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let mixed = state;
+      mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+      mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+      return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+
+  const pick = (random, list) => list[Math.floor(random() * list.length)];
+  const between = (random, low, high) => low + random() * (high - low);
+
+  const planSpan = (random, kind, start) => {
+    const isTool = kind === "tool";
+    const length = isTool ? between(random, 6 * SECOND, 26 * SECOND) : between(random, 8 * SECOND, 32 * SECOND);
+    return { kind, start, end: null, plannedEnd: start + length, label: isTool ? pick(random, TOOL_LABELS) : "reasoning" };
+  };
+
+  const createAgent = (random, id, group, start) => ({
+    id,
+    name: `harness:${pick(random, ROLES)}-${id}`,
+    group,
+    spawnedAt: start,
+    state: "live",
+    endedAt: null,
+    detail: "",
+    limit: Math.floor(between(random, 6, 14)),
+    spans: [planSpan(random, "thinking", start)],
+  });
+
+  const lastSpan = (agent) => agent.spans[agent.spans.length - 1];
+
+  const endAgent = (agent, state, at) => {
+    const current = lastSpan(agent);
+    if (current.end === null) current.end = Math.min(at, current.plannedEnd);
+    agent.state = state;
+    agent.endedAt = at;
+    agent.detail = state === "failed" ? "tests failed" : "completed";
+  };
+
+  const advanceAgent = (random, agent, now) => {
+    while (agent.state === "live") {
+      const current = lastSpan(agent);
+      if (current.end !== null || current.plannedEnd > now) return;
+      current.end = current.plannedEnd;
+      if (agent.spans.length >= agent.limit) {
+        endAgent(agent, random() < FAIL_CHANCE ? "failed" : "finished", current.end);
+        return;
+      }
+      agent.spans.push(planSpan(random, current.kind === "tool" ? "thinking" : "tool", current.end));
+    }
+  };
+
+  const liveAgents = (model) => model.agents.filter((agent) => agent.state === "live");
+
+  const spawnAgent = (model) => {
+    model.spawned += 1;
+    const group = model.random() < 0.6 ? "workflow" : "direct";
+    model.agents.push(createAgent(model.random, model.spawned, group, model.now));
+  };
+
+  const startTurn = (model) => {
+    model.isWorking = true;
+    model.turnStart = model.now;
+    model.turnEnd = model.now + WORK_MS;
+    model.cacheCalledAt = model.now;
+    model.main.spans.push(planSpan(model.random, "thinking", model.now));
+    for (let count = 0; count < MIN_LIVE; count += 1) spawnAgent(model);
+  };
+
+  const finishTurn = (model) => {
+    model.isWorking = false;
+    model.lastTurnMs = model.now - model.turnStart;
+    model.idleEnd = model.now + IDLE_MS;
+    const current = lastSpan(model.main);
+    if (current.end === null) current.end = Math.min(model.now, current.plannedEnd);
+    for (const agent of liveAgents(model)) endAgent(agent, "finished", model.now);
+  };
+
+  const maybeSpawn = (model, deltaMs) => {
+    if (model.turnEnd - model.now < 20 * SECOND) return;
+    const live = liveAgents(model).length;
+    const rate = live < MIN_LIVE ? 0.5 : live < MAX_LIVE ? 0.04 : 0;
+    if (model.random() < (rate * deltaMs) / SECOND) spawnAgent(model);
+  };
+
+  const countEnded = (model) => {
+    model.done = model.agents.filter((agent) => agent.state === "finished").length + model.prunedDone;
+    model.failed = model.agents.filter((agent) => agent.state === "failed").length + model.prunedFailed;
+  };
+
+  const pruneAgents = (model) => {
+    const keep = [];
+    for (const agent of model.agents) {
+      const isOld = agent.state !== "live" && model.now - agent.endedAt > KEEP_ENDED_MS;
+      if (!isOld) keep.push(agent);
+      else if (agent.state === "finished") model.prunedDone += 1;
+      else model.prunedFailed += 1;
+    }
+    model.agents = keep;
+  };
+
+  const stepModel = (model, deltaMs) => {
+    model.now += deltaMs;
+    if (model.isWorking && model.now >= model.turnEnd) finishTurn(model);
+    else if (!model.isWorking && model.now >= model.idleEnd) startTurn(model);
+    advanceAgent(model.random, model.main, model.now);
+    for (const agent of model.agents) advanceAgent(model.random, agent, model.now);
+    if (model.isWorking) maybeSpawn(model, deltaMs);
+    pruneAgents(model);
+    countEnded(model);
+  };
+
+  const advanceModel = (model, deltaMs) => {
+    let remaining = deltaMs;
+    while (remaining > 0) {
+      const step = Math.min(remaining, MAX_STEP_MS);
+      stepModel(model, step);
+      remaining -= step;
+    }
+  };
+
+  const createModel = (seed) => {
+    const random = createRandom(seed);
+    const main = {
+      id: 0,
+      name: "main session",
+      group: "main",
+      state: "live",
+      endedAt: null,
+      detail: "",
+      limit: Number.POSITIVE_INFINITY,
+      spans: [],
+    };
+    const model = {
+      random,
+      now: SEED_START_MS,
+      sessionStart: SEED_START_MS,
+      main,
+      agents: [],
+      spawned: 0,
+      prunedDone: 0,
+      prunedFailed: 0,
+      done: 0,
+      failed: 0,
+      isWorking: false,
+      turnStart: SEED_START_MS,
+      turnEnd: SEED_START_MS,
+      idleEnd: SEED_START_MS,
+      lastTurnMs: 0,
+      cacheCalledAt: SEED_START_MS,
+    };
+    startTurn(model);
+    advanceModel(model, -SEED_START_MS);
+    model.cacheCalledAt = -18 * MINUTE;
+    return model;
+  };
+
+  const pad = (value) => String(value).padStart(2, "0");
+
+  const formatClock = (ms) => {
+    const total = Math.max(0, Math.floor(ms / SECOND));
+    return `${Math.floor(total / 60)}:${pad(total % 60)}`;
+  };
+
+  const formatSpan = (ms) => {
+    if (ms < 90 * SECOND) return `${Math.max(1, Math.round(ms / SECOND))}s`;
+    if (ms < 10 * MINUTE && ms % MINUTE !== 0) return `${Math.floor(ms / MINUTE)}m${pad(Math.round((ms % MINUTE) / SECOND))}s`;
+    if (ms < 90 * MINUTE) return `${Math.round(ms / MINUTE)}m`;
+    return `${Math.round(ms / HOUR)}h`;
+  };
+
+  const formatRemaining = (ms) => {
+    const hours = Math.floor(ms / HOUR);
+    const minutes = Math.floor((ms % HOUR) / MINUTE);
+    if (hours >= 24) return `${Math.floor(hours / 24)}d${hours % 24}h`;
+    return `${hours}h${pad(minutes)}`;
+  };
+
+  const readGauges = (model) => {
+    const seconds = model.now / SECOND;
+    const contextK = 93 + seconds * 0.05;
+    const cacheReadK = 319 + seconds * 0.2;
+    return {
+      ctx: { pct: contextK / 10, detail: `${Math.round(contextK)}k/1M ↻${Math.round(cacheReadK)}k` },
+      five: { pct: 35 + seconds * 0.004, detail: `in ${formatRemaining(3 * HOUR + 16 * MINUTE - model.now)}` },
+      week: { pct: 11 + seconds * 0.0004, detail: `in ${formatRemaining(6 * 24 * HOUR + HOUR - model.now)}` },
+    };
+  };
+
+  const create = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const required = (root, selector) => {
+    const node = root.querySelector(selector);
+    if (!node) throw new Error(`The band page is missing ${selector}.`);
+    return node;
+  };
+
+  const readRangeMs = (model, rangeMs) => (rangeMs === 0 ? Math.max(model.now - model.sessionStart, MINUTE) : rangeMs);
+
+  const currentKind = (agent) => {
+    if (agent.state !== "live") return agent.state;
+    const current = lastSpan(agent);
+    return current.end === null ? current.kind : "idle";
+  };
+
+  const drawSpans = (track, agent, windowStart, rangeMs, now) => {
+    const nodes = [];
+    const lastIndex = agent.spans.length - 1;
+    agent.spans.forEach((span, index) => {
+      const end = span.end ?? Math.min(now, span.plannedEnd);
+      const start = Math.max(span.start, windowStart);
+      if (end <= windowStart || end <= start) return;
+      const isEndMark = index === lastIndex && agent.state !== "live";
+      const node = create("span", `ab-span is-${isEndMark ? agent.state : span.kind}`);
+      node.style.insetInlineStart = `${((start - windowStart) / rangeMs) * 100}%`;
+      node.style.inlineSize = `${((end - start) / rangeMs) * 100}%`;
+      nodes.push(node);
+    });
+    track.replaceChildren(...nodes);
+  };
+
+  const setPill = (row, agent) => {
+    const kind = currentKind(agent);
+    const isIdle = kind === "idle";
+    const visual = isIdle ? "finished" : kind;
+    row.pill.className = `ab-pill is-${visual}`;
+    row.pill.textContent = isIdle ? "IDLE" : PILL_TEXT[visual];
+    const isEnded = agent.state !== "live";
+    const current = lastSpan(agent);
+    let detail = agent.detail;
+    if (agent.state === "live") detail = isIdle ? "waiting for a prompt" : current.label;
+    row.detail.textContent = detail;
+    row.detail.classList.toggle("is-ended", isEnded || isIdle);
+    row.name.classList.toggle("is-ended", isEnded);
+  };
+
+  const createRow = (agent, isMain) => {
+    const element = create("div", "ab-row");
+    const name = create("span", `ab-name${isMain ? "" : " is-strong"}`, agent.name);
+    const track = create("div", "ab-track");
+    const state = create("div", "ab-state");
+    const pill = create("span", "ab-pill");
+    const detail = create("span", "ab-detail");
+    state.append(pill, detail);
+    element.append(name, track, state);
+    return { element, name, track, pill, detail, agent };
+  };
+
+  const chooseVisible = (model, windowStart) => {
+    const candidates = model.agents.filter((agent) => agent.state === "live" || agent.endedAt >= windowStart);
+    const ranked = [...candidates].sort((left, right) => {
+      if ((left.state === "live") !== (right.state === "live")) return left.state === "live" ? -1 : 1;
+      return left.state === "live" ? left.spawnedAt - right.spawnedAt : right.endedAt - left.endedAt;
+    });
+    const shown = new Set(ranked.slice(0, MAX_ROWS).map((agent) => agent.id));
+    return model.agents.filter((agent) => shown.has(agent.id));
+  };
+
+  const groupSignature = (groups, collapsed) =>
+    groups
+      .map((group) => `${group.key}${collapsed.has(group.key) ? "c" : "o"}${group.agents.map((agent) => agent.id).join(",")}`)
+      .join("|");
+
+  const createBand = (root, model, options) => {
+    const view = {
+      status: required(root, "[data-status]"),
+      turn: required(root, "[data-turn]"),
+      cache: required(root, "[data-cache]"),
+      live: required(root, "[data-live]"),
+      done: required(root, "[data-done]"),
+      fail: required(root, "[data-fail]"),
+      axisStart: required(root, "[data-axis-start]"),
+      axisMiddle: required(root, "[data-axis-middle]"),
+      rows: required(root, "[data-rows]"),
+      earlier: required(root, "[data-earlier]"),
+      foldLabel: required(root, "[data-fold-label]"),
+      foldButton: required(root, "[data-fold]"),
+      gauges: new Map(),
+    };
+    for (const node of root.querySelectorAll("[data-gauge]")) {
+      view.gauges.set(node.dataset.gauge, {
+        arc: required(node, "[data-arc]"),
+        pct: required(node, "[data-pct]"),
+        detail: required(node, "[data-detail]"),
+      });
+    }
+    const state = {
+      rangeMs: options.rangeMs,
+      isFolded: false,
+      collapsed: new Set(),
+      signature: "",
+      mainRow: null,
+      agentRows: new Map(),
+      groupHeads: new Map(),
+    };
+
+    const rebuildRows = (groups) => {
+      const focusedKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.group : undefined;
+      state.agentRows.clear();
+      state.groupHeads.clear();
+      state.mainRow = createRow(model.main, true);
+      const nodes = [state.mainRow.element];
+      for (const group of groups) {
+        const head = create("button", `ab-group${state.collapsed.has(group.key) ? " is-collapsed" : ""}`);
+        head.type = "button";
+        head.dataset.group = group.key;
+        head.setAttribute("aria-expanded", String(!state.collapsed.has(group.key)));
+        const line = create("span", "ab-group-row");
+        const count = create("span", "ab-group-count");
+        line.append(create("span", "ab-chevron"), create("span", "ab-group-tag", group.tag), create("span", "", group.name), count);
+        line.firstChild.setAttribute("aria-hidden", "true");
+        head.append(line);
+        state.groupHeads.set(group.key, count);
+        nodes.push(head);
+        if (state.collapsed.has(group.key)) continue;
+        for (const agent of group.agents) {
+          const row = createRow(agent, false);
+          state.agentRows.set(agent.id, row);
+          nodes.push(row.element);
+        }
+      }
+      view.rows.replaceChildren(...nodes);
+      if (focusedKey) view.rows.querySelector(`[data-group="${focusedKey}"]`)?.focus();
+    };
+
+    const render = () => {
+      const rangeMs = readRangeMs(model, state.rangeMs);
+      const windowStart = model.now - rangeMs;
+      const visible = chooseVisible(model, windowStart);
+      const groups = GROUPS.map((group) => ({ ...group, agents: visible.filter((agent) => agent.group === group.key) })).filter(
+        (group) => group.agents.length > 0,
+      );
+      const signature = groupSignature(groups, state.collapsed);
+      if (signature !== state.signature) {
+        state.signature = signature;
+        rebuildRows(groups);
+      }
+      if (state.mainRow) {
+        drawSpans(state.mainRow.track, model.main, windowStart, rangeMs, model.now);
+        setPill(state.mainRow, model.main);
+      }
+      for (const row of state.agentRows.values()) {
+        drawSpans(row.track, row.agent, windowStart, rangeMs, model.now);
+        setPill(row, row.agent);
+      }
+      for (const group of groups) {
+        const live = group.agents.filter((agent) => agent.state === "live").length;
+        const ended = group.agents.length - live;
+        state.groupHeads.get(group.key).textContent = `${live} live · ${ended} ended`;
+      }
+      view.axisStart.textContent = `-${formatSpan(rangeMs)}`;
+      view.axisMiddle.textContent = `-${formatSpan(rangeMs / 2)}`;
+      const earlier = model.spawned - visible.length;
+      view.earlier.textContent = earlier > 0 ? `+${earlier} earlier` : "";
+      view.earlier.hidden = earlier <= 0;
+      renderSummary();
+    };
+
+    const renderSummary = () => {
+      view.status.textContent = model.isWorking ? "WORKING" : "IDLE";
+      view.status.classList.toggle("is-idle", !model.isWorking);
+      view.turn.textContent = model.isWorking
+        ? `turn ${formatClock(model.now - model.turnStart)}`
+        : `last turn ${formatClock(model.lastTurnMs)}`;
+      const coldMs = CACHE_LIFETIME_MS - (model.now - model.cacheCalledAt);
+      view.cache.textContent = coldMs > 0 ? `cold in ~${Math.ceil(coldMs / MINUTE)}m` : "cold";
+      const live = liveAgents(model).length;
+      view.live.textContent = `${live} live`;
+      view.done.textContent = `${model.done} done`;
+      view.fail.textContent = `${model.failed} fail`;
+      const gauges = readGauges(model);
+      for (const [key, values] of Object.entries(gauges)) {
+        const gauge = view.gauges.get(key);
+        if (!gauge) continue;
+        const pct = Math.min(100, values.pct);
+        gauge.arc.setAttribute("stroke-dasharray", `${pct.toFixed(1)} 100`);
+        gauge.pct.textContent = `${Math.round(pct)}%`;
+        gauge.detail.textContent = values.detail;
+      }
+    };
+
+    const setRange = (rangeMs) => {
+      state.rangeMs = rangeMs;
+      for (const button of root.querySelectorAll("[data-range]")) {
+        button.setAttribute("aria-pressed", String(Number(button.dataset.range) === rangeMs));
+      }
+      render();
+    };
+
+    const toggleFold = () => {
+      state.isFolded = !state.isFolded;
+      root.classList.toggle("is-folded", state.isFolded);
+      view.foldButton.classList.toggle("is-folded", state.isFolded);
+      view.foldButton.setAttribute("aria-expanded", String(!state.isFolded));
+      view.foldLabel.textContent = state.isFolded ? "unfold" : "fold";
+    };
+
+    const toggleGroup = (key) => {
+      if (state.collapsed.has(key)) state.collapsed.delete(key);
+      else state.collapsed.add(key);
+      state.signature = "";
+      render();
+    };
+
+    root.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) return;
+      const rangeButton = event.target.closest("[data-range]");
+      if (rangeButton instanceof HTMLElement) return setRange(Number(rangeButton.dataset.range));
+      if (event.target.closest("[data-fold]")) return toggleFold();
+      const groupButton = event.target.closest("[data-group]");
+      if (groupButton instanceof HTMLElement && groupButton.dataset.group) toggleGroup(groupButton.dataset.group);
+    });
+
+    return { render };
+  };
+
+  const bindTheme = (button) => {
+    const page = document.documentElement;
+    const applyTheme = (theme) => {
+      page.dataset.theme = theme;
+      button.setAttribute("aria-checked", String(theme === "dark"));
+    };
+    button.addEventListener("click", () => {
+      const theme = page.dataset.theme === "dark" ? "dark" : "light";
+      const next = theme === "dark" ? "light" : "dark";
+      applyTheme(next);
+      try {
+        localStorage.setItem(THEME_KEY, next);
+      } catch (error) {
+        console.warn("The theme could not be saved.", error);
+      }
+    });
+    applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
+  };
+
+  const bindPause = (button, onChange, isPausedAtStart) => {
+    let isPaused = isPausedAtStart;
+    const show = () => {
+      button.textContent = isPaused ? "Resume" : "Pause";
+      button.setAttribute("aria-pressed", String(isPaused));
+    };
+    button.addEventListener("click", () => {
+      isPaused = !isPaused;
+      show();
+      onChange(isPaused);
+    });
+    show();
+  };
+
+  const start = () => {
+    const root = required(document, "[data-band]");
+    bindTheme(required(document, "[data-theme-toggle]"));
+    const model = createModel(Date.now());
+    const band = createBand(root, model, { rangeMs: 5 * MINUTE });
+    band.render();
+    let isPaused = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let lastReal = performance.now();
+    bindPause(
+      required(document, "[data-pause]"),
+      (value) => {
+        isPaused = value;
+        lastReal = performance.now();
+      },
+      isPaused,
+    );
+    window.setInterval(() => {
+      const real = performance.now();
+      const elapsed = Math.min(real - lastReal, 2 * SECOND);
+      lastReal = real;
+      if (isPaused) return;
+      advanceModel(model, elapsed * SPEED);
+      band.render();
+    }, TICK_MS);
+  };
+
+  start();
+}
