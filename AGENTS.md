@@ -18,7 +18,8 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Update: `claude plugin marketplace update harness` and `claude plugin update harness@harness`. Every pushed commit is a version.
 - Per project, run `/harness:init` once. It writes `AGENTS.md` from `templates/`, asks only what the files do not settle, and shows a diff before touching an existing file.
 - A team commits `AGENTS.md`; each member still installs the plugin.
-- Cortex Code and Kiro: `curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex` (or `kiro`)
+- Cortex Code: `cortex plugin install tfernd/harness`; `cortex plugin update harness` updates it.
+- Kiro: `curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro`
   installs; run it again to update; add `--uninstall` to remove it, then delete the clone it names (`~/.local/share/harness`).
 - Uninstall: `claude plugin uninstall harness@harness`. Develop without touching the installed copy: `claude --plugin-dir .`.
 - Hooks do nothing: `uv` is missing. Every rule runs by default; the owner file only overrides. A "harness guard

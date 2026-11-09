@@ -69,8 +69,8 @@
           <p class="install-note">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
-          <code class="install-command"><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> cortex</code>
-          <button type="button" class="install-copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex">Copy</button>
+          <code class="install-command"><span class="tok-command">cortex</span> plugin install tfernd/harness</code>
+          <button type="button" class="install-copy" data-copy="cortex plugin install tfernd/harness">Copy</button>
           <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
           <p class="install-note">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
         </div>

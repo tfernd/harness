@@ -150,11 +150,18 @@ bin/harness-port --target kiro      # ~/.kiro: skills, agents, hooks/harness-hoo
 bin/harness-port --target cortex    # ~/.snowflake/cortex: skills, agents, hooks.json (merged, yours are kept)
 ```
 
-Cortex Code and Kiro without a clone: one line installs the port, and running it again updates it. The script
-fetches the repo into `~/.local/share/harness` and ports from there.
+Cortex Code installs it as a plugin with its own CLI; `cortex plugin update harness` updates it and
+`cortex plugin uninstall harness` removes it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex   # or kiro
+cortex plugin install tfernd/harness
+```
+
+Kiro without a clone: one line installs the port, and running it again updates it. The script fetches the repo into
+`~/.local/share/harness` and ports from there (it still takes `cortex` too).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro
 ```
 
 Add `--uninstall` to remove it, then delete the clone it names (`~/.local/share/harness`).
