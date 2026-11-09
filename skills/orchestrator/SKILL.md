@@ -123,6 +123,8 @@ home and file each Feedback item. Steps: `references/learning-loop.md`.
 
 - Results in plain words first (what was measured, the baseline, the verdict), then the numbers; every comparison a
   signed percent against a named baseline. A cause told to the owner is probed first.
+- An owner's ask about how to work (use sub-agents, use the repo's make targets) holds for the whole task, not one
+  step; check it again at each new unit.
 - Work down the plan without asking. Ask only before an irreversible or outward step (delete outside `__scratch__/`, push,
   install, permissions) or a change of direction or format; decide any other choice and state its cost in one line.
 - Ask what must be true of the product, never which tests to use.

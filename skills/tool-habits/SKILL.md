@@ -17,6 +17,8 @@ costs no turn.
   `grep` and `ls`. Locate and read in one call: print each match with three lines around it.
 - One file: the Read tool with `offset` and `limit`. Search: `rg` and `find` through Bash by default; Grep and Glob only
   when they are listed among your tools (in many sessions they do not exist, and a call to them is wasted).
+- A path you have not seen listed is found first (`rg --files -g '<name>'`), then read. Before reporting that a file or
+  folder is missing, confirm it with `ls` on its parent.
 - Cap a command that may print a lot (`cat` of a big file, a loop over files, `rg` over a tree, `git diff`): `| head -n 200`,
   `rg -m`, `git diff --stat` first, Read with `limit`. One output over about 4,000 characters costs context for the rest
   of the session.
@@ -128,6 +130,7 @@ Nothing needs it:
 
 - Read the reason and change what the command does, or use the tool it names. A command with the same effect in other
   words is refused again and costs a turn.
+- A call the owner denied or cancelled is not sent again unchanged: ask what to change.
 - A glob that matches nothing is refused with the folder it was matched from: `cd` to the right one, or list files with
   `rg --files -g '<pattern>'` or `git ls-files`.
 - A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position
