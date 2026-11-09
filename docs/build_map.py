@@ -63,8 +63,8 @@ TARGETS = ("cortex", "kiro")
 STATE_RANK = {"runs": 0, "partial": 1, "advisory": 2, "off": 3}
 PORT_DEST = Path("port-dest")
 INSTALL_COMMANDS = {
-    "claude": "claude plugin marketplace add https://github.com/tfernd/harness.git && claude plugin install harness@harness --scope user",
-    "cortex": "cortex plugin install tfernd/harness",
+    "claude": "claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness && claude plugin install harness@harness --scope user && claude plugin update harness@harness",
+    "cortex": "cortex plugin update harness || cortex plugin install tfernd/harness",
     "kiro": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro",
 }
 SHELL_TOKEN = re.compile(r"""(?P<space>\s+)|(?P<comment>#.*)|(?P<string>'[^']*'|"(?:\\.|[^"\\])*")|(?P<operator>&&|\|\||[|;<>()])|(?P<word>[^\s'"|&;<>()]+|.)""")

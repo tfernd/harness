@@ -23,7 +23,7 @@ how the parts fit, what it stops and what it does not.
 
 ## How you use it
 
-Install it once (see [AGENTS.md](AGENTS.md)) and run `/harness:init` in a project. Then work as usual: you ask, and the
+Install it once: in Claude Code, `claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness && claude plugin install harness@harness --scope user && claude plugin update harness@harness` installs or updates it (see [AGENTS.md](AGENTS.md)). Then run `/harness:init` in a project. Then work as usual: you ask, and the
 main session follows the `orchestrator` skill. `/harness:init` writes an `AGENTS.md`. You see a refusal
 only when a hook stops something (the agent is told what to change, so usually you do nothing), a question when a package
 change needs your yes, and a closing status after a big job. In this repo, `make help` lists the checks.
@@ -150,11 +150,11 @@ bin/harness-port --target kiro      # ~/.kiro: skills, agents, hooks/harness-hoo
 bin/harness-port --target cortex    # ~/.snowflake/cortex: skills, agents, hooks.json (merged, yours are kept)
 ```
 
-Cortex Code installs it as a plugin with its own CLI; `cortex plugin update harness` updates it and
+Cortex Code installs it as a plugin with its own CLI. The one line below updates it, or installs it when it is absent;
 `cortex plugin uninstall harness` removes it:
 
 ```sh
-cortex plugin install tfernd/harness
+cortex plugin update harness || cortex plugin install tfernd/harness
 ```
 
 Kiro without a clone: one line installs the port, and running it again updates it. The script fetches the repo into
@@ -172,6 +172,12 @@ Add `--uninstall` to remove it, then delete the clone it names (`~/.local/share/
 - Kiro loses: `SubagentStart` and `SubagentStop` hooks (no trigger), the owner prompt (a guard "ask" becomes a block),
   command rewrites (the `sleep` fix, a quoted pattern and a move to the trash each become a block with the note), hook context outside session start and prompt submit,
   and agent models (pass `--model haiku=ID` for each). Agent prompts sit in `agents/harness-<name>.md` beside the JSON.
+- Kiro crew (the separate crew app): when `~/.kiro/crew/` exists the Kiro port also merges `harness-*` entries into
+  `~/.kiro/crew/hooks.json` (yours are kept, the old file is saved as `hooks.json.harness-backup`, `--uninstall` removes
+  only the `harness-*` entries). Each command is wrapped so that only a refusal blocks and any crash or timeout lets the
+  call run, and it uses the absolute `uv` found at install time. The crew has no `SubagentStart` or `SubagentStop`
+  event; a guard "ask" and a command rewrite become a block. The entry shape is copied from the Kiro CLI hooks and is
+  unverified until `sh port/kiro-crew-probe.sh` passes in your crew.
 - Cortex loses: `SubagentStart`, agent models, tool ids it lacks, and
   the report gate blocks nothing (advisory). An "ask" becomes a block.
 
@@ -181,7 +187,7 @@ Every key is optional and the file itself is not needed: the defaults apply with
 
 | Key | Effect |
 |---|---|
-| `guard` | `scratch` names `__scratch__/`, `no_tmp` notes writes under `/tmp`, `ask_packages` asks before package changes and tool runs (`uvx`, `npx`, `bunx`, `dlx`), except that `uvx`, `uv tool run`, `uv run --with`, `npx` and `bunx` run unasked with a release delay added (`--exclude-newer`, `--before`, `--minimum-release-age`; `tool_delay_days`, default 7, and 0 asks again; `pnpm dlx` and `yarn dlx` have no checked flag and still ask), `ask_cloud` asks before an `aws`, `sam` or `cdk` command that writes to an account, `ask_installers` asks before a fetcher piped into an interpreter, `commit_style: false` turns the commit rule off |
+| `guard` | `scratch` names `__scratch__/`, `no_tmp` notes writes under `/tmp`, `ask_packages` asks before package changes and tool runs (`uvx`, `npx`, `bunx`, `dlx`), except that `uvx`, `uv tool run`, `uv run --with`, `npx` and `bunx` run unasked with a release delay added (`--exclude-newer`, `--before`, `--minimum-release-age`; `tool_delay_days`, default 7, and 0 asks again; `pnpm dlx` and `yarn dlx` have no checked flag and still ask), `ask_cloud` asks before an `aws`, `sam` or `cdk` command that writes to an account, `ask_installers` asks before a fetcher piped into an interpreter, `commit_style: false` turns the commit rule off, `block_dbt_targets` false turns off the dbt non-dev target guard, `dbt_dev_targets` lists extra dev target names that pass it, `block_snow` false turns off the snow write guard |
 | `main_edits` | `max` (default 3, 0 is off) and `allow` (globs; default `__harness__/*`, `__scratch__/*`): the main session's edits per turn outside `allow` before the hook refuses and the change goes to a worker |
 | `delegate` | Off until set. The main session hands edits to agents; `write_allow` and `bash_allow` list what it may still do |
 | `brief` | Briefs must hold the lines each role needs. `required` replaces the defaults |

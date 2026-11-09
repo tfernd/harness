@@ -11,14 +11,12 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## Install, update, set up a project
 - Needs Claude Code, `uv` on `PATH` (hooks run as `uv run --script`) and git access to this repo (`gh auth setup-git` for a private one).
-- Install once per machine, then restart Claude Code or run `/reload-plugins`:
-  `claude plugin marketplace add https://github.com/tfernd/harness.git` and `claude plugin install harness@harness --scope user`.
-  The git URL matches an `extraKnownMarketplaces` entry of the same form; if the add still says the source does not match,
-  the marketplace is already known: skip the add and run `claude plugin marketplace update harness`.
-- Update: `claude plugin marketplace update harness` and `claude plugin update harness@harness`. Every pushed commit is a version.
+- Install or update once per machine, then restart Claude Code or run `/reload-plugins`:
+  `claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness && claude plugin install harness@harness --scope user && claude plugin update harness@harness`.
+  The add may say the marketplace already exists and the install may say the plugin is already installed; the update then pulls the latest, so the same line works for a new or an installed plugin. Every pushed commit is a version.
 - Per project, run `/harness:init` once. It writes `AGENTS.md` from `templates/`, asks only what the files do not settle, and shows a diff before touching an existing file.
 - A team commits `AGENTS.md`; each member still installs the plugin.
-- Cortex Code: `cortex plugin install tfernd/harness`; `cortex plugin update harness` updates it.
+- Cortex Code: `cortex plugin update harness || cortex plugin install tfernd/harness` updates it, or installs it when absent.
 - Kiro: `curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro`
   installs; run it again to update; add `--uninstall` to remove it, then delete the clone it names (`~/.local/share/harness`).
 - Uninstall: `claude plugin uninstall harness@harness`. Develop without touching the installed copy: `claude --plugin-dir .`.
