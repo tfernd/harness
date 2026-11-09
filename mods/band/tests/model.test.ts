@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import { LINGER_MS, MAX_AGENTS, MAX_SEGMENTS, addAgent, nextLeaveMs, tracedRows, moveMain, countAgents, orderAgents, splitByWindow, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
+import { LINGER_MS, MAX_AGENTS, MAX_SEGMENTS, addAgent, nextLeaveMs, tracedRows, moveMain, countAgents, orderAgents, splitByWindow, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus, closeOpen, finishAgent } from '../hooks/model'
 import { paintTextRows } from '../hooks/paint'
 import { CLOCK_COLUMNS } from '../hooks/view'
 
@@ -182,4 +182,35 @@ test('the folded traces keep an agent 4.9 s after it ends and drop it at 5.1 s, 
   expect(nextLeaveMs(rows.values(), '1m', ENDED_AT + JUST_INSIDE_LINGER_MS, true)).toBe(100)
   expect(nextLeaveMs(rows.values(), 'session', ENDED_AT + JUST_PAST_LINGER_MS, true)).toBeNull()
   expect(countAgents(roster).failed).toBe(1)
+})
+
+test('closeOpen closes every open segment at the given time, rests main and fails live agents', () => {
+  let store: AgentStore = moveMain(EMPTY_STORE, { activity: { state: 'thinking', command: null }, now: 100 })
+  store = addAgent(store, agentNamed('a', 100))
+  store = moveAgent(store, { id: 'a', state: 'thinking', command: null, now: 150 })
+  store = addAgent(store, agentNamed('b', 100))
+  store = finishAgent(store, { id: 'b', state: 'done', now: 120 })
+
+  const closed = closeOpen(store, 500)
+  const everySegment = [...(closed.main?.segments ?? []), ...closed.rows.flatMap(row => row.segments)]
+
+  expect(everySegment.some(segment => segment.to === null)).toBe(false)
+  expect(closed.main?.state).toBe('launched')
+  expect(closed.main?.segments.at(-1)?.to).toBe(500)
+  expect(closed.rows.find(row => row.id === 'a')?.state).toBe('failed')
+  expect(closed.rows.find(row => row.id === 'a')?.endedAt).toBe(500)
+  expect(closed.rows.find(row => row.id === 'b')?.state).toBe('done')
+  expect(closed.rows.find(row => row.id === 'b')?.endedAt).toBe(120)
+})
+
+test('closeOpen clears background tasks and the held flag', () => {
+  let store: AgentStore = addAgent(EMPTY_STORE, agentNamed('a', 0))
+  store = { ...store, tasks: { a: ['t1'], main: ['t2'] } }
+  store = moveMain(store, { activity: { state: 'thinking', command: null }, now: 5 })
+
+  const closed = closeOpen(store, 50)
+
+  expect(closed.tasks?.['a']).toBeUndefined()
+  expect(closed.tasks?.['main']).toBeUndefined()
+  expect(closed.main?.background ?? 0).toBe(0)
 })

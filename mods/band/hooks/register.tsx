@@ -11,6 +11,8 @@ import {
   EMPTY_STORE,
   type MainActivity,
   addAgent,
+  closeOpen,
+  lastEventAt,
   applyListing,
   MAIN_ID,
   endBackgroundTask,
@@ -80,6 +82,8 @@ type Runtime = {
   refreshAt: number | null
   retry: Timer | null
   isDrawnByTree: boolean
+  isClearing: boolean
+  listedIds: Set<string>
 }
 
 const indexRows = (store: AgentStore | null): Rows =>
@@ -212,7 +216,11 @@ const reconcile = async ($: EngineInterface, runtime: Runtime): Promise<void> =>
 
   try {
     const list = await $.agent.list()
-    await mutateAgents($, runtime, (store, now) => applyListing(store, list, now))
+    await mutateAgents($, runtime, (store, now) => applyListing(store, list, now, runtime.listedIds))
+
+    for (const info of list) {
+      runtime.listedIds.add(info.id)
+    }
   } finally {
     runtime.isReconciling = false
   }
@@ -292,10 +300,18 @@ export const register: Register = on => {
     refreshAt: null,
     retry: null,
     isDrawnByTree: false,
+    isClearing: false,
+    listedIds: new Set(),
   }
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+
+    if (!runtime.isClearing) {
+      await mutateAgents($, runtime, (store, now) => closeOpen(store, store.main === null ? now : lastEventAt(store.main)))
+    }
+
+    runtime.isClearing = false
     const usage = await $.session.usage()
     await writeGauges($, current => withUsage(current, usage))
     const rows = await $.config.list()
@@ -305,12 +321,18 @@ export const register: Register = on => {
     return result
   })
 
-  on('session.end', ($, e, next) => {
-    if (e.reason !== 'clear') {
-      stopTimers(runtime)
-      runtime.retry?.cancel()
-      runtime.retry = null
+  on('session.end', async ($, e, next) => {
+    runtime.isClearing = e.reason === 'clear'
+
+    if (e.reason === 'clear') {
+      return next(e)
     }
+
+    stopTimers(runtime)
+    runtime.retry?.cancel()
+    runtime.retry = null
+    await mutateAgents($, runtime, (store, now) => closeOpen(store, now))
+    await update($, turnStartedAt, () => null)
 
     return next(e)
   })

@@ -479,11 +479,44 @@ export const finishAgent = (store: AgentStore, input: { id: string; state: 'done
   return isHeldByTasks ? settleHeld(moved, input.id, input.now) : moved
 }
 
+const failLiveRows = (store: AgentStore, at: number): AgentStore =>
+  store.rows
+    .filter(row => isLive(row.state))
+    .reduce((current, row) => finishAgent(current, { id: row.id, state: 'failed', now: at }), store)
+
+export const closeOpen = (store: AgentStore, closeAt: number): AgentStore => {
+  const failed = failLiveRows(store, closeAt)
+  const main = failed.main
+
+  if (main === null) {
+    return failed
+  }
+
+  const segments = main.segments.map(segment => (segment.to === null ? { ...segment, to: closeAt } : segment))
+  const rested: AgentRow = { ...main, state: 'launched', command: null, background: 0, segments: compactSegments(segments) }
+
+  return { ...withTasks(failed, MAIN_ID, []), main: rested }
+}
+
 export type Listing = { id: string; status: AgentStatus; name?: string; type: string }
 
 const isLiveStatus = (status: AgentStatus): boolean => status === 'pending' || status === 'running' || status === 'waiting'
 
-export const applyListing = (store: AgentStore, list: readonly Listing[], now: number): AgentStore =>
+export const applyListing = (
+  store: AgentStore,
+  list: readonly Listing[],
+  now: number,
+  previouslyListed: ReadonlySet<string>,
+): AgentStore => {
+  const reduced = applyListed(store, list, now)
+  const listedIds = new Set(list.map(info => info.id))
+
+  return reduced.rows
+    .filter(row => isLive(row.state) && previouslyListed.has(row.id) && !listedIds.has(row.id))
+    .reduce((current, row) => finishAgent(current, { id: row.id, state: 'failed', now }), reduced)
+}
+
+const applyListed = (store: AgentStore, list: readonly Listing[], now: number): AgentStore =>
   list.reduce((current, info) => {
     const row = current.rows.find(agent => agent.id === info.id)
 

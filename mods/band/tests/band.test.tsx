@@ -789,3 +789,30 @@ test('the folded line keeps the counts at full width for 2 live, 53 done, 0 fail
     expect(foldedTracesWidth(width, specs)).toBe(tracesWidth)
   }
 })
+
+test('a session end leaves no open segment, no live agent and no turn clock', async ($, on) => {
+  const clock = mock.clock(on)
+  baseHooks(on)
+  on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
+  const written = { agents: [] as string[], turnStartedAt: [] as string[] }
+  on('state.set', (_, e, next) => {
+    if (e.key === 'agents') written.agents.push(JSON.stringify(e.value))
+    if (e.key === 'turnStartedAt') written.turnStartedAt.push(JSON.stringify(e.value))
+
+    return next(e)
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await $.agent.spawn(SPAWN)
+  await $.turn.start({ text: '', turnId: 'a', agentId: 'a1' })
+  await $.turn.start({ text: '', turnId: 'm' })
+  await clock.advance(600)
+
+  await $.session.end({ reason: 'prompt_input_exit', sessionId: 's', resume: { id: 's' } })
+
+  expect(written.agents.length).toBeGreaterThan(0)
+  expect(written.agents.at(-1)).not.toContain('"to":null')
+  expect(written.agents.at(-1)).toContain('"state":"failed"')
+  expect(written.turnStartedAt.at(-1)).toBe('null')
+  await ui.unmount()
+})
