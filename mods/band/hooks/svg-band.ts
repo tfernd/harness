@@ -1,11 +1,11 @@
 import type { AgentRow, Gauges, Range, Roster, RosterRow, ThemeSetting } from '../types'
 
 import { cacheRefreshMs } from './gauges'
-import { MAIN_ID, nextLeaveMs, nextQuietChangeMs, stateWordOf, tracedRows } from './model'
-import { type Ctx, horizontalLine } from './svg-parts'
+import { MAIN_ID, countAgents, nextLeaveMs, nextQuietChangeMs, stateWordOf, tracedRows } from './model'
+import { type Ctx, countsIcons, horizontalLine } from './svg-parts'
 import { FOLDED_RING_RADIUS, FOLDED_RING_SIZE, RING_SIZE, hasRing, TRACES_MORE_WIDTH, foldedTracesWidth, type GaugeSpec, type StripInput, gaugeSpecs, ring, traceLanes, tracesHeight } from './svg-strip'
 import { styleFor } from './svg-theme'
-import { type GroupPlan, type TimelineInput, type TimelinePiece, densityMarkup, densityWidthOf, groupCountsMarkup, groupCountsText, groupCountsWidthOf, groupLabelMarkup, groupLabelWidthOf, liveStateCounts, groupRowsMarkup, groupTitleOf, hiddenAgentsMarkup, planGroups, timelineHeadMarkup, windowSpanOf } from './svg-timeline'
+import { type GroupPlan, type TimelineInput, type TimelinePiece, densityMarkup, densityWidthOf, groupCountsMarkup, groupCountsText, groupCountsWidthOf, groupLabelWidthOf, liveStateCounts, groupRowsMarkup, hiddenAgentsMarkup, planGroups, timelineHeadMarkup, windowSpanOf } from './svg-timeline'
 
 export type SvgInput = {
   width: number
@@ -104,6 +104,22 @@ const ringPiece = (input: SvgInput, spec: GaugeSpec): PieceSpec => {
   }
 }
 
+const countsPiece = (input: SvgInput): PieceSpec => {
+  const counts = countAgents(input.roster.rows, { done: input.roster.evictedDone, failed: input.roster.evictedFailed })
+
+  return {
+    key: COUNTS_KEY,
+    signature: JSON.stringify([counts.live, counts.done, counts.failed, input.scheme]),
+    interaction: input.scheme,
+    maxAgeMs: null,
+    build: () => {
+      const icons = countsIcons(counts)
+
+      return wrap({ scheme: input.scheme, width: icons.width, height: icons.height, ctx: newCtx(input.now), body: icons.markup })
+    },
+  }
+}
+
 const tracesWidthOf = (input: SvgInput): number => foldedTracesWidth(input.width, gaugeSpecs(input.gauges, input.now))
 
 const tracesPiece = (input: SvgInput): PieceSpec => ({
@@ -123,13 +139,15 @@ const tracesPiece = (input: SvgInput): PieceSpec => ({
 
 const EMPTY_SVG: BandSvg = { source: '', width: 0, height: 0 }
 
+export const COUNTS_KEY = 'counts'
 export const TIMELINE_KEY = 'timeline'
 export const HIDDEN_KEY = 'timeline-more'
 export const groupRowsKey = (groupId: string): string => `timeline-rows-${groupId}`
 export const densityKey = (groupId: string): string => `density-${groupId}`
 export const groupCountsKey = (groupId: string): string => `group-counts-${groupId}`
-export const groupLabelKey = (groupId: string): string => `group-label-${groupId}`
 export const RULE_KEY = 'rule'
+
+export const groupLabelColumnOf = (input: SvgInput): number => groupLabelWidthOf(timelineInputOf(input))
 
 const timelineInputOf = (input: SvgInput): TimelineInput => {
   const width = Math.max(MIN_TIMELINE_WIDTH, input.width - BORDER_PX)
@@ -239,18 +257,6 @@ const timelinePieces = (input: SvgInput): PieceSpec[] => {
         build: () => drawn(input, densityWidthOf(timelineInput), ctx => densityMarkup(timelineInput, group, densityWidthOf(timelineInput), ctx.now)),
       }),
     )
-  const labels = groups.map((group): PieceSpec => {
-    const width = groupLabelWidthOf(timelineInput)
-    const { kind, name } = groupTitleOf(group)
-
-    return {
-      key: groupLabelKey(group.id),
-      signature: JSON.stringify([width, input.scheme, kind, name]),
-      interaction: input.scheme,
-      maxAgeMs: null,
-      build: () => drawn(input, width, () => groupLabelMarkup(kind, name, width)),
-    }
-  })
   const counts = groups
     .filter(group => group.isFolded && groupCountsWidthOf(timelineInput) > 0)
     .map((group): PieceSpec => {
@@ -273,11 +279,11 @@ const timelinePieces = (input: SvgInput): PieceSpec[] => {
     build: () => fittedPiece(HIDDEN_KEY),
   }
 
-  return rowsBefore === 0 ? [head, ...rows, ...labels, ...densities, ...counts] : [head, ...rows, ...labels, ...densities, ...counts, more]
+  return rowsBefore === 0 ? [head, ...rows, ...densities, ...counts] : [head, ...rows, ...densities, ...counts, more]
 }
 
 export const piecesOf = (input: SvgInput): PieceSpec[] => {
-  const pieces = gaugeSpecs(input.gauges, input.now).filter(hasRing).map(spec => ringPiece(input, spec))
+  const pieces = [...gaugeSpecs(input.gauges, input.now).filter(hasRing).map(spec => ringPiece(input, spec)), countsPiece(input)]
 
   if (input.isFolded) {
     return tracedOf(input).length > 0 && tracesWidthOf(input) > 0 ? [...pieces, tracesPiece(input)] : pieces

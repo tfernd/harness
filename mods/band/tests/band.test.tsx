@@ -3,7 +3,9 @@ import { expect, mock, test } from 'claude-code/testing'
 import { EMPTY_GAUGES, cacheClockOf, cacheRefreshMs } from '../hooks/gauges'
 import { EMPTY_ROSTER, EMPTY_STORE, addAgent, layoutBand, moveMain, newAgent, rosterOf, themeOf } from '../hooks/model'
 import { listedGroupsOf, piecesOf, refreshAfterMs } from '../hooks/svg-band'
-import { liveStateCounts } from '../hooks/svg-timeline'
+import { gaugeSpecs } from '../hooks/svg-strip'
+import { bandColorsOf } from '../hooks/svg-theme'
+import { groupCountsText, liveStateCounts } from '../hooks/svg-timeline'
 import { MIN_REBUILD_MS, chooseBand } from '../hooks/svg-cache'
 
 const BAND = {
@@ -371,7 +373,7 @@ test('a fresh desktop band starts unfolded with every group open', async ($, on)
 
   expect(JSON.stringify((await ui.find({ key: 'fold' }))?.props)).toContain('▴ fold')
   expect(JSON.stringify((await ui.find({ key: 'group-button-direct' }))?.props)).toContain('∧')
-  expect(await ui.find({ key: 'ranges' })).toBeDefined()
+  expect(await ui.find({ key: 'range' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -427,7 +429,9 @@ test('a 1h cache last called 58 minutes ago counts down to ~2m, is urgent under 
   expect(cold?.text).toBe('cold')
   expect(unmetered?.text).toBe('~1m')
   expect(warm?.tip).toContain('TTL 1h')
-  expect(warm?.detail).toBe('cold in ~2m')
+  expect(warm?.detail).toBe('warm ~2m')
+  expect(cold?.detail).toBe('cold')
+  expect(unmetered?.detail).toBe('warm ~1m')
   expect(piecesOf({ ...SVG_INPUT, gauges } as never).some(spec => spec.key === 'ring-cache')).toBe(false)
   expect(piecesOf({ ...SVG_INPUT } as never).some(spec => spec.key === 'ring-ctx')).toBe(true)
 })
@@ -455,7 +459,7 @@ test('an agent changing state rebuilds the timeline alone, never a ring, and dra
   const buttonPress = chooseBand(first.caches, { ...SVG_INPUT, ...oneAgent('launched'), range: '5m', now: NOW + 50 } as never)
   const settled = chooseBand(changed.caches, { ...SVG_INPUT, ...oneAgent('tool'), now: NOW + MIN_REBUILD_MS + 50 } as never)
 
-  expect(first.builtKeys.sort()).toEqual(['group-label-direct', 'ring-ctx', 'rule', 'timeline', 'timeline-more', 'timeline-rows-direct'])
+  expect(first.builtKeys.sort()).toEqual(['counts', 'ring-ctx', 'rule', 'timeline', 'timeline-more', 'timeline-rows-direct'])
   expect(changed.builtKeys).toEqual([])
   expect(changed.retryInMs).toBe(MIN_REBUILD_MS - 50)
   expect(unchanged.builtKeys).toEqual([])
@@ -570,7 +574,7 @@ test('a main tool call rebuilds the timeline alone, never a ring', () => {
   const idle = chooseBand(new Map(), withMain('launched', null) as never)
   const called = chooseBand(idle.caches, { ...withMain('tool', 'make check'), now: NOW + MIN_REBUILD_MS + 50 } as never)
 
-  expect(idle.builtKeys.sort()).toEqual(['ring-ctx', 'rule', 'timeline'])
+  expect(idle.builtKeys.sort()).toEqual(['counts', 'ring-ctx', 'rule', 'timeline'])
   expect(called.builtKeys).toEqual(['timeline'])
 })
 
@@ -638,7 +642,8 @@ test('a folded group header says how many agents are in each state now, beside i
   await ui.press({ key: 'group-button-direct' })
 
   const header = JSON.stringify(await ui.find({ key: 'group-header-direct' }))
-  expect(header).toMatch(/\d+ tool · \d+ think · \d+ wait/)
+  expect(header).toMatch(/idle|\d+ (tool|think|wait)/)
+  expect(header).not.toMatch(/\b0 (tool|think|wait|ended)/)
   expect(header).not.toContain(' live · ')
   expect((await ui.findAll({ type: 'Svg' })).some(svg => String(svg.props['alt']).includes('agents per state'))).toBe(true)
   await ui.unmount()
@@ -665,20 +670,104 @@ test('a quiet agent row reads "quiet 2m" in a muted amber pill on desktop, and i
   expect(signatureOfPiece(quiet, 'timeline-rows-direct')).not.toBe(signatureOfPiece(justBefore, 'timeline-rows-direct'))
 })
 
-test('a folded header lines up: label piece plus the 24px chevron is the label column, the strip is the track width (800px band: 188 and 384)', () => {
+test('a folded header strip is the track width and only 12px high, and no label piece exists (the Button holds the label)', () => {
   const folded = { ...(quietInput(NOW) as object), foldedGroups: ['direct'] } as never
-  const label = sourceOfPiece(folded, 'group-label-direct')
-  const widthOf = (source: string): number => Number(/width="(\d+)"/.exec(source)?.[1])
+  const density = sourceOfPiece(folded, 'density-direct')
 
-  expect(label).toContain('DIRECT')
-  expect(widthOf(label) + 24).toBe(188)
-  expect(widthOf(sourceOfPiece(folded, 'density-direct'))).toBe(384)
+  expect(piecesOf(folded).some(spec => spec.key.startsWith('group-label-'))).toBe(false)
+  expect(Number(/width="(\d+)"/.exec(density)?.[1])).toBe(384)
+  expect(Number(/height="(\d+)"/.exec(density)?.[1])).toBe(12)
 })
 
 test('a folded header gets its counts as a piece that fits the state column, in short words', () => {
   const folded = { ...(quietInput(NOW) as object), foldedGroups: ['direct'] } as never
   const counts = sourceOfPiece(folded, 'group-counts-direct')
 
-  expect(counts).toContain('0 tool · 1 think · 0 wait')
+  expect(counts).toContain('>1 think<')
+  expect(counts).not.toContain('0 tool')
   expect(Number(/width="(\d+)"/.exec(counts)?.[1])).toBe(212)
+})
+
+test('group counts drop zeros', () => {
+  expect(groupCountsText({ tool: 1, thinking: 0, waiting: 0 }, 5)).toBe('1 tool · 5 ended')
+  expect(groupCountsText({ tool: 0, thinking: 0, waiting: 0 }, 0)).toBe('idle')
+})
+
+test('the auto theme paints no surface and tints with a translucent grey and a theme-key frame', () => {
+  const auto = bandColorsOf('auto')
+
+  expect(auto.surface).toBeUndefined()
+  expect(auto.tint).toMatch(/^rgba\(/)
+  expect(auto.frame).toBe('promptBorder')
+  expect(bandColorsOf('dark').surface).toBeDefined()
+})
+
+test('on desktop one native range Button shows the range and cycles it on every press', async ($, on) => {
+  mock.clock(on)
+  baseHooks(on)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect(JSON.stringify((await ui.find({ key: 'range' }))?.props)).toContain('range 1m ▾')
+
+  await ui.press({ key: 'range' })
+
+  expect(JSON.stringify((await ui.find({ key: 'range' }))?.props)).toContain('range 5m ▾')
+  expect(await ui.find({ key: 'range-5m' })).toBeUndefined()
+  await ui.unmount()
+})
+
+const LIVE_STORE = addAgent(EMPTY_STORE, newAgent({ id: 'live-1', label: 'worker', group: 'direct', groupLabel: 'direct agents', now: NOW - 20_000 }))
+
+const OWNER_GAUGES = {
+  ...EMPTY_GAUGES,
+  contextPercent: 23,
+  contextTokens: 227_000,
+  contextWindow: 1_000_000,
+  cachePercent: 84,
+  fiveHour: { percent: 35, resetsAt: NOW + 3 * 3_600_000 },
+  sevenDay: { percent: 11, resetsAt: NOW + 144 * 3_600_000 },
+  sessionStartedAt: NOW - 62 * 3_600_000,
+  lastCallAt: NOW - 4 * MINUTE,
+  isSubscription: true,
+}
+
+test('the folded band keeps its live traces at 800 px and 1500 px with one live agent, shrunk to fit, and drops them when nothing fits', () => {
+  const folded = (width: number) =>
+    ({ ...SVG_INPUT, width, isFolded: true, roster: rosterOf(LIVE_STORE), rows: new Map([['live-1', LIVE_STORE.rows[0]]]), gauges: OWNER_GAUGES }) as never
+  const traces = (width: number) => piecesOf(folded(width)).find(spec => spec.key === 'traces')?.build().width
+
+  expect(traces(800)).toBeGreaterThanOrEqual(56)
+  expect(traces(1500)).toBeGreaterThan(traces(800) ?? 0)
+  expect(traces(1500)).toBeLessThanOrEqual(360)
+  expect(traces(500)).toBeUndefined()
+})
+
+test('live, done and failed are three icon rows with numbers and no words, dim at zero, in both the folded and the open band', () => {
+  const counts = (isFolded: boolean, done: number) => {
+    const roster = { ...rosterOf(LIVE_STORE), evictedDone: done, evictedFailed: 0 }
+
+    return sourceOfPiece({ ...SVG_INPUT, isFolded, roster, rows: new Map() } as never, 'counts')
+  }
+
+  for (const isFolded of [true, false]) {
+    const source = counts(isFolded, 51)
+
+    expect(source).toContain('ic-live')
+    expect(source).toContain('ic-ok')
+    expect(source).toContain('ic-bad ic-dim')
+    expect(source).toContain('>51<')
+    expect([...source.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(match => match[1])).toEqual(['1', '51', '0'])
+  }
+
+  expect(counts(true, 0)).toContain('ic-ok ic-dim')
+})
+
+test('the cache gauge says only "cache" and a short detail: warm with minutes left, cold, or the hit rate', () => {
+  const specOf = (gauges: typeof OWNER_GAUGES | typeof EMPTY_GAUGES) => gaugeSpecs(gauges, NOW).find(spec => spec.id === 'cache')
+
+  expect(specOf(OWNER_GAUGES)?.name).toBe('cache')
+  expect(specOf(OWNER_GAUGES)?.detail).toBe('warm ~56m')
+  expect(specOf({ ...OWNER_GAUGES, lastCallAt: NOW - 61 * MINUTE })?.detail).toBe('cold')
+  expect(specOf({ ...EMPTY_GAUGES, cachePercent: 84 })?.detail).toBe('84% hit')
 })

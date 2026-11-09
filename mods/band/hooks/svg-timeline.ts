@@ -5,7 +5,6 @@ import {
   type Ctx,
   type Track,
   driftGroup,
-  escapeText,
   fit,
   horizontalLine,
   label,
@@ -223,8 +222,6 @@ export const hiddenAgentsMarkup = (input: TimelineInput, hidden: number): Timeli
 
 export const DENSITY_HEIGHT = 12
 export const GROUP_PIECE_HEIGHT = 24
-export const GROUP_CHEVRON_PX = 24
-const DENSITY_TOP = (GROUP_PIECE_HEIGHT - DENSITY_HEIGHT) / 2
 const DENSITY_BIN_WIDTH = 3
 const DENSITY_MIN_BINS = 8
 const DENSITY_MAX_BINS = 160
@@ -253,23 +250,21 @@ export const groupTitleOf = (plan: GroupPlan): { kind: string; name: string } =>
   name: plan.name.replace(/^workflow /, ''),
 })
 
-export const groupLabelWidthOf = (input: TimelineInput): number => columnsFor(input.width, input.isWide).labelWidth - GROUP_CHEVRON_PX
-
-export const groupLabelMarkup = (kind: string, name: string, width: number): TimelinePiece => {
-  const text = fit(`${kind} ${name}`, width, 12)
-  const kindText = text.slice(0, kind.length)
-  const rest = text.slice(kind.length)
-
-  return {
-    markup: `<text x="0" y="${GROUP_PIECE_HEIGHT / 2 + TEXT_DROP}"><tspan class="m b s cap">${escapeText(kindText)}</tspan>${rest === '' ? '' : `<tspan dx="6">${escapeText(rest.trimStart())}</tspan>`}</text>`,
-    height: GROUP_PIECE_HEIGHT,
-  }
-}
+export const groupLabelWidthOf = (input: TimelineInput): number => columnsFor(input.width, input.isWide).labelWidth
 
 export const groupCountsWidthOf = (input: TimelineInput): number => columnsFor(input.width, input.isWide).stateWidth
 
-export const groupCountsText = (counts: StateCounts, ended: number): string =>
-  `${counts.tool} tool · ${counts.thinking} think · ${counts.waiting} wait${ended > 0 ? ` · ${ended} ended` : ''}`
+export const groupCountsText = (counts: StateCounts, ended: number): string => {
+  const entries: { count: number; word: string }[] = [
+    { count: counts.tool, word: 'tool' },
+    { count: counts.thinking, word: 'think' },
+    { count: counts.waiting, word: 'wait' },
+    { count: ended, word: 'ended' },
+  ]
+  const parts = entries.filter(entry => entry.count > 0).map(entry => `${entry.count} ${entry.word}`)
+
+  return parts.length === 0 ? 'idle' : parts.join(' · ')
+}
 
 export const groupCountsMarkup = (text: string, width: number): TimelinePiece => ({
   markup: label(PAD, GROUP_PIECE_HEIGHT / 2 + TEXT_DROP, 'm s', fit(text, width - PAD, 11)),
@@ -359,5 +354,5 @@ export const densityMarkup = (input: TimelineInput, plan: GroupPlan, width: numb
     })
   }
 
-  return { markup: `<g transform="translate(0 ${DENSITY_TOP})">${horizontalLine(base, 0, width)}${layers.join('')}</g>`, height: GROUP_PIECE_HEIGHT }
+  return { markup: `${horizontalLine(base, 0, width)}${layers.join('')}`, height: DENSITY_HEIGHT }
 }

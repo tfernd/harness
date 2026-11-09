@@ -61,3 +61,10 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
 ## Not in this version
 
 - Hover tooltips and eased CSS transitions of the mock where the surface has no such thing; say which ones per surface.
+- 2026-11-09: live desktop fixes (a desktop draws every Button as a native button with its own chrome): the range control
+  is one Button "range 1m ▾" that cycles on press; a group header is one Button holding "∨ DIRECT direct agents" in a
+  fixed-width label column, the strip (12px, centred) and the counts (zeros dropped) beside it; under the auto theme the
+  band paints no surface, tints rows with a translucent grey and frames with the theme key `promptBorder`; one frame, no
+  border of our own; gauges sit left with equal gaps and the ring-less cache keeps a ring-wide slot; the folded traces
+  budget counts the native Button and the real gaps.
+- 2026-11-09: owner fixes to the folded band: the live traces shrink to the width that is left (56 to 360 px) before they drop; live, done and failed are one three-row icon Svg (a blue dot, a check, a cross, numbers only, zero dim) in the folded and the open band; the cache gauge reads "cache" over "warm ~56m", "cold" or "84% hit".

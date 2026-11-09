@@ -82,14 +82,16 @@ const DARK: Tokens = {
 
 const TOKENS: Record<Scheme, Tokens> = { light: LIGHT, dark: DARK }
 
-export type BandColors = { surface: string; tint: string; selected: string; line: string; frame: string }
+export type BandColors = { surface: string | undefined; tint: string; selected: string; line: string; frame: string }
 
 const BAND_COLORS: Record<Scheme, BandColors> = {
   light: { surface: '#fbfaf7', tint: '#f1efe9', selected: '#ffffff', line: '#e4e0d6', frame: '#d9d4c7' },
   dark: { surface: '#1a1c20', tint: '#22252b', selected: '#33373f', line: '#33373f', frame: '#3a3e46' },
 }
 
-export const bandColorsOf = (setting: ThemeSetting): BandColors | null => (setting === 'auto' ? null : BAND_COLORS[setting])
+const AUTO_COLORS: BandColors = { surface: undefined, tint: 'rgba(128,128,128,0.12)', selected: 'rgba(128,128,128,0.2)', line: 'rgba(128,128,128,0.25)', frame: 'promptBorder' }
+
+export const bandColorsOf = (setting: ThemeSetting): BandColors => (setting === 'auto' ? AUTO_COLORS : BAND_COLORS[setting])
 
 export const STATES: readonly AgentState[] = ['launched', 'thinking', 'tool', 'waiting', 'done', 'failed']
 
@@ -130,6 +132,7 @@ export const styleFor = (setting: ThemeSetting): string =>
   '.ring-t{fill:none;stroke:var(--lane);stroke-width:4}.nowl{stroke:var(--now);stroke-width:1;fill:none}.ring-v{fill:none;stroke-width:4;stroke-linecap:round}' +
   '.r-ok{stroke:var(--accent)}.r-warn{stroke:var(--seg-waiting)}.r-bad{stroke:var(--seg-failed)}' +
     '.dot{fill:var(--accent)}.bad{fill:var(--seg-failed)}' +
+  '.ico{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.ic-ok{stroke:var(--seg-tool)}.ic-bad{stroke:var(--seg-failed)}.ic-live{fill:var(--seg-thinking)}.ic-dim{opacity:.4}' +
   '.hit{fill:transparent}.row:hover .hit,.gauge:hover .hit{fill:var(--hover)}' +
   '.card .face{stroke:var(--line);stroke-width:1}.card:hover .face{stroke:var(--line-strong)}' +
   perState() +

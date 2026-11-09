@@ -58,6 +58,30 @@ export const rect = (box: { x: number; y: number; width: number; height: number;
 export const label = (x: number, y: number, cls: string, content: string, extra = ''): string =>
   `<text x="${num(x)}" y="${num(y)}" class="${cls}"${extra}>${escapeText(content)}</text>`
 
+export const COUNTS_ROW_STEP = 14
+export const COUNTS_ICON_WIDTH = 14
+const COUNTS_DIGIT_WIDTH = 7.5
+const COUNTS_MIN_DIGITS = 2
+
+export type CountsMark = { live: number; done: number; failed: number }
+
+export const countsIcons = (counts: CountsMark): { markup: string; width: number; height: number } => {
+  const digits = Math.max(COUNTS_MIN_DIGITS, ...[counts.live, counts.done, counts.failed].map(value => String(value).length))
+  const width = COUNTS_ICON_WIDTH + 4 + digits * COUNTS_DIGIT_WIDTH
+  const mid = (row: number): number => row * COUNTS_ROW_STEP + COUNTS_ROW_STEP / 2
+  const dim = (value: number): string => (value === 0 ? ' ic-dim' : '')
+  const text = (row: number, value: number): string => label(width, mid(row) + 4, `b end${value === 0 ? ' m' : ''}`, String(value))
+  const check = `<path class="ico ic-ok${dim(counts.done)}" d="M2 ${num(mid(1))}L5.5 ${num(mid(1) + 3.5)}L11 ${num(mid(1) - 3.5)}"/>`
+  const cross = `<path class="ico ic-bad${dim(counts.failed)}" d="M2.5 ${num(mid(2) - 3.5)}L10.5 ${num(mid(2) + 3.5)}M10.5 ${num(mid(2) - 3.5)}L2.5 ${num(mid(2) + 3.5)}"/>`
+  const dot = `<circle class="ic-live${dim(counts.live)}" cx="6.5" cy="${num(mid(0))}" r="4"/>`
+
+  return {
+    markup: dot + text(0, counts.live) + check + text(1, counts.done) + cross + text(2, counts.failed),
+    width,
+    height: 3 * COUNTS_ROW_STEP,
+  }
+}
+
 export const horizontalLine = (y: number, from: number, to: number): string =>
   `<path class="ln" d="M${num(from)} ${num(y) + 0.5}H${num(to)}"/>`
 

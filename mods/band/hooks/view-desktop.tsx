@@ -2,8 +2,8 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { AgentState } from '../types'
 
-import { DIRECT_GROUP, RANGES, countAgents, formatClock, formatShort, tracedRows } from './model'
-import { HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupRowsKey, groupCountsKey, groupLabelKey, listedGroupsOf } from './svg-band'
+import { RANGES, countAgents, formatClock, formatShort, tracedRows } from './model'
+import { COUNTS_KEY, HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupLabelColumnOf, groupRowsKey, groupCountsKey, listedGroupsOf } from './svg-band'
 import type { BandSvg, SvgInput } from './svg-band'
 import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
 import { bandColorsOf } from './svg-theme'
@@ -49,7 +49,8 @@ const captionOf = (input: SvgInput): string => {
 }
 
 const HEADER_PAD_COLUMNS = 2
-const CHEVRON_COLUMNS = 3
+const PX_PER_COLUMN = 8
+const RING_SLOT_COLUMNS = 4
 const FRAME_PAD_X = 'sm'
 const SECTION_GAP = 'sm'
 const ITEM_GAP = 'xs'
@@ -67,12 +68,13 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     : stripDetailOf(specs, {
         width: input.width,
         statusChars: Math.max(status.word.length, captionOf(input).length),
-        countsChars: `${counts.done} done`.length + 2,
+        countsChars: 4,
       })
 
   const colors = bandColorsOf(input.scheme)
   const fill = (color: string | undefined) => (color === undefined ? {} : { backgroundColor: color })
-  const tinted = fill(colors?.tint)
+  const tinted = fill(colors.tint)
+  const labelColumns = Math.round(groupLabelColumnOf(input) / PX_PER_COLUMN)
 
   const svgOf = (key: string, alt: string) => {
     const svg = view.svgs.get(key)
@@ -87,8 +89,8 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   }
 
   const gaugeBox = (spec: GaugeSpec) => (
-    <Box key={`gauge-${spec.id}`} flexDirection="row" gap={ITEM_GAP} alignItems="center">
-      {svgOf(`ring-${spec.id}`, `${spec.name} ${Math.round(spec.percent)}%`)}
+    <Box key={`gauge-${spec.id}`} flexDirection="row" gap={ITEM_GAP} alignItems="center" flexShrink={0}>
+      {svgOf(`ring-${spec.id}`, `${spec.name} ${Math.round(spec.percent)}%`) ?? <Box key={`slot-${spec.id}`} width={RING_SLOT_COLUMNS} flexShrink={0} />}
       <Box flexDirection="column">
         <Text bold wrap="truncate-end">
           {spec.name}
@@ -103,29 +105,24 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Box>
   )
 
+  const gaugeGroup = (
+    <Box key="gauges" flexDirection="row" gap="md" alignItems="center" flexShrink={0}>
+      {specs.map(gaugeBox)}
+    </Box>
+  )
+
   const foldButton = (
     <Button key="fold" plain onPress={() => actions.toggleFold()}>
       {isFolded ? '▾' : '▴ fold'}
     </Button>
   )
 
+  const nextRange = RANGES[(RANGES.indexOf(input.range) + 1) % RANGES.length] ?? RANGES[0]
+
   const rangeControl = (
-    <Box key="ranges" flexDirection="row" gap={SECTION_GAP} alignItems="center">
-      <Text dimColor>range</Text>
-      <Box flexDirection="row" gap={SECTION_GAP}>
-        {RANGES.map(name =>
-          name === input.range ? (
-            <Text key={`range-${name}`} bold underline>
-              {name}
-            </Text>
-          ) : (
-            <Button key={`range-${name}`} plain dimColor onPress={() => actions.setRange(name)}>
-              {name}
-            </Button>
-          ),
-        )}
-      </Box>
-    </Box>
+    <Button key="range" plain onPress={() => (nextRange === undefined ? undefined : actions.setRange(nextRange))}>
+      {`range ${input.range} ▾`}
+    </Button>
   )
 
   const groupHeader = (group: GroupPlan) => {
@@ -133,19 +130,17 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     const ended = group.counts.done + group.counts.failed
     const key = `group-header-${group.id}`
     const toggle = (
-      <Box key={`group-toggle-${group.id}`} width={CHEVRON_COLUMNS} flexShrink={0}>
+      <Box key={`group-toggle-${group.id}`} width={labelColumns} flexShrink={0} overflow="hidden">
         <Button key={`group-button-${group.id}`} plain onPress={() => actions.toggleGroup(group.id)}>
-          <Text>{group.isFolded ? '∨' : '∧'}</Text>
+          {`${group.isFolded ? '∨' : '∧'} ${kind} ${name}`}
         </Button>
       </Box>
     )
-    const title = svgOf(groupLabelKey(group.id), `${kind} ${name}`)
 
     if (!group.isFolded) {
       return (
         <Box key={key} flexDirection="row" alignItems="center" {...tinted}>
           {toggle}
-          {title}
           <Box flexGrow={1} flexShrink={1} justifyContent="flex-end" paddingRight={HEADER_PAD_COLUMNS}>
             <Text dimColor wrap="truncate-end">{`${group.counts.live} live · ${ended} ended`}</Text>
           </Box>
@@ -155,12 +150,16 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
 
     const counts = liveStateCounts(input.rows, group.agents)
     const text = groupCountsText(counts, ended)
+    const density = svgOf(densityKey(group.id), `${group.name}: agents per state over ${input.range}`)
 
     return (
       <Box key={key} flexDirection="row" alignItems="center" {...tinted}>
         {toggle}
-        {title}
-        {svgOf(densityKey(group.id), `${group.name}: agents per state over ${input.range}`)}
+        {density === null ? null : (
+          <Box key={`group-density-${group.id}`} alignSelf="center" flexShrink={0}>
+            {density}
+          </Box>
+        )}
         {svgOf(groupCountsKey(group.id), `${group.name}: agents by state now`) ?? (
           <Box flexGrow={1} flexShrink={1} overflow="hidden" paddingLeft={HEADER_PAD_COLUMNS}>
             <Text dimColor wrap="truncate-end">
@@ -195,58 +194,43 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Box>
   )
 
-  const countsInline = (
-    <Box key="counts" flexDirection="row" gap="xs" flexShrink={0}>
-      <Text bold color="success" wrap="truncate-end">{`${counts.live} live ·`}</Text>
-      <Text dimColor wrap="truncate-end">{`${counts.done} ✓ ·`}</Text>
-      <Text color={counts.failed > 0 ? 'error' : undefined} dimColor={counts.failed === 0} wrap="truncate-end">{`${counts.failed} ✗`}</Text>
-    </Box>
-  )
-
-  const countRow = (mark: string, markColor: string | undefined, text: string, isDim: boolean, textColor?: string) => (
-    <Box key={`count-${mark}`} flexDirection="row" gap="xs" alignItems="center">
-      <Text color={markColor} dimColor={markColor === undefined}>
-        {mark}
-      </Text>
-      <Text bold={!isDim} dimColor={isDim} color={textColor} wrap="truncate-end">
-        {text}
-      </Text>
-    </Box>
-  )
-
-  const countsStacked = (
-    <Box key="counts" flexDirection="column" flexShrink={0}>
-      {countRow('●', STATE_COLOR.thinking, `${counts.live} live`, false)}
-      {countRow('✓', undefined, `${counts.done} done`, true)}
-      {countRow('✗', counts.failed > 0 ? 'error' : undefined, `${counts.failed} fail`, counts.failed === 0, counts.failed > 0 ? 'error' : undefined)}
-    </Box>
-  )
+  const countsSvg = svgOf(COUNTS_KEY, `${counts.live} live, ${counts.done} done, ${counts.failed} failed`)
+  const countsBox =
+    countsSvg === null ? null : (
+      <Box key="counts-slot" alignSelf="center" flexShrink={0}>
+        {countsSvg}
+      </Box>
+    )
 
   if (isFolded) {
     return (
-      <Box flexDirection="row" alignItems="center" gap="md" borderStyle="round" borderColor={colors?.frame ?? 'promptBorder'} paddingX={FRAME_PAD_X} {...fill(colors?.surface)}>
+      <Box flexDirection="row" alignItems="center" gap="md" paddingX={FRAME_PAD_X} {...fill(colors.surface)}>
         {foldButton}
         {statusBox}
-        {specs.map(gaugeBox)}
-        {live.length === 0 ? null : svgOf('traces', `${live.length} live agent traces, last 60s`)}
+        {gaugeGroup}
+        {live.length === 0 ? null : (
+          <Box key="traces-slot" alignSelf="center" flexShrink={0}>
+            {svgOf('traces', `${live.length} live agent traces, last 60s`)}
+          </Box>
+        )}
         <Box key="spacer" flexGrow={1} />
-        {countsInline}
+        {countsBox}
       </Box>
     )
   }
 
-  const frameColor = colors?.frame ?? 'promptBorder'
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={frameColor} {...fill(colors?.surface)}>
-      <Box key="controls" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X} paddingY="xs">
+    <Box flexDirection="column" paddingBottom={ITEM_GAP} {...fill(colors.surface)}>
+      <Box key="controls" flexDirection="row" alignItems="center" gap="md" paddingX={FRAME_PAD_X} paddingBottom="xs">
         {foldButton}
         {rangeControl}
       </Box>
       {ruleFor('rule-controls')}
-      <Box key="strip" flexDirection="row" alignItems="center" justifyContent="space-between" gap={SECTION_GAP} paddingX={FRAME_PAD_X} paddingY="xs">
+      <Box key="strip" flexDirection="row" alignItems="center" gap="md" paddingX={FRAME_PAD_X} paddingY="xs">
         {statusBox}
-        {specs.map(gaugeBox)}
-        {countsStacked}
+        {gaugeGroup}
+        <Box key="spacer" flexGrow={1} />
+        {countsBox}
       </Box>
       {timelineRegion}
     </Box>

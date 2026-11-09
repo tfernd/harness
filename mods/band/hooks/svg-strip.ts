@@ -31,11 +31,12 @@ export const RING_RADIUS = 13.5
 export const RING_SIZE = 32
 export const FOLDED_RING_RADIUS = 11.5
 export const FOLDED_RING_SIZE = 28
-export const FOLDED_GAP = 12
-export const MIN_TRACES_WIDTH = 80
+export const FOLDED_GAP = 16
+export const MIN_TRACES_WIDTH = 56
+export const MAX_TRACES_WIDTH = 360
 export const MAX_TRACE_LANES = 4
-export const LANE_HEIGHT = 4
-export const LANE_STEP = 6
+export const LANE_HEIGHT = 6
+export const LANE_STEP = 8
 export const TRACES_MORE_WIDTH = 30
 
 const RING_FONT_BASELINE = 3.5
@@ -145,19 +146,19 @@ export const stripDetailOf = (specs: readonly GaugeSpec[], budget: StripBudget):
 const TEXT_CHAR_PX = 6.6
 const FOLDED_CONTENT_INSET = 48
 const FOLDED_STATUS_WIDTH = 66
-const FOLDED_UNFOLD_WIDTH = 14
-const FOLDED_COUNTS_CHARS = 20
+const FOLDED_UNFOLD_WIDTH = 32
+const FOLDED_COUNTS_WIDTH = 44
 
 export const foldedTracesWidth = (width: number, specs: readonly GaugeSpec[]): number => {
   const gauges = specs.reduce(
-    (sum, spec) => sum + (hasRing(spec) ? FOLDED_RING_SIZE + FOLDED_GAP / 2 : 0) + Math.max(spec.name.length, foldedDetail(spec).length) * TEXT_CHAR_PX,
+    (sum, spec) => sum + (FOLDED_RING_SIZE + FOLDED_GAP / 4) + Math.max(spec.name.length, foldedDetail(spec).length) * TEXT_CHAR_PX,
     0,
   )
   const items = specs.length + 3
-  const fixed = FOLDED_UNFOLD_WIDTH + FOLDED_STATUS_WIDTH + gauges + FOLDED_COUNTS_CHARS * TEXT_CHAR_PX + items * FOLDED_GAP
+  const fixed = FOLDED_UNFOLD_WIDTH + FOLDED_STATUS_WIDTH + gauges + FOLDED_COUNTS_WIDTH + items * FOLDED_GAP
   const free = Math.floor(width - FOLDED_CONTENT_INSET - fixed)
 
-  return free >= MIN_TRACES_WIDTH ? free : 0
+  return free >= MIN_TRACES_WIDTH ? Math.min(free, MAX_TRACES_WIDTH) : 0
 }
 
 export const tracesHeight = (laneCount: number): number => Math.max(1, Math.min(laneCount, MAX_TRACE_LANES)) * LANE_STEP
