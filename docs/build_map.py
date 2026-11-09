@@ -67,6 +67,13 @@ INSTALL_COMMANDS = {
     "cortex": "cortex plugin update harness || cortex plugin install tfernd/harness",
     "kiro": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro",
 }
+UNINSTALL_COMMANDS = {
+    "claude-off": "claude plugin uninstall harness@harness && claude plugin marketplace remove harness",
+    "cortex-off": "cortex plugin uninstall harness",
+    "cortex-port-off": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall",
+    "kiro-off": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall",
+    "kiro-clone-off": "rm -rf ~/.local/share/harness",
+}
 SHELL_TOKEN = re.compile(r"""(?P<space>\s+)|(?P<comment>#.*)|(?P<string>'[^']*'|"(?:\\.|[^"\\])*")|(?P<operator>&&|\|\||[|;<>()])|(?P<word>[^\s'"|&;<>()]+|.)""")
 SHELL_STARTERS = ("&&", "||", "|", ";", "(")
 HEREDOC = re.compile(r"""<<-?\s*(['"]?)(\w+)\1""")
@@ -1176,8 +1183,8 @@ def make_slot(slot: Slot, layout: Layout, /) -> str:
             return make_pyramid(layout)
         case "panels":
             return make_panels(layout)
-        case "install-command" | "install-copy" if slot.arguments and slot.arguments[0] in INSTALL_COMMANDS:
-            command = INSTALL_COMMANDS[slot.arguments[0]]
+        case "install-command" | "install-copy" if slot.arguments and slot.arguments[0] in INSTALL_COMMANDS | UNINSTALL_COMMANDS:
+            command = (INSTALL_COMMANDS | UNINSTALL_COMMANDS)[slot.arguments[0]]
             return make_shell(command) if slot.name == "install-command" else html.escape(command)
         case _:
             raise ValueError(f"the template holds an unknown slot: {slot.name}")

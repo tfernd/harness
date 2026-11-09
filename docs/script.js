@@ -207,7 +207,7 @@
   };
 
   const selectCommands = (panel) => {
-    const commands = panel.querySelectorAll(".install-command");
+    const commands = [...panel.querySelectorAll(".install-command")].filter((command) => !command.closest("[hidden]"));
     if (commands.length === 0) return;
     const range = document.createRange();
     range.setStartBefore(commands[0]);
@@ -231,6 +231,13 @@
     }, LABEL_RESET_MS);
   };
 
+  const showMode = (root, mode) => {
+    for (const choice of root.querySelectorAll("[data-mode-choice]")) {
+      choice.setAttribute("aria-pressed", String(choice.dataset.modeChoice === mode));
+    }
+    for (const item of root.querySelectorAll("[data-mode]")) item.hidden = item.dataset.mode !== mode;
+  };
+
   const bindInstall = (root) => {
     const savedTab = root.querySelector(`[data-install-target="${document.documentElement.dataset.target ?? "claude"}"]`);
     if (savedTab) showTab(root, savedTab);
@@ -241,6 +248,8 @@
         showTab(root, tab);
         setTarget(tab);
       }
+      const modeChoice = event.target.closest("[data-mode-choice]");
+      if (modeChoice) showMode(root, modeChoice.dataset.modeChoice ?? "install");
       const copyButton = event.target.closest("[data-copy]");
       if (copyButton) void copyCommand(copyButton);
     });

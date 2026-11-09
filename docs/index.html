@@ -19,7 +19,7 @@
       console.warn("The saved theme or install target could not be read.", error);
     }
   </script>
-  <link rel="stylesheet" href="style.css?v=d48b4ebf42">
+  <link rel="stylesheet" href="style.css?v=68563d98eb">
 </head>
 <body>
   <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -56,7 +56,10 @@
       </div>
       <div class="card install" data-install>
         <div class="install-bar">
-          <span class="install-label">Install</span>
+          <div class="install-tablist" role="group" aria-label="Install or uninstall">
+            <button type="button" class="install-tab install-mode" data-mode-choice="install" aria-pressed="true">Install</button>
+            <button type="button" class="install-tab install-mode" data-mode-choice="uninstall" aria-pressed="false">Uninstall</button>
+          </div>
           <div class="install-tablist" role="tablist" aria-label="Install target">
             <button type="button" class="install-tab" role="tab" id="install-tab-claude" data-install-target="claude" aria-controls="install-panel-claude" aria-selected="true" tabindex="0">Claude Code</button>
             <button type="button" class="install-tab" role="tab" id="install-tab-cortex" data-install-target="cortex" aria-controls="install-panel-cortex" aria-selected="false" tabindex="-1">Cortex Code</button>
@@ -64,21 +67,35 @@
           </div>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-claude" aria-labelledby="install-tab-claude">
-          <code class="install-command"><span class="tok-command">claude</span> plugin marketplace add https://github.com/tfernd/harness.git<span class="tok-operator">;</span> <span class="tok-command">claude</span> plugin marketplace update harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin install harness@harness <span class="tok-flag">--scope</span> user <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin update harness@harness</code>
-          <button type="button" class="install-copy" data-copy="claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness &amp;&amp; claude plugin install harness@harness --scope user &amp;&amp; claude plugin update harness@harness">Copy</button>
-          <p class="install-note">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
+          <code class="install-command" data-mode="install"><span class="tok-command">claude</span> plugin marketplace add https://github.com/tfernd/harness.git<span class="tok-operator">;</span> <span class="tok-command">claude</span> plugin marketplace update harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin install harness@harness <span class="tok-flag">--scope</span> user <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin update harness@harness</code>
+          <button type="button" class="install-copy" data-mode="install" data-copy="claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness &amp;&amp; claude plugin install harness@harness --scope user &amp;&amp; claude plugin update harness@harness">Copy</button>
+          <p class="install-note" data-mode="install">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">claude</span> plugin uninstall harness@harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin marketplace remove harness</code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="claude plugin uninstall harness@harness &amp;&amp; claude plugin marketplace remove harness">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. Each project keeps its own <code>__harness__/</code> and <code>__scratch__/</code> folders and its AGENTS.md; delete them by hand if you want them gone.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
-          <code class="install-command"><span class="tok-command">cortex</span> plugin update harness <span class="tok-operator">||</span> <span class="tok-command">cortex</span> plugin install tfernd/harness</code>
-          <button type="button" class="install-copy" data-copy="cortex plugin update harness || cortex plugin install tfernd/harness">Copy</button>
-          <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
-          <p class="install-note">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
+          <code class="install-command" data-mode="install"><span class="tok-command">cortex</span> plugin update harness <span class="tok-operator">||</span> <span class="tok-command">cortex</span> plugin install tfernd/harness</code>
+          <button type="button" class="install-copy" data-mode="install" data-copy="cortex plugin update harness || cortex plugin install tfernd/harness">Copy</button>
+          <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+          <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">cortex</span> plugin uninstall harness</code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="cortex plugin uninstall harness">Copy</button>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> cortex <span class="tok-flag">--uninstall</span></code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>The first line removes the plugin; the second removes a port install.</p>
+          <p class="install-note" data-mode="uninstall" hidden>If a reinstall says the plugin path already exists, a folder was left behind: look for a harness folder in <code>~/.snowflake/cortex/plugins/</code>, move it away, then install again.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
-          <code class="install-command"><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> kiro</code>
-          <button type="button" class="install-copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro">Copy</button>
-          <p class="install-note">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
-          <p class="install-note">Below, <span class="install-mark is-off">struck</span> parts are not ported to Kiro and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
+          <code class="install-command" data-mode="install"><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> kiro</code>
+          <button type="button" class="install-copy" data-mode="install" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro">Copy</button>
+          <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+          <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Kiro and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> kiro <span class="tok-flag">--uninstall</span></code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall">Copy</button>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">rm</span> <span class="tok-flag">-rf</span> ~/.local/share/harness</code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="rm -rf ~/.local/share/harness">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The second line deletes the clone.</p>
         </div>
       </div>
     </header>
@@ -5138,6 +5155,6 @@ ITEM_ID = re.compile(<span class="tok-string">r"^- id=([0-9a-f]{8}) session=(\S+
     </main>
   </div>
 
-  <script defer src="script.js?v=5ead94d2c4"></script>
+  <script defer src="script.js?v=5686a3ebb9"></script>
 </body>
 </html>
