@@ -14,8 +14,10 @@ import {
   applyListing,
   isSameRoster,
   moveAgent,
+  OWNER_QUESTION_TOOL,
   moveMain,
   nextLeaveMs,
+  nextQuietChangeMs,
   newAgent,
   rosterOf,
   sessionTotal,
@@ -296,16 +298,18 @@ export const register: Register = on => {
     const id = e.agentId
 
     if (id === undefined) {
-      await setMainActivity($, runtime, { activity: { state: 'tool', command: describeCall(e) } }).catch(cause =>
-        reportFailure($, 'main tool start', cause),
-      )
+      const isQuestion = e.tool === OWNER_QUESTION_TOOL
+      const started: MainActivity = isQuestion ? { state: 'waiting', command: null } : { state: 'tool', command: describeCall(e) }
+      await setMainActivity($, runtime, { activity: started }).catch(cause => reportFailure($, 'main tool start', cause))
 
       try {
         return await next(e)
       } finally {
-        await setMainActivity($, runtime, { activity: { state: 'thinking', command: null }, from: 'tool' }).catch(cause =>
-          reportFailure($, 'main tool end', cause),
-        )
+        for (const from of ['tool', 'waiting'] as const) {
+          await setMainActivity($, runtime, { activity: { state: 'thinking', command: null }, from }).catch(cause =>
+            reportFailure($, 'main tool end', cause),
+          )
+        }
       }
     }
 
@@ -320,6 +324,18 @@ export const register: Register = on => {
         reportFailure($, 'tool end', cause),
       )
     }
+  })
+
+  on('tool.check', async ($, e, next) => {
+    const verdict = await next(e)
+
+    if (e.agentId === undefined && verdict.decision === 'ask' && e.approver !== 'host') {
+      await setMainActivity($, runtime, { activity: { state: 'waiting', command: null }, from: 'tool' }).catch(cause =>
+        reportFailure($, 'main permission ask', cause),
+      )
+    }
+
+    return verdict
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -433,7 +449,9 @@ export const register: Register = on => {
     )
 
     const leaveWait = nextLeaveMs(rowIndex.values(), rangeValue, now, folded)
-    runtime.refreshAt = leaveWait === null ? null : now + leaveWait
+    const quietWait = nextQuietChangeMs(rowIndex.values(), now)
+    const waits = [leaveWait, quietWait].filter(wait => wait !== null)
+    runtime.refreshAt = waits.length === 0 ? null : now + Math.min(...waits)
     runtime.painters = nextPainters
     runtime.requestId = e.requestId
     runtime.isDrawnByTree = false

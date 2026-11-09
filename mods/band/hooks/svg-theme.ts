@@ -35,6 +35,10 @@ const LIGHT: Tokens = {
   'pill-failed-fg': '#8f1d14',
   'pill-launched-bg': '#e8e2d6',
   'pill-launched-fg': '#463f33',
+  'pill-quiet-bg': '#f3ead2',
+  'pill-quiet-fg': '#6b5320',
+  'pill-needs-bg': '#c9820a',
+  'pill-needs-fg': '#1f1300',
 }
 
 const DARK: Tokens = {
@@ -70,9 +74,22 @@ const DARK: Tokens = {
   'pill-failed-fg': '#ffc2b9',
   'pill-launched-bg': '#302f2b',
   'pill-launched-fg': '#dcd5c8',
+  'pill-quiet-bg': '#33291a',
+  'pill-quiet-fg': '#d2bb83',
+  'pill-needs-bg': '#e0a02e',
+  'pill-needs-fg': '#1f1300',
 }
 
 const TOKENS: Record<Scheme, Tokens> = { light: LIGHT, dark: DARK }
+
+export type BandColors = { surface: string; tint: string; selected: string; line: string; frame: string }
+
+const BAND_COLORS: Record<Scheme, BandColors> = {
+  light: { surface: '#fbfaf7', tint: '#f1efe9', selected: '#ffffff', line: '#e4e0d6', frame: '#d9d4c7' },
+  dark: { surface: '#1a1c20', tint: '#22252b', selected: '#33373f', line: '#33373f', frame: '#3a3e46' },
+}
+
+export const bandColorsOf = (setting: ThemeSetting): BandColors | null => (setting === 'auto' ? null : BAND_COLORS[setting])
 
 export const STATES: readonly AgentState[] = ['launched', 'thinking', 'tool', 'waiting', 'done', 'failed']
 
@@ -85,7 +102,12 @@ const variables = (scheme: Scheme): string =>
     .map(([name, value]) => `--${name}:${value}`)
     .join(';')
 
+const TONES = ['quiet', 'needs'] as const
+
+const perTone = (): string => TONES.map(tone => `.pb-${tone}{fill:var(--pill-${tone}-bg)}.pf-${tone}{fill:var(--pill-${tone}-fg)}`).join('')
+
 const perState = (): string =>
+  perTone() +
   STATES.map(
     state =>
       `.pb-${state}{fill:var(--pill-${state}-bg)}.pf-${state}{fill:var(--pill-${state}-fg)}` +

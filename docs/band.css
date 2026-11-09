@@ -484,6 +484,59 @@
   padding-inline: var(--band-pad);
 }
 
+.ab-group-row.is-strip {
+  display: grid;
+  grid-template-columns: var(--band-name) minmax(0, 1fr) var(--band-state);
+  gap: var(--band-gap);
+}
+
+.ab-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.ab-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ab-group-row.is-strip .ab-group-count {
+  margin-inline-start: 0;
+  overflow: visible;
+  font-size: var(--text-meta);
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.ab-group-row.is-strip .ab-group-tag {
+  min-inline-size: 0;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+}
+
+.ab-strip {
+  display: block;
+  inline-size: 100%;
+  block-size: 1rem;
+}
+
+.ab-strip-tool {
+  fill: var(--tool);
+}
+
+.ab-strip-thinking {
+  fill: var(--thinking);
+}
+
+.ab-strip-base {
+  fill: none;
+  stroke: var(--band-line);
+  vector-effect: non-scaling-stroke;
+}
+
 .ab-group-tag {
   min-inline-size: 3.5rem;
   font-size: var(--text-meta);
@@ -494,6 +547,9 @@
 
 .ab-group-count {
   margin-inline-start: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--band-muted);
 }
 

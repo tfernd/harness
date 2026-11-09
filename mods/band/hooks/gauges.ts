@@ -86,7 +86,7 @@ export const cacheClockOf = (gauges: Gauges, now: number): CacheClock | null => 
 
   return {
     text,
-    detail: isCold ? 'cold' : `cold ${text}`,
+    detail: isCold ? 'cold' : `cold in ${text}`,
     isCold,
     isUrgent: remainingMs < CACHE_URGENT_MS,
     remainingMs,

@@ -2,7 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { EMPTY_GAUGES, cacheClockOf, cacheRefreshMs } from '../hooks/gauges'
 import { EMPTY_ROSTER, EMPTY_STORE, addAgent, layoutBand, moveMain, newAgent, rosterOf, themeOf } from '../hooks/model'
-import { piecesOf, refreshAfterMs } from '../hooks/svg-band'
+import { listedGroupsOf, piecesOf, refreshAfterMs } from '../hooks/svg-band'
+import { liveStateCounts } from '../hooks/svg-timeline'
 import { MIN_REBUILD_MS, chooseBand } from '../hooks/svg-cache'
 
 const BAND = {
@@ -308,14 +309,16 @@ test('a held sub-agent tool call shows RUNNING with its command in the desktop t
   await clock.advance(MIN_REBUILD_MS + 200)
   const during = await sourceOf(ui)
 
-  expect(during).toContain('scout-1: tool, make check')
+  expect(during).toContain('>RUNNING<')
+  expect(during).toContain('>make check<')
+  expect(during).not.toContain('<title>')
 
   release()
   await call
   await clock.advance(MIN_REBUILD_MS + 200)
   const after = await sourceOf(ui)
 
-  expect(after).toContain('scout-1: thinking, thinking...')
+  expect(after).toContain('>THINKING<')
   expect(after).not.toContain('make check')
   await ui.unmount()
 })
@@ -367,7 +370,7 @@ test('a fresh desktop band starts unfolded with every group open', async ($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   expect(JSON.stringify((await ui.find({ key: 'fold' }))?.props)).toContain('▴ fold')
-  expect(JSON.stringify((await ui.find({ key: 'group-button-direct' }))?.props)).toContain('▾')
+  expect(JSON.stringify((await ui.find({ key: 'group-button-direct' }))?.props)).toContain('∧')
   expect(await ui.find({ key: 'ranges' })).toBeDefined()
   await ui.unmount()
 })
@@ -397,7 +400,7 @@ test('each timeline group header is a native Button that folds its own rows Svg,
   const left = await rowsAlts()
   expect(left).toHaveLength(1)
   expect(left[0]).toContain('review')
-  expect(JSON.stringify(await ui.find({ key: 'group-button-direct' }))).toContain('▸')
+  expect(JSON.stringify(await ui.find({ key: 'group-button-direct' }))).toContain('∨')
   await ui.unmount()
 })
 
@@ -424,7 +427,9 @@ test('a 1h cache last called 58 minutes ago counts down to ~2m, is urgent under 
   expect(cold?.text).toBe('cold')
   expect(unmetered?.text).toBe('~1m')
   expect(warm?.tip).toContain('TTL 1h')
-  expect(sourceOfPiece({ ...SVG_INPUT, gauges }, 'ring-cache')).toContain('r-bad')
+  expect(warm?.detail).toBe('cold in ~2m')
+  expect(piecesOf({ ...SVG_INPUT, gauges } as never).some(spec => spec.key === 'ring-cache')).toBe(false)
+  expect(piecesOf({ ...SVG_INPUT } as never).some(spec => spec.key === 'ring-ctx')).toBe(true)
 })
 
 test('the cache countdown refreshes every minute, every 15 s under 5m, and not once cold', () => {
@@ -450,7 +455,7 @@ test('an agent changing state rebuilds the timeline alone, never a ring, and dra
   const buttonPress = chooseBand(first.caches, { ...SVG_INPUT, ...oneAgent('launched'), range: '5m', now: NOW + 50 } as never)
   const settled = chooseBand(changed.caches, { ...SVG_INPUT, ...oneAgent('tool'), now: NOW + MIN_REBUILD_MS + 50 } as never)
 
-  expect(first.builtKeys.sort()).toEqual(['ring-cache', 'ring-ctx', 'timeline', 'timeline-more', 'timeline-rows-direct'])
+  expect(first.builtKeys.sort()).toEqual(['group-label-direct', 'ring-ctx', 'rule', 'timeline', 'timeline-more', 'timeline-rows-direct'])
   expect(changed.builtKeys).toEqual([])
   expect(changed.retryInMs).toBe(MIN_REBUILD_MS - 50)
   expect(unchanged.builtKeys).toEqual([])
@@ -516,7 +521,11 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const titleOf = async (): Promise<string | undefined> => (await sourceOf(ui)).match(/main session: [a-z]+, [^<]*/)?.[0]
+  const titleOf = async (): Promise<string> => {
+    const texts = [...(await sourceOf(ui)).matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(match => match[1] ?? '')
+
+    return texts.slice(texts.indexOf('main session') + 1, texts.indexOf('main session') + 3).join(', ')
+  }
   const idleAtStart = await titleOf()
 
   await $.turn.start({ text: '', turnId: 'm1' })
@@ -533,10 +542,10 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   await clock.advance(MIN_REBUILD_MS + 200)
   const idle = await titleOf()
 
-  expect(idleAtStart).toBe('main session: launched, idle')
-  expect(thinking).toBe('main session: thinking, working...')
-  expect(tool).toBe('main session: tool, make check')
-  expect(idle).toBe('main session: launched, idle')
+  expect(idleAtStart).toBe('IDLE')
+  expect(thinking).toBe('WORKING')
+  expect(tool).toBe('TOOL, make check')
+  expect(idle).toBe('IDLE')
   expect(await sourceOf(ui)).not.toContain('>idle<')
   await ui.unmount()
 })
@@ -561,6 +570,115 @@ test('a main tool call rebuilds the timeline alone, never a ring', () => {
   const idle = chooseBand(new Map(), withMain('launched', null) as never)
   const called = chooseBand(idle.caches, { ...withMain('tool', 'make check'), now: NOW + MIN_REBUILD_MS + 50 } as never)
 
-  expect(idle.builtKeys.sort()).toEqual(['ring-cache', 'ring-ctx', 'timeline'])
+  expect(idle.builtKeys.sort()).toEqual(['ring-ctx', 'rule', 'timeline'])
   expect(called.builtKeys).toEqual(['timeline'])
+})
+
+const stateRoster = (states: readonly ('tool' | 'thinking' | 'waiting' | 'done')[]) => {
+  const store = states.reduce(
+    (current, _, index) =>
+      addAgent(current, newAgent({ id: `s${index}`, label: `agent-${index}`, group: 'direct', groupLabel: 'direct agents', now: NOW - 40_000 })),
+    EMPTY_STORE,
+  )
+  const rows = new Map(
+    store.rows.map((row, index): [string, (typeof store.rows)[number]] => {
+      const state = states[index] ?? 'thinking'
+      const isEnded = state === 'done'
+
+      return [
+        row.id,
+        {
+          ...row,
+          state,
+          endedAt: isEnded ? NOW - 10_000 : null,
+          segments: [{ state, from: NOW - 30_000, to: isEnded ? NOW - 10_000 : null }],
+        },
+      ]
+    }),
+  )
+
+  return { roster: rosterOf(store), rows }
+}
+
+test('a folded group counts its live agents by state, and an ended agent counts as none', () => {
+  const { roster, rows } = stateRoster(['tool', 'tool', 'thinking', 'done'])
+  const plan = listedGroupsOf({ ...SVG_INPUT, roster, rows, foldedGroups: ['direct'], range: '1m' } as never)
+
+  expect(plan).toHaveLength(1)
+  expect(liveStateCounts(rows, plan[0]?.agents ?? [])).toEqual({ tool: 2, thinking: 1, waiting: 0 })
+})
+
+test('only a folded group gets a density strip, drawn in the tool and thinking colours and never the done one', () => {
+  const { roster, rows } = stateRoster(['tool', 'thinking', 'done'])
+  const input = { ...SVG_INPUT, roster, rows, range: '1m' } as never
+  const unfolded = piecesOf(input).map(spec => spec.key)
+  const foldedInput = { ...(input as object), foldedGroups: ['direct'] } as never
+  const folded = piecesOf(foldedInput).map(spec => spec.key)
+  const source = sourceOfPiece(foldedInput, 'density-direct')
+
+  expect(unfolded.some(key => key.startsWith('density-'))).toBe(false)
+  expect(folded).toContain('density-direct')
+  expect(folded).not.toContain('timeline-rows-direct')
+  expect(source).toContain('class="sg-tool"')
+  expect(source).toContain('class="sg-thinking"')
+  expect(source).not.toContain('class="sg-waiting"')
+  expect(source).not.toContain('class="sg-done"')
+})
+
+test('a folded group header says how many agents are in each state now, beside its density strip', async ($, on) => {
+  mock.clock(on)
+  baseHooks(on)
+  on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect(JSON.stringify(await ui.find({ key: 'group-header-direct' }))).toContain(' live · ')
+
+  await ui.press({ key: 'group-button-direct' })
+
+  const header = JSON.stringify(await ui.find({ key: 'group-header-direct' }))
+  expect(header).toMatch(/\d+ tool · \d+ think · \d+ wait/)
+  expect(header).not.toContain(' live · ')
+  expect((await ui.findAll({ type: 'Svg' })).some(svg => String(svg.props['alt']).includes('agents per state'))).toBe(true)
+  await ui.unmount()
+})
+
+const quietInput = (now: number) => {
+  const { roster, rows } = stateRoster(['thinking'])
+  const quietRows = new Map([...rows].map(([id, row]) => [id, { ...row, segments: [{ state: row.state, from: NOW - 150_000, to: null }] }]))
+
+  return { ...SVG_INPUT, roster, rows: quietRows, range: '5m', now } as never
+}
+
+const signatureOfPiece = (input: Parameters<typeof piecesOf>[0], key: string): string => piecesOf(input).find(spec => spec.key === key)?.signature ?? ''
+
+test('a quiet agent row reads "quiet 2m" in a muted amber pill on desktop, and its piece cache key changes when it turns quiet', () => {
+  const quiet = quietInput(NOW)
+  const justBefore = quietInput(NOW - 31_000)
+  const source = sourceOfPiece(quiet, 'timeline-rows-direct')
+
+  expect(source).toContain('>quiet 2m<')
+  expect(source).toContain('class="pb-quiet"')
+  expect(source).not.toContain('>THINKING<')
+  expect(sourceOfPiece(justBefore, 'timeline-rows-direct')).toContain('>THINKING<')
+  expect(signatureOfPiece(quiet, 'timeline-rows-direct')).not.toBe(signatureOfPiece(justBefore, 'timeline-rows-direct'))
+})
+
+test('a folded header lines up: label piece plus the 24px chevron is the label column, the strip is the track width (800px band: 188 and 384)', () => {
+  const folded = { ...(quietInput(NOW) as object), foldedGroups: ['direct'] } as never
+  const label = sourceOfPiece(folded, 'group-label-direct')
+  const widthOf = (source: string): number => Number(/width="(\d+)"/.exec(source)?.[1])
+
+  expect(label).toContain('DIRECT')
+  expect(widthOf(label) + 24).toBe(188)
+  expect(widthOf(sourceOfPiece(folded, 'density-direct'))).toBe(384)
+})
+
+test('a folded header gets its counts as a piece that fits the state column, in short words', () => {
+  const folded = { ...(quietInput(NOW) as object), foldedGroups: ['direct'] } as never
+  const counts = sourceOfPiece(folded, 'group-counts-direct')
+
+  expect(counts).toContain('0 tool · 1 think · 0 wait')
+  expect(Number(/width="(\d+)"/.exec(counts)?.[1])).toBe(212)
 })

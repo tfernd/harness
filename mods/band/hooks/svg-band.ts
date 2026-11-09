@@ -1,11 +1,11 @@
 import type { AgentRow, Gauges, Range, Roster, RosterRow, ThemeSetting } from '../types'
 
 import { cacheRefreshMs } from './gauges'
-import { MAIN_ID, nextLeaveMs, tracedRows } from './model'
-import type { Ctx } from './svg-parts'
-import { FOLDED_RING_RADIUS, FOLDED_RING_SIZE, RING_SIZE, TRACES_MORE_WIDTH, foldedTracesWidth, type GaugeSpec, type StripInput, gaugeSpecs, ring, traceLanes, tracesHeight } from './svg-strip'
+import { MAIN_ID, nextLeaveMs, nextQuietChangeMs, stateWordOf, tracedRows } from './model'
+import { type Ctx, horizontalLine } from './svg-parts'
+import { FOLDED_RING_RADIUS, FOLDED_RING_SIZE, RING_SIZE, hasRing, TRACES_MORE_WIDTH, foldedTracesWidth, type GaugeSpec, type StripInput, gaugeSpecs, ring, traceLanes, tracesHeight } from './svg-strip'
 import { styleFor } from './svg-theme'
-import { type GroupPlan, type TimelineInput, type TimelinePiece, groupRowsMarkup, hiddenAgentsMarkup, planGroups, timelineHeadMarkup, windowSpanOf } from './svg-timeline'
+import { type GroupPlan, type TimelineInput, type TimelinePiece, densityMarkup, densityWidthOf, groupCountsMarkup, groupCountsText, groupCountsWidthOf, groupLabelMarkup, groupLabelWidthOf, liveStateCounts, groupRowsMarkup, groupTitleOf, hiddenAgentsMarkup, planGroups, timelineHeadMarkup, windowSpanOf } from './svg-timeline'
 
 export type SvgInput = {
   width: number
@@ -75,13 +75,13 @@ const detailsOfRows = (input: SvgInput, rows: readonly RosterRow[]) =>
   rows.map(row => {
     const detail = input.rows.get(row.id)
 
-    return detail === undefined ? null : [row.id, detail.state, detail.command, detail.segments.length, detail.endedAt]
+    return detail === undefined ? null : [row.id, detail.state, stateWordOf(detail, input.now), detail.command, detail.segments.length, detail.endedAt]
   })
 
 const mainDetailOf = (input: SvgInput) => {
   const main = input.rows.get(MAIN_ID)
 
-  return main === undefined ? null : [main.state, main.command, main.segments.length, main.segments.at(-1)?.from]
+  return main === undefined ? null : [main.state, stateWordOf(main, input.now), main.command, main.segments.length, main.segments.at(-1)?.from]
 }
 
 const ringPiece = (input: SvgInput, spec: GaugeSpec): PieceSpec => {
@@ -126,6 +126,10 @@ const EMPTY_SVG: BandSvg = { source: '', width: 0, height: 0 }
 export const TIMELINE_KEY = 'timeline'
 export const HIDDEN_KEY = 'timeline-more'
 export const groupRowsKey = (groupId: string): string => `timeline-rows-${groupId}`
+export const densityKey = (groupId: string): string => `density-${groupId}`
+export const groupCountsKey = (groupId: string): string => `group-counts-${groupId}`
+export const groupLabelKey = (groupId: string): string => `group-label-${groupId}`
+export const RULE_KEY = 'rule'
 
 const timelineInputOf = (input: SvgInput): TimelineInput => {
   const width = Math.max(MIN_TIMELINE_WIDTH, input.width - BORDER_PX)
@@ -141,6 +145,18 @@ const timelineInputOf = (input: SvgInput): TimelineInput => {
 }
 
 export const listedGroupsOf = (input: SvgInput): GroupPlan[] => planGroups(timelineInputOf(input), input.now, Number.POSITIVE_INFINITY).groups
+
+const rulePiece = (input: SvgInput): PieceSpec => {
+  const width = timelineInputOf(input).width
+
+  return {
+    key: RULE_KEY,
+    signature: JSON.stringify([width, input.scheme]),
+    interaction: input.scheme,
+    maxAgeMs: null,
+    build: () => wrap({ scheme: input.scheme, width, height: 1, ctx: newCtx(input.now), body: horizontalLine(0, 0, width) }),
+  }
+}
 
 const drawn = (input: SvgInput, width: number, draw: (ctx: Ctx) => TimelinePiece): BandSvg => {
   const ctx = newCtx(input.now)
@@ -212,6 +228,43 @@ const timelinePieces = (input: SvgInput): PieceSpec[] => {
 
       return { key: groupRowsKey(group.id), signature, interaction, maxAgeMs: REFRESH_IDLE_MS, build: () => fittedPiece(groupRowsKey(group.id)) }
     })
+  const densities = groups
+    .filter(group => group.isFolded)
+    .map(
+      (group): PieceSpec => ({
+        key: densityKey(group.id),
+        signature: JSON.stringify([...base, 'density', group.id, group.agents.map(agent => agent.id), detailsOfRows(input, group.agents)]),
+        interaction,
+        maxAgeMs: REFRESH_LIVE_MS,
+        build: () => drawn(input, densityWidthOf(timelineInput), ctx => densityMarkup(timelineInput, group, densityWidthOf(timelineInput), ctx.now)),
+      }),
+    )
+  const labels = groups.map((group): PieceSpec => {
+    const width = groupLabelWidthOf(timelineInput)
+    const { kind, name } = groupTitleOf(group)
+
+    return {
+      key: groupLabelKey(group.id),
+      signature: JSON.stringify([width, input.scheme, kind, name]),
+      interaction: input.scheme,
+      maxAgeMs: null,
+      build: () => drawn(input, width, () => groupLabelMarkup(kind, name, width)),
+    }
+  })
+  const counts = groups
+    .filter(group => group.isFolded && groupCountsWidthOf(timelineInput) > 0)
+    .map((group): PieceSpec => {
+      const width = groupCountsWidthOf(timelineInput)
+      const text = groupCountsText(liveStateCounts(input.rows, group.agents), group.counts.done + group.counts.failed)
+
+      return {
+        key: groupCountsKey(group.id),
+        signature: JSON.stringify([width, input.scheme, text]),
+        interaction: input.scheme,
+        maxAgeMs: null,
+        build: () => drawn(input, width, () => groupCountsMarkup(text, width)),
+      }
+    })
   const more: PieceSpec = {
     key: HIDDEN_KEY,
     signature: JSON.stringify([...base, rowsBefore]),
@@ -220,17 +273,17 @@ const timelinePieces = (input: SvgInput): PieceSpec[] => {
     build: () => fittedPiece(HIDDEN_KEY),
   }
 
-  return rowsBefore === 0 ? [head, ...rows] : [head, ...rows, more]
+  return rowsBefore === 0 ? [head, ...rows, ...labels, ...densities, ...counts] : [head, ...rows, ...labels, ...densities, ...counts, more]
 }
 
 export const piecesOf = (input: SvgInput): PieceSpec[] => {
-  const pieces = gaugeSpecs(input.gauges, input.now).map(spec => ringPiece(input, spec))
+  const pieces = gaugeSpecs(input.gauges, input.now).filter(hasRing).map(spec => ringPiece(input, spec))
 
   if (input.isFolded) {
     return tracedOf(input).length > 0 && tracesWidthOf(input) > 0 ? [...pieces, tracesPiece(input)] : pieces
   }
 
-  return [...pieces, ...timelinePieces(input)]
+  return [...pieces, rulePiece(input), ...timelinePieces(input)]
 }
 
 export const refreshAfterMs = (input: SvgInput): number | null => {
@@ -238,6 +291,7 @@ export const refreshAfterMs = (input: SvgInput): number | null => {
     nextLeaveMs(input.rows.values(), input.range, input.now, input.isFolded),
     liveCountOf(input) > 0 ? REFRESH_LIVE_MS : null,
     input.roster.rows.length > 0 && !input.isFolded ? REFRESH_IDLE_MS : null,
+    input.isFolded ? null : nextQuietChangeMs(input.rows.values(), input.now),
     cacheRefreshMs(input.gauges, input.now),
   ].filter((wait): wait is number => wait !== null)
 

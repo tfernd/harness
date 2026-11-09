@@ -7,7 +7,6 @@ import {
   FOLDED_RANGE,
   RANGES,
   STATE_ICON,
-  STATE_WORD,
   barText,
   countAgents,
   earliestStart,
@@ -19,6 +18,7 @@ import {
   MAIN_ID,
   MAIN_LABEL,
   MAIN_STATE_WORD,
+  stateWordOf,
   splitByWindow,
   tracedRows,
   layoutBand,
@@ -380,10 +380,10 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
         </Box>
         {lanes('lanes-main', [MAIN_ID], trackColumns, input.range, false)}
         {stateColumns > 0
-          ? textBlock({ key: 'states-main', columns: stateColumns, rowCount: 1, align: 'left' }, (_, rows) => {
+          ? textBlock({ key: 'states-main', columns: stateColumns, rowCount: 1, align: 'left' }, (frame, rows) => {
               const row = rows.get(MAIN_ID)
 
-              return [{ text: MAIN_STATE_WORD[row?.state ?? 'launched'], color: palette[row?.state ?? 'launched'] }]
+              return [{ text: row === undefined ? MAIN_STATE_WORD.launched : stateWordOf(row, frame.now), color: palette[row?.state ?? 'launched'] }]
             })
           : null}
       </Box>
@@ -439,11 +439,11 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
                   {stateColumns > 0
                     ? textBlock(
                         { key: `states-${group.id}`, columns: stateColumns, rowCount: Math.max(1, ids.length), align: 'left' },
-                        (_, rows) =>
+                        (frame, rows) =>
                           ids.map(id => {
                             const row = rows.get(id)
 
-                            return row === undefined ? { text: '', color: null } : { text: STATE_WORD[row.state], color: palette[row.state] }
+                            return row === undefined ? { text: '', color: null } : { text: stateWordOf(row, frame.now), color: palette[row.state] }
                           }),
                       )
                     : null}

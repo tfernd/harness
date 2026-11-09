@@ -15,6 +15,8 @@ export const DIRECT_LABEL = 'direct agents'
 
 export const MAIN_ID = 'main'
 export const MAIN_LABEL = 'main session'
+export const NEEDS_YOU_WORD = 'NEEDS YOU'
+export const OWNER_QUESTION_TOOL = 'AskUserQuestion'
 
 export const EMPTY_STORE: AgentStore = { rows: [], main: null, evictedDone: 0, evictedFailed: 0 }
 export const EMPTY_ROSTER: Roster = { rows: [], evictedDone: 0, evictedFailed: 0 }
@@ -264,9 +266,57 @@ export const MAIN_STATE_WORD: Record<AgentState, string> = {
   launched: 'IDLE',
   thinking: 'WORKING',
   tool: 'TOOL',
-  waiting: 'IDLE',
+  waiting: NEEDS_YOU_WORD,
   done: 'IDLE',
   failed: 'IDLE',
+}
+
+export const QUIET_AFTER_MS = 120_000
+const QUIET_STEP_MS = 60_000
+
+export const lastEventAt = (row: AgentRow): number => {
+  const last = row.segments.at(-1)
+
+  return last === undefined ? row.startedAt : (last.to ?? last.from)
+}
+
+export const quietMs = (row: AgentRow, now: number): number | null => {
+  const isAwaitingOwner = row.id === MAIN_ID && row.state === 'waiting'
+  const isMainIdle = row.id === MAIN_ID && row.state === 'launched'
+
+  if (!isLive(row.state) || isAwaitingOwner || isMainIdle) {
+    return null
+  }
+
+  const quiet = now - lastEventAt(row)
+
+  return quiet >= QUIET_AFTER_MS ? quiet : null
+}
+
+export const stateWordOf = (row: AgentRow, now: number): string => {
+  const quiet = quietMs(row, now)
+
+  if (quiet !== null) {
+    return `quiet ${formatSpan(quiet)}`
+  }
+
+  return row.id === MAIN_ID ? MAIN_STATE_WORD[row.state] : STATE_WORD[row.state]
+}
+
+export const nextQuietChangeMs = (rows: Iterable<AgentRow>, now: number): number | null => {
+  let soonest: number | null = null
+
+  for (const row of rows) {
+    const isTracked = isLive(row.state) && !(row.id === MAIN_ID && row.state === 'launched')
+    const quiet = now - lastEventAt(row)
+    const wait = quiet < QUIET_AFTER_MS ? QUIET_AFTER_MS - quiet : QUIET_STEP_MS - ((quiet - QUIET_AFTER_MS) % QUIET_STEP_MS)
+
+    if (isTracked && (soonest === null || wait < soonest)) {
+      soonest = wait
+    }
+  }
+
+  return soonest
 }
 
 export const moveMain = (
@@ -308,7 +358,8 @@ export const moveMain = (
 
 export const stateFromStatus = (status: AgentStatus, current: AgentState): AgentState => {
   if (status === 'failed' || status === 'killed') return 'failed'
-  if (status === 'completed' || status === 'idle') return current === 'failed' ? 'failed' : 'done'
+  if (status === 'completed') return current === 'failed' ? 'failed' : 'done'
+  if (status === 'idle') return current
   if (current === 'done' || current === 'failed') return current
   if (status === 'waiting') return 'waiting'
   if (status === 'pending') return current

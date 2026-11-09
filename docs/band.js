@@ -299,6 +299,68 @@
     return ranked.filter((agent) => shown.has(agent.id));
   };
 
+  const STRIP_BINS = 60;
+  const STRIP_HEIGHT = 16;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  const kindAt = (agent, at, now) => {
+    for (const span of agent.spans) {
+      const end = span.end ?? Math.min(now, span.plannedEnd);
+      if (span.start <= at && at < end) return span.kind;
+    }
+    return null;
+  };
+
+  const stepPath = (heights, bottoms) => {
+    const x = (bin) => bin;
+    let path = `M0 ${heights[0]}`;
+    for (let bin = 0; bin < heights.length; bin += 1) path += `H${x(bin + 1)}${bin + 1 < heights.length ? `V${heights[bin + 1]}` : ""}`;
+    path += `V${bottoms[bottoms.length - 1]}`;
+    for (let bin = bottoms.length - 1; bin >= 0; bin -= 1) path += `H${x(bin)}${bin > 0 ? `V${bottoms[bin - 1]}` : ""}`;
+    return `${path}Z`;
+  };
+
+  const drawStrip = (svg, agents, windowStart, rangeMs, now) => {
+    const live = agents.filter((agent) => agent.state === "live" || agent.endedAt > windowStart);
+    const series = Array.from({ length: STRIP_BINS }, (_, bin) => {
+      const at = windowStart + ((bin + 0.5) / STRIP_BINS) * rangeMs;
+      const counts = { tool: 0, thinking: 0 };
+      for (const agent of live) {
+        const kind = kindAt(agent, at, now);
+        if (kind === "tool" || kind === "thinking") counts[kind] += 1;
+      }
+      return counts;
+    });
+    const peak = Math.max(1, ...series.map((counts) => counts.tool + counts.thinking));
+    const base = STRIP_HEIGHT - 1;
+    const scale = (base - 1) / peak;
+    const floors = series.map(() => base);
+    const nodes = [];
+    for (const kind of ["tool", "thinking"]) {
+      const tops = series.map((counts, bin) => Number((floors[bin] - counts[kind] * scale).toFixed(2)));
+      if (series.some((counts) => counts[kind] > 0)) {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("class", `ab-strip-${kind}`);
+        path.setAttribute("d", stepPath(tops, floors));
+        nodes.push(path);
+      }
+      tops.forEach((top, bin) => {
+        floors[bin] = top;
+      });
+    }
+    const line = document.createElementNS(SVG_NS, "path");
+    line.setAttribute("class", "ab-strip-base");
+    line.setAttribute("d", `M0 ${base + 0.5}H${STRIP_BINS}`);
+    svg.replaceChildren(line, ...nodes);
+  };
+
+  const groupCountsText = (group) => {
+    const live = group.agents.filter((agent) => agent.state === "live");
+    const count = (kind) => live.filter((agent) => currentKind(agent) === kind).length;
+    const ended = group.agents.length - live.length;
+    return `${count("tool")} tool · ${count("thinking")} thinking · 0 waiting${ended > 0 ? ` · ${ended} ended` : ""}`;
+  };
+
   const groupSignature = (groups, collapsed) =>
     groups
       .map((group) => `${group.key}${collapsed.has(group.key) ? "c" : "o"}${group.agents.map((agent) => agent.id).join(",")}`)
@@ -350,10 +412,23 @@
         head.setAttribute("aria-expanded", String(!state.collapsed.has(group.key)));
         const line = create("span", "ab-group-row");
         const count = create("span", "ab-group-count");
-        line.append(create("span", "ab-chevron"), create("span", "ab-group-tag", group.tag), create("span", "", group.name), count);
-        line.firstChild.setAttribute("aria-hidden", "true");
+        const title = create("span", "ab-group-title");
+        title.append(create("span", "ab-chevron"), create("span", "ab-group-tag", group.tag), create("span", "ab-group-name", group.name.replace(/^workflow: /, "")));
+        title.firstChild.setAttribute("aria-hidden", "true");
+        line.append(title);
+        let strip = null;
+        if (state.collapsed.has(group.key)) {
+          strip = document.createElementNS(SVG_NS, "svg");
+          strip.setAttribute("class", "ab-strip");
+          strip.setAttribute("viewBox", `0 0 ${STRIP_BINS} ${STRIP_HEIGHT}`);
+          strip.setAttribute("preserveAspectRatio", "none");
+          strip.setAttribute("aria-hidden", "true");
+          line.classList.add("is-strip");
+          line.append(strip);
+        }
+        line.append(count);
         head.append(line);
-        state.groupHeads.set(group.key, count);
+        state.groupHeads.set(group.key, { count, strip });
         nodes.push(head);
         if (state.collapsed.has(group.key)) continue;
         for (const agent of group.agents) {
@@ -387,9 +462,14 @@
         setPill(row, row.agent);
       }
       for (const group of groups) {
-        const live = group.agents.filter((agent) => agent.state === "live").length;
-        const ended = group.agents.length - live;
-        state.groupHeads.get(group.key).textContent = `${live} live · ${ended} ended`;
+        const head = state.groupHeads.get(group.key);
+        if (head.strip) {
+          drawStrip(head.strip, group.agents, windowStart, rangeMs, model.now);
+          head.count.textContent = groupCountsText(group);
+        } else {
+          const live = group.agents.filter((agent) => agent.state === "live").length;
+          head.count.textContent = `${live} live · ${group.agents.length - live} ended`;
+        }
       }
       view.axisStart.textContent = `-${formatSpan(rangeMs)}`;
       view.axisMiddle.textContent = `-${formatSpan(rangeMs / 2)}`;

@@ -73,7 +73,7 @@ export const gaugeSpecs = (gauges: Gauges, now: number): GaugeSpec[] => {
       id: 'cache',
       name: 'cache',
       percent: gauges.cachePercent,
-      detail: clock?.detail ?? '',
+      detail: clock?.detail ?? `${Math.round(gauges.cachePercent)}% hit`,
       isDetailUrgent: clock?.isUrgent ?? false,
       tone: clock?.isUrgent === true ? 'bad' : gauges.cachePercent >= WARN_PERCENT ? 'ok' : 'warn',
       tip: `Prompt cache hit rate ${Math.round(gauges.cachePercent)}%${clock === null ? '' : `. ${clock.tip}`}`,
@@ -101,6 +101,8 @@ export const gaugeSpecs = (gauges: Gauges, now: number): GaugeSpec[] => {
   return specs
 }
 
+export const hasRing = (spec: GaugeSpec): boolean => spec.id !== 'cache'
+
 export const ring = (box: { cx: number; cy: number; radius?: number }, spec: GaugeSpec): string => {
   const radius = box.radius ?? RING_RADIUS
   const value = Math.max(0, Math.min(100, spec.percent))
@@ -127,7 +129,7 @@ export type StripBudget = { width: number; statusChars: number; countsChars: num
 
 export const stripWidth = (specs: readonly GaugeSpec[], budget: StripBudget, detailOf: (spec: GaugeSpec) => string): number => {
   const gauges = specs.reduce(
-    (sum, spec) => sum + RING_SIZE + STRIP_RING_GAP + Math.max(spec.name.length, detailOf(spec).length) * STRIP_CHAR_PX,
+    (sum, spec) => sum + (hasRing(spec) ? RING_SIZE + STRIP_RING_GAP : 0) + Math.max(spec.name.length, detailOf(spec).length) * STRIP_CHAR_PX,
     0,
   )
 
@@ -148,7 +150,7 @@ const FOLDED_COUNTS_CHARS = 20
 
 export const foldedTracesWidth = (width: number, specs: readonly GaugeSpec[]): number => {
   const gauges = specs.reduce(
-    (sum, spec) => sum + FOLDED_RING_SIZE + FOLDED_GAP / 2 + Math.max(spec.name.length, foldedDetail(spec).length) * TEXT_CHAR_PX,
+    (sum, spec) => sum + (hasRing(spec) ? FOLDED_RING_SIZE + FOLDED_GAP / 2 : 0) + Math.max(spec.name.length, foldedDetail(spec).length) * TEXT_CHAR_PX,
     0,
   )
   const items = specs.length + 3

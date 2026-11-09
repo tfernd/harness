@@ -49,6 +49,14 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
   not adding anything... can you just remove it ... this makes things shorter and better". The timeline row and its
   STATE column stay; the terminal view keeps its strip.
 - 2026-11-09: the owner asked for the main session row in the timeline: "the timeline show agents, but not the main sessions, fix that?"
+- 2026-11-09: the owner asked to spot stuck work and to know when he is needed: the main row says NEEDS YOU while a
+  question (`AskUserQuestion`, a `tool.call`) is open or `tool.check` answered `ask` to a person, and any live row with
+  no state or command change for 2 minutes says "quiet 2m" (minutes counting up) in its state cell until its next change.
+  NEEDS YOU from a permission ask clears when that tool call ends, not at the answer: no event marks the answer.
+- 2026-11-09: desktop polish: the state cell of a quiet row is a muted amber pill and NEEDS YOU a strong amber one; a
+  folded group header is a 24px chevron button, a label piece, a density strip exactly as wide as the track (its left
+  edge on the track's left edge, its right on the now line, half the row high, centred) and a counts piece in the state
+  column ("N tool · N think · N wait"); the range control is plain text, the active one bold and underlined.
 
 ## Not in this version
 

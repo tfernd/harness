@@ -64,15 +64,16 @@ export const horizontalLine = (y: number, from: number, to: number): string =>
 export const verticalLine = (x: number, from: number, to: number): string =>
   `<path class="ln" d="M${num(x) + 0.5} ${num(from)}V${num(to)}"/>`
 
-export const pill = (box: { x: number; y: number; width: number; height: number }, state: AgentState, content: string): string =>
-  rect({ ...box, radius: box.height / 2 }, `pb-${state}`) +
-  label(box.x + box.width / 2, box.y + box.height / 2 + PILL_FONT_BASELINE, `mid b x pf-${state}`, content, ' letter-spacing=".06em"')
+export const pill = (box: { x: number; y: number; width: number; height: number }, tone: string, content: string): string =>
+  rect({ ...box, radius: box.height / 2 }, `pb-${tone}`) +
+  label(box.x + box.width / 2, box.y + box.height / 2 + PILL_FONT_BASELINE, `mid b x pf-${tone}`, content, ' letter-spacing=".06em"')
 
 export const statePill = (
   box: { x: number; y: number; width: number; height: number },
   state: AgentState,
   word: string = STATE_WORD[state],
-): string => pill(box, state, word)
+  tone: string = state,
+): string => pill(box, tone, word)
 
 type Run = { state: AgentState; left: number; right: number; isOpen: boolean }
 
