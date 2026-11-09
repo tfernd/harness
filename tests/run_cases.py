@@ -113,6 +113,7 @@ class Case(NamedTuple):
     context_lacks: str = ""
     git: tuple[str, ...] = ()
     home: str = ""
+    is_silent: bool = False
 
 
 
@@ -2907,6 +2908,18 @@ SKILL_GATE_CASES = (
 )
 
 
+def hook_command(name: str, blocks: bool, text: str, /, **options: object) -> Case:
+    event = {"tool_name": "Bash", "tool_input": {"command": "git reset --hard HEAD~1"}}
+
+    return Case(name, ("hooks.json", "guard.py"), event, blocks, text, STRICT, is_silent=not blocks, **options)
+
+
+COMMAND_CASES = (
+    hook_command("hooks.json command: a hook script that exists runs and refuses as before", True, "history"),
+    hook_command("hooks.json command: a missing hook script lets the call through, silent", False, "", plugin_root="plug", files=(("../plug/keep", ""),)),
+)
+
+
 def resolve(root: Path, name: str, /) -> Path:
 
     return root / "data" / name[5:] if name.startswith("data/") else root / "project" / name
@@ -2966,11 +2979,22 @@ def check_files(case: Case, root: Path, /) -> str:
     return ""
 
 
+def get_hook_command(hooks: Path, name: str, /) -> str:
+
+    events = json.loads((hooks / "hooks.json").read_text())["hooks"]
+    commands = [hook["command"] for groups in events.values() for group in groups for hook in group["hooks"] if f'hooks/{name}"' in hook["command"]]
+    assert commands, name
+
+    return commands[0]
+
+
 def run_hook(hooks: Path, script: tuple[str, ...], event: dict, environment: dict[str, str], root: Path, /) -> subprocess.CompletedProcess[str]:
 
     paths = {key: str(root / event[key]) for key in ("transcript_path", "agent_transcript_path") if key in event}
 
     command = ["uv", "run", "--script", str(hooks / script[0]), *script[1:]]
+    if script[0] == "hooks.json":
+        command = ["sh", "-c", get_hook_command(hooks, script[1])]
     try:
         return subprocess.run(
             command,
@@ -3009,6 +3033,8 @@ def run_case(case: Case, hooks: Path, /) -> str:
         (root / "transcript.jsonl").write_text("".join(f"{json.dumps(line)}\n" for line in case.transcript).replace(ROOT, str(root)))
         environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root / case.home), "UV_CACHE_DIR": UV_CACHE, "HARNESS_CONFIG": str(root / "data" / "user.json")}
         environment.pop("CLAUDE_PROJECT_DIR", None)
+        if case.script[0] == "hooks.json":
+            environment["CLAUDE_PLUGIN_ROOT"] = str(hooks.parent)
         if case.plugin_root:
             environment["CLAUDE_PLUGIN_ROOT"] = str(root / case.plugin_root)
         environment["SHELL"] = case.shell
@@ -3030,6 +3056,8 @@ def run_case(case: Case, hooks: Path, /) -> str:
             return f"the hook crashed, exit {run.returncode}: {message.strip()[-300:]!r}"
         elif is_blocked(run) != case.blocks:
             return f"expected blocks={case.blocks}, got {is_blocked(run)}: {message.strip()[:200]!r}"
+        if case.is_silent and (run.returncode != 0 or run.stdout or run.stderr):
+            return f"expected exit 0 and no output, got {run.returncode}: {message.strip()[:200]!r}"
         text, lacks = case.text.replace(ROOT, str(root)), case.lacks.replace(ROOT, str(root))
         if text and text not in message:
             return f"the message lacks {text!r}: {message.strip()[:200]!r}"
@@ -3047,7 +3075,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of these hooks first, comma-separated")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES]
     cases = [case for case in every if arguments.only in case.name]
     first = set(arguments.first.split(","))
     cases.sort(key=lambda case: not first & set(case.script))

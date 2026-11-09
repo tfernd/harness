@@ -119,7 +119,7 @@ def get_cortex_matcher(names: list[str], /) -> str | None:
 
 
 def make_command(target: Target, event: str, hook_command: str, /) -> str:
-    tail = hook_command.replace("uv run --script ", "", 1).replace(
+    tail = hook_command.partition("uv run --script ")[2].replace(
         "${CLAUDE_PLUGIN_ROOT}", str(CHECKOUT)
     )
     return f'uv run --script "{SHIM}" --host {target} --event {event} {tail}'

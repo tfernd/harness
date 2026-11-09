@@ -28,6 +28,7 @@ DEFAULT_JOBS = max(1, (os.cpu_count() or 8) // 8)
 LOW_PRIORITY = 10
 TIMED_OUT = -1
 MUTANTS = (
+    ("hooks-json-missing-script-blocks", "hooks.json", '[ -f \\"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\\" ] || exit 0; ', ""),
     ("packages-refused", "guard.py", "    if not lines:\n        reason", "    if False:\n        reason"),
     ("packages-pass-silently", "guard.py", '"permissionDecision": "ask"', '"permissionDecision": "allow"'),
     ("packages-old-key-dropped", "guard.py", 'guard.get("ask_packages") or guard.get("deny_packages")', 'guard.get("ask_packages")'),
@@ -810,7 +811,8 @@ def get_rotted_names() -> list[str]:
     for name, script, old, new in MUTANTS:
         text = (HOOKS / script).read_text()
         try:
-            ast.parse(text.replace(old, new))
+            if script.endswith(".py"):
+                ast.parse(text.replace(old, new))
             parses = True
         except SyntaxError:
             parses = False
