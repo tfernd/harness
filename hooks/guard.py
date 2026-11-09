@@ -45,7 +45,7 @@ from shell import GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 DELETERS = frozenset({"rm", "rmdir", "unlink", "shred"})
 SCRATCH_DELETERS = frozenset({"rm", "rmdir"})
 READ_ONLY_COMMANDS = frozenset("cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [[".split())
-UV_VALUE_OPTIONS = frozenset({"--with", "--with-requirements", "--with-editable", "--project", "--directory", "--python", "-p", "--group", "--extra", "--env-file"})
+UV_VALUE_OPTIONS = frozenset({"--with", "--with-requirements", "--with-editable", "--project", "--directory", "--exclude-newer", "--python", "-p", "--group", "--extra", "--env-file"})
 UV_DENIED = frozenset({"add", "remove", "lock", "sync", "pip", "tool"})
 PUSH_DENIED = frozenset({"--force", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "--prune"})
 PUSH_DENIED_LETTERS = frozenset("fd")
@@ -290,10 +290,22 @@ def get_delay_flag(name: str, days: int, /) -> str:
     return f"--exclude-newer={days} days"
 
 
+def get_uv_run_options(command: Command, /) -> list[str]:
+
+    arguments = [word.text for word in command.arguments]
+    if os.path.basename(command.name) != "uv" or arguments[:1] != ["run"]:
+        return []
+    end = skip_options(command.arguments, 1, UV_VALUE_OPTIONS)
+
+    return arguments[1:end]
+
+
 def get_delay_lead(command: Command, /) -> list[str]:
 
     arguments = [word.text for word in command.arguments]
     name = os.path.basename(command.name)
+    if any(option.startswith("--with") for option in get_uv_run_options(command)):
+        return [command.name, "run"]
     if name in DELAYED_RUNNERS and arguments:
         return [command.name]
     if name == "uv" and arguments[:2] == ["tool", "run"] and arguments[2:]:
@@ -316,8 +328,8 @@ def get_delay_run(segment: Segment, command: Command, policy: Policy, /) -> Dela
     name = os.path.basename(command.name)
     flag = get_delay_flag(name if name != "uv" else "uvx", policy.tool_delay_days)
     option = flag.split("=")[0]
-    following = words[position + len(lead) : position + len(lead) + 1]
-    is_flagged = bool(following) and (following[0] == option or following[0].startswith(option + "="))
+    following = get_uv_run_options(command) if lead[1:] == ["run"] else words[position + len(lead) : position + len(lead) + 1]
+    is_flagged = any(text == option or text.startswith(option + "=") for text in following)
 
     return DelayRun(lead, words, flag, is_flagged)
 
