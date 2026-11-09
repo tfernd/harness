@@ -56,8 +56,9 @@ The lists the main session uses before a brief goes out, and when it accepts. Ea
   system Chrome), and says that embedded text may hold the page template's own markers (`{{`).
 - A page brief that adds a colour state asks for its contrast in both themes and on hover before the first full check,
   and says the full check runs once, last, and is never stopped to hand off sooner.
-- A mock brief at a fixed width or column count gives the width budget (characters per line, px per group), so the first
-  render fits instead of overflowing.
+- A mock brief at a fixed width or column count gives the width budget (characters per line, px per group) and asks each
+  text end to be checked against its neighbour's edge before the first render, so the first render fits.
+- A mock brief says which controls are drawn shapes and which are real buttons, and whether a trace shows its states.
 - A new name for a public repo (a folder, a plugin, a key) is run through `tests/check_leaks.py` before the brief goes
   out: a private word in it fails every file the agent writes.
 - A layout judge is checked against the reference screenshot before the brief goes out: it must not assert a row or

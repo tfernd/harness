@@ -29,7 +29,9 @@ Designer-side rules for a variant: `harness:design`. Games: `references/games.md
    summary.
 6. **Build logic first,** with a headless check (for a game: the rules, solvability, the generator). At most four
    workers, one unit each, and one checked milestone before any fan-out.
-7. **Build the view** from the chosen mock, reusing its code. Check it by screenshot at phone and desktop width
+7. **Build the view** from the chosen mock, reusing its code, on the surface the owner will look at (a desktop app, a
+   terminal, a browser): ask which before the brief, and probe that surface's richest element first, so the build does
+   not fall back to a poorer one. Check it by screenshot at phone and desktop width
    against the mock, and by opening the page; tests alone do not show a look
    (https://code.claude.com/docs/en/best-practices: "A browser screenshot next to the mockup").
 8. **Polish and optimize last.** One auditor per built unit (`harness:audit`).
