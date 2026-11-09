@@ -17,7 +17,7 @@ Designer-side rules for a variant: `harness:design`. Games: `references/games.md
    - placeholder data, so the look is judged and not the content;
    - static HTML that opens from `file://`;
    - a width budget at the target width (characters per line, px per column), so the first render fits;
-   - the first tool call is a Write of the mock file.
+   - the shared brief in one file the agent reads, then its skills, then a Write of the whole mock before any render.
    After 2-3 minutes an agent with no Write is stopped and relaunched smaller. When the shape is new, try one agent
    before fanning out.
 3. **Label.** Variants carry a letter or number, so the owner picks in one message. Send screenshots and links.
