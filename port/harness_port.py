@@ -41,7 +41,9 @@ KIRO_TAGS = {
 CORTEX_TOOLS = {
     "Read": "read", "Write": "write", "Edit": "edit", "Grep": "grep", "Glob": "glob",
     "Bash": "bash", "WebFetch": "web_fetch", "WebSearch": "web_search",
+    "Agent": "task", "Task": "task",
 }
+CORTEX_EXTRA_IDS = {"Edit": ["multi_edit"]}
 KIRO_MATCHER_IDS = {
     "Bash": ["execute_bash"],
     "Read": ["read_file"],
@@ -113,8 +115,14 @@ def get_kiro_matcher(names: list[str], /) -> str | None:
 
 
 def get_cortex_matcher(names: list[str], /) -> str | None:
-    ids = [CORTEX_TOOLS[name] for name in names if name in CORTEX_TOOLS]
-    unique = list(dict.fromkeys(ids))
+    ids = [
+        tool_id
+        for name in names
+        if name in CORTEX_TOOLS
+        for tool_id in [CORTEX_TOOLS[name], *CORTEX_EXTRA_IDS.get(name, [])]
+    ]
+    spellings = [spelling for tool_id in ids for spelling in (tool_id, tool_id.capitalize())]
+    unique = list(dict.fromkeys(spellings))
     return "|".join(unique) if unique else None
 
 
@@ -193,7 +201,7 @@ def plan_agent(
         plan.not_ported.append(
             f"agent {name}: tools {', '.join(dropped)} (no Cortex id)"
         )
-    ids = [CORTEX_TOOLS[tool] for tool in tools if tool in CORTEX_TOOLS]
+    ids = list(dict.fromkeys(CORTEX_TOOLS[tool] for tool in tools if tool in CORTEX_TOOLS))
     tool_lines = "".join(f"  - {tool_id}\n" for tool_id in ids)
     header = f"---\nname: {name}\ndescription: {fields['description']}\ntools:\n{tool_lines}"
     if model:

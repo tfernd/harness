@@ -324,8 +324,12 @@ def check_cortex(base: Path) -> None:
     run_port("cortex", dest)
     check((dest / "hooks.json").read_text() == first, "rerun changed or duplicated hooks")
     check("SubagentStart" not in merged["hooks"], "cortex SubagentStart ported")
+    check_cortex_ids(dest, merged)
     check(
-        any(g.get("matcher") == "bash|write|edit" for g in merged["hooks"]["PreToolUse"]),
+        any(
+            g.get("matcher") == "bash|Bash|write|Write|edit|Edit|multi_edit|Multi_edit"
+            for g in merged["hooks"]["PreToolUse"]
+        ),
         "cortex guard matcher",
     )
     run_port("cortex", dest, "--uninstall")
@@ -335,6 +339,62 @@ def check_cortex(base: Path) -> None:
     )
     left = sorted(str(path.relative_to(dest)) for path in dest.rglob("*") if path.is_file())
     check(left == ["hooks.json"], f"cortex uninstall left {left}")
+
+
+def check_cortex_ids(dest: Path, merged: dict) -> None:
+    groups = merged["hooks"]["PreToolUse"]
+    task_groups = [g for g in groups if "task" in g.get("matcher", "").split("|")]
+    commands = " ".join(h["command"] for g in task_groups for h in g["hooks"])
+    check("brief_lint.py" in commands, "cortex PreToolUse has no task group running brief_lint")
+    delegating = [
+        g
+        for g in groups
+        if any("delegate.py" in h["command"] for h in g["hooks"])
+        and "multi_edit" in g["matcher"].split("|")
+    ]
+    check(bool(delegating), "cortex delegate.py group does not match multi_edit")
+    turn_groups = [
+        g
+        for g in merged["hooks"]["PostToolUse"]
+        if any("turn.py" in h["command"] for h in g["hooks"])
+    ]
+    check(
+        any("task" in g["matcher"].split("|") for g in turn_groups),
+        "cortex turn.py group does not match task",
+    )
+    for group in groups:
+        if FOREIGN_COMMAND in group["hooks"][0]["command"]:
+            continue
+        names = group.get("matcher", "").split("|")
+        check(len(names) == len(set(names)), f"cortex matcher repeats an id: {names}")
+        if "bash" in names:
+            check("Bash" in names, f"cortex matcher lacks Bash: {names}")
+    check_cortex_agent_task(dest.parent)
+
+
+def load_port_module() -> object:
+    script = PORT_TOOL.resolve().parent.parent / "port" / "harness_port.py"
+    spec = importlib.util.spec_from_file_location("harness_port_under_check", script)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_cortex_agent_task(base: Path) -> None:
+    port = load_port_module()
+    agent_file = base / "spawner.md"
+    agent_file.write_text(
+        "---\nname: spawner\ndescription: d\ntools: Read, Agent, Edit\n---\nbody\n"
+    )
+    plan = port.Plan()
+    port.plan_agent(plan, base / "out", "cortex", agent_file, {})
+    written = plan.files[base / "out" / "agents" / "harness-spawner.md"]
+    check(
+        get_cortex_tools(written) == ["read", "task", "edit"],
+        f"agent with Agent lacks task: {get_cortex_tools(written)}",
+    )
 
 
 def run_shim(
@@ -464,6 +524,21 @@ def load_shim() -> object:
     return module
 
 
+def check_shim_cortex_ids() -> None:
+    shim = load_shim()
+    spawn_input = {"description": "d", "prompt": "Goal: keep me", "subagent_type": "scout"}
+    spawn = shim.map_event({"tool_name": "task", "tool_input": spawn_input}, "cortex", "PreToolUse")
+    check(spawn["tool_name"] == "Agent", f"cortex task became {spawn['tool_name']}")
+    check(spawn["tool_input"] == spawn_input, f"cortex task input changed: {spawn['tool_input']}")
+    edit = shim.map_event(
+        {"tool_name": "multi_edit", "tool_input": {"file_path": "a.py", "edits": []}},
+        "cortex",
+        "PreToolUse",
+    )
+    check(edit["tool_name"] == "Edit", f"cortex multi_edit became {edit['tool_name']}")
+    check(edit["tool_input"]["file_path"] == "a.py", "cortex multi_edit lost file_path")
+
+
 def check_shim(base: Path) -> None:
     rm_input = {"command": "rm -rf build"}
     kiro_block = run_shim(
@@ -528,6 +603,7 @@ def check_shim(base: Path) -> None:
     )
     check(not start.stdout.lstrip().startswith("{"), "kiro SessionStart printed JSON")
 
+    check_shim_cortex_ids()
     cortex_block = run_shim("cortex", "PreToolUse", {"tool_name": "bash", "tool_input": rm_input}, base)
     blocked = cortex_block.returncode == 2 or '"block"' in cortex_block.stdout
     check(

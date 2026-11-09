@@ -32,6 +32,8 @@ CORTEX_TOOLS = {
     "read": "Read",
     "write": "Write",
     "edit": "Edit",
+    "multi_edit": "Edit",
+    "task": "Agent",
     "grep": "Grep",
     "glob": "Glob",
     "web_fetch": "WebFetch",
@@ -62,7 +64,7 @@ def map_event(event: dict, host: str, event_name: str, /) -> dict:
 
     tool = event.get("tool_name")
     if isinstance(tool, str):
-        mapped["tool_name"] = tools.get(tool, tool)
+        mapped["tool_name"] = tools.get(tool, tools.get(tool.lower(), tool))
     tool_input = event.get("tool_input")
     if isinstance(tool_input, dict):
         fixed = dict(tool_input)
