@@ -177,7 +177,7 @@ Add `--uninstall` to remove it, then delete the clone it names (`~/.local/share/
   only the `harness-*` entries). Each command is wrapped so that only a refusal blocks and any crash or timeout lets the
   call run, and it uses the absolute `uv` found at install time. The crew has no `SubagentStart` or `SubagentStop`
   event; a guard "ask" and a command rewrite become a block. The entry shape is the one the crew dashboard writes; the
-  crew's agent specs (`~/.kiro/agents/kirocrew*.json`) also carry their own `hooks` field, which the port does not touch.
+  crew's agent specs (under `~/.kiro/agents`) also carry their own `hooks` field, which the port does not touch.
   `sh port/kiro-crew-probe.sh` checks that your crew fires an entry.
 - Cortex loses: `SubagentStart`, agent models, tool ids it lacks, and
   the report gate blocks nothing (advisory). An "ask" becomes a block.
