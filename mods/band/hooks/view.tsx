@@ -20,6 +20,7 @@ import {
   MAIN_LABEL,
   MAIN_STATE_WORD,
   splitByWindow,
+  tracedRows,
   layoutBand,
   partWidth,
   windowFor,
@@ -113,7 +114,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
   const palette: Palette = PALETTES[input.scheme]
   const startFrame = frameAt(input.now)
   const counts = countAgents(input.roster.rows, { done: input.roster.evictedDone, failed: input.roster.evictedFailed })
-  const liveRoster = input.roster.rows.filter(row => row.phase === 'live')
+  const liveRoster = tracedRows(input.roster.rows, input.rows, input.now)
   const innerColumns = Math.max(1, input.columns - BORDER_COLUMNS)
   const sessionStart = input.gauges.sessionStartedAt ?? input.now
 

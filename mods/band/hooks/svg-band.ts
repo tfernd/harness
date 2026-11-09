@@ -1,7 +1,7 @@
 import type { AgentRow, Gauges, Range, Roster, RosterRow, ThemeSetting } from '../types'
 
 import { cacheRefreshMs } from './gauges'
-import { MAIN_ID, nextLeaveMs } from './model'
+import { MAIN_ID, nextLeaveMs, tracedRows } from './model'
 import type { Ctx } from './svg-parts'
 import { FOLDED_RING_RADIUS, FOLDED_RING_SIZE, RING_SIZE, TRACES_MORE_WIDTH, foldedTracesWidth, type GaugeSpec, type StripInput, gaugeSpecs, ring, traceLanes, tracesHeight } from './svg-strip'
 import { styleFor } from './svg-theme'
@@ -69,6 +69,8 @@ const stripInputOf = (input: SvgInput): StripInput => ({
 
 export const liveCountOf = (input: SvgInput): number => input.roster.rows.filter(row => row.phase === 'live').length
 
+export const tracedOf = (input: SvgInput): RosterRow[] => tracedRows(input.roster.rows, input.rows, input.now)
+
 const detailsOfRows = (input: SvgInput, rows: readonly RosterRow[]) =>
   rows.map(row => {
     const detail = input.rows.get(row.id)
@@ -106,12 +108,12 @@ const tracesWidthOf = (input: SvgInput): number => foldedTracesWidth(input.width
 
 const tracesPiece = (input: SvgInput): PieceSpec => ({
   key: 'traces',
-  signature: JSON.stringify([input.scheme, input.width, detailsOfRows(input, input.roster.rows.filter(row => row.phase === 'live'))]),
+  signature: JSON.stringify([input.scheme, input.width, detailsOfRows(input, tracedOf(input))]),
   interaction: input.scheme,
   maxAgeMs: REFRESH_IDLE_MS,
   build: () => {
     const ctx = newCtx(input.now)
-    const height = tracesHeight(liveCountOf(input))
+    const height = tracesHeight(tracedOf(input).length)
     const width = tracesWidthOf(input)
     const body = traceLanes(ctx, stripInputOf(input), { x: 0, y: 0, width: width - TRACES_MORE_WIDTH })
 
@@ -225,7 +227,7 @@ export const piecesOf = (input: SvgInput): PieceSpec[] => {
   const pieces = gaugeSpecs(input.gauges, input.now).map(spec => ringPiece(input, spec))
 
   if (input.isFolded) {
-    return liveCountOf(input) > 0 && tracesWidthOf(input) > 0 ? [...pieces, tracesPiece(input)] : pieces
+    return tracedOf(input).length > 0 && tracesWidthOf(input) > 0 ? [...pieces, tracesPiece(input)] : pieces
   }
 
   return [...pieces, ...timelinePieces(input)]
@@ -233,7 +235,7 @@ export const piecesOf = (input: SvgInput): PieceSpec[] => {
 
 export const refreshAfterMs = (input: SvgInput): number | null => {
   const waits = [
-    input.isFolded ? null : nextLeaveMs(input.rows.values(), input.range, input.now),
+    nextLeaveMs(input.rows.values(), input.range, input.now, input.isFolded),
     liveCountOf(input) > 0 ? REFRESH_LIVE_MS : null,
     input.roster.rows.length > 0 && !input.isFolded ? REFRESH_IDLE_MS : null,
     cacheRefreshMs(input.gauges, input.now),

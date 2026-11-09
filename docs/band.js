@@ -15,6 +15,7 @@
   const MAX_LIVE = 5;
   const FAIL_CHANCE = 0.15;
   const KEEP_ENDED_MS = 2 * HOUR;
+  const LINGER_MS = 5 * SECOND;
   const TOOL_LABELS = [
     "uv run pytest -q",
     "make check",
@@ -128,7 +129,7 @@
   const pruneAgents = (model) => {
     const keep = [];
     for (const agent of model.agents) {
-      const isOld = agent.state !== "live" && model.now - agent.endedAt > KEEP_ENDED_MS;
+      const isOld = agent.state !== "live" && model.now - agent.endedAt > KEEP_ENDED_MS + LINGER_MS;
       if (!isOld) keep.push(agent);
       else if (agent.state === "finished") model.prunedDone += 1;
       else model.prunedFailed += 1;
@@ -289,7 +290,7 @@
   };
 
   const chooseVisible = (model, windowStart) => {
-    const candidates = model.agents.filter((agent) => agent.state === "live" || agent.endedAt >= windowStart);
+    const candidates = model.agents.filter((agent) => agent.state === "live" || agent.endedAt >= windowStart - LINGER_MS);
     const ranked = [...candidates].sort((left, right) => {
       if ((left.state === "live") !== (right.state === "live")) return left.state === "live" ? -1 : 1;
       return left.state === "live" ? left.spawnedAt - right.spawnedAt : right.endedAt - left.endedAt;

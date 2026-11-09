@@ -475,6 +475,25 @@ test('an agent that ended 2 min ago is hidden in range 1m, shown in 5m, and coun
   expect(at('5m')).not.toContain('earlier')
 })
 
+const SECONDS_PER_MINUTE = 60
+
+test('a row that left the 1m window 4.9 s ago is still drawn, one that left 5.1 s ago is not', () => {
+  const at = (secondsAgo: number) =>
+    sourceOfPiece({ ...SVG_INPUT, ...endedAgo(secondsAgo / SECONDS_PER_MINUTE) } as never, 'timeline-rows-direct')
+
+  expect(at(60 + 4.9)).toContain('old-1')
+  expect(at(60 + 5.1)).not.toContain('old-1')
+})
+
+test('the folded band draws an agent trace 4.9 s after it ends and none at 5.1 s, and redraws when the linger runs out', () => {
+  const folded = (secondsAgo: number) => ({ ...SVG_INPUT, ...endedAgo(secondsAgo / SECONDS_PER_MINUTE), isFolded: true }) as never
+  const hasTraces = (secondsAgo: number) => piecesOf(folded(secondsAgo)).some(spec => spec.key === 'traces')
+
+  expect(hasTraces(4.9)).toBe(true)
+  expect(hasTraces(5.1)).toBe(false)
+  expect(refreshAfterMs(folded(4.9)) ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(100)
+})
+
 test('leaving the window rebuilds the timeline once and a quiet clock tick rebuilds nothing', () => {
   const input = { ...SVG_INPUT, ...endedAgo(0.5) } as never
   const first = chooseBand(new Map(), input)

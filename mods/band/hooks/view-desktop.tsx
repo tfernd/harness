@@ -2,7 +2,7 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { AgentState } from '../types'
 
-import { DIRECT_GROUP, RANGES, countAgents, formatClock, formatShort } from './model'
+import { DIRECT_GROUP, RANGES, countAgents, formatClock, formatShort, tracedRows } from './model'
 import { HIDDEN_KEY, TIMELINE_KEY, groupRowsKey, listedGroupsOf } from './svg-band'
 import type { BandSvg, SvgInput } from './svg-band'
 import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
@@ -55,7 +55,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const { Box, Text, Button, Svg } = view.ui
   const { input, actions } = view
   const { isFolded } = input
-  const live = input.roster.rows.filter(row => row.phase === 'live')
+  const live = tracedRows(input.roster.rows, input.rows, input.now)
   const counts = countAgents(input.roster.rows, { done: input.roster.evictedDone, failed: input.roster.evictedFailed })
   const status = statusOf(input)
   const specs = gaugeSpecs(input.gauges, input.now)

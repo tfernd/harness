@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import { MAX_AGENTS, MAX_SEGMENTS, addAgent, moveMain, countAgents, orderAgents, splitByWindow, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
+import { LINGER_MS, MAX_AGENTS, MAX_SEGMENTS, addAgent, nextLeaveMs, tracedRows, moveMain, countAgents, orderAgents, splitByWindow, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
 import { paintTextRows } from '../hooks/paint'
 import { CLOCK_COLUMNS } from '../hooks/view'
 
@@ -41,8 +41,8 @@ test('eviction drops ended agents first, never a live one, and the total keeps c
   }
 
   for (let index = 0; index < MAX_AGENTS + 2; index += 1) {
-    store = addAgent(store, agentNamed(`end${index}`, 1))
-    store = moveAgent(store, { id: `end${index}`, state: index % 2 === 0 ? 'done' : 'failed', command: null, now: 2 })
+    store = addAgent(store, agentNamed(`end${index}`, index * LINGER_MS))
+    store = moveAgent(store, { id: `end${index}`, state: index % 2 === 0 ? 'done' : 'failed', command: null, now: index * LINGER_MS + 1 })
   }
 
   const counts = countAgents(rosterOf(store).rows, { done: store.evictedDone, failed: store.evictedFailed })
@@ -115,10 +115,71 @@ test('inside a group live agents come first by start, then ended ones by latest 
   }
 
   store = moveAgent(store, { id: 'a', state: 'done', command: null, now: 100 })
-  store = moveAgent(store, { id: 'c', state: 'failed', command: null, now: 200 })
+  store = moveAgent(store, { id: 'c', state: 'failed', command: null, now: LINGER_MS + 200 })
   const rows = new Map(store.rows.map(row => [row.id, row]))
   const roster = rosterOf(store).rows
 
   expect(orderAgents(roster, rows).map(agent => agent.id)).toEqual(['b', 'd', 'c', 'a'])
-  expect(splitByWindow(roster, rows, 150).shown.map(agent => agent.id)).toEqual(['b', 'd', 'c'])
+  expect(splitByWindow(roster, rows, LINGER_MS + 150).shown.map(agent => agent.id)).toEqual(['b', 'd', 'c'])
+})
+
+const ENDED_AT = 1000
+const JUST_INSIDE_LINGER_MS = 4900
+const JUST_PAST_LINGER_MS = 5100
+
+const fullStoreWithOneEnded = (): AgentStore => {
+  let store: AgentStore = addAgent(EMPTY_STORE, agentNamed('old', 0))
+  store = moveAgent(store, { id: 'old', state: 'done', command: null, now: ENDED_AT })
+
+  for (let index = 0; index < MAX_AGENTS - 1; index += 1) {
+    store = addAgent(store, agentNamed(`live${index}`, 0))
+  }
+
+  return store
+}
+
+test('an ended agent past the row cap stays 4.9 s and is evicted at 5.1 s, with the counts the same', () => {
+  const full = fullStoreWithOneEnded()
+  const early = addAgent(full, agentNamed('late', ENDED_AT + JUST_INSIDE_LINGER_MS))
+  const late = addAgent(full, agentNamed('late', ENDED_AT + JUST_PAST_LINGER_MS))
+  const countsOf = (store: AgentStore) => countAgents(rosterOf(store).rows, { done: store.evictedDone, failed: store.evictedFailed })
+
+  expect(early.rows.some(row => row.id === 'old')).toBe(true)
+  expect(early.rows.length).toBe(MAX_AGENTS + 1)
+  expect(late.rows.some(row => row.id === 'old')).toBe(false)
+  expect(late.rows.length).toBe(MAX_AGENTS)
+  expect(late.evictedDone).toBe(1)
+  expect(countsOf(early)).toEqual(countsOf(late))
+})
+
+test('a row 4.9 s past the window edge is still shown and one 5.1 s past is not, the earlier count follows', () => {
+  const windowStart = 100_000
+  const rowsAt = (endedAt: number) => {
+    const store = moveAgent(addAgent(EMPTY_STORE, agentNamed('a', 0)), { id: 'a', state: 'done', command: null, now: endedAt })
+
+    return { store, rows: new Map(store.rows.map(row => [row.id, row])) }
+  }
+  const inside = rowsAt(windowStart - JUST_INSIDE_LINGER_MS)
+  const past = rowsAt(windowStart - JUST_PAST_LINGER_MS)
+  const insideSplit = splitByWindow(rosterOf(inside.store).rows, inside.rows, windowStart)
+  const pastSplit = splitByWindow(rosterOf(past.store).rows, past.rows, windowStart)
+
+  expect(insideSplit.shown.map(row => row.id)).toEqual(['a'])
+  expect(insideSplit.earlier).toBe(0)
+  expect(pastSplit.shown).toEqual([])
+  expect(pastSplit.earlier).toBe(1)
+})
+
+test('the folded traces keep an agent 4.9 s after it ends and drop it at 5.1 s, live ones always, and the wait is exact', () => {
+  const live = addAgent(EMPTY_STORE, agentNamed('live', 0))
+  const both = moveAgent(addAgent(live, agentNamed('gone', 0)), { id: 'gone', state: 'failed', command: null, now: ENDED_AT })
+  const rows = new Map(both.rows.map(row => [row.id, row]))
+  const roster = rosterOf(both).rows
+  const idsAt = (now: number) => tracedRows(roster, rows, now).map(row => row.id)
+
+  expect(idsAt(ENDED_AT + JUST_INSIDE_LINGER_MS)).toEqual(['live', 'gone'])
+  expect(idsAt(ENDED_AT + JUST_PAST_LINGER_MS)).toEqual(['live'])
+  expect(nextLeaveMs(rows.values(), '1m', ENDED_AT + JUST_INSIDE_LINGER_MS, true)).toBe(100)
+  expect(nextLeaveMs(rows.values(), 'session', ENDED_AT + JUST_PAST_LINGER_MS, true)).toBeNull()
+  expect(countAgents(roster).failed).toBe(1)
 })

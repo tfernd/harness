@@ -432,7 +432,7 @@ export const register: Register = on => {
       nextPainters,
     )
 
-    const leaveWait = folded ? null : nextLeaveMs(rowIndex.values(), rangeValue, now)
+    const leaveWait = nextLeaveMs(rowIndex.values(), rangeValue, now, folded)
     runtime.refreshAt = leaveWait === null ? null : now + leaveWait
     runtime.painters = nextPainters
     runtime.requestId = e.requestId

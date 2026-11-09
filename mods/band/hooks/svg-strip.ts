@@ -1,7 +1,7 @@
 import type { AgentRow, Gauges, Roster } from '../types'
 
 import { cacheClockOf } from './gauges'
-import { FOLDED_RANGE, earliestStart, formatReset, formatTokens, windowFor } from './model'
+import { FOLDED_RANGE, earliestStart, formatReset, formatTokens, tracedRows, windowFor } from './model'
 import { type Ctx, driftGroup, label, laneMarkup, num } from './svg-parts'
 
 export type StripInput = {
@@ -161,7 +161,7 @@ export const foldedTracesWidth = (width: number, specs: readonly GaugeSpec[]): n
 export const tracesHeight = (laneCount: number): number => Math.max(1, Math.min(laneCount, MAX_TRACE_LANES)) * LANE_STEP
 
 export const traceLanes = (ctx: Ctx, input: StripInput, box: { x: number; y: number; width: number }): string => {
-  const live = input.roster.rows.filter(row => row.phase === 'live')
+  const live = tracedRows(input.roster.rows, input.rows, ctx.now)
   const shown = live.slice(0, MAX_TRACE_LANES)
   const window = windowFor(FOLDED_RANGE, ctx.now, earliestStart([...input.rows.values()], ctx.now))
   const track = { x: box.x, width: box.width, window }

@@ -6,6 +6,7 @@ export const RANGES: readonly Range[] = ['1m', '5m', '15m', '1h', 'session']
 export const FOLDED_RANGE: Range = '1m'
 export const MAX_AGENTS = 200
 export const MAX_SEGMENTS = 200
+export const LINGER_MS = 5000
 
 const RANGE_MS = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000 } as const
 
@@ -53,8 +54,10 @@ export const windowFor = (range: Range, now: number, earliestStart: number): Win
 export const earliestStart = (agents: readonly AgentRow[], fallback: number): number =>
   agents.reduce((earliest, agent) => (agent.id === MAIN_ID ? earliest : Math.min(earliest, agent.startedAt)), fallback)
 
+export const isLingering = (endedAt: number, boundary: number): boolean => endedAt > boundary - LINGER_MS
+
 export const isInWindow = (agent: { phase: Phase }, row: AgentRow | undefined, windowStart: number): boolean =>
-  agent.phase === 'live' || row === undefined || row.endedAt === null || row.endedAt > windowStart
+  agent.phase === 'live' || row === undefined || row.endedAt === null || isLingering(row.endedAt, windowStart)
 
 const startedOf = (row: AgentRow | undefined): number => row?.startedAt ?? 0
 
@@ -73,6 +76,20 @@ export const orderAgents = <Member extends { id: string; phase: Phase }>(
   return [...live, ...ended]
 }
 
+export const tracedRows = <Member extends { id: string; phase: Phase }>(
+  members: readonly Member[],
+  rows: ReadonlyMap<string, AgentRow>,
+  now: number,
+): Member[] =>
+  orderAgents(
+    members.filter(member => {
+      const endedAt = rows.get(member.id)?.endedAt
+
+      return member.phase === 'live' || (endedAt !== undefined && endedAt !== null && isLingering(endedAt, now))
+    }),
+    rows,
+  )
+
 export type WindowSplit<Member extends { id: string; phase: Phase }> = { shown: Member[]; earlier: number }
 
 export const splitByWindow = <Member extends { id: string; phase: Phase }>(
@@ -85,16 +102,26 @@ export const splitByWindow = <Member extends { id: string; phase: Phase }>(
   return { shown, earlier: agents.length - shown.length }
 }
 
-export const nextLeaveMs = (rows: Iterable<AgentRow>, range: Range, now: number): number | null => {
-  if (range === 'session') {
-    return null
+const leaveTimesOf = (endedAt: number, range: Range, isFolded: boolean): number[] => {
+  if (isFolded) {
+    return [endedAt + LINGER_MS]
   }
 
+  if (range === 'session') {
+    return []
+  }
+
+  const leavesAt = endedAt + RANGE_MS[range]
+
+  return [leavesAt, leavesAt + LINGER_MS]
+}
+
+export const nextLeaveMs = (rows: Iterable<AgentRow>, range: Range, now: number, isFolded = false): number | null => {
   let soonest: number | null = null
 
   for (const row of rows) {
-    if (row.endedAt !== null) {
-      const wait = row.endedAt + RANGE_MS[range] - now
+    for (const at of row.endedAt === null ? [] : leaveTimesOf(row.endedAt, range, isFolded)) {
+      const wait = at - now
 
       if (wait > 0 && (soonest === null || wait < soonest)) {
         soonest = wait
@@ -123,12 +150,12 @@ export const newAgent = (input: {
   segments: [{ state: 'launched', from: input.now, to: null }],
 })
 
-const evictEnded = (store: AgentStore): AgentStore => {
+const evictEnded = (store: AgentStore, now: number): AgentStore => {
   let { rows, evictedDone, evictedFailed } = store
   const { main } = store
 
   while (rows.length > MAX_AGENTS) {
-    const index = rows.findIndex(row => !isLive(row.state))
+    const index = rows.findIndex(row => !isLive(row.state) && !(row.endedAt !== null && isLingering(row.endedAt, now)))
 
     if (index === -1) {
       break
@@ -158,7 +185,7 @@ export const addAgent = (store: AgentStore, row: AgentRow): AgentStore => {
     }
   }
 
-  return evictEnded({ ...store, rows: [...store.rows, row] })
+  return evictEnded({ ...store, rows: [...store.rows, row] }, row.startedAt)
 }
 
 export const sessionTotal = (store: AgentStore): number => store.rows.length + store.evictedDone + store.evictedFailed

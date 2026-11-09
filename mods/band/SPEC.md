@@ -21,6 +21,8 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
 1. **Band row:** status (working, waiting, idle, with time this turn); context ring (percent, used / window); cache;
    5-hour limit and week limit (percent, resets in); agent counts (live, done, failed, this session); a fold toggle.
 2. **Folded:** the band row plus the compact live traces: one thin lane per live agent over the last minute, now at the right.
+   Nothing leaves the band the instant it ends: a trace, a row past the time window and a row the store would evict stay
+   `LINGER_MS` (5 s) in their ended look, then go; counts never change by it.
 3. **Unfolded (the start state):** the band row, then the live strip (one card per live agent: name, state, elapsed,
    current command or "thinking..."; three cards and "+N"), then the timeline: range 1m 5m 15m 1h session, agents
    grouped by workflow and direct, one row per agent with its bar (thinking, tool, waiting, done, failed) and a state
