@@ -13,7 +13,9 @@
 
 .ab-about {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
+  min-inline-size: 0;
 }
 
 .ab-about-title {
@@ -32,6 +34,8 @@
   margin: var(--space-2) 0 0;
   padding: var(--space-3);
   overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
