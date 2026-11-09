@@ -290,7 +290,7 @@ EOF
 <span class="tok-command">ruff</span> check src/app.py tests/test_app.py <span class="tok-operator">&amp;&amp;</span>
 <span class="tok-command">python3</span> <span class="tok-flag">-m</span> py_compile src/app.py <span class="tok-operator">&amp;&amp;</span>
 <span class="tok-command">uv</span> run pytest <span class="tok-flag">-q</span> tests/test_app.py 2<span class="tok-operator">&gt;</span>&amp;1 <span class="tok-operator">|</span> <span class="tok-command">tail</span> <span class="tok-flag">-15</span> <span class="tok-operator">&amp;&amp;</span>
-<span class="tok-command">git</span> diff <span class="tok-flag">--stat</span></code></pre><ul><li>The order is the edit, the formatter, the linter, a compile or type check, the tests, then the diff. Use the project&#x27;s own commands (<code>AGENTS.md</code> names them); these are examples.</li><li>Other languages, same order: <code>tsc --noEmit</code> or <code>node --check</code>, the linter, the tests; <code>terraform fmt</code> and <code>terraform validate</code>; a build target. A check that cannot run for want of a tool is not skipped in silence: say so.</li><li>Run the chain once, when the unit is written, not after each edit. After a fix, run the whole chain again.</li><li>Edit, check, edit, check on one file is a ping-pong that costs a turn per step: batch the remaining edits, then run the chain once, or put the edit and the check in one script.</li><li>Read the output before saying &quot;done&quot;. Without <code>pipefail</code>, a pipe into <code>tail</code> hides a test&#x27;s exit code. Do not end a check in <code>|| true</code> or <code>|| echo</code>, and do not print <code>echo ----</code> separators.</li><li>Say what ran with its exit code, and what did not run and why. &quot;Done&quot; with no gate named is a claim, not a result.</li><li>One-call recipes for discovery, independent gates, a <code>sed</code> edit, web calls and an ML probe: <code>references/recipes.md</code>.</li></ul><h4>Clean</h4><ul><li>Keep probes and one-off output in <code>__scratch__/</code>; a hook makes the folder and its <code>.gitignore</code>. <code>rm</code> deletes named paths there and in the Claude scratchpad, also by a variable the same command set to a literal (<code>d=__scratch__/x &amp;&amp; rm -rf &quot;$d&quot;</code>).</li><li>Elsewhere in the project the guard moves what <code>rm</code> or <code>rmdir</code> names into <code>__harness__/trash/&lt;call id&gt;/</code>, which the owner empties. It refuses a delete it cannot move: a glob or an unknown variable, the project root, a path outside the project or under <code>node_modules</code>, <code>dist</code>, <code>.venv</code> or <code>.git</code>, and <code>git clean</code>, <code>find -delete</code> or <code>shred</code>. A tracked file that must go uses <code>git rm</code>.</li><li>Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.</li></ul><h4>Shell</h4><ul><li>Use absolute paths; a <code>cd</code> may not carry to the next call.</li><li>A list of files goes in an array (<code>files=(a.py b.py)</code>, then <code>&quot;${files[@]}&quot;</code>) or a Python script: zsh does not split <code>$files</code> into words, so the command gets one name with spaces in it.</li><li>Quote every glob: zsh refuses one that matches nothing. Read exit codes from <code>$pipestatus</code> in zsh.</li></ul><h4>Waiting</h4><p>Never <code>sleep N</code> to wait and never poll in a foreground loop; a run that takes long goes with <code>run_in_background: true</code>, and its exit wakes you. The guard does not run a foreground <code>sleep</code>: it removes a direct one and the rest of the command runs at once, so the result may be early; it moves any other (a polling loop, a wrapper) to the background, where its exit wakes you. Nothing needs it:</p><ul><li>Your own long job: run it with <code>run_in_background: true</code>, then do other work or end the turn. Its exit wakes you; read the output then, not before.</li><li>A condition on this machine (a file, a log line): the wait itself runs in the background, with a bound: <code>timeout 600 sh -c &#x27;until [ -f done ]; do sleep 5; done&#x27;</code>. Or Monitor, if you have it.</li><li>A service coming up: <code>curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL</code>.</li><li>A process you stopped: <code>timeout 5 tail --pid=PID -f /dev/null</code>, then the next step.</li><li>A wait names its job by PID (<code>cmd &amp; pid=$!</code>, then <code>timeout N tail --pid=&quot;$pid&quot; -f /dev/null</code>) or by a done file the job writes. Never <code>pgrep -f</code> with a pattern that also occurs in the waiter&#x27;s own command line: it matches itself and never ends.</li><li>Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.</li></ul><h4>Git</h4><ul><li>Before any commit, load <code>harness:git-commit</code>; it holds the AI-attribution ban.</li></ul><h4>When a call is refused</h4><ul><li>Read the reason and change what the command does, or use the tool it names. A command with the same effect in other words is refused again and costs a turn.</li><li>A call the owner denied or cancelled is not sent again unchanged: ask what to change.</li><li>A glob that matches nothing is refused with the folder it was matched from: <code>cd</code> to the right one, or list files with <code>rg --files -g &#x27;&lt;pattern&gt;&#x27;</code> or <code>git ls-files</code>.</li><li>A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position (<code>--include</code>, <code>-name</code>, <code>-g</code>), moves a delete to the trash (Clean) and drops a foreground <code>sleep</code> (Waiting). Write the call that way next time.</li></ul></template></li>
+<span class="tok-command">git</span> diff <span class="tok-flag">--stat</span></code></pre><ul><li>The order is the edit, the formatter, the linter, a compile or type check, the tests, then the diff. Use the project&#x27;s own commands (<code>AGENTS.md</code> names them); these are examples.</li><li>Other languages, same order: <code>tsc --noEmit</code> or <code>node --check</code>, the linter, the tests; <code>terraform fmt</code> and <code>terraform validate</code>; a build target. A check that cannot run for want of a tool is not skipped in silence: say so.</li><li>Run the chain once, when the unit is written, not after each edit. After a fix, run the whole chain again.</li><li>Edit, check, edit, check on one file is a ping-pong that costs a turn per step: batch the remaining edits, then run the chain once, or put the edit and the check in one script.</li><li>Read the output before saying &quot;done&quot;. Without <code>pipefail</code>, a pipe into <code>tail</code> hides a test&#x27;s exit code. Do not end a check in <code>|| true</code> or <code>|| echo</code>, and do not print <code>echo ----</code> separators.</li><li>Say what ran with its exit code, and what did not run and why. &quot;Done&quot; with no gate named is a claim, not a result.</li><li>One-call recipes for discovery, independent gates, a <code>sed</code> edit, web calls and an ML probe: <code>references/recipes.md</code>.</li></ul><h4>Clean</h4><ul><li>Keep probes and one-off output in <code>__scratch__/</code>; a hook makes the folder and its <code>.gitignore</code>. <code>rm</code> deletes named paths there and in the Claude scratchpad, also by a variable the same command set to a literal (<code>d=__scratch__/x &amp;&amp; rm -rf &quot;$d&quot;</code>).</li><li>Elsewhere in the project the guard moves what <code>rm</code> or <code>rmdir</code> names into <code>__harness__/trash/&lt;call id&gt;/</code>, which the owner empties. It refuses a delete it cannot move: a glob or an unknown variable, the project root, a path outside the project or under <code>node_modules</code>, <code>dist</code>, <code>.venv</code> or <code>.git</code>, and <code>git clean</code>, <code>find -delete</code> or <code>shred</code>. A tracked file that must go uses <code>git rm</code>.</li><li>Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.</li></ul><h4>Shell</h4><ul><li>Use absolute paths; a <code>cd</code> may not carry to the next call.</li><li>A list of files goes in an array (<code>files=(a.py b.py)</code>, then <code>&quot;${files[@]}&quot;</code>) or a Python script: zsh does not split <code>$files</code> into words, so the command gets one name with spaces in it.</li><li>Quote every glob: zsh refuses one that matches nothing. Read exit codes from <code>$pipestatus</code> in zsh.</li></ul><h4>Waiting</h4><p>Never <code>sleep N</code> to wait and never poll in a foreground loop; a run that takes long goes with <code>run_in_background: true</code>, and its exit wakes you. The guard does not run a foreground <code>sleep</code>: it removes a direct one and the rest of the command runs at once, so the result may be early; it moves any other (a polling loop, a wrapper) to the background, where its exit wakes you. Nothing needs it:</p><ul><li>Your own long job: run it with <code>run_in_background: true</code>, then do other work or end the turn. Its exit wakes you; read the output then, not before.</li><li>A condition on this machine (a file, a log line): the wait itself runs in the background, with a bound: <code>timeout 600 sh -c &#x27;until [ -f done ]; do sleep 5; done&#x27;</code>. Or Monitor, if you have it.</li><li>A service coming up: <code>curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL</code>.</li><li>A process you stopped: <code>timeout 5 tail --pid=PID -f /dev/null</code>, then the next step.</li><li>A wait names its job by PID (<code>cmd &amp; pid=$!</code>, then <code>timeout N tail --pid=&quot;$pid&quot; -f /dev/null</code>) or by a done file the job writes. Never <code>pgrep -f</code> with a pattern that also occurs in the waiter&#x27;s own command line: it matches itself and never ends.</li><li>Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.</li><li>A background command you no longer need is stopped (TaskStop) before you report; never search the whole filesystem (<code>find /</code>, <code>find ~</code>): <code>command -v &lt;tool&gt;</code>, <code>ls node_modules/.bin</code> or <code>rg --files -g &#x27;&lt;name&gt;&#x27;</code> in the project answer it.</li></ul><h4>Git</h4><ul><li>Before any commit, load <code>harness:git-commit</code>; it holds the AI-attribution ban.</li></ul><h4>When a call is refused</h4><ul><li>Read the reason and change what the command does, or use the tool it names. A command with the same effect in other words is refused again and costs a turn.</li><li>A call the owner denied or cancelled is not sent again unchanged: ask what to change.</li><li>A glob that matches nothing is refused with the folder it was matched from: <code>cd</code> to the right one, or list files with <code>rg --files -g &#x27;&lt;pattern&gt;&#x27;</code> or <code>git ls-files</code>.</li><li>A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position (<code>--include</code>, <code>-name</code>, <code>-g</code>), moves a delete to the trash (Clean) and drops a foreground <code>sleep</code> (Waiting). Write the call that way next time.</li></ul></template></li>
 </ul></div>
 </div>
 </section>
@@ -414,6 +414,9 @@ MESSAGES = {
     <span class="tok-string">"temporary"</span>: <span class="tok-string">"the guard lets this call pass, but a write under /tmp is not where throwaway files go. Throwaway files belong in the project's `__scratch__/` folder, never under /tmp."</span>,
     <span class="tok-string">"repo"</span>: <span class="tok-string">"the guard lets this call pass, but project files change with the Write tool (new file) or Edit (change); a shell "</span>
     <span class="tok-string">"redirect, tee, sed -i, cp or mv belongs under `__scratch__/`."</span>,
+    <span class="tok-string">"search"</span>: <span class="tok-string">"a search that starts at `/`, `~` or a whole system or home folder walks the entire disk and runs for minutes, mostly "</span>
+    <span class="tok-string">"finding nothing. Ask for the thing directly: `command -v tsc` for a tool on PATH, `ls node_modules/.bin` for a project tool, "</span>
+    <span class="tok-string">"`rg --files -g '&lt;name&gt;'` inside the project. If a wider look is needed, start at the project folder or add `-maxdepth 3`."</span>,
     <span class="tok-string">"sleep"</span>: <span class="tok-string">"`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "</span>
     <span class="tok-string">"the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "</span>
     <span class="tok-string">"notifies you on exit, and a condition runs as a background `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`."</span>,
@@ -422,6 +425,14 @@ PATTERN_REFUSAL = (
     <span class="tok-string">"this unquoted glob is a pattern for the command, which zsh would expand first, and the guard could not quote it safely. "</span>
     <span class="tok-string">"Quote it (`--include='*.py'`), or use `rg -g '*.py'`."</span>
 )
+HOME_WORDS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"~"</span>, <span class="tok-string">"$HOME"</span>, <span class="tok-string">"${HOME}"</span>})
+HOME_PARENTS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"home"</span>, <span class="tok-string">"Users"</span>})
+WIDE_SEARCHERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"find"</span>, <span class="tok-string">"fd"</span>, <span class="tok-string">"rg"</span>})
+SEARCH_DEPTH_LIMIT = <span class="tok-number">3</span>
+FIND_EXPRESSION_STARTS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"("</span>, <span class="tok-string">"!"</span>, <span class="tok-string">")"</span>, <span class="tok-string">","</span>})
+DEPTH_OPTIONS = {<span class="tok-string">"find"</span>: <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-maxdepth"</span>}), <span class="tok-string">"fd"</span>: <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>}), <span class="tok-string">"rg"</span>: <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>, <span class="tok-string">"--maxdepth"</span>})}
+FD_VALUE_OPTIONS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>, <span class="tok-string">"-e"</span>, <span class="tok-string">"--extension"</span>, <span class="tok-string">"-E"</span>, <span class="tok-string">"--exclude"</span>, <span class="tok-string">"-t"</span>, <span class="tok-string">"--type"</span>, <span class="tok-string">"-c"</span>, <span class="tok-string">"--color"</span>, <span class="tok-string">"-j"</span>, <span class="tok-string">"--threads"</span>, <span class="tok-string">"-S"</span>, <span class="tok-string">"--size"</span>, <span class="tok-string">"--search-path"</span>})
+RG_VALUE_OPTIONS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-g"</span>, <span class="tok-string">"--glob"</span>, <span class="tok-string">"--iglob"</span>, <span class="tok-string">"-e"</span>, <span class="tok-string">"--regexp"</span>, <span class="tok-string">"-f"</span>, <span class="tok-string">"--file"</span>, <span class="tok-string">"-t"</span>, <span class="tok-string">"--type"</span>, <span class="tok-string">"-T"</span>, <span class="tok-string">"--type-not"</span>, <span class="tok-string">"-m"</span>, <span class="tok-string">"--max-count"</span>, <span class="tok-string">"-A"</span>, <span class="tok-string">"-B"</span>, <span class="tok-string">"-C"</span>, <span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>, <span class="tok-string">"--maxdepth"</span>, <span class="tok-string">"-j"</span>, <span class="tok-string">"--threads"</span>, <span class="tok-string">"-M"</span>, <span class="tok-string">"-r"</span>, <span class="tok-string">"--replace"</span>, <span class="tok-string">"--sort"</span>, <span class="tok-string">"--sortr"</span>})
 SOFT_RULES = (<span class="tok-string">"pattern"</span>, <span class="tok-string">"trash"</span>, <span class="tok-string">"temporary"</span>, <span class="tok-string">"repo"</span>, <span class="tok-string">"sleep"</span>, <span class="tok-string">"delay"</span>)
 NOTED_RULES = (<span class="tok-string">"temporary"</span>, <span class="tok-string">"repo"</span>)
 SLEEP_BACKGROUND_NOTE = (
@@ -1233,6 +1244,49 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     <span class="tok-keyword">return</span> <span class="tok-builtin">bool</span>(policy.scratch) <span class="tok-keyword">and</span> is_under(path, policy.root) <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> is_under(path, policy.scratch)
 
 
+<span class="tok-keyword">def</span> is_wide_path(word: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-builtin">bool</span>:
+
+    <span class="tok-keyword">if</span> word.rstrip(<span class="tok-string">"/"</span>) <span class="tok-keyword">in</span> HOME_WORDS:
+        <span class="tok-keyword">return</span> <span class="tok-keyword">True</span>
+    parts = [part <span class="tok-keyword">for</span> part <span class="tok-keyword">in</span> word.split(<span class="tok-string">"/"</span>) <span class="tok-keyword">if</span> part]
+
+    <span class="tok-keyword">return</span> word.startswith(<span class="tok-string">"/"</span>) <span class="tok-keyword">and</span> (<span class="tok-builtin">len</span>(parts) &lt;= <span class="tok-number">1</span> <span class="tok-keyword">or</span> (<span class="tok-builtin">len</span>(parts) == <span class="tok-number">2</span> <span class="tok-keyword">and</span> parts[<span class="tok-number">0</span>] <span class="tok-keyword">in</span> HOME_PARENTS))
+
+
+<span class="tok-keyword">def</span> get_depth_limit(arguments: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], options: Set[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">int</span> | <span class="tok-keyword">None</span>:
+
+    <span class="tok-keyword">for</span> index, argument <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(arguments):
+        name, _, inline = argument.partition(<span class="tok-string">"="</span>)
+        value = inline <span class="tok-keyword">or</span> (arguments[index + <span class="tok-number">1</span>] <span class="tok-keyword">if</span> index + <span class="tok-number">1</span> &lt; <span class="tok-builtin">len</span>(arguments) <span class="tok-keyword">else</span> <span class="tok-string">""</span>)
+        <span class="tok-keyword">if</span> name <span class="tok-keyword">in</span> options <span class="tok-keyword">and</span> value.isdigit():
+            <span class="tok-keyword">return</span> <span class="tok-builtin">int</span>(value)
+
+    <span class="tok-keyword">return</span> <span class="tok-keyword">None</span>
+
+
+<span class="tok-keyword">def</span> get_search_paths(name: <span class="tok-builtin">str</span>, arguments: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
+
+    <span class="tok-keyword">if</span> name == <span class="tok-string">"find"</span>:
+        start = <span class="tok-builtin">next</span>((index <span class="tok-keyword">for</span> index, argument <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(arguments) <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> argument.startswith(<span class="tok-string">"-"</span>)), <span class="tok-builtin">len</span>(arguments))
+        end = <span class="tok-builtin">next</span>((index <span class="tok-keyword">for</span> index <span class="tok-keyword">in</span> <span class="tok-builtin">range</span>(start, <span class="tok-builtin">len</span>(arguments)) <span class="tok-keyword">if</span> arguments[index].startswith(<span class="tok-string">"-"</span>) <span class="tok-keyword">or</span> arguments[index] <span class="tok-keyword">in</span> FIND_EXPRESSION_STARTS), <span class="tok-builtin">len</span>(arguments))
+        <span class="tok-keyword">return</span> arguments[start:end]
+    positionals = get_positionals(arguments, FD_VALUE_OPTIONS <span class="tok-keyword">if</span> name == <span class="tok-string">"fd"</span> <span class="tok-keyword">else</span> RG_VALUE_OPTIONS)
+    has_pattern_option = <span class="tok-builtin">any</span>(argument <span class="tok-keyword">in</span> (<span class="tok-string">"-e"</span>, <span class="tok-string">"--regexp"</span>, <span class="tok-string">"-f"</span>, <span class="tok-string">"--file"</span>, <span class="tok-string">"--files"</span>) <span class="tok-keyword">for</span> argument <span class="tok-keyword">in</span> arguments)
+
+    <span class="tok-keyword">return</span> positionals <span class="tok-keyword">if</span> name == <span class="tok-string">"rg"</span> <span class="tok-keyword">and</span> has_pattern_option <span class="tok-keyword">else</span> positionals[<span class="tok-number">1</span>:]
+
+
+<span class="tok-keyword">def</span> is_wide_search(command: Command, /) -&gt; <span class="tok-builtin">bool</span>:
+
+    name = os.path.basename(command.name)
+    arguments = [word.text <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> command.arguments]
+    <span class="tok-keyword">if</span> name <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> WIDE_SEARCHERS:
+        <span class="tok-keyword">return</span> <span class="tok-keyword">False</span>
+    depth = get_depth_limit(arguments, DEPTH_OPTIONS[name])
+
+    <span class="tok-keyword">return</span> <span class="tok-builtin">any</span>(is_wide_path(path) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> get_search_paths(name, arguments)) <span class="tok-keyword">and</span> (depth <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">or</span> depth &gt; SEARCH_DEPTH_LIMIT)
+
+
 <span class="tok-keyword">def</span> get_positional(arguments: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
 
     <span class="tok-keyword">return</span> [argument <span class="tok-keyword">for</span> argument <span class="tok-keyword">in</span> arguments <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> argument.startswith(<span class="tok-string">"-"</span>)]
@@ -1619,6 +1673,7 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
         (<span class="tok-string">"trash"</span>, trash <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>),
         (<span class="tok-string">"temporary"</span>, <span class="tok-builtin">any</span>(is_temporary(path, policy) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> written)),
         (<span class="tok-string">"repo"</span>, is_unknown_write <span class="tok-keyword">or</span> <span class="tok-builtin">any</span>(is_repo_write(path, policy) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> [*written, *moved])),
+        (<span class="tok-string">"search"</span>, is_wide_search(command)),
         (<span class="tok-string">"sleep"</span>, os.path.basename(command.name) == <span class="tok-string">"sleep"</span>),
     ]
 
@@ -2616,6 +2671,7 @@ ADVICE = <span class="tok-string">"the main session delegates edits and runs in 
 
 MIN_TURNS_LEFT = <span class="tok-number">3</span>
 DEFAULT_BUDGET = {<span class="tok-string">"scout"</span>: <span class="tok-number">35</span>, <span class="tok-string">"cold-reader"</span>: <span class="tok-number">20</span>, <span class="tok-string">"runner"</span>: <span class="tok-number">30</span>, <span class="tok-string">"reviewer"</span>: <span class="tok-number">35</span>, <span class="tok-string">"auditor"</span>: <span class="tok-number">35</span>, <span class="tok-string">"worker"</span>: <span class="tok-number">70</span>, <span class="tok-string">"designer"</span>: <span class="tok-number">70</span>, <span class="tok-string">"releaser"</span>: <span class="tok-number">40</span>, <span class="tok-string">"analyst"</span>: <span class="tok-number">30</span>, <span class="tok-string">"planner"</span>: <span class="tok-number">30</span>, <span class="tok-string">"researcher"</span>: <span class="tok-number">30</span>, <span class="tok-string">"*"</span>: <span class="tok-number">40</span>}
+STOP_TOOLS = (<span class="tok-string">"TaskStop"</span>, <span class="tok-string">"KillShell"</span>)
 BUDGET_LABEL = re.compile(<span class="tok-string">r"(?:^|[.;]\s+)[\s\-*#]*budget\b"</span>, re.I)
 LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + <span class="tok-string">r"\**\s*:"</span>, re.I)
 BUDGET_LINE = re.compile(BUDGET_LABEL.pattern + <span class="tok-string">r"[:*\s~]*([0-9]+)\s*(?:turns?\b|(?=\W*$))"</span>, re.I)
@@ -2889,7 +2945,7 @@ SECONDS_PER_DAY = <span class="tok-number">86400</span>
         <span class="tok-keyword">if</span> note:
             <span class="tok-builtin">print</span>(json.dumps(make_note_output(note)))
         <span class="tok-keyword">return</span> <span class="tok-number">0</span>
-    <span class="tok-keyword">if</span> event.get(<span class="tok-string">"tool_name"</span>) == HANDBACK_TOOL:
+    <span class="tok-keyword">if</span> event.get(<span class="tok-string">"tool_name"</span>) <span class="tok-keyword">in</span> (HANDBACK_TOOL, *STOP_TOOLS):
         <span class="tok-keyword">return</span> <span class="tok-number">0</span>
     root, config = find_project(event.get(<span class="tok-string">"cwd"</span>) <span class="tok-keyword">or</span> os.getcwd())
     path = get_agent_path(event)
@@ -2924,7 +2980,7 @@ SECONDS_PER_DAY = <span class="tok-number">86400</span>
         <span class="tok-keyword">return</span> <span class="tok-number">0</span>
     <span class="tok-builtin">print</span>(
         <span class="tok-string">f"</span><span class="tok-string">Blocked by the harness budget rule: your budget of </span>{limit}<span class="tok-string"> turns is spent (</span>{num_turns}<span class="tok-string"> turns so far). </span><span class="tok-string">"</span>
-        <span class="tok-string">"Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass. "</span>
+        <span class="tok-string">"Stop now. First stop every background command you started (TaskStop, or KillShell if that is the name in your tool list); a job left running keeps going after you report. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass. "</span>
         <span class="tok-string">f"</span><span class="tok-string">Call </span>{HANDBACK_TOOL}<span class="tok-string"> now with your partial report.</span><span class="tok-string">"</span>,
         file=sys.stderr,
     )
@@ -3087,6 +3143,9 @@ REPORT_TITLE = re.compile(<span class="tok-string">r"^# Report: [^,\n]*, *(.+?)\
 NO_FEEDBACK = re.compile(<span class="tok-string">r"(none|none needed|no feedback|n/?a)[ .]*"</span>, re.I)
 NO_PROBLEM = re.compile(<span class="tok-string">r"(- +)?no problem"</span>, re.I)
 MAX_SEND_BACKS = <span class="tok-number">3</span>
+MAX_JOB_SEND_BACKS = <span class="tok-number">2</span>
+JOB_SHOWN_CHARS = <span class="tok-number">80</span>
+JOB_NAMED_CHARS = <span class="tok-number">20</span>
 PRINTED_EXIT = <span class="tok-string">r"\b(?:exit|code|rc|status|returncode|returned|error)\b\D{{0,12}}\b{code}\b"</span>
 GIT_TIMEOUT_S = <span class="tok-number">3</span>
 MAX_WALK_FILES = <span class="tok-number">20000</span>
@@ -3588,13 +3647,27 @@ REPORT_POLL_S = <span class="tok-number">0.25</span>
     <span class="tok-keyword">return</span> folder / <span class="tok-string">f"</span>{event.get(<span class="tok-string">'agent_id'</span>) <span class="tok-keyword">or</span> <span class="tok-string">'unknown'</span>}<span class="tok-string">.count</span><span class="tok-string">"</span>
 
 
-<span class="tok-keyword">def</span> get_send_backs(event: <span class="tok-builtin">dict</span>, /) -&gt; <span class="tok-builtin">int</span>:
-    path = get_send_backs_path(event)
+<span class="tok-keyword">def</span> read_count(path: Path, /) -&gt; <span class="tok-builtin">int</span>:
 
     <span class="tok-keyword">try</span>:
         <span class="tok-keyword">return</span> <span class="tok-builtin">int</span>(path.read_text())
     <span class="tok-keyword">except</span> (<span class="tok-builtin">OSError</span>, <span class="tok-builtin">ValueError</span>):
         <span class="tok-keyword">return</span> <span class="tok-number">0</span>
+
+
+<span class="tok-keyword">def</span> get_send_backs(event: <span class="tok-builtin">dict</span>, /) -&gt; <span class="tok-builtin">int</span>:
+
+    <span class="tok-keyword">return</span> read_count(get_send_backs_path(event))
+
+
+<span class="tok-keyword">def</span> get_jobs_path(event: <span class="tok-builtin">dict</span>, /) -&gt; Path:
+
+    <span class="tok-keyword">return</span> get_send_backs_path(event).with_suffix(<span class="tok-string">".jobs"</span>)
+
+
+<span class="tok-keyword">def</span> get_job_send_backs(event: <span class="tok-builtin">dict</span>, /) -&gt; <span class="tok-builtin">int</span>:
+
+    <span class="tok-keyword">return</span> read_count(get_jobs_path(event))
 
 
 <span class="tok-keyword">def</span> get_kept_path(event: <span class="tok-builtin">dict</span>, /) -&gt; Path:
@@ -3649,7 +3722,7 @@ REPORT_POLL_S = <span class="tok-number">0.25</span>
 
     path = get_send_backs_path(event)
     send_backs = get_send_backs(event)
-    <span class="tok-keyword">for</span> stale <span class="tok-keyword">in</span> (path, get_kept_path(event)):
+    <span class="tok-keyword">for</span> stale <span class="tok-keyword">in</span> (path, get_kept_path(event), get_jobs_path(event)):
         <span class="tok-keyword">if</span> stale.exists():
             stale.unlink()
     session = event.get(<span class="tok-string">"session_id"</span>) <span class="tok-keyword">or</span> <span class="tok-string">"unknown"</span>
@@ -3687,19 +3760,50 @@ REPORT_POLL_S = <span class="tok-number">0.25</span>
     <span class="tok-keyword">return</span> problems
 
 
-<span class="tok-keyword">def</span> count_running_jobs(path: Path, outputs: <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">int</span>:
+<span class="tok-keyword">def</span> find_running_jobs(path: Path, outputs: <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
 
-    launched: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>] = <span class="tok-builtin">set</span>()
+    launched: <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">str</span>] = {}
     finished: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>] = <span class="tok-builtin">set</span>()
     <span class="tok-keyword">for</span> line <span class="tok-keyword">in</span> read_events(path):
         content = (line.get(<span class="tok-string">"message"</span>) <span class="tok-keyword">or</span> {}).get(<span class="tok-string">"content"</span>) <span class="tok-keyword">if</span> line.get(<span class="tok-string">"type"</span>) == <span class="tok-string">"assistant"</span> <span class="tok-keyword">else</span> <span class="tok-keyword">None</span>
         <span class="tok-keyword">for</span> block <span class="tok-keyword">in</span> content <span class="tok-keyword">if</span> <span class="tok-builtin">isinstance</span>(content, <span class="tok-builtin">list</span>) <span class="tok-keyword">else</span> ():
             is_background = <span class="tok-builtin">isinstance</span>(block, <span class="tok-builtin">dict</span>) <span class="tok-keyword">and</span> block.get(<span class="tok-string">"name"</span>) == <span class="tok-string">"Bash"</span> <span class="tok-keyword">and</span> (block.get(<span class="tok-string">"input"</span>) <span class="tok-keyword">or</span> {}).get(<span class="tok-string">"run_in_background"</span>) <span class="tok-keyword">is</span> <span class="tok-keyword">True</span>
             <span class="tok-keyword">if</span> is_background <span class="tok-keyword">and</span> <span class="tok-string">"in background"</span> <span class="tok-keyword">in</span> outputs.get(block.get(<span class="tok-string">"id"</span>), <span class="tok-string">""</span>):
-                launched.add(block[<span class="tok-string">"id"</span>])
+                launched[block[<span class="tok-string">"id"</span>]] = <span class="tok-builtin">str</span>((block.get(<span class="tok-string">"input"</span>) <span class="tok-keyword">or</span> {}).get(<span class="tok-string">"command"</span>) <span class="tok-keyword">or</span> <span class="tok-string">""</span>)
         finished.update(tool_id <span class="tok-keyword">for</span> tool_id, status <span class="tok-keyword">in</span> NOTIFICATION.findall(get_notice_text(line)) <span class="tok-keyword">if</span> status <span class="tok-keyword">in</span> FINISHED_STATUSES)
 
-    <span class="tok-keyword">return</span> <span class="tok-builtin">len</span>(launched - finished)
+    <span class="tok-keyword">return</span> [command <span class="tok-keyword">for</span> tool_id, command <span class="tok-keyword">in</span> launched.items() <span class="tok-keyword">if</span> tool_id <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> finished]
+
+
+<span class="tok-keyword">def</span> make_job_text(commands: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">str</span>:
+
+    shown = <span class="tok-string">"; "</span>.join(<span class="tok-string">f"</span><span class="tok-string">`</span>{<span class="tok-string">' '</span>.join(command.split())[:JOB_SHOWN_CHARS]}<span class="tok-string">`</span><span class="tok-string">"</span> <span class="tok-keyword">for</span> command <span class="tok-keyword">in</span> commands)
+
+    <span class="tok-keyword">return</span> (
+        <span class="tok-string">f"</span>{<span class="tok-builtin">len</span>(commands)}<span class="tok-string"> background command(s) you started are still running: </span>{shown}<span class="tok-string">. Stop each one you no longer need with the </span><span class="tok-string">"</span>
+        <span class="tok-string">f"</span><span class="tok-string">TaskStop tool (KillShell, if that is the name in your tool list), or wait for its completion notice if you need its result; then report</span><span class="tok-string">"</span>
+    )
+
+
+<span class="tok-keyword">def</span> names_jobs(report: <span class="tok-builtin">str</span>, commands: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">bool</span>:
+
+    sections = <span class="tok-builtin">dict</span>(read_sections(report))
+    text = <span class="tok-string">" "</span>.join(sections.get(<span class="tok-string">"Not proven"</span>, [])).lower()
+    named = [<span class="tok-string">" "</span>.join(command.split())[:JOB_NAMED_CHARS].lower() <span class="tok-keyword">for</span> command <span class="tok-keyword">in</span> commands]
+
+    <span class="tok-keyword">return</span> <span class="tok-string">"running"</span> <span class="tok-keyword">in</span> text <span class="tok-keyword">or</span> <span class="tok-builtin">any</span>(name <span class="tok-keyword">and</span> name <span class="tok-keyword">in</span> <span class="tok-string">" "</span>.join(text.split()) <span class="tok-keyword">for</span> name <span class="tok-keyword">in</span> named)
+
+
+<span class="tok-keyword">def</span> get_job_problems(report: <span class="tok-builtin">str</span>, commands: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], job_tries: <span class="tok-builtin">int</span>, tries: <span class="tok-builtin">int</span>, /) -&gt; <span class="tok-builtin">list</span>[Problem]:
+
+    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> commands:
+        <span class="tok-keyword">return</span> []
+    <span class="tok-keyword">if</span> job_tries &lt; MAX_JOB_SEND_BACKS:
+        <span class="tok-keyword">return</span> [Problem(<span class="tok-string">"Answer"</span>, make_job_text(commands))]
+    <span class="tok-keyword">if</span> tries &lt; MAX_SEND_BACKS <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> names_jobs(report, commands):
+        <span class="tok-keyword">return</span> [Problem(<span class="tok-string">"Not proven"</span>, <span class="tok-string">"a background command is still running after the send-backs; name it here as left running, with the command that stops it"</span>)]
+
+    <span class="tok-keyword">return</span> []
 
 
 <span class="tok-keyword">def</span> check_handback(event: <span class="tok-builtin">dict</span>, /) -&gt; <span class="tok-builtin">int</span>:
@@ -3707,18 +3811,22 @@ REPORT_POLL_S = <span class="tok-number">0.25</span>
     root, config = find_project(event.get(<span class="tok-string">"cwd"</span>) <span class="tok-keyword">or</span> os.getcwd())
     report = (event.get(<span class="tok-string">"tool_input"</span>) <span class="tok-keyword">or</span> {}).get(<span class="tok-string">"message"</span>)
     tries = get_send_backs(event)
-    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> event.get(<span class="tok-string">"agent_id"</span>) <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> is_judged(event) <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> <span class="tok-builtin">isinstance</span>(report, <span class="tok-builtin">str</span>) <span class="tok-keyword">or</span> tries &gt;= MAX_SEND_BACKS:
+    job_tries = get_job_send_backs(event)
+    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> event.get(<span class="tok-string">"agent_id"</span>) <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> is_judged(event) <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> <span class="tok-builtin">isinstance</span>(report, <span class="tok-builtin">str</span>):
         <span class="tok-keyword">return</span> <span class="tok-number">0</span>
     path = get_agent_path(event)
     found = read_assistant_blocks(<span class="tok-builtin">str</span>(path)) <span class="tok-keyword">if</span> path <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> AssistantBlocks([], {}, <span class="tok-keyword">None</span>, {})
     judged = {**event, <span class="tok-string">"agent_transcript_path"</span>: <span class="tok-builtin">str</span>(path)} <span class="tok-keyword">if</span> path <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> event
-    problems = get_problems(report, judged, root, config, found)
-    running = count_running_jobs(path, found.outputs) <span class="tok-keyword">if</span> path <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> <span class="tok-number">0</span>
-    <span class="tok-keyword">if</span> running:
-        problems.append(Problem(<span class="tok-string">"Answer"</span>, <span class="tok-string">f"</span>{running}<span class="tok-string"> background command(s) you started are still running; wait for their completion notice (it wakes you), then report their result</span><span class="tok-string">"</span>))
+    problems = get_problems(report, judged, root, config, found) <span class="tok-keyword">if</span> tries &lt; MAX_SEND_BACKS <span class="tok-keyword">else</span> []
+    running = find_running_jobs(path, found.outputs) <span class="tok-keyword">if</span> path <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> []
+    has_form_problem = <span class="tok-builtin">bool</span>(problems)
+    problems += get_job_problems(report, running, job_tries, tries)
     <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> problems:
         <span class="tok-keyword">return</span> <span class="tok-number">0</span>
-    write_atomic(get_send_backs_path(event), <span class="tok-builtin">str</span>(tries + <span class="tok-number">1</span>))
+    <span class="tok-keyword">if</span> running <span class="tok-keyword">and</span> job_tries &lt; MAX_JOB_SEND_BACKS:
+        write_atomic(get_jobs_path(event), <span class="tok-builtin">str</span>(job_tries + <span class="tok-number">1</span>))
+    <span class="tok-keyword">if</span> has_form_problem <span class="tok-keyword">or</span> <span class="tok-builtin">any</span>(problem.section == <span class="tok-string">"Not proven"</span> <span class="tok-keyword">for</span> problem <span class="tok-keyword">in</span> problems):
+        write_atomic(get_send_backs_path(event), <span class="tok-builtin">str</span>(tries + <span class="tok-number">1</span>))
     <span class="tok-builtin">print</span>(make_send_back(problems, is_handback=<span class="tok-keyword">True</span>), file=sys.stderr)
 
     <span class="tok-keyword">return</span> <span class="tok-number">2</span>
