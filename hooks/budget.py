@@ -21,6 +21,7 @@ from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_
 
 MIN_TURNS_LEFT = 3
 DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70, "designer": 70, "releaser": 40, "analyst": 30, "planner": 30, "researcher": 30, "*": 40}
+STOP_TOOLS = ("TaskStop", "KillShell")
 BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
 LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + r"\**\s*:", re.I)
 BUDGET_LINE = re.compile(BUDGET_LABEL.pattern + r"[:*\s~]*([0-9]+)\s*(?:turns?\b|(?=\W*$))", re.I)
@@ -294,7 +295,7 @@ def main() -> int:
         if note:
             print(json.dumps(make_note_output(note)))
         return 0
-    if event.get("tool_name") == HANDBACK_TOOL:
+    if event.get("tool_name") in (HANDBACK_TOOL, *STOP_TOOLS):
         return 0
     root, config = find_project(event.get("cwd") or os.getcwd())
     path = get_agent_path(event)
@@ -329,7 +330,7 @@ def main() -> int:
         return 0
     print(
         f"Blocked by the harness budget rule: your budget of {limit} turns is spent ({num_turns} turns so far). "
-        "Stop now. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass. "
+        "Stop now. First stop every background command you started (TaskStop, or KillShell if that is the name in your tool list); a job left running keeps going after you report. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass. "
         f"Call {HANDBACK_TOOL} now with your partial report.",
         file=sys.stderr,
     )

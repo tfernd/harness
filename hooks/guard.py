@@ -113,6 +113,9 @@ MESSAGES = {
     "temporary": "the guard lets this call pass, but a write under /tmp is not where throwaway files go. Throwaway files belong in the project's `__scratch__/` folder, never under /tmp.",
     "repo": "the guard lets this call pass, but project files change with the Write tool (new file) or Edit (change); a shell "
     "redirect, tee, sed -i, cp or mv belongs under `__scratch__/`.",
+    "search": "a search that starts at `/`, `~` or a whole system or home folder walks the entire disk and runs for minutes, mostly "
+    "finding nothing. Ask for the thing directly: `command -v tsc` for a tool on PATH, `ls node_modules/.bin` for a project tool, "
+    "`rg --files -g '<name>'` inside the project. If a wider look is needed, start at the project folder or add `-maxdepth 3`.",
     "sleep": "`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "
     "the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "
     "notifies you on exit, and a condition runs as a background `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`.",
@@ -121,6 +124,14 @@ PATTERN_REFUSAL = (
     "this unquoted glob is a pattern for the command, which zsh would expand first, and the guard could not quote it safely. "
     "Quote it (`--include='*.py'`), or use `rg -g '*.py'`."
 )
+HOME_WORDS = frozenset({"~", "$HOME", "${HOME}"})
+HOME_PARENTS = frozenset({"home", "Users"})
+WIDE_SEARCHERS = frozenset({"find", "fd", "rg"})
+SEARCH_DEPTH_LIMIT = 3
+FIND_EXPRESSION_STARTS = frozenset({"(", "!", ")", ","})
+DEPTH_OPTIONS = {"find": frozenset({"-maxdepth"}), "fd": frozenset({"-d", "--max-depth"}), "rg": frozenset({"-d", "--max-depth", "--maxdepth"})}
+FD_VALUE_OPTIONS = frozenset({"-d", "--max-depth", "-e", "--extension", "-E", "--exclude", "-t", "--type", "-c", "--color", "-j", "--threads", "-S", "--size", "--search-path"})
+RG_VALUE_OPTIONS = frozenset({"-g", "--glob", "--iglob", "-e", "--regexp", "-f", "--file", "-t", "--type", "-T", "--type-not", "-m", "--max-count", "-A", "-B", "-C", "-d", "--max-depth", "--maxdepth", "-j", "--threads", "-M", "-r", "--replace", "--sort", "--sortr"})
 SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay")
 NOTED_RULES = ("temporary", "repo")
 SLEEP_BACKGROUND_NOTE = (
@@ -932,6 +943,49 @@ def is_repo_write(path: str, policy: Policy, /) -> bool:
     return bool(policy.scratch) and is_under(path, policy.root) and not is_under(path, policy.scratch)
 
 
+def is_wide_path(word: str, /) -> bool:
+
+    if word.rstrip("/") in HOME_WORDS:
+        return True
+    parts = [part for part in word.split("/") if part]
+
+    return word.startswith("/") and (len(parts) <= 1 or (len(parts) == 2 and parts[0] in HOME_PARENTS))
+
+
+def get_depth_limit(arguments: list[str], options: Set[str], /) -> int | None:
+
+    for index, argument in enumerate(arguments):
+        name, _, inline = argument.partition("=")
+        value = inline or (arguments[index + 1] if index + 1 < len(arguments) else "")
+        if name in options and value.isdigit():
+            return int(value)
+
+    return None
+
+
+def get_search_paths(name: str, arguments: list[str], /) -> list[str]:
+
+    if name == "find":
+        start = next((index for index, argument in enumerate(arguments) if not argument.startswith("-")), len(arguments))
+        end = next((index for index in range(start, len(arguments)) if arguments[index].startswith("-") or arguments[index] in FIND_EXPRESSION_STARTS), len(arguments))
+        return arguments[start:end]
+    positionals = get_positionals(arguments, FD_VALUE_OPTIONS if name == "fd" else RG_VALUE_OPTIONS)
+    has_pattern_option = any(argument in ("-e", "--regexp", "-f", "--file", "--files") for argument in arguments)
+
+    return positionals if name == "rg" and has_pattern_option else positionals[1:]
+
+
+def is_wide_search(command: Command, /) -> bool:
+
+    name = os.path.basename(command.name)
+    arguments = [word.text for word in command.arguments]
+    if name not in WIDE_SEARCHERS:
+        return False
+    depth = get_depth_limit(arguments, DEPTH_OPTIONS[name])
+
+    return any(is_wide_path(path) for path in get_search_paths(name, arguments)) and (depth is None or depth > SEARCH_DEPTH_LIMIT)
+
+
 def get_positional(arguments: list[str], /) -> list[str]:
 
     return [argument for argument in arguments if not argument.startswith("-")]
@@ -1318,6 +1372,7 @@ def get_command_breaches(
         ("trash", trash is not None),
         ("temporary", any(is_temporary(path, policy) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path, policy) for path in [*written, *moved])),
+        ("search", is_wide_search(command)),
         ("sleep", os.path.basename(command.name) == "sleep"),
     ]
 

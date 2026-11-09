@@ -121,6 +121,7 @@ Nothing needs it:
 - A wait names its job by PID (`cmd & pid=$!`, then `timeout N tail --pid="$pid" -f /dev/null`) or by a done file the job
   writes. Never `pgrep -f` with a pattern that also occurs in the waiter's own command line: it matches itself and never ends.
 - Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.
+- A background command you no longer need is stopped (TaskStop) before you report; never search the whole filesystem (`find /`, `find ~`): `command -v <tool>`, `ls node_modules/.bin` or `rg --files -g '<name>'` in the project answer it.
 
 ## Git
 

@@ -262,6 +262,38 @@ GUARD_CASES = (
     bash("a glob in bash -c passes", "bash -c 'ls *.nothing'", False),
     bash("an option glob in sh -c passes", "sh -c 'grep -rn x --include=*.py .'", False),
     bash("a glob in zsh -c is refused", "zsh -c 'ls *.nothing'", True, "matches no file"),
+    bash("find from the root is refused", "find / -name tsc", True, "command -v tsc"),
+    bash("find from the root with a pipe is refused", "find / -name tsc -path '*bin*' 2>/dev/null | head -3", True, "walks the entire disk"),
+    bash("find from the home folder by tilde is refused", "find ~ -name x", True, "rg --files"),
+    bash("find from HOME is refused", "find $HOME -type f", True),
+    bash("find from quoted HOME is refused", 'find "$HOME" -name x', True),
+    bash("find from a system folder is refused", "find /usr -name x", True),
+    bash("find from a user's home folder is refused", "find /home/user -name x", True),
+    bash("find from a second wide path is refused", "find . /etc -name x", True),
+    bash("find from the root to depth four is refused", "find / -maxdepth 4 -name x", True),
+    bash("find from the root with no depth after a flag is refused", "find -L / -name x", True),
+    bash("find from the root to depth three passes", "find / -maxdepth 3 -name x", False),
+    bash("find from a system folder to depth one passes", "find /usr -maxdepth 1", False),
+    bash("find in the current folder passes", "find . -name x", False),
+    bash("find in a deep project path passes", "find /home/user/proj -maxdepth 2", False),
+    bash("find in a deep project path with no depth passes", "find /home/user/proj/src -name x", False),
+    bash("find in a three-part project path with no depth passes", "find /home/user/proj -name x", False),
+    bash("find by its path from the root is refused", "/usr/bin/find / -name x", True),
+    bash("find in a variable folder passes", 'find "$dir" -name x', False),
+    bash("find in a folder under home passes", "find ~/proj -name x", False),
+    bash("find with no path passes", "find -name x", False),
+    bash("find that names the root only in a pattern passes", "find . -path / -name x", False),
+    bash("echo of a find passes", "echo find / -name x", False),
+    bash("rg over the root files is refused", "rg --files /", True),
+    bash("rg of a pattern over home is refused", "rg foo ~", True),
+    bash("rg of a pattern over a project passes", "rg foo src", False),
+    bash("rg with a slash pattern over a project passes", "rg / src", False),
+    bash("rg files in a project with a glob passes", "rg --files -g '*.py'", False),
+    bash("rg over home with a depth of two passes", "rg --max-depth 2 foo ~", False),
+    bash("fd over the root is refused", "fd tsc /", True),
+    bash("fd over the root with a depth of two passes", "fd -d 2 tsc /", False),
+    bash("fd in the project passes", "fd tsc src", False),
+    background_bash("a wide find in the background is refused too", "find / -name tsc", True),
     bash("a loop with no sleep passes", "while read line; do echo hi; done", False),
     soft_sleep("a sleep in an inner polling loop moves the call to the background", "for x in a; do while true; do sleep 1; done; done", None),
     bash("curl writing into the repo runs with a note", "curl -o AGENTS.md http://x", False, is_unchanged=True, context="let this run"),
@@ -1516,6 +1548,13 @@ RESEND_CASES = (
         files=(("data/send-backs/a1.count", "1"), ("data/send-backs/a1.report", json.dumps({"raw": "x", "merged": make_report()}))),
         not_wrote=("data/send-backs/a1.report", "merged"),
     ),
+    gate(
+        "the job send-back count is dropped once the agent stops",
+        stop_event(make_report()),
+        False,
+        files=(("data/send-backs/a1.jobs", "2"),),
+        not_wrote=("data/send-backs/a1.jobs", "2"),
+    ),
 )
 
 
@@ -2194,6 +2233,11 @@ BUDGET_CASES = (
     budget("an unexpected error in the budget rule lets the call run", "Goal: x", False, "failed and let the call run", is_exit_one=True, event={"agent_type": 5}),
     saved_count("a line with three calls is one turn", json.dumps({"type": "assistant", "message": {"id": "m1", "content": [{"type": "tool_use", "id": call, "name": "Read"} for call in ("a", "b", "c")]}}) + "\n", {"offset": len(BUDGET_HEAD), "count": 69, "last_id": None}, False),
     budget("an agent whose file cannot be found passes", "Goal: x", False, files=(), event={"transcript_path": "", "tool_use_id": None}),
+    budget("a spent budget tells to stop background commands", "Budget: 30", True, "stop every background command", turns=31),
+    budget("a spent budget names TaskStop", "Budget: 30", True, "TaskStop", turns=31),
+    budget("a spent budget lets TaskStop through", "Budget: 30", False, turns=31, event={"tool_name": "TaskStop"}),
+    budget("a spent budget lets KillShell through", "Budget: 30", False, turns=31, event={"tool_name": "KillShell"}),
+    budget("a spent budget still blocks Read", "Budget: 30", True, turns=31, event={"tool_name": "Read"}),
     budget("a note comes with a fifth of the budget left", "Budget: 30", False, "6 of your 30 turns are left", turns=24),
     budget("the note is hook context", "Budget: 30", False, '"hookEventName": "PreToolUse", "additionalContext": "Harness note', turns=24),
     budget("no note one turn before", "Budget: 30", False, lacks="additionalContext", turns=23),
@@ -2773,17 +2817,30 @@ LOOP_CASES = (
 )
 
 
-def background_job(tool_id: str, /, *, reply: str = "Command running in background with ID: b1. Output is being written to: /x") -> tuple[dict, dict]:
+def background_job(tool_id: str, /, *, reply: str = "Command running in background with ID: b1. Output is being written to: /x", command: str = "make x") -> tuple[dict, dict]:
 
-    call = assistant({"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": "make x", "run_in_background": True}})
+    call = assistant({"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command, "run_in_background": True}})
 
     return call, bash_output(tool_id, reply)
 
 
 JOB_REPORT = make_report()
+JOB_COUNT = "data/send-backs/a1.jobs"
+NAMED_REPORT = make_report(replace=("Not proven", "- The command find / -name tsc was left alive and never read."))
+RUNNING_REPORT = make_report(replace=("Not proven", "- A background search was left running, so its result was never read."))
 BACKGROUND_CASES = (
     handback("a handback with a job still running is refused", JOB_REPORT, True, "still running", lines=background_job("j1")),
-    handback("a refused handback for a job counts a send-back", JOB_REPORT, True, wrote=(SEND_BACK_COUNT, "1"), lines=background_job("j1")),
+    handback("a refused handback for a job counts a job send-back", JOB_REPORT, True, wrote=(JOB_COUNT, "1"), lines=background_job("j1")),
+    handback("a refused handback for a job leaves the form count alone", JOB_REPORT, True, not_wrote=(SEND_BACK_COUNT, ""), lines=background_job("j1")),
+    handback("the job send-back names the running command", JOB_REPORT, True, "`find / -name tsc`", lines=background_job("j1", command="find / -name tsc")),
+    handback("the job send-back names only the first 80 characters", JOB_REPORT, True, "x" * 80 + "`", lacks="x" * 81, lines=background_job("j1", command="x" * 200)),
+    handback("form send-backs all spent still ask about a running job", JOB_REPORT, True, "still running", files=((SEND_BACK_COUNT, "3"),), lines=background_job("j1")),
+    handback("the job send-back tells how to stop it", JOB_REPORT, True, "TaskStop", lines=background_job("j1")),
+    handback("form send-backs spent do not spend the job check", JOB_REPORT, True, "still running", files=((SEND_BACK_COUNT, "2"),), lines=background_job("j1")),
+    handback("the job send-backs spent let a report naming the job go", NAMED_REPORT, False, files=((JOB_COUNT, "2"),), lines=background_job("j1", command="find / -name tsc")),
+    handback("the job send-backs spent let a report saying running go", RUNNING_REPORT, False, files=((JOB_COUNT, "2"),), lines=background_job("j1")),
+    handback("the job send-backs spent ask for a Not proven line", JOB_REPORT, True, "Not proven", files=((JOB_COUNT, "2"),), lines=background_job("j1")),
+    handback("the job send-backs spent and no form send-backs left let it go", JOB_REPORT, False, files=((JOB_COUNT, "2"), (SEND_BACK_COUNT, "3")), lines=background_job("j1")),
     handback("a handback after the job's notification runs", JOB_REPORT, False, lines=(*background_job("j1"), notify("j1", "completed"))),
     handback("a job's notification as a queued command counts", JOB_REPORT, False, lines=(*background_job("j1"), queued_notify("j1"))),
     handback("a job that was stopped is over", JOB_REPORT, False, lines=(*background_job("j1"), notify("j1", "killed"))),
@@ -2792,7 +2849,6 @@ BACKGROUND_CASES = (
     handback("a foreground command that printed the words is no job", JOB_REPORT, False, lines=(assistant({"type": "tool_use", "id": "f1", "name": "Bash", "input": {"command": "echo"}}), bash_output("f1", "Command running in background with ID: b1"))),
     handback("a background call that failed to start is no job", JOB_REPORT, False, lines=background_job("j1", reply="permission denied")),
     handback("a background agent is not a Bash job", JOB_REPORT, False, lines=launch("a9")[:2]),
-    handback("a job past three send-backs lets the handback go", JOB_REPORT, False, files=((SEND_BACK_COUNT, "3"),), lines=background_job("j1")),
     handback("a built-in helper may hand back with a job running", JOB_REPORT, False, agent_type="Explore", lines=background_job("j1")),
 )
 

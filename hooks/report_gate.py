@@ -45,6 +45,9 @@ REPORT_TITLE = re.compile(r"^# Report: [^,\n]*, *(.+?)\s*$", re.M)
 NO_FEEDBACK = re.compile(r"(none|none needed|no feedback|n/?a)[ .]*", re.I)
 NO_PROBLEM = re.compile(r"(- +)?no problem", re.I)
 MAX_SEND_BACKS = 3
+MAX_JOB_SEND_BACKS = 2
+JOB_SHOWN_CHARS = 80
+JOB_NAMED_CHARS = 20
 PRINTED_EXIT = r"\b(?:exit|code|rc|status|returncode|returned|error)\b\D{{0,12}}\b{code}\b"
 GIT_TIMEOUT_S = 3
 MAX_WALK_FILES = 20000
@@ -546,13 +549,27 @@ def get_send_backs_path(event: dict, /) -> Path:
     return folder / f"{event.get('agent_id') or 'unknown'}.count"
 
 
-def get_send_backs(event: dict, /) -> int:
-    path = get_send_backs_path(event)
+def read_count(path: Path, /) -> int:
 
     try:
         return int(path.read_text())
     except (OSError, ValueError):
         return 0
+
+
+def get_send_backs(event: dict, /) -> int:
+
+    return read_count(get_send_backs_path(event))
+
+
+def get_jobs_path(event: dict, /) -> Path:
+
+    return get_send_backs_path(event).with_suffix(".jobs")
+
+
+def get_job_send_backs(event: dict, /) -> int:
+
+    return read_count(get_jobs_path(event))
 
 
 def get_kept_path(event: dict, /) -> Path:
@@ -607,7 +624,7 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
 
     path = get_send_backs_path(event)
     send_backs = get_send_backs(event)
-    for stale in (path, get_kept_path(event)):
+    for stale in (path, get_kept_path(event), get_jobs_path(event)):
         if stale.exists():
             stale.unlink()
     session = event.get("session_id") or "unknown"
@@ -645,19 +662,50 @@ def get_problems(report: str, event: dict, root: Path, config: dict, found: Assi
     return problems
 
 
-def count_running_jobs(path: Path, outputs: dict[str, str], /) -> int:
+def find_running_jobs(path: Path, outputs: dict[str, str], /) -> list[str]:
 
-    launched: set[str] = set()
+    launched: dict[str, str] = {}
     finished: set[str] = set()
     for line in read_events(path):
         content = (line.get("message") or {}).get("content") if line.get("type") == "assistant" else None
         for block in content if isinstance(content, list) else ():
             is_background = isinstance(block, dict) and block.get("name") == "Bash" and (block.get("input") or {}).get("run_in_background") is True
             if is_background and "in background" in outputs.get(block.get("id"), ""):
-                launched.add(block["id"])
+                launched[block["id"]] = str((block.get("input") or {}).get("command") or "")
         finished.update(tool_id for tool_id, status in NOTIFICATION.findall(get_notice_text(line)) if status in FINISHED_STATUSES)
 
-    return len(launched - finished)
+    return [command for tool_id, command in launched.items() if tool_id not in finished]
+
+
+def make_job_text(commands: list[str], /) -> str:
+
+    shown = "; ".join(f"`{' '.join(command.split())[:JOB_SHOWN_CHARS]}`" for command in commands)
+
+    return (
+        f"{len(commands)} background command(s) you started are still running: {shown}. Stop each one you no longer need with the "
+        f"TaskStop tool (KillShell, if that is the name in your tool list), or wait for its completion notice if you need its result; then report"
+    )
+
+
+def names_jobs(report: str, commands: list[str], /) -> bool:
+
+    sections = dict(read_sections(report))
+    text = " ".join(sections.get("Not proven", [])).lower()
+    named = [" ".join(command.split())[:JOB_NAMED_CHARS].lower() for command in commands]
+
+    return "running" in text or any(name and name in " ".join(text.split()) for name in named)
+
+
+def get_job_problems(report: str, commands: list[str], job_tries: int, tries: int, /) -> list[Problem]:
+
+    if not commands:
+        return []
+    if job_tries < MAX_JOB_SEND_BACKS:
+        return [Problem("Answer", make_job_text(commands))]
+    if tries < MAX_SEND_BACKS and not names_jobs(report, commands):
+        return [Problem("Not proven", "a background command is still running after the send-backs; name it here as left running, with the command that stops it")]
+
+    return []
 
 
 def check_handback(event: dict, /) -> int:
@@ -665,18 +713,22 @@ def check_handback(event: dict, /) -> int:
     root, config = find_project(event.get("cwd") or os.getcwd())
     report = (event.get("tool_input") or {}).get("message")
     tries = get_send_backs(event)
-    if not event.get("agent_id") or not is_judged(event) or not isinstance(report, str) or tries >= MAX_SEND_BACKS:
+    job_tries = get_job_send_backs(event)
+    if not event.get("agent_id") or not is_judged(event) or not isinstance(report, str):
         return 0
     path = get_agent_path(event)
     found = read_assistant_blocks(str(path)) if path is not None else AssistantBlocks([], {}, None, {})
     judged = {**event, "agent_transcript_path": str(path)} if path is not None else event
-    problems = get_problems(report, judged, root, config, found)
-    running = count_running_jobs(path, found.outputs) if path is not None else 0
-    if running:
-        problems.append(Problem("Answer", f"{running} background command(s) you started are still running; wait for their completion notice (it wakes you), then report their result"))
+    problems = get_problems(report, judged, root, config, found) if tries < MAX_SEND_BACKS else []
+    running = find_running_jobs(path, found.outputs) if path is not None else []
+    has_form_problem = bool(problems)
+    problems += get_job_problems(report, running, job_tries, tries)
     if not problems:
         return 0
-    write_atomic(get_send_backs_path(event), str(tries + 1))
+    if running and job_tries < MAX_JOB_SEND_BACKS:
+        write_atomic(get_jobs_path(event), str(job_tries + 1))
+    if has_form_problem or any(problem.section == "Not proven" for problem in problems):
+        write_atomic(get_send_backs_path(event), str(tries + 1))
     print(make_send_back(problems, is_handback=True), file=sys.stderr)
 
     return 2
