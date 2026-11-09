@@ -1968,6 +1968,38 @@ MAIN_EDIT_CASES = (
     Case("an edit in the allow list is not recorded", ("delegate.py",), edit_event("__scratch__/a.py"), False, config={}, not_wrote=(EDITS_FILE, "scratch")),
     Case("a refused edit is not recorded", ("delegate.py",), edit_event("src/z.py"), True, config={"main_edits": {"max": 1}}, files=((EDITS_FILE, "src/a.py\n"),), not_wrote=(EDITS_FILE, "src/z.py")),
     Case("the home folder as the root is never counted", ("delegate.py",), edit_event("src/d.py"), False, config={}, cwd=".", files=((EDITS_FILE, "a\nb\nc\n"),), lacks="main_edits"),
+    Case(
+        "an owner prompt empties the edit count while a status is due",
+        ("delegate.py",),
+        edit_event("src/d.py"),
+        False,
+        config={},
+        files=((DEFERRED_FILE, "1"),),
+        before=(*tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "go on"})),
+        context="edit 1 of 3",
+    ),
+    Case(
+        "a notification keeps the edit count",
+        ("delegate.py",),
+        edit_event("src/d.py"),
+        True,
+        "3 edits",
+        config={},
+        files=((DEFERRED_FILE, "1"),),
+        before=(*tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "<task-notification>\n<status>completed</status>"})),
+    ),
+    Case(
+        "the 4th edit within one turn is refused after a prompt",
+        ("delegate.py",),
+        edit_event("src/e.py"),
+        True,
+        "3 edits",
+        config={},
+        before=(
+            (("turn.py", "reset"), {"session_id": SESSION, "prompt": "go on"}),
+            *tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")),
+        ),
+    ),
     edit_call("the cap holds with no project file", "src/d.py", THREE_EDITS, True, "3 edits", config=None),
 )
 DELEGATE_CASES = (

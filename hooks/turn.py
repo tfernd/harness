@@ -427,9 +427,10 @@ def main() -> int:
                 file.write(f"{get_call_line(event)}\n")
     elif mode == "reset":
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
+        if not is_app_prompt:
+            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")
         if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
             write_atomic(calls_path, "")
-            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")
             if is_project_root(root):
                 write_atomic(rules_path, json.dumps(get_rule_state(root, config)))
         write_atomic(blocks_path, "0")

@@ -35,8 +35,7 @@ The owner commits, or the main session when the owner asks (git rules: `harness:
 
 ## 3. The closing status
 
-Due after a turn that ran agents or edited many files, once no background agent is still running (until then the turn is
-a progress note). A quick answer does not need it.
+Due after a turn that ran agents or edited many files, once no background agent is still running. A turn that ends while agents run is a progress note of a few lines with no status headings; a quick answer does not need it either. The Stop hook asks for the status when it is due, so never write it ahead of that.
 
 Plain words first, then narrow tables, under these exact `##` headings in this order. Required: `## Verdict`,
 `## Done`, `## Needs you`, `## Next`, `## Lessons`. The others are left out when empty.

@@ -266,6 +266,8 @@ MUTANTS = (
     ("reset-empties-a-deferred-count", "turn.py", 'if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():', "if not is_app_prompt:"),
     ("deferred-mark-not-written", "turn.py", 'write_atomic(deferred_path, "1")', "pass"),
     ("deferred-mark-not-cleared", "turn.py", "if not is_deferred and deferred_path.exists():\n        deferred_path.unlink()", "if False:\n        pass"),
+    ("reset-keeps-edits-while-deferred", "turn.py", '        if not is_app_prompt:\n            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")', '        if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():\n            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")'),
+    ("reset-empties-edits-on-notification", "turn.py", '        if not is_app_prompt:\n            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")', '        if True:\n            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")'),
     ("main-edits-cap-off-by-one", "delegate.py", "if count >= maximum:", "if count > maximum:"),
     ("progress-every-ignored", "budget.py", "if every and num_turns % every == 0 and is_first:", "if every and is_first:"),
     ("progress-first-call-ignored", "budget.py", "if every and num_turns % every == 0 and is_first:", "if every and num_turns % every == 0:"),
