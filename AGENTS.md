@@ -12,7 +12,9 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 ## Install, update, set up a project
 - Needs Claude Code, `uv` on `PATH` (hooks run as `uv run --script`) and git access to this repo (`gh auth setup-git` for a private one).
 - Install once per machine, then restart Claude Code or run `/reload-plugins`:
-  `claude plugin marketplace add tfernd/harness` and `claude plugin install harness@harness --scope user`.
+  `claude plugin marketplace add https://github.com/tfernd/harness.git` and `claude plugin install harness@harness --scope user`.
+  The git URL matches an `extraKnownMarketplaces` entry of the same form; if the add still says the source does not match,
+  the marketplace is already known: skip the add and run `claude plugin marketplace update harness`.
 - Update: `claude plugin marketplace update harness` and `claude plugin update harness@harness`. Every pushed commit is a version.
 - Per project, run `/harness:init` once. It writes `AGENTS.md` from `templates/`, asks only what the files do not settle, and shows a diff before touching an existing file.
 - A team commits `AGENTS.md`; each member still installs the plugin.
