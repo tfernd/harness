@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -35,6 +36,8 @@ CREW_HOOKS_NAME = "hooks.json"
 CREW_BACKUP_NAME = "hooks.json.harness-backup"
 CREW_ENTRY_PREFIX = "harness-"
 CREW_COMMAND_TIMEOUT_SECONDS = 8
+CREW_ENTRY_TIMEOUT_SECONDS = 30
+CREW_ID_LENGTH = 8
 CREW_BLOCK_EXIT = 2
 CREW_TOOL_EVENTS = ("PreToolUse", "PostToolUse")
 CREW_TRIGGERS = {
@@ -169,18 +172,22 @@ def make_crew_command(uv_path: str, event: str, hook_command: str, /) -> str:
 
 def make_crew_entry(uv_path: str, event: str, hook_command: str, /) -> dict:
     script = HOOK_SCRIPT.search(hook_command)
-    entry: dict = {
-        "name": f"{CREW_ENTRY_PREFIX}{event}-{script.group(1) if script else 'hook'}",
-        "trigger": CREW_TRIGGERS[event],
-    }
-    if event in CREW_TOOL_EVENTS:
-        entry["matcher"] = "*"
-    entry["action"] = {
-        "type": "command",
+    name = f"{CREW_ENTRY_PREFIX}{event}-{script.group(1) if script else 'hook'}"
+    return {
+        "id": hashlib.sha256(name.encode()).hexdigest()[:CREW_ID_LENGTH],
+        "name": name,
+        "event": CREW_TRIGGERS[event],
+        "matcher": "*" if event in CREW_TOOL_EVENTS else "",
+        "matcher_mode": "glob",
         "command": make_crew_command(uv_path, CREW_TRIGGERS[event], hook_command),
+        "skills": [],
+        "timeout": CREW_ENTRY_TIMEOUT_SECONDS,
+        "enabled": True,
+        "last_run": 0.0,
+        "last_status": "",
+        "last_error": "",
+        "run_count": 0,
     }
-    entry["timeout"] = HOOK_TIMEOUT_SECONDS
-    return entry
 
 
 def plan_crew_hooks(plan: Plan, source: dict, /) -> None:

@@ -30,11 +30,19 @@ if os.environ["HARNESS_PROBE_MODE"] == "add":
     command = f"cat >/dev/null; echo fired >> '{marker}'; exit 0"
     entries.append(
         {
+            "id": "b7e1c0de",
             "name": "harness-probe",
-            "trigger": "PreToolUse",
+            "event": "PreToolUse",
             "matcher": "*",
-            "action": {"type": "command", "command": command},
-            "timeout": 10,
+            "matcher_mode": "glob",
+            "command": command,
+            "skills": [],
+            "timeout": 30,
+            "enabled": True,
+            "last_run": 0.0,
+            "last_status": "",
+            "last_error": "",
+            "run_count": 0,
         }
     )
 document["hooks"] = entries

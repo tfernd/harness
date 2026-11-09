@@ -310,23 +310,42 @@ def check_kiro_crew(base: Path) -> None:
 
     dest = base / "crew-present"
     crew_file = dest / "crew" / "hooks.json"
-    owner = {"name": "owner-gate", "trigger": "Stop", "action": {"type": "command", "command": "true"}}
+    owner = {
+        "id": "a0f9acde",
+        "name": "owner-gate",
+        "event": "Stop",
+        "matcher": "",
+        "matcher_mode": "glob",
+        "command": "true",
+        "skills": [],
+        "timeout": 30,
+        "enabled": True,
+        "last_run": 0.0,
+        "last_status": "",
+        "last_error": "",
+        "run_count": 0,
+    }
     plant_file(crew_file, json.dumps({"hooks": [owner]}))
     run_port("kiro", dest)
     names = get_crew_names(crew_file)
     check(names[0] == "owner-gate", f"owner entry lost or moved {names[:2]}")
+    check(json.loads(crew_file.read_text())["hooks"][0] == owner, "owner entry changed")
     ours = [name for name in names if name.startswith("harness-")]
     check(ours and len(ours) == len(names) - 1, f"crew entries {names}")
     check((dest / "crew" / "hooks.json.harness-backup").exists(), "no crew backup")
     document = json.loads(crew_file.read_text())
     guard = next(e for e in document["hooks"] if e["name"] == "harness-PreToolUse-guard")
     check(
-        guard["trigger"] == "PreToolUse" and guard["matcher"] == "*" and guard["action"]["type"] == "command",
+        guard["event"] == "PreToolUse" and guard["matcher"] == "*" and guard["matcher_mode"] == "glob",
         f"crew guard shape {guard}",
     )
-    check(any(e["trigger"] == "AgentSpawn" for e in document["hooks"]), "no AgentSpawn entry")
-    check(not any("Subagent" in e["trigger"] for e in document["hooks"]), "subagent hook in crew")
-    check(guard["action"]["command"].startswith("sh -c "), "crew command not wrapped")
+    check(set(guard) == set(owner), f"crew entry keys {sorted(guard)}")
+    check(guard["enabled"] is True and guard["timeout"] > 8 and guard["skills"] == [], f"crew guard fields {guard}")
+    check(any(e["event"] == "AgentSpawn" for e in document["hooks"]), "no AgentSpawn entry")
+    check(not any("Subagent" in e["event"] for e in document["hooks"]), "subagent hook in crew")
+    check(guard["command"].startswith("sh -c "), "crew command not wrapped")
+    ids = [e["id"] for e in document["hooks"]]
+    check(len(set(ids)) == len(ids), "crew ids not unique")
 
     run_port("kiro", dest)
     check(get_crew_names(crew_file) == names, "reinstall changed or duplicated crew entries")
