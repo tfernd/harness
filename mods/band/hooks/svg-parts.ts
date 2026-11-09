@@ -60,8 +60,9 @@ export const label = (x: number, y: number, cls: string, content: string, extra 
 
 export const COUNTS_ROW_STEP = 14
 export const COUNTS_ICON_WIDTH = 14
-const COUNTS_DIGIT_WIDTH = 7.5
-const COUNTS_MIN_DIGITS = 2
+export const COUNTS_DIGIT_WIDTH = 7.5
+export const COUNTS_MIN_DIGITS = 3
+export const COUNTS_RESERVED_WIDTH = COUNTS_ICON_WIDTH + 4 + COUNTS_MIN_DIGITS * COUNTS_DIGIT_WIDTH
 
 export type CountsMark = { live: number; done: number; failed: number }
 

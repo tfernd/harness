@@ -106,7 +106,8 @@ const timelineSource = async (ui: Mounted): Promise<string> =>
     .map(svg => String(svg.props['source']))
     .join('')
 
-test('main shows NEEDS YOU while AskUserQuestion is open and leaves it when answered', async ($, on) => {
+for (const tool of ['AskUserQuestion', 'ExitPlanMode']) {
+test(`main shows NEEDS YOU while ${tool} is open and leaves it when answered`, async ($, on) => {
   const clock = mock.clock(on)
   let answer: () => void = () => undefined
   let enter: () => void = () => undefined
@@ -126,7 +127,7 @@ test('main shows NEEDS YOU while AskUserQuestion is open and leaves it when answ
   const ui = await $.ui.mount(BAND)
   await $.turn.start({ text: '', turnId: 't1' })
   await clock.advance(MIN_REBUILD_MS + 500)
-  const pending = $.tool.call({ tool: 'AskUserQuestion', questions: [] } as never)
+  const pending = $.tool.call({ tool, questions: [] } as never)
   await entered
   await clock.advance(MIN_REBUILD_MS + 200)
   const during = await timelineSource(ui)
@@ -137,5 +138,41 @@ test('main shows NEEDS YOU while AskUserQuestion is open and leaves it when answ
 
   expect(during).toContain('NEEDS YOU')
   expect(after).not.toContain('NEEDS YOU')
+  await ui.unmount()
+})
+}
+
+test('a permission ask to a person does not show NEEDS YOU: the mode decides who answers', async ($, on) => {
+  const clock = mock.clock(on)
+  let finish: () => void = () => undefined
+  let enter: () => void = () => undefined
+  const entered = new Promise<void>(resolve => {
+    enter = resolve
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: USAGE }))
+  on('config.list', () => ({ value: [] }))
+  on('agent.list', () => ({ value: [] }))
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('tool.check', (_, e, next) => (e.tool_use_id === undefined ? { decision: 'ask' } : next(e)))
+  on('tool.call', () => new Promise(resolve => {
+    finish = () => resolve({ result: 'ok' })
+    enter()
+  }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+  await $.turn.start({ text: '', turnId: 't1' })
+  await clock.advance(MIN_REBUILD_MS + 500)
+  const pending = $.tool.call({ tool: 'Bash', command: 'sleep 17' } as never)
+  await entered
+  const verdict = await $.tool.check({ tool: 'Bash', input: { command: 'sleep 17' } })
+  await clock.advance(MIN_REBUILD_MS + 200)
+  const during = await timelineSource(ui)
+  finish()
+  await pending
+
+  expect(verdict.decision).toBe('ask')
+  expect(during).not.toContain('NEEDS YOU')
+  expect(during).toContain('sleep 17')
   await ui.unmount()
 })

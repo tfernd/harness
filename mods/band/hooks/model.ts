@@ -16,7 +16,7 @@ export const DIRECT_LABEL = 'direct agents'
 export const MAIN_ID = 'main'
 export const MAIN_LABEL = 'main session'
 export const NEEDS_YOU_WORD = 'NEEDS YOU'
-export const OWNER_QUESTION_TOOL = 'AskUserQuestion'
+export const OWNER_QUESTION_TOOLS: readonly string[] = ['AskUserQuestion', 'ExitPlanMode']
 
 export const EMPTY_STORE: AgentStore = { rows: [], main: null, evictedDone: 0, evictedFailed: 0 }
 export const EMPTY_ROSTER: Roster = { rows: [], evictedDone: 0, evictedFailed: 0 }

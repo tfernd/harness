@@ -14,7 +14,7 @@ import {
   applyListing,
   isSameRoster,
   moveAgent,
-  OWNER_QUESTION_TOOL,
+  OWNER_QUESTION_TOOLS,
   moveMain,
   nextLeaveMs,
   nextQuietChangeMs,
@@ -298,7 +298,7 @@ export const register: Register = on => {
     const id = e.agentId
 
     if (id === undefined) {
-      const isQuestion = e.tool === OWNER_QUESTION_TOOL
+      const isQuestion = OWNER_QUESTION_TOOLS.includes(e.tool)
       const started: MainActivity = isQuestion ? { state: 'waiting', command: null } : { state: 'tool', command: describeCall(e) }
       await setMainActivity($, runtime, { activity: started }).catch(cause => reportFailure($, 'main tool start', cause))
 
@@ -324,18 +324,6 @@ export const register: Register = on => {
         reportFailure($, 'tool end', cause),
       )
     }
-  })
-
-  on('tool.check', async ($, e, next) => {
-    const verdict = await next(e)
-
-    if (e.agentId === undefined && verdict.decision === 'ask' && e.approver !== 'host') {
-      await setMainActivity($, runtime, { activity: { state: 'waiting', command: null }, from: 'tool' }).catch(cause =>
-        reportFailure($, 'main permission ask', cause),
-      )
-    }
-
-    return verdict
   })
 
   on('turn.complete', async ($, e, next) => {

@@ -50,9 +50,11 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
   STATE column stay; the terminal view keeps its strip.
 - 2026-11-09: the owner asked for the main session row in the timeline: "the timeline show agents, but not the main sessions, fix that?"
 - 2026-11-09: the owner asked to spot stuck work and to know when he is needed: the main row says NEEDS YOU while a
-  question (`AskUserQuestion`, a `tool.call`) is open or `tool.check` answered `ask` to a person, and any live row with
+  question (`AskUserQuestion` or `ExitPlanMode`, a `tool.call` that blocks until answered) is open, and any live row with
   no state or command change for 2 minutes says "quiet 2m" (minutes counting up) in its state cell until its next change.
-  NEEDS YOU from a permission ask clears when that tool call ends, not at the answer: no event marks the answer.
+  A permission `ask` from `tool.check` does not show NEEDS YOU: the verdict goes to the mode's decider (dialog,
+  auto-mode classifier, headless host), and the session's current mode cannot be read (only `agent.spawn` carries
+  `permissionMode`, and `approver` says only that a person can be asked), so a person cannot be told to be asked.
 - 2026-11-09: desktop polish: the state cell of a quiet row is a muted amber pill and NEEDS YOU a strong amber one; a
   folded group header is a 24px chevron button, a label piece, a density strip exactly as wide as the track (its left
   edge on the track's left edge, its right on the now line, half the row high, centred) and a counts piece in the state
@@ -68,3 +70,4 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
   border of our own; gauges sit left with equal gaps and the ring-less cache keeps a ring-wide slot; the folded traces
   budget counts the native Button and the real gaps.
 - 2026-11-09: owner fixes to the folded band: the live traces shrink to the width that is left (56 to 360 px) before they drop; live, done and failed are one three-row icon Svg (a blue dot, a check, a cross, numbers only, zero dim) in the folded and the open band; the cache gauge reads "cache" over "warm ~56m", "cold" or "84% hit".
+- 2026-11-09: nothing on the folded line is cropped: the counts Svg always reserves three digits and never shrinks; the traces sit in a Box that may shrink (`flexShrink` 1, `minWidth` 0, hidden overflow), and their width estimate assumes wider text, status and unfold button, so the strip gives way first.

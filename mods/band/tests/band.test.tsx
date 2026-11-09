@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import { EMPTY_GAUGES, cacheClockOf, cacheRefreshMs } from '../hooks/gauges'
 import { EMPTY_ROSTER, EMPTY_STORE, addAgent, layoutBand, moveMain, newAgent, rosterOf, themeOf } from '../hooks/model'
 import { listedGroupsOf, piecesOf, refreshAfterMs } from '../hooks/svg-band'
-import { gaugeSpecs } from '../hooks/svg-strip'
+import { FOLDED_CONTENT_INSET, FOLDED_GAP, FOLDED_STATUS_WIDTH, FOLDED_UNFOLD_WIDTH, foldedTracesWidth, gaugeSpecs } from '../hooks/svg-strip'
 import { bandColorsOf } from '../hooks/svg-theme'
 import { groupCountsText, liveStateCounts } from '../hooks/svg-timeline'
 import { MIN_REBUILD_MS, chooseBand } from '../hooks/svg-cache'
@@ -770,4 +770,22 @@ test('the cache gauge says only "cache" and a short detail: warm with minutes le
   expect(specOf(OWNER_GAUGES)?.detail).toBe('warm ~56m')
   expect(specOf({ ...OWNER_GAUGES, lastCallAt: NOW - 61 * MINUTE })?.detail).toBe('cold')
   expect(specOf({ ...EMPTY_GAUGES, cachePercent: 84 })?.detail).toBe('84% hit')
+})
+
+test('the folded line keeps the counts at full width for 2 live, 53 done, 0 failed and the trace strip gives way', () => {
+  const roster = { ...rosterOf(LIVE_STORE), evictedDone: 52, evictedFailed: 0 }
+
+  for (const width of [900, 1000, 1500]) {
+    const input = { ...SVG_INPUT, width, isFolded: true, roster, rows: new Map([['live-1', LIVE_STORE.rows[0]]]), gauges: OWNER_GAUGES } as never
+    const built = piecesOf(input).map(spec => [spec.key, spec.build()] as const)
+    const countsWidth = built.find(([key]) => key === 'counts')?.[1].width ?? 0
+    const tracesWidth = built.find(([key]) => key === 'traces')?.[1].width ?? 0
+    const specs = gaugeSpecs(OWNER_GAUGES, SVG_INPUT.now)
+    const gauges = specs.reduce((sum, spec) => sum + 32 + Math.max(spec.name.length, spec.detail.replace(/\s*↻.*$/, '').length) * 7, 0)
+    const fixed = FOLDED_UNFOLD_WIDTH + FOLDED_STATUS_WIDTH + gauges + (specs.length + 3) * FOLDED_GAP + FOLDED_CONTENT_INSET
+
+    expect(countsWidth).toBeGreaterThanOrEqual(40.5)
+    expect(tracesWidth + countsWidth + fixed).toBeLessThanOrEqual(width)
+    expect(foldedTracesWidth(width, specs)).toBe(tracesWidth)
+  }
 })

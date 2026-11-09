@@ -209,7 +209,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
         {statusBox}
         {gaugeGroup}
         {live.length === 0 ? null : (
-          <Box key="traces-slot" alignSelf="center" flexShrink={0}>
+          <Box key="traces-slot" alignSelf="center" flexShrink={1} minWidth={0} overflow="hidden">
             {svgOf('traces', `${live.length} live agent traces, last 60s`)}
           </Box>
         )}

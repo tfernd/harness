@@ -2,7 +2,7 @@ import type { AgentRow, Gauges, Roster } from '../types'
 
 import { cacheClockOf } from './gauges'
 import { FOLDED_RANGE, earliestStart, formatReset, formatTokens, tracedRows, windowFor } from './model'
-import { type Ctx, driftGroup, label, laneMarkup, num } from './svg-parts'
+import { COUNTS_RESERVED_WIDTH, type Ctx, driftGroup, label, laneMarkup, num } from './svg-parts'
 
 export type StripInput = {
   width: number
@@ -143,11 +143,11 @@ export const stripDetailOf = (specs: readonly GaugeSpec[], budget: StripBudget):
   return stripWidth(specs, budget, full) <= budget.width - STRIP_FRAME_INSET ? full : foldedDetail
 }
 
-const TEXT_CHAR_PX = 6.6
-const FOLDED_CONTENT_INSET = 48
-const FOLDED_STATUS_WIDTH = 66
-const FOLDED_UNFOLD_WIDTH = 32
-const FOLDED_COUNTS_WIDTH = 44
+const TEXT_CHAR_PX = 8
+export const FOLDED_CONTENT_INSET = 48
+export const FOLDED_STATUS_WIDTH = 80
+export const FOLDED_UNFOLD_WIDTH = 40
+export const FOLDED_COUNTS_WIDTH = Math.ceil(COUNTS_RESERVED_WIDTH) + FOLDED_GAP
 
 export const foldedTracesWidth = (width: number, specs: readonly GaugeSpec[]): number => {
   const gauges = specs.reduce(
