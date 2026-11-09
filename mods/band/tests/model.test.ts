@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import { MAX_AGENTS, MAX_SEGMENTS, addAgent, moveMain, countAgents, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
+import { MAX_AGENTS, MAX_SEGMENTS, addAgent, moveMain, countAgents, orderAgents, splitByWindow, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
 import { paintTextRows } from '../hooks/paint'
 import { CLOCK_COLUMNS } from '../hooks/view'
 
@@ -105,4 +105,20 @@ test('the main row keeps a thinking span, a tool span with its command, no span 
   }
 
   expect(store.main?.segments.length).toBeLessThanOrEqual(MAX_SEGMENTS)
+})
+
+test('inside a group live agents come first by start, then ended ones by latest end, before the window split', () => {
+  let store: AgentStore = EMPTY_STORE
+
+  for (const [id, start] of [['a', 10], ['b', 20], ['c', 30], ['d', 40]] as const) {
+    store = addAgent(store, agentNamed(id, start))
+  }
+
+  store = moveAgent(store, { id: 'a', state: 'done', command: null, now: 100 })
+  store = moveAgent(store, { id: 'c', state: 'failed', command: null, now: 200 })
+  const rows = new Map(store.rows.map(row => [row.id, row]))
+  const roster = rosterOf(store).rows
+
+  expect(orderAgents(roster, rows).map(agent => agent.id)).toEqual(['b', 'd', 'c', 'a'])
+  expect(splitByWindow(roster, rows, 150).shown.map(agent => agent.id)).toEqual(['b', 'd', 'c'])
 })

@@ -56,6 +56,23 @@ export const earliestStart = (agents: readonly AgentRow[], fallback: number): nu
 export const isInWindow = (agent: { phase: Phase }, row: AgentRow | undefined, windowStart: number): boolean =>
   agent.phase === 'live' || row === undefined || row.endedAt === null || row.endedAt > windowStart
 
+const startedOf = (row: AgentRow | undefined): number => row?.startedAt ?? 0
+
+const endedOf = (row: AgentRow | undefined): number => row?.endedAt ?? 0
+
+export const orderAgents = <Member extends { id: string; phase: Phase }>(
+  agents: readonly Member[],
+  rows: ReadonlyMap<string, AgentRow>,
+): Member[] => {
+  const live = agents.filter(agent => agent.phase === 'live')
+  const ended = agents.filter(agent => agent.phase !== 'live')
+
+  live.sort((left, right) => startedOf(rows.get(left.id)) - startedOf(rows.get(right.id)))
+  ended.sort((left, right) => endedOf(rows.get(right.id)) - endedOf(rows.get(left.id)))
+
+  return [...live, ...ended]
+}
+
 export type WindowSplit<Member extends { id: string; phase: Phase }> = { shown: Member[]; earlier: number }
 
 export const splitByWindow = <Member extends { id: string; phase: Phase }>(
@@ -63,7 +80,7 @@ export const splitByWindow = <Member extends { id: string; phase: Phase }>(
   rows: ReadonlyMap<string, AgentRow>,
   windowStart: number,
 ): WindowSplit<Member> => {
-  const shown = agents.filter(agent => isInWindow(agent, rows.get(agent.id), windowStart))
+  const shown = orderAgents(agents, rows).filter(agent => isInWindow(agent, rows.get(agent.id), windowStart))
 
   return { shown, earlier: agents.length - shown.length }
 }

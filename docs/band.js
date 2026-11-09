@@ -295,7 +295,7 @@
       return left.state === "live" ? left.spawnedAt - right.spawnedAt : right.endedAt - left.endedAt;
     });
     const shown = new Set(ranked.slice(0, MAX_ROWS).map((agent) => agent.id));
-    return model.agents.filter((agent) => shown.has(agent.id));
+    return ranked.filter((agent) => shown.has(agent.id));
   };
 
   const groupSignature = (groups, collapsed) =>

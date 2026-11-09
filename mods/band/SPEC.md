@@ -35,6 +35,7 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
   timeline hover was given up for that).
 - The timeline shows an agent only if its life overlaps the chosen range (live ones always); per group the rest show
   as one dim "+N earlier" line, and a group with nothing at all is not drawn.
+- Inside a group, live agents come first (oldest start on top), then ended ones, most recently ended first; the row limit cuts after that order, through one function (`orderAgents`) for every view.
 - Values the drawing reads live in `$.state`, so a write redraws only its readers.
 
 ## Owner changes
