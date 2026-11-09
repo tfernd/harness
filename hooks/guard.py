@@ -87,6 +87,8 @@ CLOUD_RULE = "cloud"
 INSTALLER_RULE = "installer"
 ASK_RULES = (ASK_RULE, CLOUD_RULE, INSTALLER_RULE)
 REMOTE_RULES = frozenset({"denied", "hidden", *ASK_RULES})
+DBT_RULE = "dbt"
+SNOW_RULE = "snow"
 MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Your own throwaway files go in `__scratch__/`, where `rm` works; "
     "a tracked file that must go uses `git rm`.",
@@ -102,6 +104,14 @@ MESSAGES = {
     "is fetched) and let it run. Put the delay flag first yourself, or run the project's own tool, to skip this note.",
     CLOUD_RULE: "`{what}` writes to an AWS account, and that cannot be undone from this session, so the owner is asked first: run it "
     "yourself, or have the owner approve it. Reads (`describe-`, `list-`, `get-`, `s3 ls`) run freely; see `harness:aws-cli`.",
+    DBT_RULE: "`{what}` runs dbt against a target that is not a dev one, and a shared warehouse is the owner's to change: run it "
+    "with `--target dev`, or ask the owner for their word in this job. The owner gives it by listing the target under "
+    "`guard.dbt_dev_targets`, or by setting `guard.block_dbt_targets` to false, in `~/.config/harness/config.json`. `dbt parse`, "
+    "`compile`, `ls`, `debug`, `deps` and `docs generate` run on any target; see `harness:code-sql`.",
+    SNOW_RULE: "`{what}`: a write to Snowflake, or any use of a production connection, is the owner's to run or approve. Do not "
+    "rephrase it. Put the SQL in a file in `__scratch__/`, name the exact `snow` command and what it changes, and say so in your "
+    "report. The owner runs it, or sets `guard.block_snow` to false in `~/.config/harness/config.json`. Reads (`select`, `show`, "
+    "`describe`, `list`) on a non-production connection run freely; see `harness:snowflake-cli`.",
     INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `__scratch__/`, read it, "
     "then run that file, or have the owner approve the pipe.",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
@@ -151,11 +161,19 @@ class Policy(NamedTuple):
     ask_cloud: bool = False
     ask_installers: bool = False
     tool_delay_days: int = 0
+    block_dbt: bool = False
+    dbt_dev_targets: tuple[str, ...] = ()
+    block_snow: bool = False
 
 
 def get_delay_days(value: object, /) -> int:
 
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def get_names(value: object, /) -> tuple[str, ...]:
+
+    return tuple(name.lower() for name in value if isinstance(name, str)) if isinstance(value, list) else ()
 
 
 def get_policy(cwd: str, /) -> Policy:
@@ -172,6 +190,9 @@ def get_policy(cwd: str, /) -> Policy:
         ask_cloud=bool(guard.get("ask_cloud")),
         ask_installers=bool(guard.get("ask_installers")),
         tool_delay_days=get_delay_days(guard.get("tool_delay_days")),
+        block_dbt=guard.get("block_dbt_targets") is not False,
+        dbt_dev_targets=get_names(guard.get("dbt_dev_targets")),
+        block_snow=guard.get("block_snow") is not False,
     )
 
 
@@ -525,6 +546,154 @@ def find_installers(segments: list[Segment], /) -> list[str]:
 
 
 
+DBT_TOOL = "dbt"
+DBT_WRITES = frozenset({"build", "run", "test", "seed", "snapshot", "run-operation", "retry", "clone"})
+DBT_VALUE_OPTIONS = frozenset({
+    "--profiles-dir", "--project-dir", "--log-path", "--log-level", "--log-level-file", "--log-format", "--log-format-file",
+    "--target-path", "--profile", "--target", "-t",
+})
+DBT_DEV_TARGETS = frozenset({"dev", "local", "sandbox"})
+DBT_DEV_PREFIXES = ("dev_", "dev-")
+DBT_TARGET_VARIABLE = "DBT_TARGET"
+SNOW_TOOL = "snow"
+SNOW_VALUE_OPTIONS = frozenset({
+    "-c", "--connection", "--environment", "--role", "--warehouse", "--database", "--schema", "--format", "--config-file", "-q",
+    "--query", "-f", "--filename", "-D", "--variable", "--account", "--user", "--host", "--authenticator", "--private-key-file",
+})
+SNOW_CONNECTION_VARIABLE = "SNOWFLAKE_DEFAULT_CONNECTION_NAME"
+SNOW_VERBS = frozenset({"deploy", "drop", "execute"})
+SNOW_WRITE_COMMANDS = frozenset({("object", "create"), ("stage", "remove")})
+SNOW_PRODUCTION_WORD = "prod"
+SNOW_PATH_LENGTH = 3
+SQL_WRITES = frozenset({
+    "CREATE", "ALTER", "DROP", "TRUNCATE", "DELETE", "UPDATE", "INSERT", "MERGE", "GRANT", "REVOKE", "CALL", "EXECUTE", "PUT", "REMOVE",
+    "COPY", "UNDROP",
+})
+SQL_NOISE = re.compile(r"--[^\n]*|//[^\n]*|/\*.*?\*/|\$\$.*?\$\$|'(?:[^'\\]|\\.|'')*'|\"(?:[^\"]|\"\")*\"", re.S)
+SQL_WORD = re.compile(r"[A-Za-z_]+")
+SQL_READ_LIMIT = 1_000_000
+
+
+def get_tool_arguments(command: Command, tool: str, /) -> list[str] | None:
+
+    name = os.path.basename(command.name)
+    arguments = [word.text for word in command.arguments]
+    if name == tool:
+        return arguments
+    if name in CLOUD_WRAPPERS:
+        wrapped = next((index for index, argument in enumerate(arguments) if os.path.basename(argument) == tool), -1)
+        return arguments[wrapped + 1 :] if wrapped >= 0 else None
+    module = arguments.index("-m") + 1 if name.startswith("python") and "-m" in arguments else 0
+    if module and module < len(arguments) and arguments[module].split(".")[0] == tool:
+        return arguments[module + 1 :]
+
+    return None
+
+
+def get_assigned_environment(segment: Segment, name: str, /) -> list[str]:
+
+    prefix = f"{name}="
+
+    return [word.text[len(prefix) :] for word in segment.words if word.text.startswith(prefix)]
+
+
+def is_unexpanded(value: str, /) -> bool:
+
+    return any(character in value for character in UNEXPANDED)
+
+
+def is_dev_target(target: str, policy: Policy, /) -> bool:
+
+    lowered = target.lower()
+
+    return lowered in DBT_DEV_TARGETS or lowered.startswith(DBT_DEV_PREFIXES) or lowered in policy.dbt_dev_targets
+
+
+def get_dbt_label(segment: Segment, command: Command, policy: Policy, /) -> str:
+
+    arguments = get_tool_arguments(command, DBT_TOOL)
+    if arguments is None:
+        return ""
+
+    positionals = get_positionals(arguments, DBT_VALUE_OPTIONS)
+    targets = [*get_option_values(arguments, "t", "--target"), *get_assigned_environment(segment, DBT_TARGET_VARIABLE)]
+    outside = [target for target in targets if target and not is_unexpanded(target) and not is_dev_target(target, policy)]
+    if not positionals or positionals[0] not in DBT_WRITES or not outside:
+        return ""
+
+    return f"dbt {positionals[0]} --target {outside[0]}"
+
+
+def read_sql_file(filename: str, directory: str | None, /) -> str:
+
+    if is_unexpanded(filename) or (directory is None and not is_absolute(filename)):
+        return ""
+    try:
+        with open(resolve_path(filename, directory or ""), errors="replace") as file:
+            return file.read(SQL_READ_LIMIT)
+    except OSError:
+        return ""
+
+
+def get_statement_keyword(statement: str, /) -> str:
+
+    words = [word.upper() for word in SQL_WORD.findall(statement)[:3]]
+    if words[:1] == ["BEGIN"]:
+        words = words[1:]
+    if words[:2] == ["ALTER", "SESSION"] or not words:
+        return ""
+
+    return words[0] if words[0] in SQL_WRITES else ""
+
+
+def find_sql_write(text: str, /) -> str:
+
+    bare = SQL_NOISE.sub(" ", text)
+    keywords = (get_statement_keyword(statement) for statement in bare.split(";"))
+
+    return next((keyword for keyword in keywords if keyword), "")
+
+
+def get_snow_sql_write(arguments: list[str], directory: str | None, /) -> str:
+
+    texts = get_option_values(arguments, "q", "--query")
+    texts.extend(read_sql_file(filename, directory) for filename in get_option_values(arguments, "f", "--filename"))
+    keywords = (find_sql_write(text) for text in texts)
+
+    return next((keyword for keyword in keywords if keyword), "")
+
+
+def get_snow_write(arguments: list[str], directory: str | None, /) -> str:
+
+    path = get_positionals(arguments, SNOW_VALUE_OPTIONS)
+    if path[:1] == ["sql"]:
+        keyword = get_snow_sql_write(arguments, directory)
+        return f"snow sql ({keyword})" if keyword else ""
+
+    verbs = [index for index, word in enumerate(path[1:SNOW_PATH_LENGTH], 1) if word in SNOW_VERBS]
+    is_command = tuple(path[:2]) in SNOW_WRITE_COMMANDS
+    is_upload = path[:2] == ["stage", "copy"] and len(path) > 3 and path[3].startswith("@")
+    end = verbs[0] + 1 if verbs else 2
+
+    return f"snow {' '.join(path[:end])}" if verbs or is_command or is_upload else ""
+
+
+def get_snow_label(segment: Segment, command: Command, directory: str | None, /) -> str:
+
+    arguments = get_tool_arguments(command, SNOW_TOOL)
+    if arguments is None:
+        return ""
+
+    write = get_snow_write(arguments, directory)
+    connections = [
+        *get_option_values(arguments, "c", "--connection"),
+        *get_assigned_environment(segment, SNOW_CONNECTION_VARIABLE),
+    ]
+    production = next((name for name in connections if SNOW_PRODUCTION_WORD in name.lower()), "")
+
+    return write or (f"snow with the production connection {production}" if production else "")
+
+
 MIN_PREFIX = 3
 GIT_VALUE_LETTERS = {"checkout": "bB", "switch": "cC", "restore": "s", "branch": "u", "tag": "mFu", "commit": "mFCct", "update-ref": "m", "fetch": "jo"}
 GIT_ALWAYS_DENIED = frozenset({"rebase", "filter-branch", "filter-repo"})
@@ -836,7 +1005,7 @@ def get_hidden_command(command: Command, text: str, policy: Policy, /) -> str:
 
 def find_script_command(script: str, policy: Policy, /) -> str:
 
-    findings = Findings([], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [])
     find_breaches(get_segments(script), None, False, policy, findings, script)
 
     return next(iter(findings.denied + findings.hidden), "") or next(
@@ -1296,6 +1465,8 @@ class Findings(NamedTuple):
     cloud: list[str]
     installer: list[str]
     delayed: list[DelayRun]
+    dbt: list[str]
+    snow: list[str]
 
 
 def find_breaches(
@@ -1328,7 +1499,7 @@ def find_breaches(
 def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
-    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [])
+    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [])
 
     breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command, {}))
 
@@ -1355,6 +1526,10 @@ def get_command_breaches(
     hidden = get_hidden_command(command, text, policy)
     cloud = get_cloud_label(command) if policy.ask_cloud else ""
     findings.cloud.extend([cloud] if cloud else [])
+    dbt = get_dbt_label(segment, command, policy) if policy.block_dbt else ""
+    snow = get_snow_label(segment, command, directory) if policy.block_snow else ""
+    findings.dbt.extend([dbt] if dbt else [])
+    findings.snow.extend([snow] if snow else [])
     findings.denied.extend([denied] if denied else [])
     findings.hidden.extend([hidden] if hidden else [])
     is_asked = policy.ask_packages and is_package_change(command, policy.root)
@@ -1367,6 +1542,8 @@ def get_command_breaches(
         (ASK_RULE, is_asked and delay is None),
         ("delay", delay is not None and not delay.is_flagged),
         (CLOUD_RULE, bool(cloud)),
+        (DBT_RULE, bool(dbt)),
+        (SNOW_RULE, bool(snow)),
         ("glob", bool(missing)),
         ("pattern", bool(patterns)),
         ("trash", trash is not None),
@@ -1534,7 +1711,9 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     hidden = MESSAGES["hidden"].format(what=(findings.hidden or ["this command"])[0])
     cloud = MESSAGES[CLOUD_RULE].format(what=(findings.cloud or ["this command"])[0])
     installer = MESSAGES[INSTALLER_RULE].format(what=(findings.installer or ["this command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer}
+    dbt = MESSAGES[DBT_RULE].format(what=(findings.dbt or ["this dbt command"])[0])
+    snow = MESSAGES[SNOW_RULE].format(what=(findings.snow or ["this snow command"])[0])
+    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow}
     lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
         reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)
@@ -1551,7 +1730,7 @@ def main() -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     policy = get_policy(cwd)
-    findings = Findings([], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [])
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, findings=findings)

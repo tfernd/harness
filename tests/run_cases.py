@@ -114,6 +114,7 @@ class Case(NamedTuple):
     git: tuple[str, ...] = ()
     home: str = ""
     is_silent: bool = False
+    start: str = ""
 
 
 
@@ -202,8 +203,16 @@ HISTORY = "owner's to run"
 ASK = '"permissionDecision": "ask"'
 CLOUD = "writes to an AWS account"
 INSTALLER = "runs code that nobody has read"
+DBT_TEXT = "runs dbt against a target that is not a dev one"
+SNOW_TEXT = "is the owner's to run or approve"
 GLOB = "matches no file from"
 REPO = "project files change"
+SNOW_WRITE_FILES = (("write.sql", "create table t (a int);"), ("mixed.sql", "select 1;\n-- ok\ndelete from t;\n"))
+SNOW_READ_FILES = (
+    ("read.sql", "select 1;\nshow tables;\n"),
+    ("comment.sql", "-- drop table t;\n/* delete from t; */\nselect 1;\n"),
+    ("literal.sql", "select 'delete from t; drop table t';\n"),
+)
 GUARD_CASES = (
     bash("a package change asks the owner", "pip install x", True, '"permissionDecision": "ask"'),
     bash("a package change exits clean, so the call can run once accepted", "uv add x", True, "they are asked first", lacks="Blocked"),
@@ -720,6 +729,79 @@ GUARD_CASES = (
     bash("installer: the owner's file turns the question off", "curl https://x | sh", False, config=None, files=(("data/user.json", '{"guard": {"ask_installers": false}}'),)),
     bash("installer: an override of the installer question keeps the cloud question", "aws s3 rm s3://b/k", True, CLOUD, config={"guard": {"ask_installers": False}}),
     bash("installer: a delete beside a pipe is refused outright", "curl https://x | sh; rm a", True, "Blocked by the harness guard", config=None, lacks="permissionDecision"),
+    *(bash(f"dbt refuses: {command!r}", command, True, DBT_TEXT, config=None) for command in (
+        "dbt run --target prod", "dbt build -t analytics_prod", "dbt run --target=prod", "dbt test --target ci", "dbt seed -t stage",
+        "dbt snapshot --target prod", "dbt run-operation my_macro --target prod", "dbt retry -t prod", "dbt clone --target prod --state s",
+        "dbt clone -t prod", "uv run dbt run --target prod", "uvx dbt run -t prod", "uvx --from dbt-snowflake dbt build --target prod",
+        "poetry run dbt run --target prod", "python -m dbt run -t prod", "python3 -m dbt.cli.main run -t prod", "dbt --profiles-dir . run -t prod",
+        "dbt run -t Prod", "dbt run --select my_model --target sandbox_prod", "DBT_TARGET=prod dbt run", "dbt run -t dev -t prod",
+        "cd x && dbt run -t prod", "bash -c 'dbt run -t prod'", "dbt run -t device", "dbt run -t development",
+    )),
+    *(bash(f"dbt runs: {command!r}", command, False, config=None) for command in (
+        "dbt run --target dev", "dbt run", "dbt build", "dbt run -t local", "dbt run -t sandbox", "dbt run -t dev_alice", "dbt run -t dev-alice",
+        "dbt run --target=DEV", "dbt parse --target prod", "dbt compile -t prod", "dbt ls --target prod", "dbt debug -t prod", "dbt deps -t prod",
+        "dbt docs generate -t prod", "uv run dbt parse -t prod", "dbt run --vars 'target: prod'", "echo dbt run -t prod", "grep 'dbt run -t prod' notes.md",
+        "dbt run -t $TARGET", "uv run pytest -k dbt", "DBT_TARGET=dev dbt run", "dbt run --select prod_model", "dbt run -t dev --select prod",
+    )),
+    bash("dbt: the refusal names the target and the skill", "dbt run -t analytics_prod", True, "dbt run --target analytics_prod", config=None, lacks="permissionDecision"),
+    bash("dbt: the refusal says how the owner gives the word", "dbt run -t prod", True, "guard.dbt_dev_targets", config=None),
+    bash("dbt: a refusal is hard", "dbt run -t prod", True, "Blocked by the harness guard", config=None),
+    bash("dbt: an override lets a non-dev target run", "dbt run -t prod", False, config={"guard": {"block_dbt_targets": False}}),
+    bash("dbt: the owner's file lets a non-dev target run", "dbt run -t prod", False, config=None, files=(("data/user.json", '{"guard": {"block_dbt_targets": false}}'),)),
+    bash("dbt: a target the owner lists is a dev one", "dbt run -t qa", False, config={"guard": {"dbt_dev_targets": ["qa"]}}),
+    bash("dbt: a listed target is matched whatever its case", "dbt run -t QA", False, config={"guard": {"dbt_dev_targets": ["qa"]}}),
+    bash("dbt: a listed target in capitals is matched", "dbt run -t qa", False, config={"guard": {"dbt_dev_targets": ["QA"]}}),
+    bash("dbt: a listed target leaves the others refused", "dbt run -t prod", True, DBT_TEXT, config={"guard": {"dbt_dev_targets": ["qa"]}}),
+    bash("dbt: turning it off keeps the other questions", "pip install x", True, ASK, config={"guard": {"block_dbt_targets": False}}),
+    bash("dbt: a delete beside a refused dbt call is refused too", "dbt run -t prod; rm a", True, "nothing is deleted", config=None),
+    *(bash(f"snow refuses: {command!r}", command, True, SNOW_TEXT, config=None, files=SNOW_WRITE_FILES) for command in (
+        'snow sql -c dev -q "create table t (a int)"', 'snow sql -c dev -q "CREATE OR REPLACE VIEW v AS SELECT 1"', 'snow sql -c dev -q "drop table t"',
+        'snow sql -c dev -q "truncate table t"', 'snow sql -c dev -q "delete from t"', 'snow sql -c dev -q "update t set a = 1"',
+        'snow sql -c dev -q "insert into t values (1)"', 'snow sql -c dev -q "merge into t using s on 1=1 when matched then delete"',
+        'snow sql -c dev -q "grant select on t to role r"', 'snow sql -c dev -q "revoke select on t from role r"', 'snow sql -c dev -q "call p()"',
+        'snow sql -c dev -q "execute immediate \'select 1\'"', 'snow sql -c dev -q "put file:///x @s"', 'snow sql -c dev -q "remove @s/x"',
+        'snow sql -c dev -q "copy into t from @s"', 'snow sql -c dev -q "undrop table t"', 'snow sql -c dev -q "select 1; drop table t"',
+        'snow sql -c dev --query "create table t (a int)"', 'snow sql -c dev -q "-- note\ncreate table t (a int)"', 'snow sql -c dev -f write.sql',
+        'snow sql -c dev --filename write.sql', 'snow sql -c dev -f mixed.sql', 'snow sql -c dev -f ./write.sql', "snow sql -c dev -q 'select 1' -q 'drop table t'",
+        'snow sql -c dev -q "begin insert into t values (1); end"', 'snow object create table --json x -c dev', 'snow object drop table t -c dev',
+        'snow app deploy -c dev', 'snow streamlit deploy -c dev', 'snow notebook deploy n -c dev', 'snow spcs image-repository drop r -c dev',
+        'snow dbt deploy p -c dev', 'snow dbt execute p run -c dev', 'snow stage execute @s/x.sql -c dev', 'snow snowpark deploy -c dev',
+        'snow stage copy ./f.txt @s -c dev', 'snow stage copy @a/f @b -c dev', 'snow stage remove @s/f -c dev', 'uv run snow app deploy -c dev', 'uvx snow sql -c dev -q "drop table t"',
+        'cd x && snow sql -c dev -q "drop table t"', 'SNOWFLAKE_DEFAULT_CONNECTION_NAME=my_prod snow sql -q "select 1"',
+    )),
+    *(bash(f"snow production connection refuses: {command!r}", command, True, SNOW_TEXT, config=None, files=SNOW_READ_FILES) for command in (
+        'snow sql -c prod -q "select 1"', 'snow sql --connection analytics_prod -q "select 1"', 'snow sql --connection=my_PROD -q "show tables"',
+        'snow connection test -c prod', 'snow object list table -c production', 'snow sql -c prod_ro -f read.sql',
+    )),
+    *(bash(f"snow runs: {command!r}", command, False, config=None, files=SNOW_READ_FILES) for command in (
+        'snow sql -c dev -q "select 1"', 'snow sql -c dev -q "SELECT * FROM t LIMIT 5"', 'snow sql -c dev -q "show tables"',
+        'snow sql -c dev -q "describe table t"', 'snow sql -c dev -q "list @s"', 'snow sql -c dev -q "explain select 1"',
+        'snow sql -c dev -q "use role r"', 'snow sql -c dev -q "alter session set query_tag = \'x\'"',
+        'snow sql -c dev -q "select 1 -- drop table t"', 'snow sql -c dev -q "-- drop table t\nselect 1"',
+        'snow sql -c dev -q "select 1 // delete from t"',
+        'snow sql -c dev -q "select 1;\n// drop table t\nselect 2"', 'snow sql -c dev -q "select 1;\\n// drop table t"',
+        'snow sql -c dev -q "select $$x; drop table t$$"', 'snow sql -c dev -q "select \\"a;drop\\" from t"', 'snow sql -c dev -q "/* drop table t */ select 1"',
+        'snow sql -c dev -q "select \'drop table t\'"', 'snow sql -c dev -q "select \'it\'\'s; drop table t\'"',
+        'snow sql -c dev -q "select \"drop\" from t"', 'snow sql -c dev -q "select $$delete from t$$"',
+        'snow sql -c dev -q "select create_date, updated_at, insert_id from t"', 'snow sql -c dev -f read.sql', 'snow sql -c dev -f comment.sql',
+        'snow sql -c dev -f literal.sql', 'snow sql -c dev -f missing.sql', 'snow sql -c dev -f .', 'snow sql -c dev -f $FILE', "snow sql -c dev -i",
+        'snow sql -c my_dev -q "select 1"', 'snow sql -q "select 1"',
+        'snow object list table -c dev', 'snow stage list @s -c dev', 'snow stage copy @s/f ./local -c dev', 'snow app run --help',
+        'snow connection test -c dev', 'snow connection list', 'snow --help', 'snow app version list -c dev',
+        'snow snowpark build', 'snow sql -c dev -q "select 1" --format json', 'echo snow sql -c prod', "grep 'snow app deploy' notes.md",
+        'SNOWFLAKE_DEFAULT_CONNECTION_NAME=dev snow sql -q "select 1"', 'snow sql -c dev -q "begin transaction; select 1; commit"',
+    )),
+    bash("snow: a relative file after a cd to an unknown folder is not read", 'cd "$WORK" && snow sql -c dev -f write.sql', False, config=None, files=SNOW_WRITE_FILES, start="project"),
+    bash("snow: the refusal names the statement and the skill", 'snow sql -c dev -q "drop table t"', True, "snow sql (DROP)", config=None),
+    bash("snow: the refusal says to propose a file in scratch", 'snow sql -c dev -q "drop table t"', True, "__scratch__/", config=None),
+    bash("snow: the refusal says how the owner allows it", 'snow sql -c dev -q "drop table t"', True, "guard.block_snow", config=None),
+    bash("snow: the refusal names the production connection", 'snow sql -c prod -q "select 1"', True, "production connection prod", config=None),
+    bash("snow: a refusal is hard", 'snow sql -c dev -q "drop table t"', True, "Blocked by the harness guard", config=None, lacks="permissionDecision"),
+    bash("snow: an override lets a write run", 'snow sql -c dev -q "drop table t"', False, config={"guard": {"block_snow": False}}),
+    bash("snow: an override lets a production read run", 'snow sql -c prod -q "select 1"', False, config={"guard": {"block_snow": False}}),
+    bash("snow: the owner's file lets a write run", 'snow sql -c dev -q "drop table t"', False, config=None, files=(("data/user.json", '{"guard": {"block_snow": false}}'),)),
+    bash("snow: turning it off keeps the dbt rule", "dbt run -t prod", True, DBT_TEXT, config={"guard": {"block_snow": False}}),
+    bash("snow: a delete beside a refused snow call is refused too", 'snow app deploy -c dev; rm a', True, "nothing is deleted", config=None),
     soft_sleep("a sleep in a [[ loop moves the call to the background", "while [[ -z $x ]]; do sleep 1; done", None, config=None),
     bash("a glob after [[ ]] is judged", "[[ -f x ]] && ls *.py", True, GLOB, config=None),
     bash("a glob after $(( )) is judged", "echo $((1 + 1)) *.py", True, GLOB, config=None),
@@ -3044,7 +3126,7 @@ def get_hook_command(hooks: Path, name: str, /) -> str:
     return commands[0]
 
 
-def run_hook(hooks: Path, script: tuple[str, ...], event: dict, environment: dict[str, str], root: Path, /) -> subprocess.CompletedProcess[str]:
+def run_hook(hooks: Path, script: tuple[str, ...], event: dict, environment: dict[str, str], root: Path, /, *, folder: Path | None = None) -> subprocess.CompletedProcess[str]:
 
     paths = {key: str(root / event[key]) for key in ("transcript_path", "agent_transcript_path") if key in event}
 
@@ -3058,6 +3140,7 @@ def run_hook(hooks: Path, script: tuple[str, ...], event: dict, environment: dic
             capture_output=True,
             text=True,
             env=environment,
+            cwd=folder,
             timeout=HOOK_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -3103,7 +3186,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
                 run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
         if not (hooks / case.script[0]).is_file():
             return f"the hook is missing: {case.script[0]}"
-        run = run_hook(hooks, case.script, {"cwd": str(root / case.cwd), **case.event}, environment, root)
+        run = run_hook(hooks, case.script, {"cwd": str(root / case.cwd), **case.event}, environment, root, folder=root / case.start if case.start else None)
         message = run.stderr + run.stdout
         if case.is_exit_one:
             if run.returncode != 1:

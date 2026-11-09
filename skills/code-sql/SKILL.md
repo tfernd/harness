@@ -43,7 +43,7 @@ A script runs twice with the same result.
 - Read the dbt and adapter versions pinned in the repo; never pick one.
 - A green `dbt parse` or compile is not a pass: build the changed models on the dev target before calling them done.
 - dbt commands name their target (`--target`); a non-dev target (ci, stage, prod, any shared one) runs only on the
-  owner's word in this job.
+  owner's word in this job. The harness guard refuses a write command (`build`, `run`, `test`, `seed`, `snapshot`, `run-operation`, `retry`, `clone`) on a non-dev target; the owner lists extra dev targets under `guard.dbt_dev_targets`.
 - Check the env vars a profile needs before the first dbt call.
 - On a failure, read the failing model and its SQL in `logs/dbt.log`, not the console summary.
 - "Two resources with the same database representation" or a duplicate schema entry means a model or YAML entry is
