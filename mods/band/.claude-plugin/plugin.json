@@ -1,0 +1,6 @@
+{
+  "name": "harness-band",
+  "version": "0.1.0",
+  "description": "A band above the prompt: status, context, cache, rate limits, agent counts, live cards and a moving agent timeline.",
+  "types": "./types/index.d.ts"
+}
