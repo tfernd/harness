@@ -150,15 +150,25 @@ def get_cortex_matcher(names: list[str], /) -> str | None:
     return "|".join(unique) if unique else None
 
 
-def make_command(target: Target, event: str, hook_command: str, /) -> str:
+def make_command(
+    target: Target, event: str, hook_command: str, /, *, matcher: str | None = None
+) -> str:
     tail = hook_command.partition("uv run --script ")[2].replace(
         "${CLAUDE_PLUGIN_ROOT}", str(CHECKOUT)
     )
-    return f'uv run --script "{SHIM}" --host {target} --event {event} {tail}'
+    matcher_option = f" --matcher {shlex.quote(matcher)}" if matcher else ""
+    return f'uv run --script "{SHIM}" --host {target} --event {event}{matcher_option} {tail}'
 
 
-def make_crew_command(uv_path: str, event: str, hook_command: str, /) -> str:
-    inner = make_command("kiro", event, hook_command).replace(
+def make_crew_command(
+    uv_path: str,
+    event: str,
+    hook_command: str,
+    /,
+    *,
+    matcher: str | None = None,
+) -> str:
+    inner = make_command("kiro", event, hook_command, matcher=matcher).replace(
         "uv run --script", f"{shlex.quote(uv_path)} run --script", 1
     )
     script = (
@@ -170,16 +180,21 @@ def make_crew_command(uv_path: str, event: str, hook_command: str, /) -> str:
     return f"sh -c {shlex.quote(script)}"
 
 
-def make_crew_entry(uv_path: str, event: str, hook_command: str, /) -> dict:
+def make_crew_entry(
+    uv_path: str, event: str, hook_command: str, /, *, matcher: str | None
+) -> dict:
     script = HOOK_SCRIPT.search(hook_command)
     name = f"{CREW_ENTRY_PREFIX}{event}-{script.group(1) if script else 'hook'}"
+    command_matcher = matcher if event in CREW_TOOL_EVENTS else None
     return {
         "id": hashlib.sha256(name.encode()).hexdigest()[:CREW_ID_LENGTH],
         "name": name,
         "event": CREW_TRIGGERS[event],
         "matcher": "*" if event in CREW_TOOL_EVENTS else "",
         "matcher_mode": "glob",
-        "command": make_crew_command(uv_path, CREW_TRIGGERS[event], hook_command),
+        "command": make_crew_command(
+            uv_path, CREW_TRIGGERS[event], hook_command, matcher=command_matcher
+        ),
         "skills": [],
         "timeout": CREW_ENTRY_TIMEOUT_SECONDS,
         "enabled": True,
@@ -200,7 +215,11 @@ def plan_crew_hooks(plan: Plan, source: dict, /) -> None:
             continue
         for group in groups:
             for hook in group["hooks"]:
-                plan.crew_hooks.append(make_crew_entry(uv_path, event, hook["command"]))
+                plan.crew_hooks.append(
+                    make_crew_entry(
+                        uv_path, event, hook["command"], matcher=group.get("matcher")
+                    )
+                )
 
 
 def plan_skills(plan: Plan, dest: Path, /) -> None:

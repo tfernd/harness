@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,8 +26,17 @@ KIRO_TOOLS = {
     "grep_search": "Grep",
     "file_search": "Glob",
     "invoke_sub_agent": "Agent",
+    "spawn_run": "Agent",
 }
-AGENT_FIELDS = ("agent_name", "agent", "name", "subagent", "agent_type")
+AGENT_FIELDS = (
+    "agent_name",
+    "agent",
+    "name",
+    "subagent",
+    "agent_type",
+    "agent_id",
+    "type",
+)
 CORTEX_TOOLS = {
     "bash": "Bash",
     "read": "Read",
@@ -41,6 +51,7 @@ CORTEX_TOOLS = {
 }
 EVENT_NAMES = {"agentSpawn": "SessionStart", "AgentSpawn": "SessionStart"}
 TEXT_EVENTS = ("SessionStart", "UserPromptSubmit")
+TOOL_EVENTS = ("PreToolUse", "PostToolUse")
 BLOCK_EXIT = 2
 
 
@@ -56,6 +67,12 @@ def get_agent_type(tool_input: dict, /) -> str:
     return "host-agent"
 
 
+def is_outside_matcher(mapped: dict, matcher: str, /) -> bool:
+    if not matcher or mapped.get("hook_event_name") not in TOOL_EVENTS:
+        return False
+    return re.fullmatch(f"({matcher})", str(mapped.get("tool_name", ""))) is None
+
+
 def map_event(event: dict, host: str, event_name: str, /) -> dict:
     tools = KIRO_TOOLS if host == "kiro" else CORTEX_TOOLS
     mapped = dict(event)
@@ -64,7 +81,8 @@ def map_event(event: dict, host: str, event_name: str, /) -> dict:
 
     tool = event.get("tool_name")
     if isinstance(tool, str):
-        mapped["tool_name"] = tools.get(tool, tools.get(tool.lower(), tool))
+        bare = tool.rsplit("/", 1)[-1] if host == "kiro" else tool
+        mapped["tool_name"] = tools.get(bare, tools.get(bare.lower(), tool))
     tool_input = event.get("tool_input")
     if isinstance(tool_input, dict):
         fixed = dict(tool_input)
@@ -132,20 +150,23 @@ def translate_cortex(stdout: str, /) -> int:
 
 
 def run(argv: list[str], /) -> int:
-    options = {"--host": "", "--event": ""}
+    options = {"--host": "", "--event": "", "--matcher": ""}
     position = 0
     while position < len(argv) and argv[position] in options:
         options[argv[position]] = argv[position + 1]
         position += 2
-    host, event_name, script_args = (
+    host, event_name, matcher, script_args = (
         options["--host"],
         options["--event"],
+        options["--matcher"],
         argv[position:],
     )
 
     event = json.loads(sys.stdin.read() or "{}")
     mapped = map_event(event, host, event_name)
     event_name = str(mapped.get("hook_event_name", ""))
+    if is_outside_matcher(mapped, matcher):
+        return 0
 
     environment = dict(os.environ)
     environment.setdefault("CLAUDE_PLUGIN_ROOT", str(CHECKOUT))

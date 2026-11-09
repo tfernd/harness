@@ -346,6 +346,7 @@ def check_kiro_crew(base: Path) -> None:
     check(guard["command"].startswith("sh -c "), "crew command not wrapped")
     ids = [e["id"] for e in document["hooks"]]
     check(len(set(ids)) == len(ids), "crew ids not unique")
+    check_crew_entries_narrow(document, dest.parent)
 
     run_port("kiro", dest)
     check(get_crew_names(crew_file) == names, "reinstall changed or duplicated crew entries")
@@ -471,7 +472,13 @@ def check_cortex_agent_task(base: Path) -> None:
 
 
 def run_shim(
-    host: str, event: str, payload: dict, base: Path, hook: str = "", config: str = ""
+    host: str,
+    event: str,
+    payload: dict,
+    base: Path,
+    hook: str = "",
+    config: str = "",
+    matcher: str = "",
 ) -> subprocess.CompletedProcess:
     home = base / "home"
     home.mkdir(parents=True, exist_ok=True)
@@ -496,6 +503,7 @@ def run_shim(
         host,
         "--event",
         event,
+        *(["--matcher", matcher] if matcher else []),
         str(ROOT / "hooks" / hook),
     ]
     return subprocess.run(
@@ -610,6 +618,118 @@ def check_shim_cortex_ids() -> None:
     )
     check(edit["tool_name"] == "Edit", f"cortex multi_edit became {edit['tool_name']}")
     check(edit["tool_input"]["file_path"] == "a.py", "cortex multi_edit lost file_path")
+
+
+def get_source_matcher(hook: str, /) -> str:
+    source = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
+    matchers = [
+        group.get("matcher", "")
+        for group in source
+        for entry in group["hooks"]
+        if f"hooks/{hook}" in entry["command"]
+    ]
+    assert len(matchers) == 1, matchers
+    return matchers[0]
+
+
+def run_crew_entry(entry: dict, payload: dict, base: Path) -> subprocess.CompletedProcess:
+    home = base / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    project = base / "project"
+    project.mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    (base / "owner.json").write_text("{}")
+    environment = {**os.environ, "HOME": str(home), "HARNESS_CONFIG": str(base / "owner.json")}
+    for name in ("CLAUDE_PROJECT_DIR", "CLAUDE_PLUGIN_ROOT"):
+        environment.pop(name, None)
+    return subprocess.run(
+        entry["command"],
+        shell=True,
+        input=json.dumps({**payload, "cwd": str(project)}),
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=90,
+    )
+
+
+def check_shim_matcher(base: Path) -> None:
+    lint_matcher = get_source_matcher("brief_lint.py")
+    guard_matcher = get_source_matcher("guard.py")
+    check(lint_matcher != "" and guard_matcher != "", "source hooks.json lost a matcher")
+
+    read = run_shim(
+        "kiro",
+        "PreToolUse",
+        {"tool_name": "fs_read", "tool_input": {"path": "x"}},
+        base,
+        "brief_lint.py",
+        matcher=lint_matcher,
+    )
+    check(read.returncode == 0, f"crew read event refused by brief_lint: {read.returncode} {read.stderr[-200:]}")
+
+    named = {"agent_name": "harness-scout", "prompt": "Goal: x"}
+    spawn = run_shim(
+        "kiro",
+        "PreToolUse",
+        {"tool_name": "core/spawn_run", "tool_input": named},
+        base,
+        "brief_lint.py",
+        matcher=lint_matcher,
+    )
+    check(spawn.returncode == 0, f"crew spawn_run with an agent name exited {spawn.returncode}: {spawn.stderr[-200:]}")
+
+    generic = run_shim(
+        "kiro",
+        "PreToolUse",
+        {"tool_name": "spawn_run", "tool_input": {"agent_name": "general-purpose"}},
+        base,
+        "brief_lint.py",
+        matcher=lint_matcher,
+    )
+    check(generic.returncode == 2, f"crew spawn_run did not reach brief_lint: {generic.returncode}")
+
+    nameless = run_shim(
+        "kiro",
+        "PreToolUse",
+        {"tool_name": "core/spawn_run", "tool_input": {"prompt": "Goal: x"}},
+        base,
+        "brief_lint.py",
+        matcher=lint_matcher,
+    )
+    check(nameless.returncode == 0, f"crew spawn_run with no agent field exited {nameless.returncode}")
+
+    bash = run_shim(
+        "kiro",
+        "PreToolUse",
+        {"tool_name": "execute_bash", "tool_input": {"command": "rm -rf build"}},
+        base,
+        "guard.py",
+        matcher=guard_matcher,
+    )
+    check(bash.returncode == 2, f"matcher stopped a Bash call reaching guard: {bash.returncode} {bash.stderr[-200:]}")
+
+    session = run_shim(
+        "kiro",
+        "SessionStart",
+        {"hook_event_name": "agentSpawn"},
+        base,
+        matcher="Agent",
+    )
+    check(
+        session.returncode == 0 and "orchestrator" in session.stdout,
+        f"matcher stopped a non-tool event: {session.stderr[-200:]}",
+    )
+
+
+def check_crew_entries_narrow(document: dict, base: Path) -> None:
+    entries = {entry["name"]: entry for entry in document["hooks"]}
+    lint = entries["harness-PreToolUse-brief_lint"]
+    guard = entries["harness-PreToolUse-guard"]
+    read = run_crew_entry(lint, {"tool_name": "fs_read", "tool_input": {"path": "x"}}, base)
+    check(read.returncode == 0, f"crew brief_lint entry refused a read: {read.returncode} {read.stderr[-200:]}")
+    rm = run_crew_entry(guard, {"tool_name": "execute_bash", "tool_input": {"command": "rm -rf build"}}, base)
+    check(rm.returncode == 2, f"crew guard entry let rm -rf through: {rm.returncode}")
 
 
 def check_shim(base: Path) -> None:
@@ -766,6 +886,7 @@ def main() -> int:
     check_kiro_legacy_hooks(WORK, PORT_SCRIPT)
     check_cortex(WORK)
     check_shim(WORK)
+    check_shim_matcher(WORK)
     check_install_guards(WORK)
     check_install_sh(WORK)
     shutil.rmtree(WORK, ignore_errors=True)
