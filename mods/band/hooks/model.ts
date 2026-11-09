@@ -300,6 +300,12 @@ export const stateWordOf = (row: AgentRow, now: number): string => {
     return `quiet ${formatSpan(quiet)}`
   }
 
+  const background = row.background ?? 0
+
+  if (background > 0 && (row.id === MAIN_ID ? row.state === 'launched' : row.state === 'waiting' && row.isHeld === true)) {
+    return `BG ${background}`
+  }
+
   return row.id === MAIN_ID ? MAIN_STATE_WORD[row.state] : STATE_WORD[row.state]
 }
 
@@ -366,6 +372,113 @@ export const stateFromStatus = (status: AgentStatus, current: AgentState): Agent
   return current === 'tool' || current === 'thinking' ? current : 'thinking'
 }
 
+const withTaskCount = (row: AgentRow, count: number): AgentRow => ({ ...row, background: count })
+
+const taskIdsOf = (store: AgentStore, owner: string): string[] => store.tasks?.[owner] ?? []
+
+const settleHeld = (store: AgentStore, owner: string, now: number): AgentStore => {
+  const count = taskIdsOf(store, owner).length
+
+  if (owner === MAIN_ID) {
+    return store.main === null ? store : { ...store, main: withTaskCount(store.main, count) }
+  }
+
+  const row = store.rows.find(agent => agent.id === owner)
+
+  if (row === undefined) {
+    return store
+  }
+
+  const counted = { ...store, rows: store.rows.map(agent => (agent.id === owner ? withTaskCount(agent, count) : agent)) }
+
+  if (count > 0 && row.state === 'done') {
+    const revived = moveAgent(counted, { id: owner, state: 'waiting', command: null, now })
+
+    return { ...revived, rows: revived.rows.map(agent => (agent.id === owner ? { ...agent, isHeld: true } : agent)) }
+  }
+
+  if (count === 0 && row.isHeld === true) {
+    const { isHeld: _released, ...rest } = row
+    const released = { ...counted, rows: counted.rows.map(agent => (agent.id === owner ? { ...rest, background: 0 } : agent)) }
+
+    return row.state === 'waiting' ? moveAgent(released, { id: owner, state: 'done', command: null, now }) : released
+  }
+
+  return counted
+}
+
+const withTasks = (store: AgentStore, owner: string, ids: string[]): AgentStore => {
+  const tasks = { ...store.tasks }
+
+  if (ids.length === 0) {
+    delete tasks[owner]
+  } else {
+    tasks[owner] = ids
+  }
+
+  return { ...store, tasks }
+}
+
+const ensureMain = (store: AgentStore, now: number): AgentStore =>
+  store.main !== null
+    ? store
+    : {
+        ...store,
+        main: {
+          id: MAIN_ID,
+          label: MAIN_LABEL,
+          group: MAIN_ID,
+          groupLabel: MAIN_LABEL,
+          state: 'launched',
+          command: null,
+          startedAt: now,
+          endedAt: null,
+          segments: [],
+        },
+      }
+
+export const startBackgroundTask = (store: AgentStore, input: { owner: string; taskId: string; now: number }): AgentStore => {
+  const { owner, taskId, now } = input
+  const ids = taskIdsOf(store, owner)
+
+  if (ids.includes(taskId)) {
+    return store
+  }
+
+  const base = owner === MAIN_ID ? ensureMain(store, now) : store
+
+  return settleHeld(withTasks(base, owner, [...ids, taskId]), owner, now)
+}
+
+export const endBackgroundTask = (store: AgentStore, input: { taskId: string; now: number }): AgentStore => {
+  const owners = Object.keys(store.tasks ?? {}).filter(owner => taskIdsOf(store, owner).includes(input.taskId))
+
+  return owners.reduce(
+    (current, owner) =>
+      settleHeld(
+        withTasks(
+          current,
+          owner,
+          taskIdsOf(current, owner).filter(id => id !== input.taskId),
+        ),
+        owner,
+        input.now,
+      ),
+    store,
+  )
+}
+
+export const finishAgent = (store: AgentStore, input: { id: string; state: 'done' | 'failed'; now: number }): AgentStore => {
+  const isHeldByTasks = input.state === 'done' && taskIdsOf(store, input.id).length > 0
+  const moved = moveAgent(store, { id: input.id, state: input.state, command: null, now: input.now })
+
+  if (input.state === 'failed') {
+    return settleHeld(withTasks(moved, input.id, []), input.id, input.now)
+  }
+
+  return isHeldByTasks ? settleHeld(moved, input.id, input.now) : moved
+}
+
 export type Listing = { id: string; status: AgentStatus; name?: string; type: string }
 
 const isLiveStatus = (status: AgentStatus): boolean => status === 'pending' || status === 'running' || status === 'waiting'
@@ -388,9 +501,11 @@ export const applyListing = (store: AgentStore, list: readonly Listing[], now: n
       return moveAgent(added, { id: info.id, state: stateFromStatus(info.status, 'launched'), command: null, now })
     }
 
-    const state = stateFromStatus(info.status, row.state)
+    const isEnded = info.status === 'failed' || info.status === 'killed'
+    const cleared = isEnded ? settleHeld(withTasks(current, row.id, []), row.id, now) : current
+    const state = row.isHeld === true && !isEnded ? row.state : stateFromStatus(info.status, row.state)
 
-    return moveAgent(current, { id: row.id, state, command: state === 'tool' ? row.command : null, now })
+    return moveAgent(cleared, { id: row.id, state, command: state === 'tool' ? row.command : null, now })
   }, store)
 
 export const rosterOf = (store: AgentStore): Roster => ({

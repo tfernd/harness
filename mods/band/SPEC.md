@@ -59,6 +59,7 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
   folded group header is a 24px chevron button, a label piece, a density strip exactly as wide as the track (its left
   edge on the track's left edge, its right on the now line, half the row high, centred) and a counts piece in the state
   column ("N tool · N think · N wait"); the range control is plain text, the active one bold and underlined.
+- 2026-11-09: the band agrees with the app on background work: a background Bash command (`tool.call` Bash with `run_in_background`, its id from `result.backgroundTaskId`) is tracked per owner (the agent, or the main session) until its completion notice (a `session.append` row holding `<task-notification>` with `<task-id>`) or a `TaskStop`. An agent that answered while it owns running commands stays live as `waiting` with the state word "BG n"; the main session's idle word becomes "BG n" while it owns some. A failed or killed agent drops its commands.
 
 ## Not in this version
 

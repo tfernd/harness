@@ -18,9 +18,17 @@ export type AgentRow = {
   startedAt: number
   endedAt: number | null
   segments: Segment[]
+  background?: number
+  isHeld?: true
 }
 
-export type AgentStore = { rows: AgentRow[]; main: AgentRow | null; evictedDone: number; evictedFailed: number }
+export type AgentStore = {
+  rows: AgentRow[]
+  main: AgentRow | null
+  evictedDone: number
+  evictedFailed: number
+  tasks?: Record<string, string[]>
+}
 
 export type Phase = 'live' | 'done' | 'failed'
 

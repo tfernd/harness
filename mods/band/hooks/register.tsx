@@ -12,6 +12,10 @@ import {
   type MainActivity,
   addAgent,
   applyListing,
+  MAIN_ID,
+  endBackgroundTask,
+  finishAgent,
+  startBackgroundTask,
   isSameRoster,
   moveAgent,
   OWNER_QUESTION_TOOLS,
@@ -136,6 +140,66 @@ const writeGauges = async ($: EngineInterface, next: (current: Gauges) => Gauges
 
   if (!isSameGauges(current, value)) {
     await update($, gauges, () => value)
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+
+const backgroundTaskIdOf = (call: Record<string, unknown>, outcome: unknown): string | null => {
+  if (call['tool'] !== 'Bash' || call['run_in_background'] !== true || !isRecord(outcome)) {
+    return null
+  }
+
+  const output = outcome['result']
+
+  if (isRecord(output) && typeof output['backgroundTaskId'] === 'string') {
+    return output['backgroundTaskId']
+  }
+
+  return typeof call['tool_use_id'] === 'string' ? call['tool_use_id'] : null
+}
+
+const stoppedTaskIdOf = (call: Record<string, unknown>): string | null => {
+  if (call['tool'] !== 'TaskStop' && call['tool'] !== 'KillShell') {
+    return null
+  }
+
+  for (const field of ['task_id', 'shell_id']) {
+    const value = call[field]
+
+    if (typeof value === 'string') {
+      return value
+    }
+  }
+
+  return null
+}
+
+const FINISHED_NOTICE = /<status>\s*(completed|failed|killed|stopped)\s*<\/status>/
+const NOTICE_TASK_ID = /<task-id>\s*([^<\s]+)\s*<\/task-id>/
+
+const finishedTaskIdOf = (blocks: readonly unknown[]): string | null => {
+  for (const block of blocks) {
+    const text = isRecord(block) && typeof block['text'] === 'string' ? block['text'] : ''
+    const taskId = text.includes('<task-notification') ? NOTICE_TASK_ID.exec(text)?.[1] : undefined
+
+    if (taskId !== undefined && (FINISHED_NOTICE.test(text) || !text.includes('<status>'))) {
+      return taskId
+    }
+  }
+
+  return null
+}
+
+const noteBackgroundStart = async (
+  $: EngineInterface,
+  runtime: Runtime,
+  input: { owner: string; call: Record<string, unknown>; outcome: unknown },
+): Promise<void> => {
+  const taskId = backgroundTaskIdOf(input.call, input.outcome)
+
+  if (taskId !== null) {
+    await mutateAgents($, runtime, (store, now) => startBackgroundTask(store, { owner: input.owner, taskId, now }))
   }
 }
 
@@ -296,6 +360,16 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     startClocks($, runtime)
     const id = e.agentId
+    const stoppedId = stoppedTaskIdOf(e)
+
+    if (stoppedId !== null) {
+      const outcome = await next(e)
+      await mutateAgents($, runtime, (store, now) => endBackgroundTask(store, { taskId: stoppedId, now })).catch(cause =>
+        reportFailure($, 'background stop', cause),
+      )
+
+      return outcome
+    }
 
     if (id === undefined) {
       const isQuestion = OWNER_QUESTION_TOOLS.includes(e.tool)
@@ -303,7 +377,12 @@ export const register: Register = on => {
       await setMainActivity($, runtime, { activity: started }).catch(cause => reportFailure($, 'main tool start', cause))
 
       try {
-        return await next(e)
+        const outcome = await next(e)
+        await noteBackgroundStart($, runtime, { owner: MAIN_ID, call: e, outcome }).catch(cause =>
+          reportFailure($, 'main background start', cause),
+        )
+
+        return outcome
       } finally {
         for (const from of ['tool', 'waiting'] as const) {
           await setMainActivity($, runtime, { activity: { state: 'thinking', command: null }, from }).catch(cause =>
@@ -318,7 +397,12 @@ export const register: Register = on => {
     )
 
     try {
-      return await next(e)
+      const outcome = await next(e)
+      await noteBackgroundStart($, runtime, { owner: id, call: e, outcome }).catch(cause =>
+        reportFailure($, 'background start', cause),
+      )
+
+      return outcome
     } finally {
       await setAgentState($, runtime, { id, state: 'thinking', command: null, from: 'tool' }).catch(cause =>
         reportFailure($, 'tool end', cause),
@@ -339,7 +423,21 @@ export const register: Register = on => {
         await writeGauges($, current => withCache(current, usage, calledAt))
       }
     } else {
-      await setAgentState($, runtime, { id: e.agentId, state: e.reason === 'answer' ? 'done' : 'failed', command: null })
+      const agentId = e.agentId
+      const state = e.reason === 'answer' ? 'done' : 'failed'
+      await mutateAgents($, runtime, (store, now) => finishAgent(store, { id: agentId, state, now }))
+    }
+
+    return next(e)
+  })
+
+  on('session.append', async ($, e, next) => {
+    const taskId = finishedTaskIdOf(e.message.content)
+
+    if (taskId !== null) {
+      await mutateAgents($, runtime, (store, now) => endBackgroundTask(store, { taskId, now })).catch(cause =>
+        reportFailure($, 'background end', cause),
+      )
     }
 
     return next(e)
