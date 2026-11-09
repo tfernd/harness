@@ -8,6 +8,8 @@ The lists the main session uses before a brief goes out, and when it accepts. Ea
   problem with cause `other agent`.
 - A brief that asks for a new judge names the deliberate bug that must fail it, read off the code (`harness:testing`).
 - A brief that changes a public signature lists every caller, found by `rg`.
+- A brief says what the agent cannot do (permissions, read-only, no network), so it reports `blocked` with the reason
+  instead of going quiet.
 - A size limit states what it counts (file or report, frontmatter, fenced blocks) and which moves can reach it.
 
 ## Checklist before it goes out (the sender's, not text of the brief)

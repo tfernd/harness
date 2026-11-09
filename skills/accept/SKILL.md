@@ -42,6 +42,8 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
 
 1. `## Verdict`: one or two sentences: done, partly done or blocked, and the one thing that matters most.
 2. `## Done`: table Item | Result (done, partly, failed) | Evidence (the proposal file, or the command and exit code).
+   It lists every ask the owner made since the last status, each marked done or not with its evidence, so the owner need not ask
+   "anything missing?"; the same list serves a checkpoint.
 3. Optional: `## Decisions` (Decision | Reason | Alternative rejected | Taken by), so the owner can overrule one; `## Problems`
    (Problem | Fix | State), where a fix is a rule, hook or gate named by its file, never "be careful".
 4. `## Agents`, required when the turn ran agents: one row per agent, its Task cell starting with the description it was

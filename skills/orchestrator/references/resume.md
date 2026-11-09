@@ -1,6 +1,6 @@
-# Resume file for a long job
+# Resume file for a medium or large job
 
-A restart or a compaction drops what the session knew. A long job keeps its state on disk so the next session carries on.
+A restart or a compaction drops what the session knew. A medium or large job (tiers in `harness:workflows`) keeps its state on disk so the next session carries on.
 
 ## Where
 
@@ -17,7 +17,7 @@ One file in `__scratch__/` (cleaned at the end of the job; use the project's pla
 
 ## When it is written
 
-After each accepted unit, and before any checkpoint. Overwrite the file; do not append a story.
+After each accepted unit, and before any checkpoint. It always names the next step, so a resumed session continues cleanly. Overwrite the file; do not append a story.
 
 ## On resume
 

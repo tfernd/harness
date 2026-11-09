@@ -24,6 +24,11 @@ SQL itself (DDL, dynamic tables, procedures, cost): `harness:code-sql`. No comme
 - A production connection is never used, even to read, without the owner's word.
 - A read that could be large carries `LIMIT`; use `--format json` when a program parses the result.
 - Check `snow <cmd> --help` for a flag before relying on it.
+- SQL with quoted identifiers goes in a file run with `-f`, never nested in `-q`: the shell strips the inner quotes.
+- Filter a large `SHOW` in SQL (`RESULT_SCAN(LAST_QUERY_ID())` with `WHERE`) or save it to a file; unfiltered it
+  overflows the tool output.
+- "Does not exist or not authorized" may be a missing grant, the wrong role, or the wrong environment's database: name
+  the connection and role and run `SHOW GRANTS` before concluding the object is missing.
 
 ## Deploying
 

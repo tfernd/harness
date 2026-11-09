@@ -1,6 +1,6 @@
 ---
 name: code-sql
-description: Snowflake SQL rules - style, idempotent DDL that never drops table data, dynamic tables, procedures and UDFs, Snowpark ML and the model registry, cost, check queries. Load before writing, moving or reviewing any .sql file.
+description: Snowflake SQL and dbt rules - style, idempotent DDL that never drops table data, grants, tasks, dynamic tables, procedures and UDFs, Snowpark ML, cost, check queries, dbt targets and builds. Load before writing, moving or reviewing any .sql file or dbt project file.
 ---
 
 # Snowflake SQL
@@ -30,7 +30,31 @@ A script runs twice with the same result.
 - `CREATE OR REPLACE DYNAMIC TABLE` keeps the old table until the new one exists, then the new one runs its initial refresh (`INITIALIZE = ON_CREATE` by default): a full recompute, and its cost.
 - `DROP`, `TRUNCATE` and `DELETE` without `WHERE` only with the owner's word, said in this job.
 - `UPDATE` and `DELETE` carry a `WHERE`; run its `SELECT COUNT(*)` first and state the count expected.
-- Grants are repeatable (`GRANT` twice is a no-op); `REVOKE` is a change, treat it like a `DROP`.
+- Grants are per role, and repeatable (`GRANT` twice is a no-op); an object grant also needs `USAGE` on its database and
+  schema. `REVOKE` is a change, treat it like a `DROP`.
+- A script that creates a schema or objects grants on both `ALL` and `FUTURE` schemas (or objects) in the same script,
+  so objects made later are covered.
+- A task is created suspended; resuming it is a separate step the owner runs, child tasks before the root. Name the schedule's timezone.
+- A destructive macro or script checks the target and database first, names the objects it drops, and makes
+  "everything" an explicit flag.
+
+## dbt
+
+- Read the dbt and adapter versions pinned in the repo; never pick one.
+- A green `dbt parse` or compile is not a pass: build the changed models on the dev target before calling them done.
+- dbt commands name their target (`--target`); a non-dev target (ci, stage, prod, any shared one) runs only on the
+  owner's word in this job.
+- Check the env vars a profile needs before the first dbt call.
+- On a failure, read the failing model and its SQL in `logs/dbt.log`, not the console summary.
+- "Two resources with the same database representation" or a duplicate schema entry means a model or YAML entry is
+  defined twice: search for the name.
+- Read tables through `ref` or `source`, never an assumed schema: schema naming differs by target.
+- An existing table is declared as a source, never copied as a model.
+- Business constants go in `vars`, not SQL literals.
+- A change to a model's contract edits its YAML in the same change as the column.
+- An ephemeral model takes no test: test the next materialised model, or write a singular test.
+- Report a deprecation warning, and fix it when the change touches that file.
+- Check a seed file's delimiter and line endings before its first build.
 
 ## Dynamic tables
 
@@ -51,7 +75,10 @@ A script runs twice with the same result.
   An identifier that must vary goes through `IDENTIFIER(:name)`, after a check against an allowed list.
 - Errors raised: `RAISE` or `RETURN` an error status; a `WHEN OTHER` handler that swallows the error is a bug.
 - A procedure that changes data is idempotent (`MERGE` over `INSERT`), so a retry does not duplicate rows.
-- Python handlers: pin `RUNTIME_VERSION` and list `PACKAGES`.
+- Python handlers: pin `RUNTIME_VERSION` and list `PACKAGES`. A NULL argument is checked explicitly; how it reaches the
+  handler differs by type and handler language, so test the NULL case.
+- A function name the warehouse does not have fails only at build: check the docs.
+- A changed procedure signature leaves the old overload: drop it by its full signature.
 
 ## Snowpark ML and the model registry
 

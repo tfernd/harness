@@ -43,6 +43,7 @@ Local modules live in `./modules/<module_name>`.
 
 ## Variables, outputs, locals
 
+- A `.tf` file holds no literal for a value that differs between deployments (names, ids, sizes, lists); it goes in `.tfvars`, behind a variable.
 - Every variable has `type` and `description`, in the order type, description, default, sensitive, validation. Give a
   default to an optional one. Expose only settings that differ between deployments.
 - `sensitive = true` on secrets (values still appear in plain text in state). `validation` only for strict
@@ -56,9 +57,28 @@ Local modules live in `./modules/<module_name>`.
 
 - Pin providers in `required_providers`; set `required_version`; pin registry modules to a major and minor version
   (`version` is ignored for local modules).
-- Never commit state files, `.terraform/`, saved plans, or `.tfvars` with secrets. Commit `.terraform.lock.hcl`, the
-  `.gitignore` and a README. Prefer short-lived credentials or a secrets manager to static keys.
+- A git-sourced module in stage, prod and any shared environment pins to a release tag, a major-line tag or a commit SHA
+  (`?ref=`), never a branch; a sandbox may use a branch while testing.
+- Never commit state files, `.terraform/`, saved plans, or `.tfvars` with secrets. Commit `.terraform.lock.hcl` in root
+  configurations only, never in a child module; commit the `.gitignore` and a README. Prefer short-lived credentials or a secrets manager to static keys.
 - Share data between workspaces through `tfe_outputs` and provider data sources; avoid sharing full state files.
+
+## Running and committing
+
+- Never run `plan` or `apply` against a real backend or account; a local plan with no refresh and no lock is fine.
+  Deploys are the owner's: hand over the commands in run order, one copy-paste block each. Never act on a workspace
+  while the owner is applying it.
+- Copy the nearest working sibling workspace or module before writing a new one, and follow the repo's own file-naming
+  and folder pattern for `.tfvars` and workspaces.
+- Declare apply order between workspaces (platform before project) where the repo's deploy tool supports it.
+- `validate` misses plan-time errors (invalid index, unsupported attribute): read the empty-input and `count = 0` paths
+  by hand, and say what only a plan can prove.
+- The repo's own pre-commit hook is the gate; run it once per unit, not after each edit. `fmt` and `validate` (below)
+  are the fallback when the repo has none.
+- Never commit build artifacts (zips, plans, state, `.terraform/`).
+- A branch gone stale after another merge is updated from the base before pushing.
+- A change to a folder's `.tf` or `.tfvars` updates that folder's README in the same commit.
+- JSON inside a `.tfvars` string is parsed in the gate (`jsondecode` or a JSON linter); `validate` does not check it.
 
 ## Enforcing tools
 

@@ -37,6 +37,8 @@ the plan: report it with the cause. Never skip, loosen or replace the check.
 
 Every claim in it is backed by a command you ran. No AI attribution.
 
+Draft the body in `__scratch__/`, offer it with the push question, and keep it there until the PR merges; then delete it.
+
 ## CI basics
 
 - Run the project's own check target (`make check`), so CI and a laptop agree; no second copy of the commands.
