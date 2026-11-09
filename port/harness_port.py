@@ -24,6 +24,8 @@ SHIM_SUFFIX = "port/shim.py"
 SHIM = CHECKOUT / SHIM_SUFFIX
 MANIFEST_NAME = "harness-port.json"
 KIRO_PROMPTS_FOLDER = "harness-prompts"
+KIRO_AGENTS_FILE = "file://AGENTS.md"
+KIRO_STEERING_GLOB = "file://.kiro/steering/**/*.md"
 LEGACY_KIRO_HOOKS = "hooks/harness.json"
 HOOK_TIMEOUT_SECONDS = 10
 HARNESS_REF = re.compile(r"harness:([a-z][a-z0-9-]*)")
@@ -147,6 +149,15 @@ def get_preload_sections(skills: list[str], /) -> str:
     return sections
 
 
+def get_kiro_resources(dest: Path, preloaded: list[str], /) -> list[str]:
+    skill_resources = {
+        f"skill://{dest / 'skills' / f'harness-{skill_file.parent.name}' / 'SKILL.md'}"
+        for skill_file in (CHECKOUT / "skills").glob("*/SKILL.md")
+        if skill_file.parent.name not in preloaded
+    }
+    return sorted({KIRO_AGENTS_FILE, KIRO_STEERING_GLOB} | skill_resources)
+
+
 def plan_agent(
     plan: Plan, dest: Path, target: Target, agent_file: Path, models: dict[str, str], /
 ) -> None:
@@ -167,7 +178,7 @@ def plan_agent(
             "tools": list(
                 dict.fromkeys(KIRO_TAGS[tool] for tool in tools if tool in KIRO_TAGS)
             ),
-            "resources": [],
+            "resources": get_kiro_resources(dest, skills),
         }
         if model:
             config["model"] = model

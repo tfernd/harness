@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PORT_TOOL = ROOT / "bin" / "harness-port"
+PORT_TOOL = Path(os.environ.get("HARNESS_PORT_TOOL", ROOT / "bin" / "harness-port"))
 PORT_SCRIPT = ROOT / "port" / "harness_port.py"
 INSTALL_SH = ROOT / "install.sh"
 SHIM = Path(os.environ.get("HARNESS_PORT_SHIM", ROOT / "port" / "shim.py"))
@@ -100,6 +100,21 @@ def check_preloads(dest: Path, target: str) -> None:
     check(checked >= MIN_PRELOADS, f"{target}: only {checked} preloads checked")
 
 
+def check_kiro_resources(dest: Path) -> None:
+    config = json.loads((dest / "agents" / "harness-analyst.json").read_text())
+    resources = config["resources"]
+    preloaded = get_preloads(ROOT / "agents" / "analyst.md")
+    others = [path.name for path in sorted((ROOT / "skills").iterdir()) if path.name not in preloaded]
+    check("file://AGENTS.md" in resources, f"kiro: resources lack AGENTS.md: {resources}")
+    check("file://.kiro/steering/**/*.md" in resources, "kiro: resources lack the steering glob")
+    check(bool(preloaded) and bool(others), "kiro: analyst has no preload or no other skill")
+    for skill in others:
+        skill_file = dest / "skills" / f"harness-{skill}" / "SKILL.md"
+        check(f"skill://{skill_file}" in resources, f"kiro: resources lack skill://{skill}")
+        check(skill_file.is_file(), f"kiro: {skill_file} missing after install")
+    check(resources == sorted(set(resources)), "kiro: resources not sorted and unique")
+
+
 def check_texts(dest: Path, target: str) -> None:
     skills = sorted((dest / "skills").glob("*/SKILL.md"))
     check(len(skills) >= MIN_SKILLS, f"{target}: only {len(skills)} skills")
@@ -129,6 +144,7 @@ def check_texts(dest: Path, target: str) -> None:
         check("model" not in config, "kiro agent has a model")
         check(prompt_file.read_text().strip() != "", "kiro agent prompt file empty")
         check_preloads(dest, target)
+        check_kiro_resources(dest)
         return
 
     text = analyst.with_suffix(".md").read_text()
