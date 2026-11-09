@@ -1,11 +1,11 @@
-import type { AgentRow, Gauges, Range, Roster, ThemeSetting } from '../types'
+import type { AgentRow, Gauges, Range, Roster, RosterRow, ThemeSetting } from '../types'
 
 import { cacheRefreshMs } from './gauges'
-import { MAIN_ID, earliestStart, isInWindow, nextLeaveMs, windowFor } from './model'
+import { MAIN_ID, nextLeaveMs } from './model'
 import type { Ctx } from './svg-parts'
 import { FOLDED_RING_RADIUS, FOLDED_RING_SIZE, RING_SIZE, TRACES_MORE_WIDTH, foldedTracesWidth, type GaugeSpec, type StripInput, gaugeSpecs, ring, traceLanes, tracesHeight } from './svg-strip'
 import { styleFor } from './svg-theme'
-import { type TimelineInput, timelineMarkup } from './svg-timeline'
+import { type GroupPlan, type TimelineInput, type TimelinePiece, groupRowsMarkup, hiddenAgentsMarkup, planGroups, timelineHeadMarkup, windowSpanOf } from './svg-timeline'
 
 export type SvgInput = {
   width: number
@@ -69,14 +69,12 @@ const stripInputOf = (input: SvgInput): StripInput => ({
 
 export const liveCountOf = (input: SvgInput): number => input.roster.rows.filter(row => row.phase === 'live').length
 
-const detailsOf = (input: SvgInput, isLiveOnly: boolean) =>
-  input.roster.rows
-    .filter(row => !isLiveOnly || row.phase === 'live')
-    .map(row => {
-      const detail = input.rows.get(row.id)
+const detailsOfRows = (input: SvgInput, rows: readonly RosterRow[]) =>
+  rows.map(row => {
+    const detail = input.rows.get(row.id)
 
-      return detail === undefined ? null : [row.id, detail.state, detail.command, detail.segments.length, detail.endedAt]
-    })
+    return detail === undefined ? null : [row.id, detail.state, detail.command, detail.segments.length, detail.endedAt]
+  })
 
 const mainDetailOf = (input: SvgInput) => {
   const main = input.rows.get(MAIN_ID)
@@ -108,7 +106,7 @@ const tracesWidthOf = (input: SvgInput): number => foldedTracesWidth(input.width
 
 const tracesPiece = (input: SvgInput): PieceSpec => ({
   key: 'traces',
-  signature: JSON.stringify([input.scheme, input.width, detailsOf(input, true)]),
+  signature: JSON.stringify([input.scheme, input.width, detailsOfRows(input, input.roster.rows.filter(row => row.phase === 'live'))]),
   interaction: input.scheme,
   maxAgeMs: REFRESH_IDLE_MS,
   build: () => {
@@ -121,10 +119,16 @@ const tracesPiece = (input: SvgInput): PieceSpec => ({
   },
 })
 
-const buildTimeline = (input: SvgInput, rowLimit: number): BandSvg => {
-  const ctx = newCtx(input.now)
+const EMPTY_SVG: BandSvg = { source: '', width: 0, height: 0 }
+
+export const TIMELINE_KEY = 'timeline'
+export const HIDDEN_KEY = 'timeline-more'
+export const groupRowsKey = (groupId: string): string => `timeline-rows-${groupId}`
+
+const timelineInputOf = (input: SvgInput): TimelineInput => {
   const width = Math.max(MIN_TIMELINE_WIDTH, input.width - BORDER_PX)
-  const timelineInput: TimelineInput = {
+
+  return {
     ...stripInputOf(input),
     width,
     isWide: width >= WIDE_MIN_WIDTH,
@@ -132,44 +136,90 @@ const buildTimeline = (input: SvgInput, rowLimit: number): BandSvg => {
     foldedGroups: input.foldedGroups,
     sessionStart: input.gauges.sessionStartedAt ?? input.now,
   }
-  const timeline = timelineMarkup(ctx, timelineInput, 0, rowLimit)
-  const height = timeline.height
-
-  return wrap({ scheme: input.scheme, width, height, ctx, body: timeline.markup })
 }
 
-const shownIds = (input: SvgInput): string[] => {
-  const start = windowFor(input.range, input.now, earliestStart([...input.rows.values()], input.gauges.sessionStartedAt ?? input.now)).start
+export const listedGroupsOf = (input: SvgInput): GroupPlan[] => planGroups(timelineInputOf(input), input.now, Number.POSITIVE_INFINITY).groups
 
-  return input.roster.rows.filter(row => isInWindow(row, input.rows.get(row.id), start)).map(row => row.id)
+const drawn = (input: SvgInput, width: number, draw: (ctx: Ctx) => TimelinePiece): BandSvg => {
+  const ctx = newCtx(input.now)
+  const piece = draw(ctx)
+
+  return piece.height === 0 ? EMPTY_SVG : wrap({ scheme: input.scheme, width, height: piece.height, ctx, body: piece.markup })
 }
 
-const timelinePiece = (input: SvgInput): PieceSpec => ({
-  key: 'timeline',
-  signature: JSON.stringify([
-    input.width,
-    input.range,
-    input.foldedGroups,
-    input.scheme,
-    input.roster,
-    detailsOf(input, false),
-    mainDetailOf(input),
-    shownIds(input),
-  ]),
-  interaction: JSON.stringify([input.width, input.range, input.foldedGroups, input.scheme]),
-  maxAgeMs: REFRESH_IDLE_MS,
-  build: () => {
-    for (const limit of ROW_LIMITS) {
-      const built = buildTimeline(input, limit)
+const buildTimelinePieces = (input: SvgInput, rowLimit: number): Map<string, BandSvg> => {
+  const timelineInput = timelineInputOf(input)
+  const { width } = timelineInput
+  const plan = planGroups(timelineInput, input.now, rowLimit)
+  const pieces = new Map<string, BandSvg>([[TIMELINE_KEY, drawn(input, width, ctx => timelineHeadMarkup(ctx, timelineInput))]])
 
-      if (built.source.length <= SOURCE_LIMIT_CHARACTERS) {
-        return built
-      }
+  for (const group of plan.groups) {
+    pieces.set(groupRowsKey(group.id), drawn(input, width, ctx => groupRowsMarkup(ctx, timelineInput, group)))
+  }
+
+  pieces.set(HIDDEN_KEY, drawn(input, width, () => hiddenAgentsMarkup(timelineInput, plan.hidden)))
+
+  return pieces
+}
+
+const fittingTimeline = (input: SvgInput): Map<string, BandSvg> => {
+  for (const limit of ROW_LIMITS) {
+    const built = buildTimelinePieces(input, limit)
+    const characters = [...built.values()].reduce((sum, svg) => sum + svg.source.length, 0)
+
+    if (characters <= SOURCE_LIMIT_CHARACTERS) {
+      return built
     }
+  }
 
-    throw new Error(`band svg wider than ${SOURCE_LIMIT_CHARACTERS} characters even with no agent rows`)
-  },
-})
+  throw new Error(`band svg wider than ${SOURCE_LIMIT_CHARACTERS} characters even with no agent rows`)
+}
+
+const timelinePieces = (input: SvgInput): PieceSpec[] => {
+  const timelineInput = timelineInputOf(input)
+  const groups = listedGroupsOf(input)
+  let fitted: Map<string, BandSvg> | null = null
+  const fittedPiece = (key: string): BandSvg => {
+    fitted ??= fittingTimeline(input)
+
+    return fitted.get(key) ?? EMPTY_SVG
+  }
+  const base = [input.width, input.range, input.scheme]
+  const interaction = JSON.stringify([...base, input.foldedGroups])
+  const head: PieceSpec = {
+    key: TIMELINE_KEY,
+    signature: JSON.stringify([...base, mainDetailOf(input), windowSpanOf(timelineInput, input.now)]),
+    interaction,
+    maxAgeMs: REFRESH_IDLE_MS,
+    build: () => fittedPiece(TIMELINE_KEY),
+  }
+  let rowsBefore = 0
+  const rows = groups
+    .filter(group => !group.isFolded)
+    .map((group): PieceSpec => {
+      const signature = JSON.stringify([
+        ...base,
+        group.id,
+        rowsBefore,
+        group.earlier,
+        group.inWindowCount,
+        detailsOfRows(input, group.shown),
+        group.shown.map(row => row.id),
+      ])
+      rowsBefore += group.inWindowCount
+
+      return { key: groupRowsKey(group.id), signature, interaction, maxAgeMs: REFRESH_IDLE_MS, build: () => fittedPiece(groupRowsKey(group.id)) }
+    })
+  const more: PieceSpec = {
+    key: HIDDEN_KEY,
+    signature: JSON.stringify([...base, rowsBefore]),
+    interaction,
+    maxAgeMs: REFRESH_IDLE_MS,
+    build: () => fittedPiece(HIDDEN_KEY),
+  }
+
+  return rowsBefore === 0 ? [head, ...rows] : [head, ...rows, more]
+}
 
 export const piecesOf = (input: SvgInput): PieceSpec[] => {
   const pieces = gaugeSpecs(input.gauges, input.now).map(spec => ringPiece(input, spec))
@@ -178,7 +228,7 @@ export const piecesOf = (input: SvgInput): PieceSpec[] => {
     return liveCountOf(input) > 0 && tracesWidthOf(input) > 0 ? [...pieces, tracesPiece(input)] : pieces
   }
 
-  return [...pieces, timelinePiece(input)]
+  return [...pieces, ...timelinePieces(input)]
 }
 
 export const refreshAfterMs = (input: SvgInput): number | null => {

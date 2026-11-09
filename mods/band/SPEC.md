@@ -32,7 +32,10 @@ A Claude Code mod: a `ui.render` hook on `AbovePrompt` (the band above the promp
   no tree rebuilt per frame. The tree is rebuilt only when an agent, a state or a fold changes.
 - On the desktop, text, pills and cards are native Box/Text; each ring is its own small Svg, rebuilt only on a
   whole-percent, tone or theme change; the traces and the timeline are image Svgs (no interactive frame, so no flash;
-  timeline hover was given up for that).
+  timeline hover was given up for that). The timeline is several pieces, top to bottom: the axis header and main row
+  (one Svg), then per group a native header Button (chevron, tag, name; the "N live · M ended" count sits beside it,
+  since a Button holds only text) that folds the group, and that group's rows with "+N earlier" (one Svg, none when
+  folded), then the "+N more agents not drawn" line. The only group toggle is that header Button.
 - The timeline shows an agent only if its life overlaps the chosen range (live ones always); per group the rest show
   as one dim "+N earlier" line, and a group with nothing at all is not drawn.
 - Inside a group, live agents come first (oldest start on top), then ended ones, most recently ended first; the row limit cuts after that order, through one function (`orderAgents`) for every view.

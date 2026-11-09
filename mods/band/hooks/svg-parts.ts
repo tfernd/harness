@@ -74,12 +74,6 @@ export const statePill = (
   word: string = STATE_WORD[state],
 ): string => pill(box, state, word)
 
-export const chevron = (x: number, y: number, isFolded: boolean): string => {
-  const points = isFolded ? `${x + 4} ${y - 4}L${x + 8} ${y}L${x + 4} ${y + 4}` : `${x} ${y - 2}L${x + 4} ${y + 2}L${x + 8} ${y - 2}`
-
-  return `<path class="lns" d="M${points}"/>`
-}
-
 type Run = { state: AgentState; left: number; right: number; isOpen: boolean }
 
 const motionOverlay = (ctx: Ctx, run: Run, shape: LaneShape): string => {

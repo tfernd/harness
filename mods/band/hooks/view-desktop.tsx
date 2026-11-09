@@ -2,9 +2,11 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { AgentState } from '../types'
 
-import { RANGES, countAgents, formatClock, formatShort, groupAgents } from './model'
+import { DIRECT_GROUP, RANGES, countAgents, formatClock, formatShort } from './model'
+import { HIDDEN_KEY, TIMELINE_KEY, groupRowsKey, listedGroupsOf } from './svg-band'
 import type { BandSvg, SvgInput } from './svg-band'
 import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
+import type { GroupPlan } from './svg-timeline'
 import type { Actions } from './view'
 
 export type SvgTable = Elements['desktop'] | Elements['vscode'] | Elements['mobile']
@@ -53,7 +55,6 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const { Box, Text, Button, Svg } = view.ui
   const { input, actions } = view
   const { isFolded } = input
-  const groups = groupAgents(input.roster.rows)
   const live = input.roster.rows.filter(row => row.phase === 'live')
   const counts = countAgents(input.roster.rows, { done: input.roster.evictedDone, failed: input.roster.evictedFailed })
   const status = statusOf(input)
@@ -69,7 +70,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const svgOf = (key: string, alt: string) => {
     const svg = view.svgs.get(key)
 
-    return svg === undefined ? null : <Svg key={key} source={svg.source} alt={alt} width={svg.width} height={svg.height} />
+    return svg === undefined || svg.height === 0 ? null : <Svg key={key} source={svg.source} alt={alt} width={svg.width} height={svg.height} />
   }
 
   const gaugeBox = (spec: GaugeSpec) => (
@@ -112,13 +113,32 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Box>
   )
 
-  const groupControl = (
-    <Box key="groups" flexDirection="row" gap={SECTION_GAP}>
-      {groups.map(group => (
-        <Button key={`group-button-${group.id}`} plain onPress={() => actions.toggleGroup(group.id)}>
-          {`${input.foldedGroups.includes(group.id) ? '▸' : '▾'} ${group.label.replace(/^workflow /, '')}`}
-        </Button>
-      ))}
+  const groupHeader = (group: GroupPlan) => {
+    const kind = group.id === DIRECT_GROUP ? 'DIRECT' : 'WORKFLOW'
+    const name = group.name.replace(/^workflow /, '')
+
+    return (
+      <Box key={`group-header-${group.id}`} flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X}>
+        <Box flexGrow={1} flexShrink={1}>
+          <Button key={`group-button-${group.id}`} plain onPress={() => actions.toggleGroup(group.id)}>
+            <Text>{group.isFolded ? '▸ ' : '▾ '}</Text>
+            <Text dimColor bold>{`${kind} `}</Text>
+            <Text>{name}</Text>
+          </Button>
+        </Box>
+        <Text dimColor wrap="truncate-end">{`${group.counts.live} live · ${group.counts.done + group.counts.failed} ended`}</Text>
+      </Box>
+    )
+  }
+
+  const timelineRegion = (
+    <Box key="timeline" flexDirection="column">
+      {svgOf(TIMELINE_KEY, `Agent timeline over ${input.range}`)}
+      {listedGroupsOf(input).flatMap(group => [
+        groupHeader(group),
+        group.isFolded ? null : svgOf(groupRowsKey(group.id), `Agent rows: ${group.name}`),
+      ])}
+      {svgOf(HIDDEN_KEY, 'Agents not drawn')}
     </Box>
   )
 
@@ -160,7 +180,6 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
         {foldButton}
         {rangeControl}
         <Box key="spacer" flexGrow={1} />
-        {groups.length === 0 ? null : groupControl}
       </Box>
       <Box key="strip" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X}>
         {statusBox}
@@ -168,7 +187,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
         <Box key="spacer" flexGrow={1} />
         {countsInline}
       </Box>
-      {svgOf('timeline', `Agent timeline over ${input.range}`)}
+      {timelineRegion}
     </Box>
   )
 }

@@ -1,10 +1,9 @@
 import type { AgentRow, AgentState, Range, RosterRow } from '../types'
 
-import { DIRECT_GROUP, MAIN_ID, MAIN_LABEL, MAIN_STATE_WORD, STATE_ICON, earliestStart, formatSpan, groupAgents, splitByWindow, windowFor } from './model'
+import { MAIN_ID, MAIN_LABEL, MAIN_STATE_WORD, STATE_ICON, earliestStart, formatSpan, groupAgents, splitByWindow, windowFor } from './model'
 import {
   type Ctx,
   type Track,
-  chevron,
   driftGroup,
   escapeText,
   fit,
@@ -108,25 +107,6 @@ const laneBlockMarkup = (
   )
 }
 
-const groupHeader = (
-  input: { id: string; name: string; counts: { live: number; done: number; failed: number }; isFolded: boolean; y: number; width: number },
-): string => {
-  const kind = input.id === DIRECT_GROUP ? 'DIRECT' : 'WORKFLOW'
-  const name = input.name.replace(/^workflow /, '')
-  const summary = `${input.counts.live} live · ${input.counts.done + input.counts.failed} ended`
-  const baseline = input.y + GROUP_HEIGHT / 2 + TEXT_DROP
-  const nameX = PAD + 17 + kind.length * 10 + 10
-
-  return (
-    rect({ x: 0, y: input.y, width: input.width, height: GROUP_HEIGHT }, 'pan') +
-    horizontalLine(input.y, 0, input.width) +
-    chevron(PAD, input.y + GROUP_HEIGHT / 2, input.isFolded) +
-    label(PAD + 17, baseline, 'm b s cap', kind) +
-    label(nameX, baseline, '', fit(name, input.width - nameX - summary.length * 6.4 - 2 * PAD, 12)) +
-    label(input.width - PAD, baseline, 'm end', summary)
-  )
-}
-
 const headMarkup = (input: { columns: Columns; width: number; top: number; spanMs: number; range: Range }): string => {
   const { columns, top } = input
   const trackEnd = columns.labelWidth + columns.trackWidth
@@ -142,79 +122,102 @@ const headMarkup = (input: { columns: Columns; width: number; top: number; spanM
   )
 }
 
-export const timelineMarkup = (ctx: Ctx, input: TimelineInput, top: number, rowLimit: number): { markup: string; height: number } => {
-  const columns = columnsFor(input.width, input.isWide)
-  const window = windowFor(input.range, ctx.now, earliestStart([...input.rows.values()], input.sessionStart))
-  const track: Track = { x: columns.labelWidth, width: columns.trackWidth, window }
-  let y = top + HEAD_HEIGHT
+export type TimelinePiece = { markup: string; height: number }
+
+export type GroupPlan = {
+  id: string
+  name: string
+  counts: ReturnType<typeof groupAgents>[number]['counts']
+  isFolded: boolean
+  shown: readonly RosterRow[]
+  inWindowCount: number
+  earlier: number
+}
+
+export type TimelinePlan = { groups: GroupPlan[]; hidden: number }
+
+const windowOf = (input: TimelineInput, now: number) => windowFor(input.range, now, earliestStart([...input.rows.values()], input.sessionStart))
+
+export const windowSpanOf = (input: TimelineInput, now: number): number => {
+  const window = windowOf(input, now)
+
+  return window.end - window.start
+}
+
+export const planGroups = (input: TimelineInput, now: number, rowLimit: number): TimelinePlan => {
+  const windowStart = windowOf(input, now).start
+  const groups: GroupPlan[] = []
   let used = 0
   let hidden = 0
-  const parts: string[] = [headMarkup({ columns, width: input.width, top, spanMs: window.end - window.start, range: input.range })]
-  const mainRow = input.rows.get(MAIN_ID)
-  const mainTop = y
-
-  parts.push(rowMarkup({ agent: MAIN_ROSTER_ROW, row: mainRow, y, width: input.width, columns }))
-  y += ROW_HEIGHT
-  parts.push(
-    laneBlockMarkup(ctx, {
-      lanes: [laneMarkup(ctx, mainRow, track, { y: mainTop + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 })],
-      top: mainTop,
-      bottom: y,
-      columns,
-      track,
-    }),
-  )
 
   for (const group of groupAgents(input.roster.rows)) {
     const isFolded = input.foldedGroups.includes(group.id)
-    const { shown: inWindow, earlier } = splitByWindow(group.agents, input.rows, window.start)
+    const { shown: inWindow, earlier } = splitByWindow(group.agents, input.rows, windowStart)
 
     if (inWindow.length === 0 && earlier === 0) {
       continue
     }
 
-    const shown = inWindow.slice(0, Math.max(0, rowLimit - used))
-
-    if (!isFolded && shown.length === 0 && inWindow.length > 0) {
-      hidden += inWindow.length
-      continue
-    }
-
-    parts.push(groupHeader({ id: group.id, name: group.label, counts: group.counts, isFolded, y, width: input.width }))
-    y += GROUP_HEIGHT
-
-    if (isFolded) {
-      continue
-    }
-
-    hidden += inWindow.length - shown.length
+    const shown = isFolded ? [] : inWindow.slice(0, Math.max(0, rowLimit - used))
     used += shown.length
-    const blockTop = y
-    const lanes: string[] = []
-
-    for (const agent of shown) {
-      const row = input.rows.get(agent.id)
-      parts.push(rowMarkup({ agent, row, y, width: input.width, columns }))
-      lanes.push(laneMarkup(ctx, row, track, { y: y + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 }))
-      y += ROW_HEIGHT
-    }
-
-    if (y > blockTop) {
-      parts.push(laneBlockMarkup(ctx, { lanes, top: blockTop, bottom: y, columns, track }))
-    }
-
-    if (earlier > 0) {
-      parts.push(horizontalLine(y, 0, input.width), label(PAD, y + MORE_HEIGHT / 2 + TEXT_DROP, 'm s', `+${earlier} earlier`))
-      y += MORE_HEIGHT
-    }
+    hidden += isFolded ? 0 : inWindow.length - shown.length
+    groups.push({ id: group.id, name: group.label, counts: group.counts, isFolded, shown, inWindowCount: inWindow.length, earlier })
   }
 
-  if (hidden > 0) {
-    parts.push(horizontalLine(y, 0, input.width), label(PAD, y + MORE_HEIGHT / 2 + TEXT_DROP, 'm s', `+${hidden} more agents not drawn`))
+  return { groups, hidden }
+}
+
+export const timelineHeadMarkup = (ctx: Ctx, input: TimelineInput): TimelinePiece => {
+  const columns = columnsFor(input.width, input.isWide)
+  const window = windowOf(input, ctx.now)
+  const track: Track = { x: columns.labelWidth, width: columns.trackWidth, window }
+  const mainRow = input.rows.get(MAIN_ID)
+  const mainTop = HEAD_HEIGHT
+  const mainBottom = mainTop + ROW_HEIGHT
+
+  return {
+    markup:
+      headMarkup({ columns, width: input.width, top: 0, spanMs: window.end - window.start, range: input.range }) +
+      rowMarkup({ agent: MAIN_ROSTER_ROW, row: mainRow, y: mainTop, width: input.width, columns }) +
+      laneBlockMarkup(ctx, {
+        lanes: [laneMarkup(ctx, mainRow, track, { y: mainTop + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 })],
+        top: mainTop,
+        bottom: mainBottom,
+        columns,
+        track,
+      }),
+    height: mainBottom,
+  }
+}
+
+export const groupRowsMarkup = (ctx: Ctx, input: TimelineInput, plan: GroupPlan): TimelinePiece => {
+  const columns = columnsFor(input.width, input.isWide)
+  const track: Track = { x: columns.labelWidth, width: columns.trackWidth, window: windowOf(input, ctx.now) }
+  const parts: string[] = []
+  const lanes: string[] = []
+  let y = 0
+
+  for (const agent of plan.shown) {
+    const row = input.rows.get(agent.id)
+    parts.push(rowMarkup({ agent, row, y, width: input.width, columns }))
+    lanes.push(laneMarkup(ctx, row, track, { y: y + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 }))
+    y += ROW_HEIGHT
+  }
+
+  if (y > 0) {
+    parts.push(laneBlockMarkup(ctx, { lanes, top: 0, bottom: y, columns, track }))
+  }
+
+  if (plan.earlier > 0) {
+    parts.push(moreLine(y, input.width, `+${plan.earlier} earlier`))
     y += MORE_HEIGHT
   }
 
-  const height = y - top
-
-  return { markup: parts.join(''), height }
+  return { markup: parts.join(''), height: y }
 }
+
+const moreLine = (y: number, width: number, text: string): string =>
+  horizontalLine(y, 0, width) + label(PAD, y + MORE_HEIGHT / 2 + TEXT_DROP, 'm s', text)
+
+export const hiddenAgentsMarkup = (input: TimelineInput, hidden: number): TimelinePiece =>
+  hidden > 0 ? { markup: moreLine(0, input.width, `+${hidden} more agents not drawn`), height: MORE_HEIGHT } : { markup: '', height: 0 }

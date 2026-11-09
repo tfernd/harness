@@ -238,7 +238,11 @@ type Mounted = { findAll: (query: { type: string }) => Promise<{ props: Record<s
 const svgProps = async (ui: Mounted, altStart: string): Promise<Record<string, unknown> | undefined> =>
   (await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props['alt']).startsWith(altStart))?.props
 
-const sourceOf = async (ui: Mounted): Promise<unknown> => (await svgProps(ui, 'Agent timeline'))?.['source']
+const sourceOf = async (ui: Mounted): Promise<string> =>
+  (await ui.findAll({ type: 'Svg' }))
+    .filter(svg => String(svg.props['alt']).startsWith('Agent '))
+    .map(svg => String(svg.props['source']))
+    .join('')
 
 test('the desktop draws the band from native text and plain image Svgs, no Raster and no interactive frame', async ($, on) => {
   mock.clock(on)
@@ -302,14 +306,14 @@ test('a held sub-agent tool call shows RUNNING with its command in the desktop t
   const call = $.tool.call({ tool: 'Bash', command: 'make check', agentId: 'a1' })
   await entered
   await clock.advance(MIN_REBUILD_MS + 200)
-  const during = String(await sourceOf(ui))
+  const during = await sourceOf(ui)
 
   expect(during).toContain('scout-1: tool, make check')
 
   release()
   await call
   await clock.advance(MIN_REBUILD_MS + 200)
-  const after = String(await sourceOf(ui))
+  const after = await sourceOf(ui)
 
   expect(after).toContain('scout-1: thinking, thinking...')
   expect(after).not.toContain('make check')
@@ -368,6 +372,35 @@ test('a fresh desktop band starts unfolded with every group open', async ($, on)
   await ui.unmount()
 })
 
+const groupSpawn = (runId: string) => ({ ...SPAWN, workflow: { runId, agentIndex: 1 } })
+
+test('each timeline group header is a native Button that folds its own rows Svg, and the controls row holds none', async ($, on) => {
+  mock.clock(on)
+  baseHooks(on)
+  let spawned = 0
+  on('agent.spawn', () => ({ model: 'm', agentId: `a${(spawned += 1)}` }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await $.agent.spawn(groupSpawn('wf_review'))
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const rowsAlts = async () => (await ui.findAll({ type: 'Svg' })).map(svg => String(svg.props['alt'])).filter(alt => alt.startsWith('Agent rows'))
+  const controls = await ui.find({ key: 'controls' })
+  const timeline = await ui.find({ key: 'timeline' })
+
+  expect(JSON.stringify(controls)).not.toContain('group-button')
+  expect(JSON.stringify(timeline)).toContain('group-button-direct')
+  expect(JSON.stringify(timeline)).toContain('group-button-wf_review')
+  expect(await rowsAlts()).toHaveLength(2)
+
+  await ui.press({ key: 'group-button-direct' })
+
+  const left = await rowsAlts()
+  expect(left).toHaveLength(1)
+  expect(left[0]).toContain('review')
+  expect(JSON.stringify(await ui.find({ key: 'group-button-direct' }))).toContain('▸')
+  await ui.unmount()
+})
+
 test('the session axis names real times and never the word session', () => {
   const input = { ...SVG_INPUT, range: 'session', gauges: { ...SVG_INPUT.gauges, sessionStartedAt: NOW - 51 * 3_600_000 - 20 * MINUTE } } as const
   const source = sourceOfPiece(input, 'timeline')
@@ -417,12 +450,12 @@ test('an agent changing state rebuilds the timeline alone, never a ring, and dra
   const buttonPress = chooseBand(first.caches, { ...SVG_INPUT, ...oneAgent('launched'), range: '5m', now: NOW + 50 } as never)
   const settled = chooseBand(changed.caches, { ...SVG_INPUT, ...oneAgent('tool'), now: NOW + MIN_REBUILD_MS + 50 } as never)
 
-  expect(first.builtKeys.sort()).toEqual(['ring-cache', 'ring-ctx', 'timeline'])
+  expect(first.builtKeys.sort()).toEqual(['ring-cache', 'ring-ctx', 'timeline', 'timeline-more', 'timeline-rows-direct'])
   expect(changed.builtKeys).toEqual([])
   expect(changed.retryInMs).toBe(MIN_REBUILD_MS - 50)
   expect(unchanged.builtKeys).toEqual([])
-  expect(buttonPress.builtKeys).toEqual(['timeline'])
-  expect(settled.builtKeys).toEqual(['timeline'])
+  expect(buttonPress.builtKeys.sort()).toEqual(['timeline', 'timeline-more', 'timeline-rows-direct'])
+  expect(settled.builtKeys).toEqual(['timeline-rows-direct'])
 })
 
 const endedAgo = (minutes: number) => {
@@ -434,7 +467,7 @@ const endedAgo = (minutes: number) => {
 }
 
 test('an agent that ended 2 min ago is hidden in range 1m, shown in 5m, and counted as earlier', () => {
-  const at = (range: '1m' | '5m') => sourceOfPiece({ ...SVG_INPUT, ...endedAgo(2), range } as never, 'timeline')
+  const at = (range: '1m' | '5m') => sourceOfPiece({ ...SVG_INPUT, ...endedAgo(2), range } as never, 'timeline-rows-direct')
 
   expect(at('1m')).not.toContain('old-1')
   expect(at('1m')).toContain('+1 earlier')
@@ -449,7 +482,7 @@ test('leaving the window rebuilds the timeline once and a quiet clock tick rebui
   const left = chooseBand(first.caches, { ...(input as object), now: NOW + 40_000 } as never)
 
   expect(quiet.builtKeys).toEqual([])
-  expect(left.builtKeys).toEqual(['timeline'])
+  expect(left.builtKeys).toEqual(['timeline-rows-direct'])
 })
 
 test('a main turn with one tool call gives the main row WORKING, then TOOL with its command, then IDLE', async ($, on) => {
@@ -464,7 +497,7 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const titleOf = async (): Promise<string | undefined> => String(await sourceOf(ui)).match(/main session: [a-z]+, [^<]*/)?.[0]
+  const titleOf = async (): Promise<string | undefined> => (await sourceOf(ui)).match(/main session: [a-z]+, [^<]*/)?.[0]
   const idleAtStart = await titleOf()
 
   await $.turn.start({ text: '', turnId: 'm1' })
@@ -485,17 +518,17 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   expect(thinking).toBe('main session: thinking, working...')
   expect(tool).toBe('main session: tool, make check')
   expect(idle).toBe('main session: launched, idle')
-  expect(String(await sourceOf(ui))).not.toContain('>idle<')
+  expect(await sourceOf(ui)).not.toContain('>idle<')
   await ui.unmount()
 })
 
-test('the main row shows in range 1m with no agent at all, above every group and outside the counts', () => {
+test('the main row shows in range 1m with no agent at all, apart from the rows of every group', () => {
   const source = sourceOfPiece({ ...SVG_INPUT, range: '1m' } as never, 'timeline')
   const withAgent = sourceOfPiece({ ...SVG_INPUT, ...oneAgent('launched') } as never, 'timeline')
 
   expect(source).toContain('main session')
-  expect(withAgent.indexOf('main session')).toBeGreaterThan(-1)
-  expect(withAgent.indexOf('main session')).toBeLessThan(withAgent.indexOf('DIRECT'))
+  expect(withAgent).toContain('main session')
+  expect(withAgent).not.toContain('scout-1')
 })
 
 const withMain = (state: 'launched' | 'tool', command: string | null) => {
