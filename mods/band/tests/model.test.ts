@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import { MAX_AGENTS, MAX_SEGMENTS, addAgent, countAgents, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
+import { MAX_AGENTS, MAX_SEGMENTS, addAgent, moveMain, countAgents, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus } from '../hooks/model'
 import { paintTextRows } from '../hooks/paint'
 import { CLOCK_COLUMNS } from '../hooks/view'
 
@@ -79,4 +79,30 @@ test('the clock raster holds the longest turn text whole', () => {
 
   expect(textOf([{ text: 'turn 10:00', color: null }], CLOCK_COLUMNS).trimEnd()).toBe('turn 10:00')
   expect(textOf([{ text: longest, color: null }], CLOCK_COLUMNS).trimEnd()).toBe(longest)
+})
+
+test('the main row keeps a thinking span, a tool span with its command, no span while idle, and stays bounded', () => {
+  let store: AgentStore = moveMain(EMPTY_STORE, { activity: { state: 'thinking', command: null }, now: 10 })
+  store = moveMain(store, { activity: { state: 'tool', command: 'make check' }, now: 20 })
+  const inTool = store.main
+  store = moveMain(store, { activity: { state: 'thinking', command: null }, now: 30, from: 'tool' })
+  store = moveMain(store, { activity: null, now: 40 })
+
+  expect(inTool?.command).toBe('make check')
+  expect(store.main?.segments).toEqual([
+    { state: 'thinking', from: 10, to: 20 },
+    { state: 'tool', from: 20, to: 30 },
+    { state: 'thinking', from: 30, to: 40 },
+  ])
+  expect(store.main?.state).toBe('launched')
+  expect(moveMain(store, { activity: null, now: 50 })).toBe(store)
+  expect(moveMain(EMPTY_STORE, { activity: null, now: 1 })).toBe(EMPTY_STORE)
+
+  for (let turn = 0; turn < MAX_SEGMENTS; turn += 1) {
+    store = moveMain(store, { activity: { state: 'thinking', command: null }, now: 100 + turn * 10 })
+    store = moveMain(store, { activity: { state: 'tool', command: `c${turn}` }, now: 105 + turn * 10 })
+    store = moveMain(store, { activity: null, now: 108 + turn * 10 })
+  }
+
+  expect(store.main?.segments.length).toBeLessThanOrEqual(MAX_SEGMENTS)
 })

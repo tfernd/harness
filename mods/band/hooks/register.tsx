@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { AgentState, AgentStore, Gauges, Range, Roster, Scheme } from '../types'
+import type { AgentState, AgentStore, Gauges, Range, Roster } from '../types'
 
 import { EMPTY_GAUGES, isSameGauges, withCache, withCompaction, withUsage } from './gauges'
 import {
@@ -9,27 +9,35 @@ import {
   DIRECT_LABEL,
   EMPTY_ROSTER,
   EMPTY_STORE,
+  type MainActivity,
   addAgent,
   applyListing,
   isSameRoster,
   moveAgent,
+  moveMain,
+  nextLeaveMs,
   newAgent,
   rosterOf,
   sessionTotal,
+  terminalSchemeOf,
+  themeOf,
 } from './model'
 import { TICK_MS, frameAt } from './paint'
-import { type Painter, type Rows, buildBand } from './view'
+import { columnsToWidth, refreshAfterMs } from './svg-band'
+import { type PieceCache, chooseBand } from './svg-cache'
+import { type Actions, type Painter, type Rows, buildBand } from './view'
+import { buildDesktopBand } from './view-desktop'
 
 const RECONCILE_MS = 1000
 
-const isFolded = atom({ plugin: 'harness-band', key: 'isFolded' } as const, false)
+const isFolded = atom({ plugin: 'harness-band', key: 'isFolded' } as const, false, { shape: 'isFolded-2' })
 const range = atom({ plugin: 'harness-band', key: 'range' } as const, '1m')
-const foldedGroups = atom({ plugin: 'harness-band', key: 'foldedGroups' } as const, [])
-const agents = atom({ plugin: 'harness-band', key: 'agents' } as const, EMPTY_STORE, { shape: 'agents-2' })
+const foldedGroups = atom({ plugin: 'harness-band', key: 'foldedGroups' } as const, [], { shape: 'foldedGroups-2' })
+const agents = atom({ plugin: 'harness-band', key: 'agents' } as const, EMPTY_STORE, { shape: 'agents-3' })
 const roster = atom({ plugin: 'harness-band', key: 'roster' } as const, EMPTY_ROSTER, { shape: 'roster-1' })
-const gauges = atom({ plugin: 'harness-band', key: 'gauges' } as const, EMPTY_GAUGES, { shape: 'gauges-1' })
+const gauges = atom({ plugin: 'harness-band', key: 'gauges' } as const, EMPTY_GAUGES, { shape: 'gauges-2' })
 const turnStartedAt = atom({ plugin: 'harness-band', key: 'turnStartedAt' } as const, null)
-const scheme = atom({ plugin: 'harness-band', key: 'scheme' } as const, 'dark')
+const scheme = atom({ plugin: 'harness-band', key: 'scheme' } as const, 'light')
 
 const describeCall = (call: { tool: string } & Record<string, unknown>): string => {
   const command = call['command']
@@ -49,8 +57,6 @@ const describeCall = (call: { tool: string } & Record<string, unknown>): string 
   return call.tool
 }
 
-const schemeOf = (value: unknown): Scheme => (typeof value === 'string' && value.includes('light') ? 'light' : 'dark')
-
 const reportFailure = ($: EngineInterface, where: string, cause: unknown): void => {
   $.ui.log(`harness-band ${where}: ${cause instanceof Error ? cause.message : String(cause)}`, { to: 'debug' })
 }
@@ -64,9 +70,14 @@ type Runtime = {
   store: AgentStore | null
   roster: Roster | null
   queue: Promise<void>
+  pieces: ReadonlyMap<string, PieceCache>
+  refreshAt: number | null
+  retry: Timer | null
+  isDrawnByTree: boolean
 }
 
-const indexRows = (store: AgentStore | null): Rows => new Map((store?.rows ?? []).map(row => [row.id, row]))
+const indexRows = (store: AgentStore | null): Rows =>
+  new Map([...(store?.main ? [store.main] : []), ...(store?.rows ?? [])].map(row => [row.id, row]))
 
 const mutateAgents = async (
   $: EngineInterface,
@@ -83,10 +94,15 @@ const mutateAgents = async (
     let written: AgentStore = EMPTY_STORE
     await update($, agents, current => {
       written = change(current, now)
-
       return written
     })
+
     runtime.store = written
+
+    if (runtime.isDrawnByTree) {
+      $.ui.invalidate('ui.render')
+    }
+
     const wanted: Roster = rosterOf(written)
 
     if (runtime.roster === null || !isSameRoster(runtime.roster, wanted)) {
@@ -105,6 +121,12 @@ const setAgentState = (
   runtime: Runtime,
   change: { id: string; state: AgentState; command: string | null; from?: AgentState },
 ): Promise<void> => mutateAgents($, runtime, (store, now) => moveAgent(store, { ...change, now }))
+
+const setMainActivity = (
+  $: EngineInterface,
+  runtime: Runtime,
+  change: { activity: MainActivity; from?: AgentState },
+): Promise<void> => mutateAgents($, runtime, (store, now) => moveMain(store, { ...change, now }))
 
 const writeGauges = async ($: EngineInterface, next: (current: Gauges) => Gauges): Promise<void> => {
   const current = await read($, gauges)
@@ -146,7 +168,13 @@ const tick = async ($: EngineInterface, runtime: Runtime): Promise<void> => {
   runtime.isTicking = true
 
   try {
-    const frame = frameAt(await $.clock.now())
+    const now = await $.clock.now()
+    const frame = frameAt(now)
+
+    if (runtime.refreshAt !== null && now >= runtime.refreshAt) {
+      $.ui.invalidate('ui.render')
+    }
+
     const store = await read($, agents)
     runtime.store = runtime.store ?? store
     const rows = indexRows(store)
@@ -161,6 +189,15 @@ const tick = async ($: EngineInterface, runtime: Runtime): Promise<void> => {
     }
   } finally {
     runtime.isTicking = false
+  }
+}
+
+const scheduleRetry = ($: EngineInterface, runtime: Runtime, retryInMs: number | null): void => {
+  runtime.retry?.cancel()
+  runtime.retry = null
+
+  if (retryInMs !== null) {
+    runtime.retry = $.clock.after(retryInMs, () => $.ui.invalidate('ui.render'))
   }
 }
 
@@ -185,6 +222,10 @@ export const register: Register = on => {
     store: null,
     roster: null,
     queue: Promise.resolve(),
+    pieces: new Map(),
+    refreshAt: null,
+    retry: null,
+    isDrawnByTree: false,
   }
 
   on('session.start', async ($, e, next) => {
@@ -192,7 +233,7 @@ export const register: Register = on => {
     const usage = await $.session.usage()
     await writeGauges($, current => withUsage(current, usage))
     const rows = await $.config.list()
-    await update($, scheme, () => schemeOf(rows.find(row => row.key === 'theme')?.value))
+    await update($, scheme, () => themeOf(rows.find(row => row.key === 'theme')?.value))
     startClocks($, runtime)
 
     return result
@@ -201,6 +242,8 @@ export const register: Register = on => {
   on('session.end', ($, e, next) => {
     if (e.reason !== 'clear') {
       stopTimers(runtime)
+      runtime.retry?.cancel()
+      runtime.retry = null
     }
 
     return next(e)
@@ -209,7 +252,7 @@ export const register: Register = on => {
   on('config.set', { key: 'theme' }, async ($, e, next) => {
     const result = await next(e)
     const rows = await $.config.list()
-    await update($, scheme, () => schemeOf(rows.find(row => row.key === 'theme')?.value))
+    await update($, scheme, () => themeOf(rows.find(row => row.key === 'theme')?.value))
 
     return result
   })
@@ -240,6 +283,7 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       const now = await $.clock.now()
       await update($, turnStartedAt, () => now)
+      await setMainActivity($, runtime, { activity: { state: 'thinking', command: null } })
     } else {
       await setAgentState($, runtime, { id: e.agentId, state: 'thinking', command: null })
     }
@@ -252,7 +296,17 @@ export const register: Register = on => {
     const id = e.agentId
 
     if (id === undefined) {
-      return next(e)
+      await setMainActivity($, runtime, { activity: { state: 'tool', command: describeCall(e) } }).catch(cause =>
+        reportFailure($, 'main tool start', cause),
+      )
+
+      try {
+        return await next(e)
+      } finally {
+        await setMainActivity($, runtime, { activity: { state: 'thinking', command: null }, from: 'tool' }).catch(cause =>
+          reportFailure($, 'main tool end', cause),
+        )
+      }
     }
 
     await setAgentState($, runtime, { id, state: 'tool', command: describeCall(e) }).catch(cause =>
@@ -273,10 +327,12 @@ export const register: Register = on => {
 
     if (e.agentId === undefined) {
       await update($, turnStartedAt, () => null)
+      await setMainActivity($, runtime, { activity: null })
       const usage = e.usage
 
       if (usage !== undefined) {
-        await writeGauges($, current => withCache(current, usage))
+        const calledAt = await $.clock.now()
+        await writeGauges($, current => withCache(current, usage, calledAt))
       }
     } else {
       await setAgentState($, runtime, { id: e.agentId, state: e.reason === 'answer' ? 'done' : 'failed', command: null })
@@ -322,6 +378,40 @@ export const register: Register = on => {
     ])
     const store = hasRaster ? runtime.store : await read($, agents)
     const now = await $.clock.now()
+    const actions: Actions = {
+      toggleFold: () => void update($, isFolded, current => !current),
+      setRange: (chosen: Range) => void update($, range, () => chosen),
+      toggleGroup: (id: string) =>
+        void update($, foldedGroups, current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id])),
+    }
+    const rowIndex = indexRows(store)
+
+    if (e.surface !== 'terminal') {
+      const svgInput = {
+        width: columnsToWidth(e.props.bodyColumns),
+        now,
+        isFolded: folded,
+        range: rangeValue,
+        foldedGroups: groups,
+        roster: rosterValue,
+        rows: rowIndex,
+        gauges: gaugeValues,
+        isWorking: e.props.isWorking,
+        turnStartedAt: startedAt,
+        scheme: schemeValue,
+      }
+      const choice = chooseBand(runtime.pieces, svgInput)
+      const wait = refreshAfterMs(svgInput)
+      runtime.pieces = choice.caches
+      runtime.refreshAt = wait === null ? null : now + wait
+      scheduleRetry($, runtime, choice.retryInMs)
+      runtime.painters = new Map()
+      runtime.requestId = e.requestId
+      runtime.isDrawnByTree = true
+
+      return buildDesktopBand({ ui: $.ui.resolve(e), svgs: choice.svgs, input: svgInput, actions })
+    }
+
     const nextPainters = new Map<string, Painter>()
     const tree = buildBand(
       {
@@ -332,23 +422,21 @@ export const register: Register = on => {
         range: rangeValue,
         foldedGroups: groups,
         roster: rosterValue,
-        rows: indexRows(store),
+        rows: rowIndex,
         gauges: gaugeValues,
         isWorking: e.props.isWorking,
         turnStartedAt: startedAt,
-        scheme: schemeValue,
-        actions: {
-          toggleFold: () => void update($, isFolded, current => !current),
-          setRange: (chosen: Range) => void update($, range, () => chosen),
-          toggleGroup: (id: string) =>
-            void update($, foldedGroups, current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id])),
-        },
+        scheme: terminalSchemeOf(schemeValue),
+        actions,
       },
       nextPainters,
     )
 
+    const leaveWait = folded ? null : nextLeaveMs(rowIndex.values(), rangeValue, now)
+    runtime.refreshAt = leaveWait === null ? null : now + leaveWait
     runtime.painters = nextPainters
     runtime.requestId = e.requestId
+    runtime.isDrawnByTree = false
 
     return tree
   })

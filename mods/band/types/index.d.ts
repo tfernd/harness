@@ -4,6 +4,8 @@ export type Range = '1m' | '5m' | '15m' | '1h' | 'session'
 
 export type Scheme = 'light' | 'dark'
 
+export type ThemeSetting = Scheme | 'auto'
+
 export type Segment = { state: AgentState; from: number; to: number | null }
 
 export type AgentRow = {
@@ -18,7 +20,7 @@ export type AgentRow = {
   segments: Segment[]
 }
 
-export type AgentStore = { rows: AgentRow[]; evictedDone: number; evictedFailed: number }
+export type AgentStore = { rows: AgentRow[]; main: AgentRow | null; evictedDone: number; evictedFailed: number }
 
 export type Phase = 'live' | 'done' | 'failed'
 
@@ -37,19 +39,21 @@ export type Gauges = {
   fiveHour: Limit | null
   sevenDay: Limit | null
   sessionStartedAt: number | null
+  lastCallAt: number | null
+  isSubscription: boolean
 }
 
 declare module 'claude-code' {
   interface PluginState {
     "harness-band": {
-      isFolded: boolean
+      isFolded: Shaped<boolean>
       range: Range
-      foldedGroups: string[]
+      foldedGroups: Shaped<string[]>
       agents: Shaped<AgentStore>
       roster: Shaped<Roster>
       gauges: Shaped<Gauges>
       turnStartedAt: number | null
-      scheme: Scheme
+      scheme: ThemeSetting
     }
   }
 }

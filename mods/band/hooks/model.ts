@@ -1,6 +1,6 @@
 import type { AgentStatus } from 'claude-code'
 
-import type { AgentRow, AgentState, AgentStore, Phase, Range, Roster, RosterRow } from '../types'
+import type { AgentRow, AgentState, AgentStore, Phase, Range, Roster, RosterRow, Scheme, ThemeSetting } from '../types'
 
 export const RANGES: readonly Range[] = ['1m', '5m', '15m', '1h', 'session']
 export const FOLDED_RANGE: Range = '1m'
@@ -12,8 +12,29 @@ const RANGE_MS = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000 
 export const DIRECT_GROUP = 'direct'
 export const DIRECT_LABEL = 'direct agents'
 
-export const EMPTY_STORE: AgentStore = { rows: [], evictedDone: 0, evictedFailed: 0 }
+export const MAIN_ID = 'main'
+export const MAIN_LABEL = 'main session'
+
+export const EMPTY_STORE: AgentStore = { rows: [], main: null, evictedDone: 0, evictedFailed: 0 }
 export const EMPTY_ROSTER: Roster = { rows: [], evictedDone: 0, evictedFailed: 0 }
+
+export const STATE_WORD: Record<AgentState, string> = {
+  launched: 'STARTING',
+  thinking: 'THINKING',
+  tool: 'RUNNING',
+  waiting: 'WAITING',
+  done: 'FINISHED',
+  failed: 'FAILED',
+}
+
+export const STATE_ICON: Record<AgentState, string> = {
+  launched: '○',
+  thinking: '●',
+  tool: '●',
+  waiting: '◐',
+  done: '✓',
+  failed: '✕',
+}
 
 export const phaseOf = (state: AgentState): Phase => (state === 'done' ? 'done' : state === 'failed' ? 'failed' : 'live')
 
@@ -30,7 +51,42 @@ export const windowFor = (range: Range, now: number, earliestStart: number): Win
 }
 
 export const earliestStart = (agents: readonly AgentRow[], fallback: number): number =>
-  agents.reduce((earliest, agent) => Math.min(earliest, agent.startedAt), fallback)
+  agents.reduce((earliest, agent) => (agent.id === MAIN_ID ? earliest : Math.min(earliest, agent.startedAt)), fallback)
+
+export const isInWindow = (agent: { phase: Phase }, row: AgentRow | undefined, windowStart: number): boolean =>
+  agent.phase === 'live' || row === undefined || row.endedAt === null || row.endedAt > windowStart
+
+export type WindowSplit<Member extends { id: string; phase: Phase }> = { shown: Member[]; earlier: number }
+
+export const splitByWindow = <Member extends { id: string; phase: Phase }>(
+  agents: readonly Member[],
+  rows: ReadonlyMap<string, AgentRow>,
+  windowStart: number,
+): WindowSplit<Member> => {
+  const shown = agents.filter(agent => isInWindow(agent, rows.get(agent.id), windowStart))
+
+  return { shown, earlier: agents.length - shown.length }
+}
+
+export const nextLeaveMs = (rows: Iterable<AgentRow>, range: Range, now: number): number | null => {
+  if (range === 'session') {
+    return null
+  }
+
+  let soonest: number | null = null
+
+  for (const row of rows) {
+    if (row.endedAt !== null) {
+      const wait = row.endedAt + RANGE_MS[range] - now
+
+      if (wait > 0 && (soonest === null || wait < soonest)) {
+        soonest = wait
+      }
+    }
+  }
+
+  return soonest
+}
 
 export const newAgent = (input: {
   id: string
@@ -52,6 +108,7 @@ export const newAgent = (input: {
 
 const evictEnded = (store: AgentStore): AgentStore => {
   let { rows, evictedDone, evictedFailed } = store
+  const { main } = store
 
   while (rows.length > MAX_AGENTS) {
     const index = rows.findIndex(row => !isLive(row.state))
@@ -69,7 +126,7 @@ const evictEnded = (store: AgentStore): AgentStore => {
     rows = rows.filter((_, position) => position !== index)
   }
 
-  return { rows, evictedDone, evictedFailed }
+  return { rows, main, evictedDone, evictedFailed }
 }
 
 export const addAgent = (store: AgentStore, row: AgentRow): AgentStore => {
@@ -155,6 +212,54 @@ export const moveAgent = (
   }
 
   return { ...store, rows: store.rows.map(agent => (agent.id === change.id ? moved : agent)) }
+}
+
+export type MainActivity = { state: 'thinking' | 'tool'; command: string | null } | null
+
+export const MAIN_STATE_WORD: Record<AgentState, string> = {
+  launched: 'IDLE',
+  thinking: 'WORKING',
+  tool: 'TOOL',
+  waiting: 'IDLE',
+  done: 'IDLE',
+  failed: 'IDLE',
+}
+
+export const moveMain = (
+  store: AgentStore,
+  change: { activity: MainActivity; now: number; from?: AgentState },
+): AgentStore => {
+  const { activity, now } = change
+  const state: AgentState = activity === null ? 'launched' : activity.state
+  const command = activity === null ? null : activity.command
+  const current = store.main
+
+  if (current === null ? activity === null : !isChange(current, state, command)) {
+    return store
+  }
+
+  if (current !== null && change.from !== undefined && current.state !== change.from) {
+    return store
+  }
+
+  const base: AgentRow = current ?? {
+    id: MAIN_ID,
+    label: MAIN_LABEL,
+    group: MAIN_ID,
+    groupLabel: MAIN_LABEL,
+    state: 'launched',
+    command: null,
+    startedAt: now,
+    endedAt: null,
+    segments: [],
+  }
+  const closed = base.segments.map(segment => (segment.to === null ? { ...segment, to: now } : segment))
+  const segments =
+    base.state === state && activity !== null
+      ? base.segments
+      : compactSegments(activity === null ? closed : [...closed, { state, from: now, to: null }])
+
+  return { ...store, main: { ...base, state, command, segments } }
 }
 
 export const stateFromStatus = (status: AgentStatus, current: AgentState): AgentState => {
@@ -292,6 +397,28 @@ export const formatShort = (milliseconds: number): string => {
   return seconds < 3600 ? `${Math.floor(seconds / 60)}m${pad(seconds % 60)}` : `${Math.floor(seconds / 3600)}h${pad(Math.floor((seconds % 3600) / 60))}`
 }
 
+export const formatSpan = (milliseconds: number): string => {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000))
+
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+
+  const minutes = Math.floor(seconds / 60)
+
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`
+}
+
+export const themeOf = (value: unknown): ThemeSetting => {
+  if (typeof value !== 'string') {
+    return 'light'
+  }
+
+  return value.includes('light') ? 'light' : value.includes('dark') ? 'dark' : value.includes('auto') ? 'auto' : 'light'
+}
+
+export const terminalSchemeOf = (setting: ThemeSetting): Scheme => (setting === 'light' ? 'light' : 'dark')
+
 export const formatReset = (milliseconds: number): string => {
   const minutes = Math.max(0, Math.round(milliseconds / 60_000))
 
@@ -305,7 +432,7 @@ export const formatReset = (milliseconds: number): string => {
 }
 
 export const formatTokens = (tokens: number): string =>
-  tokens >= 1_000_000 ? `${(tokens / 1_000_000).toFixed(1)}M` : tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens)
+  tokens >= 1_000_000 ? `${Number((tokens / 1_000_000).toFixed(1))}M` : tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens)
 
 export const barText = (percent: number, width: number): string => {
   const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)))
@@ -330,7 +457,7 @@ const PART_WIDTH: Record<BandPartName, number> = {
 const DETAIL_WIDTH: Record<BandPartName, number> = {
   status: 0,
   context: 10,
-  cache: 0,
+  cache: 9,
   fiveHour: 6,
   sevenDay: 6,
   counts: 0,

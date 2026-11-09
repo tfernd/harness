@@ -6,6 +6,8 @@ import {
   type BandPartName,
   FOLDED_RANGE,
   RANGES,
+  STATE_ICON,
+  STATE_WORD,
   barText,
   countAgents,
   earliestStart,
@@ -14,6 +16,10 @@ import {
   formatShort,
   formatTokens,
   groupAgents,
+  MAIN_ID,
+  MAIN_LABEL,
+  MAIN_STATE_WORD,
+  splitByWindow,
   layoutBand,
   partWidth,
   windowFor,
@@ -76,24 +82,6 @@ const STATE_COLUMNS = 10
 const WIDE_COLUMNS = 60
 const TRACE_LABEL_COLUMNS = 9
 const BORDER_COLUMNS = 2
-
-const STATE_WORD: Record<AgentState, string> = {
-  launched: 'STARTING',
-  thinking: 'THINKING',
-  tool: 'RUNNING',
-  waiting: 'WAITING',
-  done: 'FINISHED',
-  failed: 'FAILED',
-}
-
-const STATE_ICON: Record<AgentState, string> = {
-  launched: '○',
-  thinking: '●',
-  tool: '●',
-  waiting: '◐',
-  done: '✓',
-  failed: '✕',
-}
 
 const PHASE_ICON: Record<Phase, string> = { live: '●', done: '✓', failed: '✕' }
 
@@ -377,11 +365,36 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
     </Box>
   )
 
+  const mainRow = () => {
+    const stateColumns = innerColumns >= WIDE_COLUMNS ? STATE_COLUMNS : 0
+    const labelColumns = Math.max(10, Math.min(20, Math.floor(innerColumns * 0.22)))
+    const trackColumns = Math.max(MIN_TRACK_COLUMNS, innerColumns - labelColumns - stateColumns - 2)
+
+    return (
+      <Box key="main-row" flexDirection="row" gap={1}>
+        <Box width={labelColumns}>
+          <Text color="success" wrap="truncate-end">
+            {`● ${MAIN_LABEL}`}
+          </Text>
+        </Box>
+        {lanes('lanes-main', [MAIN_ID], trackColumns, input.range, false)}
+        {stateColumns > 0
+          ? textBlock({ key: 'states-main', columns: stateColumns, rowCount: 1, align: 'left' }, (_, rows) => {
+              const row = rows.get(MAIN_ID)
+
+              return [{ text: MAIN_STATE_WORD[row?.state ?? 'launched'], color: palette[row?.state ?? 'launched'] }]
+            })
+          : null}
+      </Box>
+    )
+  }
+
   const timeline = () => {
     const stateColumns = innerColumns >= WIDE_COLUMNS ? STATE_COLUMNS : 0
     const labelColumns = Math.max(10, Math.min(20, Math.floor(innerColumns * 0.22)))
     const trackColumns = Math.max(MIN_TRACK_COLUMNS, innerColumns - labelColumns - stateColumns - 2)
     const scale = input.range === 'session' ? 'session' : input.range
+    const windowStartOf = windowFor(input.range, input.now, earliestStart([...input.rows.values()], sessionStart)).start
 
     return (
       <Box key="timeline" flexDirection="column">
@@ -396,10 +409,16 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
           </Box>
           {stateColumns > 0 ? <Text dimColor>STATE</Text> : null}
         </Box>
+        {mainRow()}
         {groupAgents(input.roster.rows).map(group => {
           const isFolded = input.foldedGroups.includes(group.id)
           const title = `${isFolded ? '▸' : '▾'} ${group.label} · ${group.counts.live} live · ${group.counts.done + group.counts.failed} ended`
-          const ids = group.agents.map(agent => agent.id)
+          const { shown, earlier } = splitByWindow(group.agents, input.rows, windowStartOf)
+          const ids = shown.map(agent => agent.id)
+
+          if (shown.length === 0 && earlier === 0) {
+            return null
+          }
 
           return (
             <Box key={`group-${group.id}`} flexDirection="column">
@@ -409,7 +428,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
               {isFolded ? null : (
                 <Box flexDirection="row" gap={1}>
                   <Box flexDirection="column" width={labelColumns}>
-                    {group.agents.map(agent => (
+                    {shown.map(agent => (
                       <Text color={PHASE_THEME[agent.phase]} wrap="truncate-end">
                         {`${PHASE_ICON[agent.phase]} ${agent.label}`}
                       </Text>
@@ -429,6 +448,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
                     : null}
                 </Box>
               )}
+              {isFolded || earlier === 0 ? null : <Text dimColor>{`+${earlier} earlier`}</Text>}
             </Box>
           )
         })}
