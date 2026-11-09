@@ -52,7 +52,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
   end. Run the smallest check that can fail, never the whole suite twice, and never a check to confirm what a tool
   already confirmed (a write that succeeded, a file just read).
 - Never run `ruff format` (or any formatter) over the whole repo; format only files you changed. Run no formatter on
-  `hooks/` or `tests/`: they are hand-laid.
+  `hooks/`, `tests/` or `port/`: they are hand-laid.
 - A slow check runs once, in the background. A slow machine is a cost to the owner too.
 
 ## Files
