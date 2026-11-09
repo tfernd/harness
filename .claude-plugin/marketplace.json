@@ -9,6 +9,11 @@
       "name": "harness",
       "source": "./",
       "description": "Spec-driven multi-agent work: safety guards, enforced sub-agent reports, and a learning loop"
+    },
+    {
+      "name": "harness-band",
+      "source": "./mods/band",
+      "description": "A band above the prompt: session status, context, cache, rate limits and a live timeline of the main session and its agents"
     }
   ]
 }

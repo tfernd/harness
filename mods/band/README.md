@@ -1,10 +1,19 @@
 # harness-band
 
 A Claude Code mod: a band above the prompt with status, context, cache, the 5-hour and week limits, agent counts and a
-fold toggle; unfolded it adds live agent cards and a moving timeline (ranges 1m 5m 15m 1h session, groups by workflow
+fold toggle; unfolded it adds a moving timeline of the main session and its agents (ranges 1m 5m 15m 1h session, groups by workflow
 and direct); folded it keeps the band row and one thin live trace per agent. Look and contract: `SPEC.md`.
 
-## Load it
+## Install it
+
+```
+claude plugin marketplace add tfernd/harness
+claude plugin install harness-band@harness --scope user
+```
+
+Then restart Claude Code or run `/reload-plugins`. Update with `claude plugin update harness-band@harness`.
+
+## Develop it
 
 ```
 claude --plugin-dir <absolute path to this folder>
