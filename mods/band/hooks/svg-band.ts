@@ -36,7 +36,7 @@ export const WIDE_MIN_WIDTH = 640
 export const REFRESH_LIVE_MS = 15_000
 export const REFRESH_IDLE_MS = 55_000
 
-const ROW_LIMITS: readonly number[] = [60, 24, 8, 0]
+const ROW_LIMITS: readonly number[] = [6, 4, 2, 0]
 const BORDER_PX = 16
 const MIN_TIMELINE_WIDTH = 304
 

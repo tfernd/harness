@@ -19,10 +19,10 @@ import type { StripInput } from './svg-strip'
 
 export type TimelineInput = StripInput & { range: Range; foldedGroups: readonly string[]; sessionStart: number }
 
-export const HEAD_HEIGHT = 28
-export const GROUP_HEIGHT = 28
-export const ROW_HEIGHT = 32
-export const MORE_HEIGHT = 28
+export const HEAD_HEIGHT = 22
+export const GROUP_HEIGHT = 22
+export const ROW_HEIGHT = 24
+export const MORE_HEIGHT = 22
 
 const PAD = 16
 const LABEL_MIN = 112
@@ -30,9 +30,9 @@ const LABEL_MAX = 200
 const STATE_MIN = 184
 const STATE_MAX = 260
 const PILL_WIDTH = 66
-const PILL_HEIGHT = 18
+const PILL_HEIGHT = 16
 const PILL_GAP = 8
-const TRACK_LANE = 8
+const TRACK_LANE = 6
 const LANE_INSET = (ROW_HEIGHT - TRACK_LANE) / 2
 const TEXT_DROP = 4
 const GLYPH_WIDTH = 14
@@ -173,6 +173,13 @@ export const timelineMarkup = (ctx: Ctx, input: TimelineInput, top: number, rowL
       continue
     }
 
+    const shown = inWindow.slice(0, Math.max(0, rowLimit - used))
+
+    if (!isFolded && shown.length === 0 && inWindow.length > 0) {
+      hidden += inWindow.length
+      continue
+    }
+
     parts.push(groupHeader({ id: group.id, name: group.label, counts: group.counts, isFolded, y, width: input.width }))
     y += GROUP_HEIGHT
 
@@ -180,7 +187,6 @@ export const timelineMarkup = (ctx: Ctx, input: TimelineInput, top: number, rowL
       continue
     }
 
-    const shown = inWindow.slice(0, Math.max(0, rowLimit - used))
     hidden += inWindow.length - shown.length
     used += shown.length
     const blockTop = y

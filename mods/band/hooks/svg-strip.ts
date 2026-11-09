@@ -27,8 +27,8 @@ export type GaugeSpec = {
   tip: string
 }
 
-export const RING_RADIUS = 19
-export const RING_SIZE = 44
+export const RING_RADIUS = 13.5
+export const RING_SIZE = 32
 export const FOLDED_RING_RADIUS = 11.5
 export const FOLDED_RING_SIZE = 28
 export const FOLDED_GAP = 12
@@ -108,15 +108,37 @@ export const ring = (box: { cx: number; cy: number; radius?: number }, spec: Gau
     value <= 0
       ? ''
       : `<circle class="ring-v r-${spec.tone}" cx="${num(box.cx)}" cy="${num(box.cy)}" r="${radius}" pathLength="100" stroke-dasharray="${num(value)} 100"/>`
-  const text = value >= 100 ? '100' : `${Math.round(value)}%`
+  const text = `${Math.round(value)}%`
 
   return (
     `<g transform="rotate(-90 ${num(box.cx)} ${num(box.cy)})"><circle class="ring-t" cx="${num(box.cx)}" cy="${num(box.cy)}" r="${radius}"/>${arc}</g>` +
-    label(box.cx, box.cy + RING_FONT_BASELINE, 'mid n', text, text.length > RING_TEXT_MAX_CHARS || radius < RING_RADIUS ? ' style="font-size:7px"' : '')
+    label(box.cx, box.cy + RING_FONT_BASELINE, 'mid n', text, text.length > RING_TEXT_MAX_CHARS || radius < RING_RADIUS ? ' style="font-size:7px"' : ' style="font-size:9px"')
   )
 }
 
 export const foldedDetail = (spec: GaugeSpec): string => spec.detail.replace(/\s*↻.*$/, '')
+
+export const STRIP_CHAR_PX = 8.5
+export const STRIP_GAP = 12
+export const STRIP_RING_GAP = 8
+export const STRIP_FRAME_INSET = 16 + 2 * 12
+
+export type StripBudget = { width: number; statusChars: number; countsChars: number }
+
+export const stripWidth = (specs: readonly GaugeSpec[], budget: StripBudget, detailOf: (spec: GaugeSpec) => string): number => {
+  const gauges = specs.reduce(
+    (sum, spec) => sum + RING_SIZE + STRIP_RING_GAP + Math.max(spec.name.length, detailOf(spec).length) * STRIP_CHAR_PX,
+    0,
+  )
+
+  return gauges + (budget.statusChars + budget.countsChars) * STRIP_CHAR_PX + (specs.length + 1) * STRIP_GAP
+}
+
+export const stripDetailOf = (specs: readonly GaugeSpec[], budget: StripBudget): ((spec: GaugeSpec) => string) => {
+  const full = (spec: GaugeSpec): string => spec.detail
+
+  return stripWidth(specs, budget, full) <= budget.width - STRIP_FRAME_INSET ? full : foldedDetail
+}
 
 const TEXT_CHAR_PX = 6.6
 const FOLDED_CONTENT_INSET = 48

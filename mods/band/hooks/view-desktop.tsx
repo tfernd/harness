@@ -4,7 +4,7 @@ import type { AgentState } from '../types'
 
 import { RANGES, countAgents, formatClock, formatShort, groupAgents } from './model'
 import type { BandSvg, SvgInput } from './svg-band'
-import { type GaugeSpec, foldedDetail, gaugeSpecs } from './svg-strip'
+import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
 import type { Actions } from './view'
 
 export type SvgTable = Elements['desktop'] | Elements['vscode'] | Elements['mobile']
@@ -25,6 +25,8 @@ const STATE_COLOR: Record<AgentState, string> = {
   failed: 'error',
 }
 
+const foldedDetailOf = (spec: GaugeSpec): string => spec.detail.replace(/\s*↻.*$/, '')
+
 const statusOf = (input: SvgInput): { word: string; state: AgentState } => {
   if (input.isWorking) {
     return { word: 'WORKING', state: 'thinking' }
@@ -43,9 +45,9 @@ const captionOf = (input: SvgInput): string => {
   return input.gauges.sessionStartedAt === null ? '' : `up ${formatShort(input.now - input.gauges.sessionStartedAt)}`
 }
 
-const FRAME_PAD_X = 'md'
-const SECTION_GAP = 'lg'
-const ITEM_GAP = 'sm'
+const FRAME_PAD_X = 'sm'
+const SECTION_GAP = 'sm'
+const ITEM_GAP = 'xs'
 
 export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const { Box, Text, Button, Svg } = view.ui
@@ -55,6 +57,14 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const live = input.roster.rows.filter(row => row.phase === 'live')
   const counts = countAgents(input.roster.rows, { done: input.roster.evictedDone, failed: input.roster.evictedFailed })
   const status = statusOf(input)
+  const specs = gaugeSpecs(input.gauges, input.now)
+  const detailOf = isFolded
+    ? foldedDetailOf
+    : stripDetailOf(specs, {
+        width: input.width,
+        statusChars: Math.max(status.word.length, captionOf(input).length),
+        countsChars: `${counts.live} live · ${counts.done} ✓ · ${counts.failed} ✗`.length,
+      })
 
   const svgOf = (key: string, alt: string) => {
     const svg = view.svgs.get(key)
@@ -70,7 +80,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
           {spec.name}
         </Text>
         <Text dimColor={!spec.isDetailUrgent} color={spec.isDetailUrgent ? 'error' : undefined} wrap="truncate-end">
-          {isFolded ? foldedDetail(spec) : spec.detail}
+          {detailOf(spec)}
         </Text>
       </Box>
       <Box position="absolute" top={-2} left={0} display="none" hover={{ display: 'flex' }} borderStyle="round" paddingX={1}>
@@ -86,21 +96,19 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   )
 
   const rangeControl = (
-    <Box key="ranges" flexDirection="row" gap="xs" alignItems="center">
+    <Box key="ranges" flexDirection="row" gap={SECTION_GAP} alignItems="center">
       <Text dimColor>range</Text>
-      <Box flexDirection="row" gap="xs" borderStyle="round" paddingX="xs">
-        {RANGES.map(name =>
-          name === input.range ? (
-            <Text key={`range-${name}`} bold>
-              {name}
-            </Text>
-          ) : (
-            <Button key={`range-${name}`} plain dimColor onPress={() => actions.setRange(name)}>
-              {name}
-            </Button>
-          ),
-        )}
-      </Box>
+      {RANGES.map(name =>
+        name === input.range ? (
+          <Text key={`range-${name}`} bold underline>
+            {name}
+          </Text>
+        ) : (
+          <Button key={`range-${name}`} plain dimColor onPress={() => actions.setRange(name)}>
+            {name}
+          </Button>
+        ),
+      )}
     </Box>
   )
 
@@ -125,31 +133,11 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Box>
   )
 
-  const failText = (
-    <Text color={counts.failed > 0 ? 'error' : undefined} dimColor={counts.failed === 0}>
-      {`✕ ${counts.failed} fail`}
-    </Text>
-  )
-
-  const doneFail = (
-    <Box flexDirection="row" gap="xs">
-      <Text dimColor>{`✓ ${counts.done} done ·`}</Text>
-      {failText}
-    </Box>
-  )
-
-  const countsBox = (
-    <Box key="counts" flexDirection="column">
-      <Text bold color="success">{`● ${counts.live} live`}</Text>
-      {doneFail}
-    </Box>
-  )
-
   const countsInline = (
     <Box key="counts" flexDirection="row" gap="xs" flexShrink={0}>
-      <Text bold color="success" wrap="truncate-end">{`● ${counts.live} live ·`}</Text>
+      <Text bold color="success" wrap="truncate-end">{`${counts.live} live ·`}</Text>
       <Text dimColor wrap="truncate-end">{`${counts.done} ✓ ·`}</Text>
-      <Text color={counts.failed > 0 ? 'error' : undefined} dimColor={counts.failed === 0} wrap="truncate-end">{`${counts.failed} ✕`}</Text>
+      <Text color={counts.failed > 0 ? 'error' : undefined} dimColor={counts.failed === 0} wrap="truncate-end">{`${counts.failed} ✗`}</Text>
     </Box>
   )
 
@@ -158,7 +146,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
       <Box flexDirection="row" alignItems="center" gap="md" borderStyle="round" paddingX={FRAME_PAD_X}>
         {foldButton}
         {statusBox}
-        {gaugeSpecs(input.gauges, input.now).map(gaugeBox)}
+        {specs.map(gaugeBox)}
         {live.length === 0 ? null : svgOf('traces', `${live.length} live agent traces, last 60s`)}
         <Box key="spacer" flexGrow={1} />
         {countsInline}
@@ -168,17 +156,17 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
 
   return (
     <Box flexDirection="column" borderStyle="round">
-      <Box key="controls" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X} paddingY="xs">
+      <Box key="controls" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X}>
         {foldButton}
         {rangeControl}
         <Box key="spacer" flexGrow={1} />
         {groups.length === 0 ? null : groupControl}
       </Box>
-      <Box key="strip" flexDirection="row" flexWrap="wrap" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X} paddingY="xs">
+      <Box key="strip" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X}>
         {statusBox}
-        {gaugeSpecs(input.gauges, input.now).map(gaugeBox)}
+        {specs.map(gaugeBox)}
         <Box key="spacer" flexGrow={1} />
-        {countsBox}
+        {countsInline}
       </Box>
       {svgOf('timeline', `Agent timeline over ${input.range}`)}
     </Box>
