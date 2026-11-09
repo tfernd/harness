@@ -12,6 +12,8 @@ import argparse
 import json
 import os
 import re
+import shlex
+import shutil
 import sys
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -28,6 +30,24 @@ KIRO_AGENTS_FILE = "file://AGENTS.md"
 KIRO_STEERING_GLOB = "file://.kiro/steering/**/*.md"
 LEGACY_KIRO_HOOKS = "hooks/harness.json"
 HOOK_TIMEOUT_SECONDS = 10
+CREW_FOLDER = "crew"
+CREW_HOOKS_NAME = "hooks.json"
+CREW_BACKUP_NAME = "hooks.json.harness-backup"
+CREW_ENTRY_PREFIX = "harness-"
+CREW_COMMAND_TIMEOUT_SECONDS = 8
+CREW_BLOCK_EXIT = 2
+CREW_TOOL_EVENTS = ("PreToolUse", "PostToolUse")
+CREW_TRIGGERS = {
+    "SessionStart": "AgentSpawn",
+    "UserPromptSubmit": "UserPromptSubmit",
+    "PreToolUse": "PreToolUse",
+    "PostToolUse": "PostToolUse",
+    "Stop": "Stop",
+}
+CREW_NOT_PORTED = (
+    "kiro crew: SubagentStart and SubagentStop have no crew event; "
+    "a guard 'ask' becomes a block and a command rewrite becomes a block with a note"
+)
 HARNESS_REF = re.compile(r"harness:([a-z][a-z0-9-]*)")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
 HOOK_SCRIPT = re.compile(r"hooks/(\w+)\.py")
@@ -75,6 +95,7 @@ class Plan:
         self.files: dict[Path, str] = {}
         self.cortex_hooks: dict[str, list[dict]] = {}
         self.not_ported: list[str] = []
+        self.crew_hooks: list[dict] = []
 
 
 def parse_frontmatter(text: str, /) -> Frontmatter:
@@ -131,6 +152,48 @@ def make_command(target: Target, event: str, hook_command: str, /) -> str:
         "${CLAUDE_PLUGIN_ROOT}", str(CHECKOUT)
     )
     return f'uv run --script "{SHIM}" --host {target} --event {event} {tail}'
+
+
+def make_crew_command(uv_path: str, event: str, hook_command: str, /) -> str:
+    inner = make_command("kiro", event, hook_command).replace(
+        "uv run --script", f"{shlex.quote(uv_path)} run --script", 1
+    )
+    script = (
+        "if command -v timeout >/dev/null 2>&1; "
+        f"then timeout {CREW_COMMAND_TIMEOUT_SECONDS} sh -c {shlex.quote(inner)}; "
+        f"else sh -c {shlex.quote(inner)}; fi; "
+        f'rc=$?; [ "$rc" -eq {CREW_BLOCK_EXIT} ] && exit {CREW_BLOCK_EXIT}; exit 0'
+    )
+    return f"sh -c {shlex.quote(script)}"
+
+
+def make_crew_entry(uv_path: str, event: str, hook_command: str, /) -> dict:
+    script = HOOK_SCRIPT.search(hook_command)
+    entry: dict = {
+        "name": f"{CREW_ENTRY_PREFIX}{event}-{script.group(1) if script else 'hook'}",
+        "trigger": CREW_TRIGGERS[event],
+    }
+    if event in CREW_TOOL_EVENTS:
+        entry["matcher"] = "*"
+    entry["action"] = {
+        "type": "command",
+        "command": make_crew_command(uv_path, CREW_TRIGGERS[event], hook_command),
+    }
+    entry["timeout"] = HOOK_TIMEOUT_SECONDS
+    return entry
+
+
+def plan_crew_hooks(plan: Plan, source: dict, /) -> None:
+    uv_path = shutil.which("uv")
+    if uv_path is None:
+        plan.not_ported.append("kiro crew: uv not found on PATH, crew hooks skipped")
+        return
+    for event, groups in source.items():
+        if event not in CREW_TRIGGERS:
+            continue
+        for group in groups:
+            for hook in group["hooks"]:
+                plan.crew_hooks.append(make_crew_entry(uv_path, event, hook["command"]))
 
 
 def plan_skills(plan: Plan, dest: Path, /) -> None:
@@ -272,6 +335,7 @@ def plan_hooks(plan: Plan, dest: Path, target: Target, /) -> None:
         plan.not_ported.append(
             "kiro: a guard 'ask' becomes a block, and a command rewrite becomes a block with a note"
         )
+        plan_crew_hooks(plan, source)
 
 
 def is_ours(group: dict, /) -> bool:
@@ -328,6 +392,34 @@ def merge_cortex_hooks(
     return merged
 
 
+def is_crew_ours(entry: object, /) -> bool:
+    return (
+        isinstance(entry, dict)
+        and isinstance(entry.get("name"), str)
+        and entry["name"].startswith(CREW_ENTRY_PREFIX)
+    )
+
+
+def merge_crew_hooks(existing: dict, ours: list[dict], /) -> dict:
+    entries = existing.get("hooks", [])
+    if entries == {}:
+        entries = []
+    if not isinstance(entries, list):
+        raise ValueError(
+            "the crew hooks document must hold `hooks` as a list; nothing was written"
+        )
+
+    merged = dict(existing)
+    merged["hooks"] = [entry for entry in entries if not is_crew_ours(entry)] + ours
+    return merged
+
+
+def write_crew_hooks(path: Path, document: dict, /) -> None:
+    if path.exists():
+        shutil.copy2(path, path.with_name(CREW_BACKUP_NAME))
+    path.write_text(json.dumps(document, indent=2) + "\n")
+
+
 def load_json(path: Path, /) -> dict:
     if not path.exists():
         return {}
@@ -357,6 +449,12 @@ def uninstall(dest: Path, /, *, dry_run: bool) -> list[str]:
         for name in manifest.get("merged", [])
     }
     legacy = find_legacy_hooks(dest) if manifest.get("target") == "kiro" else []
+    crew_path = dest / CREW_FOLDER / CREW_HOOKS_NAME
+    crew_document = (
+        merge_crew_hooks(load_json(crew_path), [])
+        if manifest.get("crew_merged") and crew_path.exists()
+        else None
+    )
     lines = []
     for name in dict.fromkeys([*manifest.get("files", []), *legacy]):
         lines.append(f"remove {name}")
@@ -377,6 +475,10 @@ def uninstall(dest: Path, /, *, dry_run: bool) -> list[str]:
             path.write_text(json.dumps(document, indent=2) + "\n")
         else:
             path.unlink(missing_ok=True)
+    if crew_document is not None:
+        lines.append(f"unmerge {CREW_FOLDER}/{CREW_HOOKS_NAME}")
+        if not dry_run:
+            write_crew_hooks(crew_path, crew_document)
     if not dry_run:
         manifest_path.unlink()
     return lines
@@ -391,11 +493,20 @@ def install(
         plan_agent(plan, dest, target, agent_file, models)
     plan_hooks(plan, dest, target)
 
+    crew_path = dest / CREW_FOLDER / CREW_HOOKS_NAME
+    has_crew = target == "kiro" and bool(plan.crew_hooks) and crew_path.parent.is_dir()
+    if has_crew:
+        plan.not_ported.append(CREW_NOT_PORTED)
+    elif target == "kiro":
+        plan.not_ported.append(f"kiro crew: no {crew_path.parent} folder or no uv, crew hooks skipped")
+
     names = sorted(str(path.relative_to(dest)) for path in plan.files)
     merged = ["hooks.json"] if target == "cortex" else []
     legacy = find_legacy_hooks(dest) if target == "kiro" else []
     lines = [f"write {name}" for name in names] + [f"merge {name}" for name in merged]
     lines += [f"remove {name}" for name in legacy]
+    if has_crew:
+        lines.append(f"merge {CREW_FOLDER}/{CREW_HOOKS_NAME}")
     lines += [f"not ported: {item}" for item in plan.not_ported]
 
     previous = dest / MANIFEST_NAME
@@ -403,6 +514,9 @@ def install(
     stale = (set(load_json(previous).get("files", [])) - set(names)) | set(legacy)
     document = (
         merge_cortex_hooks(load_json(hooks_path), plan.cortex_hooks) if merged else {}
+    )
+    crew_document = (
+        merge_crew_hooks(load_json(crew_path), plan.crew_hooks) if has_crew else {}
     )
     if dry_run:
         return lines
@@ -414,11 +528,14 @@ def install(
         path.write_text(text)
     if merged:
         hooks_path.write_text(json.dumps(document, indent=2) + "\n")
+    if has_crew:
+        write_crew_hooks(crew_path, crew_document)
     manifest = {
         "target": target,
         "checkout": str(CHECKOUT),
         "files": names,
         "merged": merged,
+        "crew_merged": has_crew,
         "not_ported": plan.not_ported,
     }
     previous.write_text(json.dumps(manifest, indent=2) + "\n")

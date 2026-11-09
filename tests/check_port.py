@@ -297,6 +297,60 @@ def check_kiro(base: Path) -> None:
     check(not list(dest.rglob("*")), f"kiro uninstall left {list(dest.rglob('*'))[:3]}")
 
 
+def get_crew_names(path: Path) -> list[str]:
+    return [entry["name"] for entry in json.loads(path.read_text())["hooks"]]
+
+
+def check_kiro_crew(base: Path) -> None:
+    absent = base / "crew-absent"
+    run_port("kiro", absent)
+    check(not (absent / "crew").exists(), "crew folder created from nothing")
+    check("crew hooks skipped" in run_port("kiro", absent, "--dry-run"), "crew skip note missing")
+    run_port("kiro", absent, "--uninstall")
+
+    dest = base / "crew-present"
+    crew_file = dest / "crew" / "hooks.json"
+    owner = {"name": "owner-gate", "trigger": "Stop", "action": {"type": "command", "command": "true"}}
+    plant_file(crew_file, json.dumps({"hooks": [owner]}))
+    run_port("kiro", dest)
+    names = get_crew_names(crew_file)
+    check(names[0] == "owner-gate", f"owner entry lost or moved {names[:2]}")
+    ours = [name for name in names if name.startswith("harness-")]
+    check(ours and len(ours) == len(names) - 1, f"crew entries {names}")
+    check((dest / "crew" / "hooks.json.harness-backup").exists(), "no crew backup")
+    document = json.loads(crew_file.read_text())
+    guard = next(e for e in document["hooks"] if e["name"] == "harness-PreToolUse-guard")
+    check(
+        guard["trigger"] == "PreToolUse" and guard["matcher"] == "*" and guard["action"]["type"] == "command",
+        f"crew guard shape {guard}",
+    )
+    check(any(e["trigger"] == "AgentSpawn" for e in document["hooks"]), "no AgentSpawn entry")
+    check(not any("Subagent" in e["trigger"] for e in document["hooks"]), "subagent hook in crew")
+    check(guard["action"]["command"].startswith("sh -c "), "crew command not wrapped")
+
+    run_port("kiro", dest)
+    check(get_crew_names(crew_file) == names, "reinstall changed or duplicated crew entries")
+
+    run_port("kiro", dest, "--uninstall")
+    check(get_crew_names(crew_file) == ["owner-gate"], f"uninstall left {get_crew_names(crew_file)}")
+
+
+def check_crew_wrapper() -> None:
+    port = load_port_module()
+    fake = Path(WORK) / "fake-uv"
+    for code in (0, 1, 2, 3):
+        fake.write_text(f"#!/bin/sh\nexit {code}\n")
+        fake.chmod(0o755)
+        command = port.make_crew_command(str(fake), "PreToolUse", "uv run --script ${CLAUDE_PLUGIN_ROOT}/hooks/guard.py")
+        got = subprocess.run(command, shell=True, capture_output=True, timeout=60).returncode
+        want = 2 if code == 2 else 0
+        check(got == want, f"crew wrapper: hook exit {code} gave {got}, wanted {want}")
+    fake.write_text("#!/bin/sh\nsleep 30\n")
+    command = port.make_crew_command(str(fake), "PreToolUse", "uv run --script x.py")
+    got = subprocess.run(command, shell=True, capture_output=True, timeout=60).returncode
+    check(got == 0, f"crew wrapper: timeout gave {got}")
+
+
 def check_cortex(base: Path) -> None:
     dest = base / "cortex"
     dest.mkdir(parents=True)
@@ -687,6 +741,8 @@ def main() -> int:
     WORK.mkdir(parents=True)
     (WORK.parent / ".gitignore").write_text("*\n")
     check_kiro(WORK)
+    check_kiro_crew(WORK)
+    check_crew_wrapper()
     check_kiro_old_layout(WORK)
     check_kiro_legacy_hooks(WORK, PORT_SCRIPT)
     check_cortex(WORK)
