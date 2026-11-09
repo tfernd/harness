@@ -79,11 +79,9 @@
           <button type="button" class="install-copy" data-mode="install" data-copy="cortex plugin update harness || cortex plugin install tfernd/harness">Copy</button>
           <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
           <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
-          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">cortex</span> plugin uninstall harness</code>
-          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="cortex plugin uninstall harness">Copy</button>
-          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> cortex <span class="tok-flag">--uninstall</span></code>
-          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall">Copy</button>
-          <p class="install-note" data-mode="uninstall" hidden>The first line removes the plugin; the second removes a port install.</p>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">cortex</span> plugin uninstall harness<span class="tok-operator">;</span> <span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> cortex <span class="tok-flag">--uninstall</span></code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="cortex plugin uninstall harness; curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>The first part removes the plugin and the second removes a port install; either may report nothing to remove.</p>
           <p class="install-note" data-mode="uninstall" hidden>If a reinstall says the plugin path already exists, a folder was left behind: look for a harness folder in <code>~/.snowflake/cortex/plugins/</code>, move it away, then install again.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
@@ -91,11 +89,9 @@
           <button type="button" class="install-copy" data-mode="install" data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro">Copy</button>
           <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
           <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Kiro and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
-          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> kiro <span class="tok-flag">--uninstall</span></code>
-          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall">Copy</button>
-          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">rm</span> <span class="tok-flag">-rf</span> ~/.local/share/harness</code>
-          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="rm -rf ~/.local/share/harness">Copy</button>
-          <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The second line deletes the clone.</p>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">curl</span> <span class="tok-flag">-fsSL</span> https://raw.githubusercontent.com/tfernd/harness/main/install.sh <span class="tok-operator">|</span> <span class="tok-command">sh</span> <span class="tok-flag">-s</span> <span class="tok-flag">--</span> kiro <span class="tok-flag">--uninstall</span><span class="tok-operator">;</span> <span class="tok-command">rm</span> <span class="tok-flag">-rf</span> ~/.local/share/harness</code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall; rm -rf ~/.local/share/harness">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The last part deletes the clone.</p>
         </div>
       </div>
     </header>

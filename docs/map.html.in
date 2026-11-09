@@ -81,9 +81,7 @@
           <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
           <code class="install-command" data-mode="uninstall" hidden>[[@install-command cortex-off]]</code>
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy cortex-off]]">Copy</button>
-          <code class="install-command" data-mode="uninstall" hidden>[[@install-command cortex-port-off]]</code>
-          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy cortex-port-off]]">Copy</button>
-          <p class="install-note" data-mode="uninstall" hidden>The first line removes the plugin; the second removes a port install.</p>
+          <p class="install-note" data-mode="uninstall" hidden>The first part removes the plugin and the second removes a port install; either may report nothing to remove.</p>
           <p class="install-note" data-mode="uninstall" hidden>If a reinstall says the plugin path already exists, a folder was left behind: look for a harness folder in <code>~/.snowflake/cortex/plugins/</code>, move it away, then install again.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
@@ -93,9 +91,7 @@
           <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Kiro and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
           <code class="install-command" data-mode="uninstall" hidden>[[@install-command kiro-off]]</code>
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy kiro-off]]">Copy</button>
-          <code class="install-command" data-mode="uninstall" hidden>[[@install-command kiro-clone-off]]</code>
-          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy kiro-clone-off]]">Copy</button>
-          <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The second line deletes the clone.</p>
+          <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The last part deletes the clone.</p>
         </div>
       </div>
     </header>

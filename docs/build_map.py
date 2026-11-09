@@ -69,10 +69,8 @@ INSTALL_COMMANDS = {
 }
 UNINSTALL_COMMANDS = {
     "claude-off": "claude plugin uninstall harness@harness && claude plugin marketplace remove harness",
-    "cortex-off": "cortex plugin uninstall harness",
-    "cortex-port-off": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall",
-    "kiro-off": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall",
-    "kiro-clone-off": "rm -rf ~/.local/share/harness",
+    "cortex-off": "cortex plugin uninstall harness; curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall",
+    "kiro-off": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall; rm -rf ~/.local/share/harness",
 }
 SHELL_TOKEN = re.compile(r"""(?P<space>\s+)|(?P<comment>#.*)|(?P<string>'[^']*'|"(?:\\.|[^"\\])*")|(?P<operator>&&|\|\||[|;<>()])|(?P<word>[^\s'"|&;<>()]+|.)""")
 SHELL_STARTERS = ("&&", "||", "|", ";", "(")
