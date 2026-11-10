@@ -89,6 +89,7 @@ ASK_RULES = (ASK_RULE, CLOUD_RULE, INSTALLER_RULE)
 REMOTE_RULES = frozenset({"denied", "hidden", *ASK_RULES})
 DBT_RULE = "dbt"
 SNOW_RULE = "snow"
+AGENT_RULE = "agent"
 MESSAGES = {
     "delete": "nothing is deleted without the owner's word. Your own throwaway files go in `__scratch__/`, where `rm` works; "
     "a tracked file that must go uses `git rm`.",
@@ -114,6 +115,10 @@ MESSAGES = {
     "`describe`, `list`) on a non-production connection run freely; see `harness:snowflake-cli`.",
     INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `__scratch__/`, read it, "
     "then run that file, or have the owner approve the pipe.",
+    AGENT_RULE: "`{what}` writes to a repository or its history, and a sub-agent never runs a git or gh command that writes. Do not "
+    "rephrase it: describe the change in your handback and the main session commits it (`harness:git-commit`). Read forms run "
+    "freely: `git status`, `git diff`, `git log`, `git show`, `git branch --list`, `git stash list`, `git config --get <key>`, "
+    "`gh pr view`, `gh pr list`, `gh api <path>` (a GET).",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
@@ -164,6 +169,7 @@ class Policy(NamedTuple):
     block_dbt: bool = False
     dbt_dev_targets: tuple[str, ...] = ()
     block_snow: bool = False
+    is_agent: bool = False
 
 
 def get_delay_days(value: object, /) -> int:
@@ -866,6 +872,180 @@ def get_denied(command: Command, directory: str | None, /) -> str:
     return get_git_denial([word.text for word in command.arguments], directory)
 
 
+GIT_AGENT_READS = frozenset({
+    "status", "diff", "log", "show", "blame", "ls-files", "ls-tree", "rev-parse", "rev-list", "describe", "grep", "cat-file", "show-ref",
+    "for-each-ref", "merge-base", "name-rev", "shortlog", "check-ignore", "diff-tree", "diff-index", "diff-files", "ls-remote", "version", "help",
+    "archive", "check-attr", "count-objects",
+})
+CONFIG_READS = frozenset({"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l"})
+CONFIG_WRITES = frozenset({"--add", "--unset", "--unset-all", "--replace-all", "--edit", "-e", "--rename-section", "--remove-section"})
+REMOTE_READS = frozenset({"get-url", "show"})
+REMOTE_OPTIONS = frozenset({"-v", "--verbose"})
+BRANCH_LISTERS = frozenset({"--list", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"})
+BRANCH_READS = frozenset({
+    *BRANCH_LISTERS, "--all", "--remotes", "--verbose", "--show-current", "--sort", "--format", "--column", "--no-column", "--color", "--no-color",
+    "--abbrev", "--no-abbrev", "--ignore-case",
+})
+BRANCH_READ_LETTERS = frozenset("lavr")
+TAG_WRITE_LETTERS = frozenset("dasufmFe")
+TAG_WRITES = frozenset({"--delete", "--annotate", "--sign", "--local-user", "--force", "--message", "--file", "--edit"})
+STASH_READS = frozenset({"list", "show"})
+GH_VALUE_OPTIONS = frozenset({"-R", "--repo", "--hostname"})
+GH_WRITES = {
+    "pr": frozenset({"create", "edit", "merge", "close", "reopen", "comment", "review", "ready", "checkout", "update-branch", "revert", "lock", "unlock"}),
+    "issue": frozenset({"create", "edit", "close", "comment", "reopen", "delete", "transfer", "pin", "unpin", "lock", "unlock", "develop"}),
+    "release": frozenset({"create", "edit", "delete", "upload", "delete-asset"}),
+    "repo": frozenset({"create", "delete", "fork", "edit", "rename", "archive", "unarchive", "sync"}),
+    "workflow": frozenset({"run", "enable", "disable"}),
+    "run": frozenset({"rerun", "cancel", "delete"}),
+    "label": frozenset({"create", "edit", "delete", "clone"}),
+    "secret": frozenset({"set", "delete", "remove"}),
+    "variable": frozenset({"set", "delete"}),
+    "gist": frozenset({"create", "edit", "delete", "rename"}),
+    "cache": frozenset({"delete"}),
+    "auth": frozenset({"login", "logout", "refresh"}),
+}
+GH_API_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+GH_API_BODY_OPTIONS = frozenset({"--field", "--raw-field", "--input"})
+
+
+def split_options(words: list[str], /) -> tuple[list[str], list[str]]:
+
+    options = [word for word in words if word.startswith("-") and word != "-"]
+    operands = [word for word in words if not word.startswith("-") or word == "-"]
+
+    return options, operands
+
+
+def is_config_read(rest: list[str], /) -> bool:
+
+    names = {word.partition("=")[0] for word in split_options(rest)[0]}
+
+    return bool(names & CONFIG_READS) and not names & CONFIG_WRITES
+
+
+def is_remote_read(rest: list[str], /) -> bool:
+
+    options, operands = split_options(rest)
+
+    return set(options) <= REMOTE_OPTIONS and (not operands or operands[0] in REMOTE_READS)
+
+
+def is_branch_read(rest: list[str], /) -> bool:
+
+    options, operands = split_options(rest)
+    for option in options:
+        if option.startswith("--"):
+            if option.partition("=")[0] not in BRANCH_READS:
+                return False
+        elif not set(option[1:]) <= BRANCH_READ_LETTERS:
+            return False
+    is_listing = any(option.partition("=")[0] in BRANCH_LISTERS or (not option.startswith("--") and "l" in option) for option in options)
+
+    return not operands or is_listing
+
+
+def is_tag_read(rest: list[str], /) -> bool:
+
+    options, operands = split_options(rest)
+    is_listing = any(option.partition("=")[0] == "--list" or (not option.startswith("--") and "l" in option) for option in options)
+    if not is_listing:
+        return not options and not operands
+    for option in options:
+        if option.startswith("--") and option.partition("=")[0] in TAG_WRITES:
+            return False
+        if not option.startswith("--") and TAG_WRITE_LETTERS & set(option[1:]):
+            return False
+
+    return True
+
+
+def is_stash_read(rest: list[str], /) -> bool:
+
+    operands = split_options(rest)[1]
+
+    return bool(operands) and operands[0] in STASH_READS
+
+
+def is_apply_check(rest: list[str], /) -> bool:
+
+    return "--check" in split_options(rest)[0]
+
+
+def is_worktree_read(rest: list[str], /) -> bool:
+
+    return split_options(rest)[1][:1] == ["list"]
+
+
+GIT_AGENT_CHECKS: dict[str, Callable[[list[str]], bool]] = {
+    "config": is_config_read,
+    "remote": is_remote_read,
+    "branch": is_branch_read,
+    "tag": is_tag_read,
+    "stash": is_stash_read,
+    "worktree": is_worktree_read,
+    "apply": is_apply_check,
+}
+
+
+def get_agent_git_label(arguments: list[str], /) -> str:
+
+    index = get_git_index(arguments)
+    if index >= len(arguments):
+        return ""
+    subcommand = arguments[index]
+    rest = arguments[index + 1 :]
+    check = GIT_AGENT_CHECKS.get(subcommand)
+    is_read = check(rest) if check else subcommand in GIT_AGENT_READS
+
+    return "" if is_read and not any(word.startswith("--output") for word in rest) else f"git {subcommand}"
+
+
+def get_gh_api_method(rest: list[str], /) -> str:
+
+    method = ""
+    for index, word in enumerate(rest):
+        if word in ("-X", "--method"):
+            method = rest[index + 1] if index + 1 < len(rest) else ""
+        elif word.startswith("--method="):
+            method = word.partition("=")[2]
+        elif word.startswith("-X"):
+            method = word[2:]
+
+    return method.upper()
+
+
+def has_gh_api_body(rest: list[str], /) -> bool:
+
+    return any(
+        word.partition("=")[0] in GH_API_BODY_OPTIONS or (word.startswith(("-f", "-F")) and not word.startswith("--"))
+        for word in rest
+    )
+
+
+def get_agent_gh_label(arguments: list[str], /) -> str:
+
+    positionals = get_positionals(arguments, GH_VALUE_OPTIONS)
+    group = positionals[0] if positionals else ""
+    action = positionals[1] if len(positionals) > 1 else ""
+    if group == "api":
+        method = get_gh_api_method(arguments)
+        is_write = method in GH_API_WRITE_METHODS if method else has_gh_api_body(arguments)
+        return "gh api (not a GET)" if is_write else ""
+
+    return f"gh {group} {action}" if action in GH_WRITES.get(group, frozenset()) else ""
+
+
+def get_agent_label(command: Command, /) -> str:
+
+    name = os.path.basename(command.name)
+    arguments = [word.text for word in command.arguments]
+    if name == "git":
+        return get_agent_git_label(arguments)
+
+    return get_agent_gh_label(arguments) if name == "gh" else ""
+
+
 
 LOOSE_WORD = re.compile(r"[^\s;&|(){}<>'\"`,\[\]]+")
 LOOSE_SEPARATOR = re.compile(r"&&|\|\||[;\n|&]")
@@ -883,7 +1063,7 @@ STAND_IN_NAMES = ("git", "python", "uv", *(name for name in PACKAGE_CHANGES if n
 
 def get_owner_label(command: Command, directory: str | None, policy: Policy, /) -> str:
 
-    denied = get_denied(command, directory)
+    denied = get_denied(command, directory) or (get_agent_label(command) if policy.is_agent else "")
     if denied:
         return denied
     is_asked = policy.ask_packages and is_package_change(command, policy.root)
@@ -1005,7 +1185,7 @@ def get_hidden_command(command: Command, text: str, policy: Policy, /) -> str:
 
 def find_script_command(script: str, policy: Policy, /) -> str:
 
-    findings = Findings([], [], [], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [], [])
     find_breaches(get_segments(script), None, False, policy, findings, script)
 
     return next(iter(findings.denied + findings.hidden), "") or next(
@@ -1467,6 +1647,7 @@ class Findings(NamedTuple):
     delayed: list[DelayRun]
     dbt: list[str]
     snow: list[str]
+    agent: list[str]
 
 
 def find_breaches(
@@ -1499,7 +1680,7 @@ def find_breaches(
 def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
-    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [])
+    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [], [])
 
     breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command, {}))
 
@@ -1530,6 +1711,8 @@ def get_command_breaches(
     snow = get_snow_label(segment, command, directory) if policy.block_snow else ""
     findings.dbt.extend([dbt] if dbt else [])
     findings.snow.extend([snow] if snow else [])
+    agent = get_agent_label(command) if policy.is_agent else ""
+    findings.agent.extend([agent] if agent else [])
     findings.denied.extend([denied] if denied else [])
     findings.hidden.extend([hidden] if hidden else [])
     is_asked = policy.ask_packages and is_package_change(command, policy.root)
@@ -1538,6 +1721,7 @@ def get_command_breaches(
     checks = [
         ("delete", is_deleting and trash is None),
         ("denied", bool(denied)),
+        (AGENT_RULE, bool(agent)),
         ("hidden", bool(hidden)),
         (ASK_RULE, is_asked and delay is None),
         ("delay", delay is not None and not delay.is_flagged),
@@ -1713,7 +1897,8 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     installer = MESSAGES[INSTALLER_RULE].format(what=(findings.installer or ["this command"])[0])
     dbt = MESSAGES[DBT_RULE].format(what=(findings.dbt or ["this dbt command"])[0])
     snow = MESSAGES[SNOW_RULE].format(what=(findings.snow or ["this snow command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow}
+    agent = MESSAGES[AGENT_RULE].format(what=(findings.agent or ["this command"])[0])
+    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
     lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
         reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)
@@ -1729,8 +1914,8 @@ def main() -> int:
     event = json.load(sys.stdin)
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
-    policy = get_policy(cwd)
-    findings = Findings([], [], [], [], [], [], [], [], [], [])
+    policy = get_policy(cwd)._replace(is_agent=bool(event.get("agent_id")))
+    findings = Findings([], [], [], [], [], [], [], [], [], [], [])
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, findings=findings)
