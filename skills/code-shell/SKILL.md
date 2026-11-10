@@ -1,6 +1,6 @@
 ---
 name: code-shell
-description: Shell script rules for bash - when shell fits, strict mode, quoting, arrays, bash against zsh differences, no parsing ls, mktemp and trap, shellcheck and shfmt. Load before writing, moving or reviewing any .sh file or a script of more than a few lines.
+description: Shell script rules for bash - when shell fits, strict mode, quoting, arrays, bash against zsh differences, no parsing ls, mktemp and trap, shellcheck and shfmt. Load before writing, moving or reviewing any .sh or .bash file or a script of more than a few lines.
 ---
 
 # Shell
@@ -57,8 +57,7 @@ script, and the other way round. Check the shebang before trusting a line.
 | Array index | starts at 0 | starts at 1 |
 | `read -p "text"` | prompt | `-p` reads from a coprocess; use `read "?text"` |
 
-- Write for bash in a saved script and do not rely on a zsh behaviour. In a tool call under zsh, quote every glob and
-  read `$pipestatus`.
+- Write for bash in a saved script and do not rely on a zsh behaviour. Tool calls under zsh: `harness:tool-habits` (Shell).
 
 ## Temporary files and cleanup
 

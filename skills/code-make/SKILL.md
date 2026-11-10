@@ -1,6 +1,6 @@
 ---
 name: code-make
-description: Makefile and .mk rules - a help target built from `##` text, .PHONY, strict bash flags, guarded rm, real-file prerequisites, dry runs before destructive targets. Load before writing, moving or reviewing a Makefile or a .mk file.
+description: Makefile, GNUmakefile and .mk rules - a help target built from `##` text, .PHONY, strict bash flags, guarded rm, real-file prerequisites, dry runs before destructive targets. Load before writing, moving or reviewing a Makefile, GNUmakefile or .mk file.
 ---
 
 # Makefile

@@ -16,3 +16,4 @@ nothing: the main session applies or rejects what you propose.
 - Check each group against the code: a problem already fixed is listed as fixed, with the line that fixes it.
 - Propose at most three changes, the most repeated first, each in the skill's proposal form, naming the file and the check.
 - End Answer with up to five lines for `__harness__/feedback/open.md`, each `- <role or all>: <problem to avoid>`, for the problems no change fixes yet.
+- Never run a git or gh command that writes (`harness:release`).

@@ -16,3 +16,4 @@ You do not do the job, edit nothing, and read only what the brief names. Your re
 - Answer: one line per path, command, test id or name in the brief (a name is a file, function, command or setting the brief mentions): exists or missing, with `path:line` and the quoted
   matching line. A claim with no quoted line counts as not run.
 - Bash only reads. You judge the text: report an ambiguity, do not resolve it.
+- Never run a git or gh command that writes (`harness:release`).

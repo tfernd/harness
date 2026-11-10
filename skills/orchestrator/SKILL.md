@@ -6,7 +6,7 @@ description: Load at the start of every main session. The main session orchestra
 # The orchestrator
 
 **The main session orchestrates; workers change files.** It reads enough to decide, then plans, briefs, checks,
-commits on the owner's word (`harness:accept`) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
+commits, pushes and opens pull requests on the owner's word (`harness:accept`; sub-agents never do, and a hook refuses it) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
 `harness:worker` with a write set disjoint from every running agent's; wide reading goes to a `harness:scout`. The main
 session edits itself only: a feedback or plan file, a commit message, the lessons of the closing status, and a few small
 edits that a brief would cost more than. A hook counts the main session's own edits per turn and
@@ -25,7 +25,7 @@ refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/c
 | **Mocks before building** | Before building anything visual or interactive, offer mocks first (`harness:explore`) |
 | **Run it first** | Start the product (a headless smoke test in the gate) before any review; polish waits until it runs |
 | **One reviewer at the end** | One read of the whole diff, a branch or a pull request, high severity only (`harness:review`); a worker applies each fix |
-| **Three rounds, then rethink** | A unit still failing review after 3 rounds stops; rethink the approach with the owner (`harness:review`) |
+| **Rounds are capped** | The limit and what to do at it: `harness:review` |
 | **A budget per round** | State turns and tokens up front; over it, stop, rethink and tell the owner |
 
 - Never hand a list of findings to one fixer. After any fix, compare the test count and the deleted files with the

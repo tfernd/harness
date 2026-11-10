@@ -24,7 +24,7 @@ The main session accepts: it reads and judges, and makes the wiring, the fixes a
 
 ## 2. The commit proposal
 
-The owner commits, or the main session when the owner asks (git rules: `harness:git-commit`).
+The main session commits and pushes when the owner asks (git rules: `harness:git-commit`).
 
 - One accepted unit per proposal (it passed section 1); two units are two proposals. Read state with `git status --short -- <paths>`,
   `git diff -- <paths>` and `git log -n 5 --pretty=format:'%s'` for the subject style.
@@ -40,7 +40,7 @@ Due after a turn that ran agents or edited many files, once no background agent 
 Plain words first, then narrow tables, under these exact `##` headings in this order. Required: `## Verdict`,
 `## Done`, `## Needs you`, `## Next`, `## Lessons`. The others are left out when empty.
 
-1. `## Verdict`: one or two sentences: done, partly done or blocked, and the one thing that matters most.
+1. `## Verdict`: one or two sentences: done, partial or blocked, and the one thing that matters most.
 2. `## Done`: table Item | Result (done, partly, failed) | Evidence (the proposal file, or the command and exit code).
    It lists every ask the owner made since the last status, each marked done or not with its evidence, so the owner need not ask
    "anything missing?"; the same list serves a checkpoint.
@@ -55,7 +55,7 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
 
    Quality is the auditor's `Grade: N/5` where there is one, else yours. Say when the agent's Verdict disagrees with it.
 5. `## Needs you`: actions only the owner can take, each with what happens if they do nothing; "nothing" when empty.
-6. Optional: `## Not verified` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
+6. Optional: `## Not proven` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
    against a named baseline with its command).
 7. `## Next`: the one thing to do next, with its cost.
 8. `## Lessons`: each lesson and the rule file written this turn. A Lessons section should show a rule-file change made in the

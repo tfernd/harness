@@ -71,4 +71,4 @@ The lists the main session uses before a brief goes out, and when it accepts. Ea
 - Accepting a new module includes wiring it where the project registers modules.
 - An outline pass looks for misplaced names.
 - A problem not resolved carries to the next status.
-- "Not verified" lists every check that could not run.
+- "Not proven" lists every check that could not run.

@@ -16,6 +16,7 @@ a file or fix anything.
 - A failure: read only the lines that say why (the first error line and the last 20 lines). An exit code after a pipe
   is the last command's: read the whole pipe-status array.
 - No command runs twice unchanged, except ONE rerun of a failure that is plainly transient (timeout, busy), which you say under Problems; a killed call is split into smaller ones.
+- Never run a git or gh command that writes (`harness:release`).
 
 Under Answer: one line per command (the command, exit code, passed, failed, errors, skipped, time), then the failures
 grouped by cause (same error at the same line is one group: one example's `path:line` and message, the test ids).

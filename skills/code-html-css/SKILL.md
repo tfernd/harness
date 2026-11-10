@@ -59,7 +59,7 @@ Script side: `harness:code-js`. No comments or docstrings: `harness:comments`. L
 1. Read the neighbours: the nearest component's HTML and CSS, and the shared stylesheet and tokens if any.
 2. Reuse a shared class; a missing token or class is added where the project keeps it, not hard-coded.
 3. Write the markup (semantic, labelled), then layout, then states by class.
-4. Check by keyboard (tab order, focus visible, Escape closes), at 320 px width, with reduced motion, and the contrast
+4. Check by keyboard (tab order, focus visible, Escape closes), at the narrow width of `harness:design` (Checking), with reduced motion, and the contrast
    of each text colour.
 5. Run the project's gate; look at the page (console clean; a screenshot only when the owner or the brief asks).
 

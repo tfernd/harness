@@ -18,3 +18,4 @@ edit nothing and fix nothing; you run. Your report follows `harness:report`.
 - Answer holds one line `Grade: N/5 for <role> <unit>` first, as the rubric of `harness:audit` sets out, then the claims, then the judges
   re-run with their exit codes.
 - A judge that cannot run here goes under Not proven with the command. Never move it to a weaker check (one that cannot fail where the named one can).
+- Never run a git or gh command that writes (`harness:release`).

@@ -26,7 +26,7 @@ Judges and the control rule: `harness:testing`. A new judge is shown to fail onc
 - Never resolve, install or remove packages unless the owner says so.
 - You change only your write set; anything else goes under Open in your report. Throwaway work goes in
   `__scratch__/TOPIC/`, never `/tmp`. `rm` works only inside `__scratch__/`; elsewhere the guard moves what `rm` or `rmdir` names into `__harness__/trash/<call id>/`, which the owner empties. A tracked file goes with `git rm -q`.
-- The owner commits, or the main session when asked. A sub-agent never runs a git command that writes.
+- The main session commits and pushes when the owner asks. A sub-agent never runs a git or gh command that writes.
 
 ## 6. The report
 Every sub-agent ends with the `harness:report` report, claims marked READ, DERIVED or PROBED (`harness:evidence`).

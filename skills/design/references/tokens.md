@@ -57,6 +57,6 @@ Steps: 4, 8, 12, 16, 24, 32, 48, 64. Inside a component use 4 to 16; between com
 
 ## Shadow
 
-- Two levels: a small one for cards that lift on hover (soft, 0 1px 2px at 8% black) and a large one for popovers and
-  dialogs (0 8px 24px at 12% black). Never a coloured or hard shadow.
+- Two levels in a light theme: a small one for cards that lift on hover (soft, 0 1px 2px at 8% black) and a large one for popovers and
+  dialogs (0 8px 24px at 12% black). Never a coloured or hard shadow. A dark theme uses a lighter surface and a 1px line instead.
 - A card at rest uses a surface step or a hairline border, not both and not a shadow.

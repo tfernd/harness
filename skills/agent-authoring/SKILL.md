@@ -28,7 +28,7 @@ Short, in the imperative, in three parts:
 
 1. **What it does:** one sentence, the one thing the role is for.
 2. **What it never does:** the limits that keep roles apart (a reader writes nothing; a worker stays inside its write
-   set; no git command that writes).
+   set; no git or gh command that writes).
 3. **What goes under Answer:** the content its report carries (files changed, probes with their commands, each judge with
    its exit code). The report form itself is `harness:report`.
 

@@ -77,7 +77,7 @@
         <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
           <code class="install-command" data-mode="install">[[@install-command cortex]]</code>
           <button type="button" class="install-copy" data-mode="install" data-copy="[[@install-copy cortex]]">Copy</button>
-          <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+          <p class="install-note" data-mode="install">Run it again to update; the Uninstall toggle shows the removal commands.</p>
           <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Cortex and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
           <code class="install-command" data-mode="uninstall" hidden>[[@install-command cortex-off]]</code>
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy cortex-off]]">Copy</button>
@@ -87,7 +87,7 @@
         <div class="install-panel" role="tabpanel" id="install-panel-kiro" aria-labelledby="install-tab-kiro" hidden>
           <code class="install-command" data-mode="install">[[@install-command kiro]]</code>
           <button type="button" class="install-copy" data-mode="install" data-copy="[[@install-copy kiro]]">Copy</button>
-          <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after the tool name to remove it.</p>
+          <p class="install-note" data-mode="install">Run it again to update; add <code>--uninstall</code> after <code>kiro</code> to remove it.</p>
           <p class="install-note" data-mode="install">Below, <span class="install-mark is-off">struck</span> parts are not ported to Kiro and <span class="install-mark is-partial">dotted</span> ones only partly.</p>
           <code class="install-command" data-mode="uninstall" hidden>[[@install-command kiro-off]]</code>
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy kiro-off]]">Copy</button>

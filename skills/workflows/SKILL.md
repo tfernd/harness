@@ -24,7 +24,7 @@ Large steps, each with its owner:
 3. A script for everything mechanical (a worker).
 4. The plumbing and every serial step (one worker each); parallel workers for units that are independent and large.
 5. Run the product: a smoke test first, then the gates (main session runs them, or a runner).
-6. One review of the whole diff, a branch or a pull request included, high severity only (reviewer), then each fix (a worker).
+6. One review at the end (reviewer), then each fix (a worker); the rule is in `harness:orchestrator`.
 7. Full test (main session, or a runner when it is long).
 
 The read-back is one sentence of what stays and what goes (`harness:orchestrator`). The gates are the project's checks,
@@ -53,6 +53,10 @@ A fact one `rg` or one read settles is read here, without a scout.
 3. Gates. The test stays.
 
 A bug claim is probed before any fix (`harness:evidence`).
+
+## Whole-repo self-audit
+
+A sweep of a repo's rules, docs and checks against each other is `harness:sweep`.
 
 ## Spec-first feature
 

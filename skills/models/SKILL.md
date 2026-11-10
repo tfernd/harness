@@ -6,12 +6,12 @@ description: Which Claude model each harness role runs on, and when a brief step
 # Models
 
 Haiku is for narrow, mechanical work whose result a person or a script can check. Sonnet is for edits and judgement.
-Opus is for design with several valid answers, visual design included. Effort is a lever within one model; lower it before changing model.
+Opus is the step-up for design with several valid answers. Effort is a lever within one model; lower it before changing model.
 
 ## Roles
 
 This table is the single source of each role's model (`harness:orchestrator` points here). A role's model is set in
-`agents/<name>.md` (`model:` is the alias `haiku`, `sonnet` or `opus`); only the designer runs on Opus by default.
+`agents/<name>.md` (`model:` is the alias `haiku`, `sonnet` or `opus`); no role runs on Opus by default.
 
 | Role | Model | Why |
 |---|---|---|
@@ -21,7 +21,7 @@ This table is the single source of each role's model (`harness:orchestrator` poi
 | scout | haiku | one narrow fact with a quoted line |
 | researcher | sonnet | weighs outside sources and separates documented from inferred |
 | worker | sonnet | edits code inside a write set; wrong code costs more than the model |
-| designer | opus | visual judgement; a weak layout costs a whole round |
+| designer | sonnet | visual work inside a write set; Opus is the step-up for a hard case |
 | releaser | sonnet | splits a diff into commit units and drafts the PR; the main session applies it |
 | runner | haiku | runs listed commands, edits nothing |
 | reviewer | sonnet | reads code against its spec |

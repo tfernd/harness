@@ -5,12 +5,12 @@ description: How finished work is prepared for release - commit units, a PR body
 
 # Release
 
-Preparing is a doer's job; applying it (commit, push, merge, tag) is the main session's, on the owner's word. A
-sub-agent never runs a git or gh command that writes.
+Preparing is a doer's job; applying it (commit, push, opening the pull request with `gh pr create`, merge, tag) is the
+main session's, on the owner's word. A sub-agent never runs a git or gh command that writes; a hook refuses it.
 
 ## Commit units
 
-- One unit per commit, each usable alone. Form and the attribution ban: `harness:git-commit`.
+- Units, message form and the attribution ban: `harness:git-commit`.
 - Split the diff by purpose, not by file count: a fix, a refactor and a doc change are three units even in one file set.
 - The plan is a list in `__scratch__/`: for each unit the paths and the full message. A file in two units is split
   by hunk, and the plan says which hunks.
@@ -37,7 +37,8 @@ the plan: report it with the cause. Never skip, loosen or replace the check.
 
 Every claim in it is backed by a command you ran. No AI attribution.
 
-Draft the body in `__scratch__/`, offer it with the push question, and keep it there until the PR merges; then delete it.
+Draft the body in `__scratch__/`, offer it with the push question, and keep it there until the PR merges; then delete it. The main session opens the PR
+(`gh pr create`) on the owner's word.
 
 ## CI basics
 
@@ -68,5 +69,5 @@ Draft the body in `__scratch__/`, offer it with the push question, and keep it t
 ## What the owner decides
 
 - A force push is never part of a plan. If history must change, say so under Open and stop.
-- Push, merge, tag and release are the owner's words, relayed by the main session.
+- Push, opening the PR (`gh pr create`), merge, tag and release are the owner's words, relayed by the main session.
 - A review of the branch or PR before merge: `harness:review` (the branch and pull request steps).

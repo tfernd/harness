@@ -57,7 +57,7 @@ one; it reads tags, merges, pull request titles, bodies and comments, and the `-
 
 ## Safety
 
-- Commit only when the owner asks. A sub-agent never runs a git command that writes.
+- Commit only when the owner asks. A sub-agent never runs a git or gh command that writes.
 - Never `--no-verify`. A failing hook is a problem to fix, and a commit it stops did not happen, so never `--amend` after it.
 - `commit --amend`, `rebase` and every command that discards work are the owner's to run: the guard refuses them. Never force
   a push unless the owner says so in words.

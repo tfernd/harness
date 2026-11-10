@@ -1,7 +1,7 @@
 # Shape of a dynamic workflow
 
-Facts below are from the `workflow-authoring` skill (load it with the Skill tool before writing a script; it is not a
-plugin skill).
+Facts below are from the `workflow-authoring` skill, a Claude Code skill outside this plugin (load it with the Skill tool
+before writing a script).
 
 - A script starts with `export const meta = {name, description, phases}`, a pure literal.
 - Default to `pipeline(items, stage1, stage2)`: each item moves through its stages with no barrier. Use `parallel`
