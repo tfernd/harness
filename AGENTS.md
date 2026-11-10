@@ -39,7 +39,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Writing a hook: `harness:hook-authoring` (events, fail open, the time budget, soft against hard, what counts as built). Hooks here are stdlib Python 3.12.
 - Each new rule gets a case in `tests/run_cases.py` and a deliberate-bug control in `tests/mutants.py` that the case catches.
 - A case can pass for the wrong reason: run the mutants of the hook you changed before trusting it (`tests/mutants.py --only`).
-- `tests/plant_bugs.py` and `tests/mutants.py` copy `hooks/` as they go: never edit a hook during a run, or its score means nothing.
+- `tests/mutants.py` copies `hooks/` as it goes: never edit a hook during a run, or its score means nothing.
 - `CASE_THREADS` and `DEFAULT_JOBS` in `tests/mutants.py` keep an audit from freezing the machine: never raise them.
 - A rule is built when it has passed cases, mutants, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
 - A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.

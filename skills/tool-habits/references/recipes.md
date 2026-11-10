@@ -40,20 +40,28 @@ done
 
 Gates that depend on each other (format, then lint, then test) chain with `&&` instead, as in the tool-habits body.
 
-## A one-line edit with sed: assert before and after
+## A one-line edit: assert before and after
+
+One exact change is the Edit tool. Several changes, or an edit joined to a check, use the Python edit form of the body
+(`sub(...)` asserts each target occurs once). `sed -i` is for files under `__scratch__/` only: the guard refuses it
+elsewhere.
 
 ```bash
 set -o pipefail
-f=src/core/shape.ts old='^export interface Span {' new='interface Span {'
-[[ $(grep -c -- "$old" "$f") == 1 ]] &&
-sed -i "s/$old/$new/" "$f" &&
-[[ $(grep -c -- "$old" "$f") == 0 ]] &&
-git diff --stat -- "$f" &&
+python3 - <<'EOF' &&
+from pathlib import Path
+
+path = Path("src/core/shape.ts")
+old = "export interface Span {"
+text = path.read_text()
+assert text.count(old) == 1, old
+path.write_text(text.replace(old, "interface Span {"))
+EOF
+git diff --stat -- src/core/shape.ts &&
 make check 2>&1 | tail -20
 ```
 
-zsh trap: a line that starts with `! grep` after a `&&` on the line before is a parse error. Test a count, as above.
-`sed -i` differs on macOS (`sed -i ''`); a Python edit (the body's recipe) works on both.
+zsh trap: a line that starts with `! grep` after a `&&` on the line before is a parse error. Test a count instead.
 
 ## Web and APIs: fail on HTTP errors, parse, cap
 
@@ -81,7 +89,7 @@ nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=c
 timeout 300 uv run python - <<'EOF' 2>&1 | tail -30
 import torch
 from mypkg.model import build
-m = build().to(0).eval()  # GPU 0
+m = build().to(0).eval()
 with torch.no_grad():
     y = m(torch.randn(4, 3, 64, 64, device=0))
 assert torch.isfinite(y).all(), "non-finite output"
@@ -89,4 +97,4 @@ print("shape", tuple(y.shape))
 EOF
 ```
 
-After an out-of-memory error, change the batch or the size before running again; the same command fails the same way.
+`.to(0)` puts the model on GPU 0. After an out-of-memory error, change the batch or the size before running again; the same command fails the same way.

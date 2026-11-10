@@ -18,8 +18,9 @@ One change, one measurement, keep or revert. Never stack a second change on one 
 2. Run the frozen benchmark and the project's gates.
 3. Better than the best kept result by more than the noise, and the gates pass: keep it (commit it when the owner has
    allowed commits). Otherwise revert it.
-4. Revert through the VCS (`git restore <paths>`, or revert the commit), never by hand, so the tree is exactly the last
-   kept state.
+4. Revert through the VCS, never by hand, so the tree is exactly the last kept state: commit each kept change
+   (`harness:git-commit`) so a revert is of a commit. A revert that discards uncommitted work is run by the owner; the
+   guard refuses it.
 5. Write the log row, then check the stop predicate.
 
 ## The stop predicate

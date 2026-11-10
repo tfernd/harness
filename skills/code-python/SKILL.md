@@ -61,8 +61,8 @@ No comments or docstrings: `harness:comments`. Tests: `harness:testing`.
 ## Layout
 
 - One job per module, the one its name says.
-- A module with more than one topic has sections: a divider line, a Title Case title, a divider line; a section
-  holds its types, then its functions, a helper before its first caller. Divider: `# ` plus 75 `=`.
+- A module with more than one topic is split into modules. Within a module, types come first, then functions, a helper
+  before its first caller.
 - A call or signature that fits the line limit is one line, however many arguments. One that does not gets one
   argument per line with a trailing comma and the closer on its own line. Name an intermediate rather than hugging
   all arguments on one middle line. (Unenforced: `ruff format` keeps a left-over magic trailing comma exploded.)
@@ -88,7 +88,7 @@ rule set and the complexity limit.
 ## What no tool checks
 
 Verbs and nouns, one word per idea, one job per function and module, phases and blank lines, `Literal` vs `int`,
-no-`dict` results, section dividers, import layering. The reviewer reads for these; a rule that keeps failing gets a
+no-`dict` results, a module of one topic, import layering. The reviewer reads for these; a rule that keeps failing gets a
 project gate (`harness:retro`).
 
 Ruff and the type checker also let these through unless the project adds a check of its own:

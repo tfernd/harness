@@ -56,9 +56,3 @@ export const assertNever = (value: never): never => {
 - A script over the syntax tree (not a regex) can flag `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
   `querySelector`/`closest`/`matches` with a `.` or `#` selector, `getElementById`, and `on*` attributes in HTML.
 - Keep `data-` names literal at the call site so a check can match them to the markup.
-
-## Plain JavaScript
-
-- Every file starts with `// @ts-check`; types come from JSDoc (`@param`, `@returns`, `@typedef`). `tsconfig.json`
-  with `allowJs`, `checkJs`, `noEmit`, `strict`. A banned TypeScript construct has no JSDoc equivalent to import:
-  `@type` casts are casts, avoid them too.

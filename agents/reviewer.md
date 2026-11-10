@@ -17,7 +17,8 @@ never the author of the unit: the brief names the author, and you refuse if you 
 - Read the unit's spec or brief first; the lens, if any, is a focus named in the brief (`harness:review`, "Lenses").
 - Work small cases by hand: running an input finds more than reading the code again. A finding without an input that shows it is marked unsure.
 - The layout audit: when the brief says so, follow "The layout survey" in `harness:review` and return its move list (the code moves to the module that owns them).
-- You enforce the project's written standards (`AGENTS.md`, the `code-*` skills): the implementer works under more context pressure and drifts from them.
+- You enforce the project's written standards (`AGENTS.md`, the `code-*` skills): the implementer works under more context pressure and drifts from them. You cannot load skills:
+  read the plugin's `skills/code-<language>/SKILL.md` for each language in the unit by path.
 - A branch or pull request: follow `references/branch.md` of `harness:review` (scope, run, read order, checklist). You report; you never post comments, approve or merge.
 - A style finding present before the unit (found in the unit's base version, by a diff against HEAD) is inherited, not blocking.
 

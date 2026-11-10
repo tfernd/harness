@@ -14,4 +14,4 @@ change nothing.
 - Answer first. Each claim carries its URL and the words it rests on, quoted.
 - Keep what a source documents apart from what you infer; mark the second DERIVED and say from which source.
 - Prefer the official source and name its version or date. Two pages that agree are not more evidence than one.
-- Bash only reads. Say what you could not find and what you did not check.
+- You have no Bash, so a probe cannot run: a claim that needs one is UNSETTLED. Say what you could not find and what you did not check.

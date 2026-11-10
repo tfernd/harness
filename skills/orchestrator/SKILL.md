@@ -6,7 +6,7 @@ description: Load at the start of every main session. The main session orchestra
 # The orchestrator
 
 **The main session orchestrates; workers change files.** It reads enough to decide, then plans, briefs, checks,
-commits (`harness:accept`) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
+commits on the owner's word (`harness:accept`) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
 `harness:worker` with a write set disjoint from every running agent's; wide reading goes to a `harness:scout`. The main
 session edits itself only: a feedback or plan file, a commit message, the lessons of the closing status, and a few small
 edits that a brief would cost more than. A hook counts the main session's own edits per turn and

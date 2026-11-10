@@ -23,8 +23,8 @@ what order. Each step lands as its own commits, with `make check` green, before 
   - `harness:code-python`, `harness:testing` and the other skills drop their docstring rules to match.
   - This repo: replace the six `__doc__` reads used for argparse (`port/harness_port.py`, `docs/build_map.py`,
     `hooks/replay.py`, `tests/mutants.py`, `tests/check_skills.py`, `tests/run_cases.py`), run `make strip`, make
-    `.githooks/pre-commit` executable. The page's hook summaries move to a `SUMMARY` constant per hook first, since
-    the strip removes docstrings.
+    `.githooks/pre-commit` executable. The page's hook summaries come from `HOOK_JOBS` in `docs/build_map.py`, not from
+    the hooks' docstrings, so the strip does not touch them.
 - **Why:** comments were written for human readers; an agent reads the code itself. A comment goes stale, costs
   tokens on every read, and a comment about a removal is noise forever. Needing one is a sign the code should be
   clearer.

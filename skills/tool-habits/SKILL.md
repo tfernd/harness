@@ -61,11 +61,12 @@ sub("src/app.py", [
 """),
 ])
 sub("tests/test_app.py", [
-    ("# end of cases\n", """def test_load_missing(tmp_path):
+    ("def test_load_ok(tmp_path):\n", """def test_load_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         load(tmp_path / "nope")
 
-# end of cases
+
+def test_load_ok(tmp_path):
 """),
 ])
 EOF
@@ -86,7 +87,7 @@ git diff --stat
 - Read the output before saying "done". Without `pipefail`, a pipe into `tail` hides a test's exit code. Do not end a
   check in `|| true` or `|| echo`, and do not print `echo ----` separators.
 - Say what ran with its exit code, and what did not run and why. "Done" with no gate named is a claim, not a result.
-- One-call recipes for discovery, independent gates, a `sed` edit, web calls and an ML probe: `references/recipes.md`.
+- One-call recipes for discovery, independent gates, an asserted edit, web calls and an ML probe: `references/recipes.md`.
 
 ## Clean
 

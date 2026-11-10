@@ -17,8 +17,7 @@ No comments or docstrings: `harness:comments`. Web pages: `harness:code-html-css
 - ES modules only. Relative imports name the extension the project's resolver needs. Group `import type` apart with
   `verbatimModuleSyntax` on.
 - Two-space indent, double quotes, semicolons, 120 columns, trailing commas in multi-line lists. The formatter owns this.
-- A plain JavaScript project (no TypeScript) gets the same rules through JSDoc types and `// @ts-check` on each file,
-  checked by `tsc --noEmit --allowJs --checkJs`.
+- Plain JavaScript gets no JSDoc types and no `// @ts-check`. If you want types, use TypeScript.
 
 ## Types
 
