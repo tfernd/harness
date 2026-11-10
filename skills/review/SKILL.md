@@ -65,6 +65,9 @@ before relaying it (`harness:accept`).
   values).
 - **Concurrency:** shared state, ordering, a resource released on every path, a retry that repeats a side effect.
 - **Interface:** what a caller can now do that it could not, an old caller that breaks, a name that lies.
+- **Adversarial:** try to break the change with real inputs; detail in the adversary and matrix reference of `harness:sweep`.
+- **Holes:** what the change promises that nothing checks; detail in the lens reference of `harness:sweep`.
+- **Drift:** which docs, examples or counts the change makes false; detail in the lens reference of `harness:sweep`.
 - **Security:** untrusted input reaching a shell, path, query or template; a secret in a log. Checklist and what not to report: `references/security.md`.
 
 ## The layout survey
