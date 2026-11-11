@@ -46,6 +46,37 @@ MIN_CLAUSE = 40
 SNIPPET = 60
 SNIPPET_LEAD = 20
 SINGLE_SLOTS = ("pyramid", "panels")
+SKILL_MENTION = re.compile(r"harness:([a-z][a-z0-9-]*)")
+CODE_SKILLS = ("code-python", "code-js", "code-html-css", "code-shell", "code-make", "code-yaml", "code-terraform", "code-sql", "git")
+HOOK_WIRES = (
+    ("context.py", "start text for all", "inject", ("main", "agents", "skill:tool-habits", "skill:orchestrator", "skill:report")),
+    ("skill_gate.py", "language rules on edit", "inject", tuple(f"skill:{name}" for name in CODE_SKILLS)),
+    ("guard.py", "refuses risky calls", "check", ("main", "agents")),
+    ("commit_gate.py", "commit message form", "check", ("main", "skill:git")),
+    ("report_gate.py", "report sections", "check", ("agents", "skill:report")),
+    ("budget.py", "agent progress note", "inject", ("main",)),
+    ("turn.py", "closing status", "check", ("main",)),
+)
+WIRE_KINDS = (
+    ("spawn", "main session spawns an agent", True),
+    ("preload", "agent preloads a skill", True),
+    ("inject", "hook injects text", True),
+    ("check", "hook checks or blocks", True),
+    ("point", "skill points to a skill", False),
+)
+WIRE_WIDTH = 1120
+WIRE_TOP = 56
+WIRE_COLUMN_X = {"hook": 24, "agent": 440, "skill": 830}
+WIRE_COLUMN_WIDTH = {"hook": 210, "agent": 220, "skill": 190}
+WIRE_COLUMN_TITLE = {"hook": "Hooks", "agent": "Main session and agents", "skill": "Skills"}
+WIRE_BIG_HEIGHT = 54
+WIRE_BIG_PITCH = 78
+WIRE_SKILL_HEIGHT = 24
+WIRE_SKILL_PITCH = 30
+WIRE_PORT_INSET = 7
+WIRE_BOW_MIN = 36
+WIRE_BOW_MAX = 100
+WIRE_BOTTOM_MARGIN = 24
 HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*#*")
 FENCE = re.compile(r"(`{3,}|~{3,})\s*([\w+-]*)\s*")
 BULLET = re.compile(r"([-*+]|\d{1,9}[.)])\s+(.*)")
@@ -127,6 +158,7 @@ class Facts(NamedTuple):
     reach: dict[str, dict[str, Reach]]
     values: dict[str, str]
     full: dict[str, str]
+    skill_links: dict[str, tuple[str, ...]]
 
 
 class Slot(NamedTuple):
@@ -162,6 +194,26 @@ class Rule(NamedTuple):
     text: str
     level: str
     script: str
+
+
+class WireNode(NamedTuple):
+
+    key: str
+    column: str
+    tone: str
+    label: str
+    sub: str
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class WireEdge(NamedTuple):
+
+    source: str
+    target: str
+    kind: str
 
 
 class Layout(NamedTuple):
@@ -492,6 +544,17 @@ def get_fingerprint(path: Path, /) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:FINGERPRINT_LENGTH]
 
 
+def get_skill_links(root: Path, skills: dict[str, Skill], /) -> dict[str, tuple[str, ...]]:
+
+    links = {}
+    for name in skills:
+        body = (root / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+        mentioned = {mention for mention in SKILL_MENTION.findall(body) if mention in skills and mention != name}
+        links[name] = tuple(sorted(mentioned))
+
+    return links
+
+
 def get_facts(root: Path, /) -> Facts:
 
     hooks_folder = root / "hooks"
@@ -524,6 +587,7 @@ def get_facts(root: Path, /) -> Facts:
         reach,
         {key: str(value) for key, value in values.items()},
         get_full_texts(root, agents, skills, scripts),
+        get_skill_links(root, skills),
     )
 
 
@@ -1176,6 +1240,147 @@ def make_pyramid(layout: Layout, /) -> str:
     )
 
 
+def get_wire_nodes(facts: Facts, /) -> dict[str, WireNode]:
+
+    skill_names = sorted(facts.skills)
+    skills_height = len(skill_names) * WIRE_SKILL_PITCH
+    big_offset = max(0, (skills_height - len(HOOK_WIRES) * WIRE_BIG_PITCH) // 2)
+    nodes = {}
+    for index, (script, sub, _, _) in enumerate(HOOK_WIRES):
+        nodes[f"hook:{script}"] = WireNode(f"hook:{script}", "hook", "hook", script, sub, WIRE_COLUMN_X["hook"], WIRE_TOP + big_offset + index * WIRE_BIG_PITCH, WIRE_COLUMN_WIDTH["hook"], WIRE_BIG_HEIGHT)
+    actors = [("main", "main", "the orchestrator session")] + [(agent.name, "agent", agent.model) for agent in facts.agents]
+    for index, (name, tone, sub) in enumerate(actors):
+        nodes[f"agent:{name}"] = WireNode(f"agent:{name}", "agent", tone, name, sub, WIRE_COLUMN_X["agent"], WIRE_TOP + big_offset + index * WIRE_BIG_PITCH, WIRE_COLUMN_WIDTH["agent"], WIRE_BIG_HEIGHT)
+    for index, name in enumerate(skill_names):
+        nodes[f"skill:{name}"] = WireNode(f"skill:{name}", "skill", "skill", name, "", WIRE_COLUMN_X["skill"], WIRE_TOP + index * WIRE_SKILL_PITCH, WIRE_COLUMN_WIDTH["skill"], WIRE_SKILL_HEIGHT)
+
+    return nodes
+
+
+def get_wire_targets(target: str, facts: Facts, /) -> list[str]:
+
+    if target == "agents":
+        return [f"agent:{agent.name}" for agent in facts.agents]
+    if target == "main":
+        return ["agent:main"]
+
+    return [target]
+
+
+def get_wire_edges(facts: Facts, nodes: dict[str, WireNode], /) -> list[WireEdge]:
+
+    edges = [WireEdge("agent:main", f"agent:{agent.name}", "spawn") for agent in facts.agents]
+    edges += [WireEdge(f"agent:{agent.name}", f"skill:{skill}", "preload") for agent in facts.agents for skill in agent.skills]
+    scripts = {hook.script for hook in facts.hooks}
+    for script, _, kind, targets in HOOK_WIRES:
+        if script not in scripts:
+            raise ValueError(f"the diagram names a hook that does not exist: {script}")
+        edges += [WireEdge(f"hook:{script}", key, kind) for target in targets for key in get_wire_targets(target, facts)]
+    edges += [WireEdge(f"skill:{name}", f"skill:{linked}", "point") for name, linked_names in facts.skill_links.items() for linked in linked_names]
+    unknown = sorted({key for edge in edges for key in (edge.source, edge.target) if key not in nodes})
+    if unknown:
+        raise ValueError(f"the diagram names a part that does not exist: {', '.join(unknown)}")
+
+    return edges
+
+
+def get_wire_sides(edge: WireEdge, nodes: dict[str, WireNode], /) -> tuple[int, int]:
+
+    source, target = nodes[edge.source], nodes[edge.target]
+    if source.column == target.column:
+        return 1, 1
+    order = ("hook", "agent", "skill")
+    is_forward = order.index(source.column) < order.index(target.column)
+
+    return (1, -1) if is_forward else (-1, 1)
+
+
+def get_wire_ports(edges: list[WireEdge], nodes: dict[str, WireNode], /) -> dict[tuple[int, str], float]:
+
+    waiting: dict[tuple[str, int], list[tuple[float, int, str]]] = {}
+    for index, edge in enumerate(edges):
+        source_side, target_side = get_wire_sides(edge, nodes)
+        source, target = nodes[edge.source], nodes[edge.target]
+        waiting.setdefault((edge.source, source_side), []).append((target.y + target.height / 2, index, "source"))
+        waiting.setdefault((edge.target, target_side), []).append((source.y + source.height / 2, index, "target"))
+    ports = {}
+    for (key, _), entries in waiting.items():
+        node = nodes[key]
+        span = node.height - 2 * WIRE_PORT_INSET
+        for position, (_, index, role) in enumerate(sorted(entries)):
+            ports[(index, role)] = node.y + WIRE_PORT_INSET + span * (position + 0.5) / len(entries)
+
+    return ports
+
+
+def make_wire_path(edge: WireEdge, index: int, nodes: dict[str, WireNode], ports: dict[tuple[int, str], float], /) -> str:
+
+    source, target = nodes[edge.source], nodes[edge.target]
+    source_side, target_side = get_wire_sides(edge, nodes)
+    start_x = source.x + (source.width if source_side > 0 else 0)
+    end_x = target.x + (target.width if target_side > 0 else 0)
+    start_y, end_y = ports[(index, "source")], ports[(index, "target")]
+    if source.column == target.column:
+        reach = min(WIRE_BOW_MAX, WIRE_BOW_MIN + abs(end_y - start_y) * 0.3)
+    else:
+        reach = max(WIRE_BOW_MIN, abs(end_x - start_x) / 2)
+    first_x = start_x + source_side * reach
+    second_x = end_x + target_side * reach
+
+    return f"M{start_x} {start_y:.1f} C{first_x:.1f} {start_y:.1f} {second_x:.1f} {end_y:.1f} {end_x} {end_y:.1f}"
+
+
+def make_wire_node(node: WireNode, /) -> str:
+
+    center_x = node.x + node.width / 2
+    label = html.escape(node.label)
+    if node.sub:
+        text = f'<text class="wire-name" x="{center_x}" y="{node.y + 22}" text-anchor="middle">{label}</text><text class="wire-sub" x="{center_x}" y="{node.y + 40}" text-anchor="middle">{html.escape(node.sub)}</text>'
+    else:
+        text = f'<text class="wire-skill" x="{center_x}" y="{node.y + node.height / 2 + 4}" text-anchor="middle">{label}</text>'
+    rect = f'<rect x="{node.x}" y="{node.y}" width="{node.width}" height="{node.height}" rx="7"/>'
+
+    return f'<g class="wire-node is-{node.tone}" data-wire-node="{html.escape(node.key)}" tabindex="0" role="button" aria-pressed="false" aria-label="{label}">{rect}{text}</g>'
+
+
+def make_wire_legend() -> str:
+
+    items = []
+    for kind, label, is_on in WIRE_KINDS:
+        swatch = f'<svg class="wire-swatch" width="40" height="12" viewBox="0 0 40 12" aria-hidden="true" focusable="false"><line class="wire-line is-{kind}" x1="2" y1="6" x2="38" y2="6"/></svg>'
+        items.append(f'<li><button type="button" class="wire-toggle" data-wire-kind="{kind}" aria-pressed="{str(is_on).lower()}">{swatch}{html.escape(label)}</button></li>')
+
+    return "\n".join(items)
+
+
+def make_diagram(layout: Layout, /) -> str:
+
+    facts = layout.facts
+    nodes = get_wire_nodes(facts)
+    edges = get_wire_edges(facts, nodes)
+    ports = get_wire_ports(edges, nodes)
+    height = max(node.y + node.height for node in nodes.values()) + WIRE_BOTTOM_MARGIN
+    markers = "".join(f'<marker id="wire-head-{kind}" class="wire-head is-{kind}" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 L11 6 L1 10.5 z"/></marker>' for kind, _, _ in WIRE_KINDS)
+    paths = "".join(
+        f'<path class="wire-line is-{edge.kind}" data-wire-source="{html.escape(edge.source)}" data-wire-target="{html.escape(edge.target)}" data-wire-edge="{edge.kind}" marker-end="url(#wire-head-{edge.kind})" d="{make_wire_path(edge, index, nodes, ports)}"/>'
+        for index, edge in enumerate(edges)
+    )
+    titles = "".join(f'<text class="wire-column" x="{WIRE_COLUMN_X[column] + WIRE_COLUMN_WIDTH[column] / 2}" y="28" text-anchor="middle">{title}</text>' for column, title in WIRE_COLUMN_TITLE.items())
+    boxes = "".join(make_wire_node(node) for node in nodes.values())
+    counts = {kind: sum(1 for edge in edges if edge.kind == kind) for kind, _, _ in WIRE_KINDS}
+    description = f"{len(HOOK_WIRES)} hooks, the main session and {len(facts.agents)} agents, and {len(facts.skills)} skills, joined by {len(edges)} arrows: " + ", ".join(f"{counts[kind]} {label}" for kind, label, _ in WIRE_KINDS)
+
+    return (
+        '<div class="wire-body" data-wire>\n'
+        f'<ul class="wire-legend" aria-label="Arrow kinds; each button shows or hides one kind">\n{make_wire_legend()}\n</ul>\n'
+        '<p class="wire-status" data-wire-status role="status"></p>\n'
+        '<div class="wire-scroll" tabindex="0" role="region" aria-label="Diagram of how hooks, agents and skills connect">\n'
+        f'<svg class="wire-svg" viewBox="0 0 {WIRE_WIDTH} {height}" role="group" aria-label="{html.escape(description)}"><defs>{markers}</defs>{titles}<g class="wire-edges">{paths}</g><g class="wire-nodes">{boxes}</g></svg>\n'
+        "</div>\n"
+        "</div>"
+    )
+
+
 def make_slot(slot: Slot, layout: Layout | None, /) -> str:
 
     match slot.name:
@@ -1183,6 +1388,8 @@ def make_slot(slot: Slot, layout: Layout | None, /) -> str:
             return make_pyramid(layout)
         case "panels" if layout:
             return make_panels(layout)
+        case "diagram" if layout:
+            return make_diagram(layout)
         case "install-command" | "install-copy" if slot.arguments and slot.arguments[0] in INSTALL_COMMANDS | UNINSTALL_COMMANDS:
             command = (INSTALL_COMMANDS | UNINSTALL_COMMANDS)[slot.arguments[0]]
             return make_shell(command) if slot.name == "install-command" else html.escape(command)
