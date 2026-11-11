@@ -1,7 +1,7 @@
-import type { AgentRow, Gauges, Range, Roster, RosterRow, ThemeSetting } from '../types'
+import type { AgentRow, AgentState, Gauges, Range, Roster, RosterRow, ThemeSetting } from '../types'
 
 import { cacheRefreshMs } from './gauges'
-import { MAIN_ID, countAgents, nextLeaveMs, nextQuietChangeMs, stateWordOf, tracedRows } from './model'
+import { MAIN_ID, countAgents, formatClock, formatShort, nextLeaveMs, nextQuietChangeMs, stateWordOf, tracedRows } from './model'
 import { type Ctx, countsIcons, horizontalLine } from './svg-parts'
 import { FOLDED_RING_RADIUS, FOLDED_RING_SIZE, RING_SIZE, hasRing, TRACES_MORE_WIDTH, foldedTracesWidth, type GaugeSpec, type StripInput, gaugeSpecs, ring, traceLanes, tracesHeight } from './svg-strip'
 import { styleFor } from './svg-theme'
@@ -19,6 +19,24 @@ export type SvgInput = {
   isWorking: boolean
   turnStartedAt: number | null
   scheme: ThemeSetting
+}
+
+export const statusOf = (input: SvgInput): { word: string; state: AgentState } => {
+  if (input.isWorking) {
+    return { word: 'WORKING', state: 'thinking' }
+  }
+
+  return [...input.rows.values()].some(row => row.state === 'waiting')
+    ? { word: 'WAITING', state: 'waiting' }
+    : { word: 'IDLE', state: 'launched' }
+}
+
+export const captionOf = (input: SvgInput): string => {
+  if (input.isWorking && input.turnStartedAt !== null) {
+    return `turn ${formatClock(input.now - input.turnStartedAt)}`
+  }
+
+  return input.gauges.sessionStartedAt === null ? '' : `up ${formatShort(input.now - input.gauges.sessionStartedAt)}`
 }
 
 export type BandSvg = { source: string; width: number; height: number }

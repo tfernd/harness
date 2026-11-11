@@ -2,8 +2,8 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { AgentState } from '../types'
 
-import { RANGES, countAgents, formatClock, formatShort, tracedRows } from './model'
-import { COUNTS_KEY, HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupLabelColumnOf, groupRowsKey, groupCountsKey, listedGroupsOf, timelineInputOf } from './svg-band'
+import { RANGES, countAgents, tracedRows } from './model'
+import { COUNTS_KEY, captionOf, statusOf, HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupLabelColumnOf, groupRowsKey, groupCountsKey, listedGroupsOf, timelineInputOf } from './svg-band'
 import type { BandSvg, SvgInput } from './svg-band'
 import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
 import { bandColorsOf } from './svg-theme'
@@ -29,24 +29,6 @@ const STATE_COLOR: Record<AgentState, string> = {
 }
 
 const foldedDetailOf = (spec: GaugeSpec): string => spec.detail.replace(/\s*↻.*$/, '')
-
-const statusOf = (input: SvgInput): { word: string; state: AgentState } => {
-  if (input.isWorking) {
-    return { word: 'WORKING', state: 'thinking' }
-  }
-
-  return [...input.rows.values()].some(row => row.state === 'waiting')
-    ? { word: 'WAITING', state: 'waiting' }
-    : { word: 'IDLE', state: 'launched' }
-}
-
-const captionOf = (input: SvgInput): string => {
-  if (input.isWorking && input.turnStartedAt !== null) {
-    return `turn ${formatClock(input.now - input.turnStartedAt)}`
-  }
-
-  return input.gauges.sessionStartedAt === null ? '' : `up ${formatShort(input.now - input.gauges.sessionStartedAt)}`
-}
 
 const HEADER_PAD_COLUMNS = 2
 const PX_PER_COLUMN = 8
