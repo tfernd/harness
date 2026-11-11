@@ -94,7 +94,7 @@ git diff --stat
 - `__scratch__/` is the temp folder for probes and one-off output (a hook makes it and its `.gitignore`) and is never
   cleaned: make a subfolder per run (`mktemp -d __scratch__/name.XXXX`) instead of deleting and recreating, and do not
   tidy it afterwards.
-- Agents delete nothing: the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `find -delete` and `git clean`, everywhere. The
+- Agents delete nothing: the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `truncate`, `find -delete`, `git clean`, `make clean`, a delete over `ssh` or `busybox`, a variable that names a deleter, and Python that calls `os.remove`, `shutil.rmtree` or `Path.unlink`, everywhere. The
   main session whose file must go gives the owner the exact command in the chat, with why it is needed, and the owner runs
   it. A sub-agent leaves the file and never asks.
 - Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.
@@ -110,9 +110,7 @@ git diff --stat
 ## Waiting
 
 Never `sleep N` to wait and never poll in a foreground loop; a run that takes long goes with `run_in_background: true`, and
-its exit wakes you. The guard does not run a foreground `sleep`: it removes a direct one and the rest of the command runs at
-once, so the result may be early; it moves any other (a polling loop, a wrapper) to the background, where its exit wakes you.
-Nothing needs it:
+its exit wakes you. Nothing needs it:
 
 - Your own long job: run it with `run_in_background: true`, then do other work or end the turn. Its exit wakes you; read
   the output then, not before.
@@ -137,6 +135,6 @@ Nothing needs it:
 - A glob that matches nothing is refused with the folder it was matched from: `cd` to the right one, or list files with
   `rg --files -g '<pattern>'` or `git ls-files`.
 - A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position
-  (`--include`, `-name`, `-g`), drops a foreground `sleep` (Waiting) and adds
+  (`--include`, `-name`, `-g`) and adds
   `set -o pipefail` to a test, check or build piped into `tail` or `grep` (not `grep -q`, `-m`, `-l` or `-L`). Write the
   call that way next time.

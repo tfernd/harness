@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -115,6 +116,7 @@ class Case(NamedTuple):
     home: str = ""
     is_silent: bool = False
     start: str = ""
+    max_seconds: float = 0.0
 
 
 
@@ -135,23 +137,6 @@ def background_bash(name: str, command: str, blocks: bool, text: str = "", /, **
     event = {"tool_name": "Bash", "tool_input": {"command": command, "run_in_background": True}}
 
     return Case(name, ("guard.py",), event, blocks, text, STRICT, **options)
-
-
-SHADOW = "sleep() { :; }; "
-
-
-def soft_sleep(name: str, command: str, updated: str | None, /, *, config: dict | None = STRICT, text: str = "", **fields: object) -> Case:
-
-    tool_input = {"command": command, **fields}
-    if updated is None:
-        expected = {**tool_input, "run_in_background": True}
-        note = text or "now runs in the background"
-    else:
-        expected = {**tool_input, "command": updated}
-        note = text or "was removed from this command"
-    event = {"tool_name": "Bash", "tool_input": tool_input}
-
-    return Case(name, ("guard.py",), event, False, note, config, updated=expected)
 
 
 def write_call(name: str, path: str, blocks: bool, text: str = "", /, **options: object) -> Case:
@@ -231,8 +216,6 @@ GUARD_CASES = (
     bash("the words of a plain find run nothing", "find . pip install y", False),
     Case("a notebook under the temporary folder runs with a note", ("guard.py",), {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/n.ipynb"}}, False, config=STRICT, is_unchanged=True, context="let this run"),
     bash("an escaped letter stays in its word", r"p\ip install x", True),
-    soft_sleep("a sleep under find moves the call to the background", r"find . -exec sleep 1 \;", None),
-    soft_sleep("a sleep under an unended find moves the call to the background", "find . -exec sleep 1", None),
     bash("git with options alone passes", "git --version", False),
     bash("uv with options alone passes", "uv --version", False),
     bash("a positional parameter stays in a path", "echo a > /$1tmp/y", False),
@@ -290,7 +273,6 @@ GUARD_CASES = (
     bash("fd in the project passes", "fd tsc src", False),
     background_bash("a wide find in the background is refused too", "find / -name tsc", True),
     bash("a loop with no sleep passes", "while read line; do echo hi; done", False),
-    soft_sleep("a sleep in an inner polling loop moves the call to the background", "for x in a; do while true; do sleep 1; done; done", None),
     bash("curl writing into the repo runs with a note", "curl -o AGENTS.md http://x", False, is_unchanged=True, context="let this run"),
     bash("curl with no output file passes", "curl http://x", False),
     bash("wget with no option writes into the repo, with a note", "wget http://x", False, is_unchanged=True, context="let this run"),
@@ -361,37 +343,9 @@ GUARD_CASES = (
     bash("a redirect over a project file runs with a note", "echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("a redirect into scratch is allowed", "echo hi > __scratch__/t/x.txt", False),
     bash("sed -i on a project file runs with a note", "sed -i s/a/b/ AGENTS.md", False, REPO, is_unchanged=True),
-    soft_sleep("a sleep in a while loop moves the call to the background", "while true; do sleep 1; done", None),
-    soft_sleep("a sleep in an until condition moves the call to the background", "until sleep 1; do x; done", None),
-    soft_sleep("a sleep in a for loop is removed by shadowing", "for i in 1 2; do sleep 1; done", SHADOW + "for i in 1 2; do sleep 1; done"),
-    soft_sleep("a sleep after then is removed by shadowing", "if true; then sleep 1; fi", SHADOW + "if true; then sleep 1; fi"),
-    soft_sleep("a sleep alone is removed by shadowing", "sleep 110", SHADOW + "sleep 110"),
-    soft_sleep("a sleep before a read leaves the read in place", "sleep 110; cat AGENTS.md", SHADOW + "sleep 110; cat AGENTS.md"),
-    soft_sleep("a sleep keeps every other input field", "sleep 3", SHADOW + "sleep 3", description="wait", timeout=5000),
-    soft_sleep("a false background flag is carried and the sleep removed", "sleep 1", SHADOW + "sleep 1", run_in_background=False),
-    soft_sleep("a sleep by its path moves the call to the background", "/bin/sleep 1", None),
-    soft_sleep("a sleep after an assignment moves the call to the background", "X=1 sleep 1", None),
-    soft_sleep("a sleep in a pipeline moves the call to the background", "sleep 1 | cat", None),
-    soft_sleep("a sleep in the background of the shell moves the call to the background", "sleep 1 &", None),
-    soft_sleep("a sleep under timeout moves the call to the background", "timeout 9 sleep 1", None),
-    soft_sleep("a sleep under command moves the call to the background", "command sleep 1", None),
-    soft_sleep("one wrapped sleep moves the whole call to the background", "sleep 1; timeout 9 sleep 1", None),
-    soft_sleep("a background move keeps every other input field", "until [ -f x ]; do sleep 5; done", None, description="wait", timeout=5000),
-    soft_sleep("a sleep in a substitution moves the call to the background", "echo $(sleep 1)", None),
-    soft_sleep("a sleep in a shell string moves the call to the background", "sh -c 'sleep 1'", None),
-    soft_sleep("a sleep in an eval moves the call to the background", "eval 'sleep 1'", None),
-    bash("the word sleep as an argument passes", "echo sleep", False),
-    bash("the word sleep in a heredoc passes", "cat <<'E'\nsleep 1\nE", False),
-    background_bash("a sleep in the background passes untouched", "sleep 1", False, is_unchanged=True),
-    background_bash("a polling loop in the background passes untouched", "until [ -f x ]; do sleep 5; done", False, is_unchanged=True),
-    soft_sleep("a false background flag still removes a sleep", "sleep 1", SHADOW + "sleep 1", run_in_background=False),
-    background_bash("the background lets only sleep through", "sleep 1; rm x", True, DELETE),
-    bash("a sleep beside a delete is refused with the delete message only", "sleep 1; rm x", True, DELETE, lacks="removed"),
     bash("a repo write beside a delete is refused with the delete message only", "echo hi > AGENTS.md; rm x", True, DELETE, lacks="lets this call pass"),
-    bash("a sleep beside a package change asks and changes nothing", "pip install x; sleep 1", True, '"permissionDecision": "ask"', lacks="updatedInput"),
     bash("a repo write note never claims the call ran", "echo hi > AGENTS.md", False, config=None, is_unchanged=True, context="the guard lets this call pass", context_lacks="went through"),
     bash("a temporary write note never claims the call ran", "tar -cf /tmp/a.tar b", False, is_unchanged=True, context="the guard lets this call pass", context_lacks="went through"),
-    soft_sleep("a sleep and a repo write give both notes", "sleep 1; echo hi > AGENTS.md", SHADOW + "sleep 1; echo hi > AGENTS.md", text=REPO),
     bash("python -c is not read as a shell", "python3 -c 'print(2 > 1)'", False),
     bash("a python heredoc is not read as a shell", HEREDOC.format(call="print(2 > 1)"), False),
     bash("a heredoc body is no command", "cat <<'EOF'\nrm x\nEOF", False),
@@ -406,7 +360,6 @@ GUARD_CASES = (
     bash("rm is refused with no project", "rm x", True, DELETE, config=None),
     bash("a forced push is refused with no project", "git push -f", True, "owner's to run", config=None),
     bash("a glob is refused with no project", "ls *.py", True, GLOB, config=None),
-    soft_sleep("a sleep is removed with no project", "sleep 1", SHADOW + "sleep 1", config=None),
     bash("a repo redirect is allowed with no project", "echo hi > AGENTS.md", False, config=None),
     bash("a /tmp redirect is allowed with no project", "echo hi > /tmp/x", False, config=None),
     bash("uv sync asks with no project file", "uv sync", True, '"permissionDecision": "ask"', config=None),
@@ -590,7 +543,7 @@ GUARD_CASES = (
         "git config --global alias.x '!git checkout -- .'",
         "git -c alias.x='reset --hard' x",
     )),
-    bash("ssh judges no delete on its host", "ssh host rm -rf /srv/x", False, config=None),
+    bash("ssh judges a delete on its host too", "ssh host rm -rf /srv/x", True, DELETE, config=None),
     bash("ssh judges no glob on its host", "ssh host 'ls *.nothing'", False, config=None),
     bash("ssh asks before a package change", "ssh host npm install x", True, ASK, config=None),
     bash("ssh asks before an aws write", "ssh host aws s3 rm s3://b/k", True, ASK, config=None),
@@ -867,7 +820,6 @@ GUARD_CASES = (
     bash("agent: the main session may create a pull request", "gh pr create --title t", False, config=None),
     bash("agent: the main session may stash", "git stash", False, config=None),
     Case("agent: an empty agent_id is the main session", ("guard.py",), {"tool_name": "Bash", "tool_input": {"command": "git commit -m x"}, "agent_id": ""}, False, config=None),
-    soft_sleep("a sleep in a [[ loop moves the call to the background", "while [[ -z $x ]]; do sleep 1; done", None, config=None),
     bash("a glob after [[ ]] is judged", "[[ -f x ]] && ls *.py", True, GLOB, config=None),
     bash("a glob after $(( )) is judged", "echo $((1 + 1)) *.py", True, GLOB, config=None),
     bash("strict: python3 -m pip is refused", "python3 -m pip install x", True, HISTORY),
@@ -2636,8 +2588,8 @@ TOOL_CASES = (
     Case("a row is added to a ledger with no final newline", ("import_reports.py",), {}, False, files=((IMPORT_SOURCE, IMPORT_TEXT), LEDGER_NO_NEWLINE), wrote=("data/ledger.jsonl", '"zz"}\n{"time"')),
     Case("a second import adds nothing", ("import_reports.py",), {}, False, "to add: 0", files=((IMPORT_SOURCE, IMPORT_TEXT),), before=((("import_reports.py",), {}),)),
     Case("the replay counts a refused command", ("replay.py",), {}, False, "refused: 1 distinct", files=(("../.claude/projects/p/s.jsonl", json.dumps({"type": "assistant", "cwd": "/", "message": {"content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {"command": "rm x"}}]}}, separators=(",", ":")) + "\n"),)),
-    Case("the replay does not refuse a soft rule", ("replay.py",), {}, False, "refused: 0 distinct", files=(replay_transcript("s", (("sleep 5", "/"),)),)),
-    Case("the replay lists a soft rule apart", ("replay.py",), {}, False, "run with a note: 1 distinct", files=(replay_transcript("s", (("sleep 5", "/"),)),)),
+    Case("the replay does not refuse a soft rule", ("replay.py",), {}, False, "refused: 0 distinct", files=(replay_transcript("s", (("pytest -q | tail -3", "/"),)),)),
+    Case("the replay lists a soft rule apart", ("replay.py",), {}, False, "run with a note: 1 distinct", files=(replay_transcript("s", (("pytest -q | tail -3", "/"),)),)),
     Case("a command in two sessions is listed once", ("replay.py",), {}, False, "== refused delete: 1", files=(replay_transcript("s", (("rm x", "/"),)), replay_transcript("t", (("rm x", "/"),)))),
     Case("a glob is matched in the folder of its transcript line", ("replay.py",), {}, False, "refused: 0 distinct", files=(replay_transcript("s", (("ls x.*", "@ROOT@/work"),)), REPLAY_WORK)),
     Case("a glob with no match there is refused", ("replay.py",), {}, False, "== refused glob: 1", files=(replay_transcript("s", (("ls y.*", "@ROOT@/work"),)), REPLAY_WORK)),
@@ -3327,6 +3279,56 @@ KILL_RUNS = (
     "pkill --help",
     "grep -r pkill .",
 )
+NESTED_SUBSTITUTIONS = "echo a\n" + "echo $( ` \n" * 300
+UNCLOSED_SUBSTITUTIONS = "echo a\n" + "echo $(\n" * 240
+DELETE_ESCAPE_CASES = (
+    bash("a delete over ssh is refused", "ssh host rm x", True, DELETE),
+    bash("a quoted delete over ssh is refused", 'ssh host "rm -rf /srv/x"', True, DELETE),
+    agent_bash("a sub-agent's delete over ssh is refused with its own message", "ssh host rm x", True, AGENT_DELETE, config=STRICT),
+    bash("a read over ssh runs", "ssh host ls x", False),
+    bash("busybox rm is refused", "busybox rm x", True, DELETE),
+    bash("busybox ls runs", "busybox ls x", False),
+    bash("a variable set to rm is refused as the command", "X=rm; $X x", True, DELETE),
+    bash("a braced variable set to rm is refused as the command", "X=rm; ${X} -rf y", True, DELETE),
+    bash("a quoted variable set to rm is refused as the command", 'X=rm; "$X" x', True, DELETE),
+    bash("a substitution naming rm is refused as the command", "$(echo rm) x", True, DELETE),
+    bash("a variable set to ls runs as the command", "X=ls; $X x", False),
+    bash("python -c with os.remove is refused", "python3 -c \"import os; os.remove('a')\"", True, DELETE),
+    bash("python -c with os.unlink is refused", "python3 -c \"import os; os.unlink('a')\"", True, DELETE),
+    bash("python -c with os.rmdir is refused", "python3 -c \"import os; os.rmdir('a')\"", True, DELETE),
+    bash("python -c with shutil.rmtree is refused", "python3 -c \"import shutil; shutil.rmtree('a')\"", True, DELETE),
+    bash("python -c with Path.unlink is refused", "python3 -c \"from pathlib import Path; Path('a').unlink()\"", True, DELETE),
+    bash("python -c with Path.rmdir is refused", "python3 -c \"from pathlib import Path; Path('a').rmdir()\"", True, DELETE),
+    bash("a python heredoc with shutil.rmtree is refused", "python3 - <<'EOF'\nimport shutil\nshutil.rmtree('d')\nEOF", True, DELETE),
+    bash("a uv run python heredoc with os.remove is refused", "uv run python - <<'EOF'\nimport os\nos.remove('d')\nEOF", True, DELETE),
+    agent_bash("a sub-agent's python delete is refused with its own message", "python3 -c \"import os; os.remove('a')\"", True, AGENT_DELETE, config=STRICT),
+    bash("python -c without a delete runs", "python3 -c \"print(1)\"", False),
+    bash("a python heredoc without a delete runs", "python3 - <<'EOF'\nprint(1)\nEOF", False),
+    bash("a delete word in a heredoc of another command runs", "cat <<'EOF'\nos.remove('a')\nEOF", False),
+    bash("truncate is refused", "truncate -s 0 a.py", True, DELETE),
+    bash("truncate --help runs", "truncate --help", False),
+    bash("make clean is refused", "make clean", True, DELETE),
+    bash("make distclean is refused", "make distclean", True, DELETE),
+    bash("make clean in another folder is refused", "make -C sub clean", True, DELETE),
+    bash("make with a folder starting in n is refused", "make -Cnode clean", True, DELETE),
+    bash("make build runs", "make build", False),
+    bash("make clean as a dry run runs", "make -n clean", False),
+    bash("make clean as a dry run in a letter cluster runs", "make -nB clean", False),
+    bash("make clean as a long dry run runs", "make --just-print clean", False),
+    bash("rm --help runs", "rm --help", False),
+    bash("rm --version runs", "rm --version", False),
+    bash("rm with a long option that is no help is refused", "rm --force x", True, DELETE),
+    bash("git clean -nfd is a dry run and runs", "git clean -nfd", False),
+    bash("git clean -fdn is a dry run and runs", "git clean -fdn", False),
+    bash("git clean --dry -fd is a dry run and runs", "git clean --dry -fd", False),
+    bash("git clean after global options as a dry run runs", "git -C sub clean -nd", False),
+    bash("git clean -fdx is refused", "git clean -fdx", True, DELETE),
+    bash("git clean with a pattern holding n is refused", "git clean -fdenode", True, DELETE),
+    bash("git clean with -n after the paths separator is refused", "git clean -fd -- -n", True, DELETE),
+    bash("300 lines of nested substitutions are read in under a second", NESTED_SUBSTITUTIONS, False, max_seconds=1.0),
+    bash("240 lines of unclosed substitutions are read in under a second", UNCLOSED_SUBSTITUTIONS, False, max_seconds=1.0),
+    bash("a delete past the nesting bound is still refused", "echo " + "$(" * 20 + "x" + ")" * 20 + "; rm y", True, DELETE),
+)
 KILL_CASES = (
     *(kill(f"{command!r} is refused", command, True) for command in KILL_REFUSED),
     *(kill(f"{command!r} runs", command, False) for command in KILL_RUNS),
@@ -3562,8 +3564,12 @@ def run_case(case: Case, hooks: Path, /) -> str:
                 run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
         if not (hooks / case.script[0]).is_file():
             return f"the hook is missing: {case.script[0]}"
+        started = time.monotonic()
         run = run_hook(hooks, case.script, {"cwd": str(root / case.cwd), **case.event}, environment, root, folder=root / case.start if case.start else None)
+        elapsed = time.monotonic() - started
         message = run.stderr + run.stdout
+        if case.max_seconds and elapsed > case.max_seconds:
+            return f"the hook took {elapsed:.2f} s, over the {case.max_seconds} s bound"
         if case.is_exit_one:
             if run.returncode != 1:
                 return f"expected exit 1, got {run.returncode}"
@@ -3654,7 +3660,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of these hooks first, comma-separated")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     first = set(arguments.first.split(","))
     cases.sort(key=lambda case: not first & set(case.script))

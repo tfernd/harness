@@ -37,7 +37,15 @@ from common import (
 )
 from shell import GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 
-DELETERS = frozenset({"rm", "rmdir", "unlink", "shred"})
+DELETERS = frozenset({"rm", "rmdir", "unlink", "shred", "truncate"})
+CLEAN_TARGETS = frozenset({"clean", "distclean"})
+MAKERS = frozenset({"make", "gmake"})
+INFORMATION_OPTIONS = ("--help", "--version")
+DRY_RUN_OPTIONS = ("--dry-run", "--just-print", "--recon")
+DRY_RUN_LETTER = "n"
+DRY_RUN_VALUE_LETTERS = {"git": "e", "make": "CfIjloW"}
+MAX_SUBSTITUTIONS = 8
+MAX_ENCLOSED_CHARACTERS = 1000
 READ_ONLY_COMMANDS = frozenset("cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [[".split())
 UV_VALUE_OPTIONS = frozenset({"--with", "--with-requirements", "--with-editable", "--project", "--directory", "--exclude-newer", "--python", "-p", "--group", "--extra", "--env-file"})
 UV_DENIED = frozenset({"add", "remove", "lock", "sync", "pip", "tool"})
@@ -97,11 +105,11 @@ ASK_RULE = "packages"
 CLOUD_RULE = "cloud"
 INSTALLER_RULE = "installer"
 ASK_RULES = (ASK_RULE, CLOUD_RULE, INSTALLER_RULE)
-REMOTE_RULES = frozenset({"denied", "hidden", *ASK_RULES})
 DBT_RULE = "dbt"
 SNOW_RULE = "snow"
 AGENT_RULE = "agent"
 AGENT_DELETE_RULE = "agent_delete"
+REMOTE_RULES = frozenset({"denied", "hidden", "delete", AGENT_DELETE_RULE, *ASK_RULES})
 MESSAGES = {
     "delete": "Agents delete nothing. If this must go, give the owner the command in the chat and say why it is needed; the owner runs it. "
     "Throwaway files stay in `__scratch__/`, which is never cleaned: a fresh run takes a new folder.",
@@ -147,9 +155,6 @@ MESSAGES = {
     "`pgrep -af <pattern>` to look), then `kill <pid>`. `kill <pid>` and `pkill -x <name>` run.",
     PIPEFAIL_RULE: "this command pipes a test, check or build into `tail` or `grep`, where the exit code is the last command's and a "
     "failed run looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note.",
-    "sleep": "`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "
-    "the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "
-    "notifies you on exit, and a condition runs as a background `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`.",
 }
 PATTERN_REFUSAL = (
     "this unquoted glob is a pattern for the command, which zsh would expand first, and the guard could not quote it safely. "
@@ -163,13 +168,8 @@ FIND_EXPRESSION_STARTS = frozenset({"(", "!", ")", ","})
 DEPTH_OPTIONS = {"find": frozenset({"-maxdepth"}), "fd": frozenset({"-d", "--max-depth"}), "rg": frozenset({"-d", "--max-depth", "--maxdepth"})}
 FD_VALUE_OPTIONS = frozenset({"-d", "--max-depth", "-e", "--extension", "-E", "--exclude", "-t", "--type", "-c", "--color", "-j", "--threads", "-S", "--size", "--search-path"})
 RG_VALUE_OPTIONS = frozenset({"-g", "--glob", "--iglob", "-e", "--regexp", "-f", "--file", "-t", "--type", "-T", "--type-not", "-m", "--max-count", "-A", "-B", "-C", "-d", "--max-depth", "--maxdepth", "-j", "--threads", "-M", "-r", "--replace", "--sort", "--sortr"})
-SOFT_RULES = ("pattern", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)
+SOFT_RULES = ("pattern", "temporary", "repo", "delay", PIPEFAIL_RULE)
 NOTED_RULES = ("temporary", "repo")
-SLEEP_BACKGROUND_NOTE = (
-    "this command waits with `sleep` (a polling loop, a wrapper or a nested string), so it now runs in the background and its exit "
-    "wakes you: read the output then, not before. Waiting on a timer in the foreground spends the owner's time (`harness:tool-habits`, Waiting)."
-)
-SLEEP_SHADOW = "sleep() { :; }; "
 
 
 class Policy(NamedTuple):
@@ -216,17 +216,44 @@ def get_policy(cwd: str, /) -> Policy:
     )
 
 
+def get_cluster_letters(argument: str, value_letters: str, /) -> str:
+
+    letters = ""
+    for letter in argument[1:]:
+        letters += letter
+        if letter in value_letters:
+            break
+
+    return letters
+
+
+def has_long_option(arguments: list[str], options: tuple[str, ...], /) -> bool:
+
+    return any(argument.startswith("--") and any(is_long_prefix(argument, option) for option in options) for argument in arguments)
+
+
+def has_dry_run(name: str, arguments: list[str], /) -> bool:
+
+    value_letters = DRY_RUN_VALUE_LETTERS.get(name, "")
+    operands = arguments[: arguments.index("--")] if "--" in arguments else arguments
+    clusters = [get_cluster_letters(argument, value_letters) for argument in operands if is_cluster(argument)]
+
+    return has_long_option(operands, DRY_RUN_OPTIONS) or any(DRY_RUN_LETTER in letters for letters in clusters)
+
+
 def is_delete(command: Command, /) -> bool:
     arguments = [word.text for word in command.arguments]
     name = os.path.basename(command.name)
+    if name == "busybox" and arguments:
+        return is_delete(Command(arguments[0], command.arguments[1:]))
     if name in DELETERS:
-        return True
+        return not has_long_option(arguments, INFORMATION_OPTIONS)
     if name == "find":
         return "-delete" in arguments
+    if name in MAKERS:
+        return bool(CLEAN_TARGETS & set(arguments)) and not has_dry_run("make", arguments)
 
-    is_dry_run = bool({"-n", "--dry-run"} & set(arguments))
-
-    return name == "git" and get_git_subcommand(arguments) == "clean" and not is_dry_run
+    return name == "git" and get_git_subcommand(arguments) == "clean" and not has_dry_run("git", arguments[get_git_index(arguments) + 1 :])
 
 
 
@@ -1068,6 +1095,8 @@ LITERAL_ASSIGNMENT = re.compile(r"(?:^|(?<=[\s;&|(]))([A-Za-z_][A-Za-z0-9_]*)=(?
 SUBSTITUTION_START = re.compile(r"\$\((?!\()|`")
 BRACED_PARAMETER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 PARAMETER = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+PYTHON_DELETES = re.compile(r"(?:\bos\.(?:remove|unlink|rmdir|removedirs)|\bshutil\.rmtree|\.unlink|\.rmdir|\brmtree)\s*\(")
+PYTHON_HEREDOC = re.compile(r"\bpython[\d.]*\b[^\n]*?<<-?[ \t]*['\"]?(\w+)['\"]?[^\n]*\n(.*?)(?:\n[ \t]*\1[ \t]*(?:\n|$)|\Z)", re.S)
 PYTHON_RUNNERS = re.compile(r"\b(?:os\.(?:system|popen|exec\w*|spawn\w*)|subprocess\.\w+|pty\.spawn)\s*\(")
 SHELL_NAMES = "|".join(sorted(SHELLS))
 SHELL_HEREDOC = re.compile(rf"\b(?:{SHELL_NAMES})\b[^\n]*?<<-?[ \t]*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n[ \t]*\1[ \t]*(?:\n|$)", re.S)
@@ -1120,7 +1149,8 @@ def get_enclosed(text: str, start: int, /) -> str:
 
     depth = 1
     index = start
-    while index < len(text) and depth:
+    stop = min(len(text), start + MAX_ENCLOSED_CHARACTERS)
+    while index < stop and depth:
         depth += {"(": 1, ")": -1}.get(text[index], 0)
         index += 1
 
@@ -1136,6 +1166,8 @@ def get_substitutions(text: str, /) -> list[str]:
 
     substitutions: list[str] = []
     for match in SUBSTITUTION_START.finditer(text):
+        if len(substitutions) == MAX_SUBSTITUTIONS:
+            break
         is_backtick = match.group(0) == "`"
         end = text.find("`", match.end()) if is_backtick else -1
         substitutions.append(text[match.end() : end if end >= 0 else len(text)] if is_backtick else get_enclosed(text, match.end()))
@@ -1166,17 +1198,53 @@ def get_python_code(words: list[str], /) -> str:
     return ""
 
 
+def fill_parameters(text: str, values: dict[str, str], /) -> str:
+
+    return PARAMETER.sub(lambda match: values.get(match.group(1), match.group(0)), text)
+
+
+def get_name_heads(text: str, values: dict[str, str], /) -> list[str]:
+
+    filled = fill_parameters(text, values)
+
+    return get_substitutions(filled) or [values[name] for name in BRACED_PARAMETER.findall(text) if name in values]
+
+
+def is_variable_delete(command: Command, text: str, /) -> bool:
+
+    if "$" not in command.name and "`" not in command.name:
+        return False
+    values = get_assigned_values(text)
+    words = fill_parameters(command.name, values).split()
+    arguments = [Word(fill_parameters(word.text, values), word.is_glob) for word in command.arguments]
+    if words and "$" not in words[0] and "`" not in words[0]:
+        return is_delete(Command(words[0], [*(Word(word, False) for word in words[1:]), *arguments]))
+    heads = get_name_heads(text, values)
+
+    return any(os.path.basename(word) in DELETERS for head in heads for word in LOOSE_WORD.findall(head))
+
+
+def is_python_delete(command: Command, text: str, /) -> bool:
+
+    words = [command.name, *(word.text for word in command.arguments)]
+    if not any(os.path.basename(word).startswith("python") for word in words):
+        return False
+    code = get_python_code(words)
+    scripts = [code] if code else [match.group(2) for match in PYTHON_HEREDOC.finditer(text)]
+
+    return any(PYTHON_DELETES.search(script) for script in scripts)
+
+
 def get_variable_command(command: Command, text: str, policy: Policy, /) -> str:
 
     values = get_assigned_values(text)
-    words = [PARAMETER.sub(lambda match: values.get(match.group(1), match.group(0)), word) for word in (command.name, *(word.text for word in command.arguments))]
+    words = [fill_parameters(word, values) for word in (command.name, *(word.text for word in command.arguments))]
     if PARAMETER.search(words[0]):
         labels = (get_owner_label(Command(stand_in, command.arguments), None, policy) for stand_in in STAND_IN_NAMES)
         return next((label for label in labels if label), "")
     if "$" in words[0] or "`" in words[0]:
-        filled = PARAMETER.sub(lambda match: values.get(match.group(1), match.group(0)), text)
         tail = " ".join(words[1:])
-        heads = get_substitutions(filled) or [values[name] for name in BRACED_PARAMETER.findall(text) if name in values]
+        heads = get_name_heads(text, values)
         return next(filter(None, (find_loose_command(f"{head} {tail}", policy) for head in heads)), "")
     resolved = " ".join(words).split()
 
@@ -1566,14 +1634,12 @@ def find_breaches(
     return [rule for rule in MESSAGES if rule in breaches]
 
 
-def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, findings: Findings | None = None) -> list[str]:
+def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool = False, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
     collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [])
 
-    breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command))
-
-    return [rule for rule in breaches if rule != "sleep" or not is_background]
+    return find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command))
 
 
 def get_command_breaches(
@@ -1585,7 +1651,7 @@ def get_command_breaches(
     arguments = [word.text for word in command.arguments]
     moved = get_written_paths(get_moved_sources(os.path.basename(command.name), arguments), directory)
     is_unknown_write = bool(policy.scratch) and directory is None and not all(is_absolute(word) for word in words)
-    is_deleting = is_delete(command)
+    is_deleting = is_delete(command) or is_variable_delete(command, text) or is_python_delete(command, text)
     missing = get_failing_globs(command, directory, globs[1]) if globs[0] else []
     patterns = get_pattern_globs(command) if globs[0] else []
     findings.missing_globs.extend(MissingGlob(text, directory or "an unknown folder") for text in missing)
@@ -1621,7 +1687,6 @@ def get_command_breaches(
         ("temporary", any(is_temporary(path, policy) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path, policy) for path in [*written, *moved])),
         ("search", is_wide_search(command)),
-        ("sleep", os.path.basename(command.name) == "sleep"),
         ("pkill", is_broad_kill(command)),
         (PIPEFAIL_RULE, scope is not None and is_unguarded_check_pipe(segment, command, text)),
     ]
@@ -1684,45 +1749,6 @@ def is_unguarded_check_pipe(segment: Segment, command: Command, text: str, /) ->
     return any(PIPE_INTO_READER.match(text, match.end()) for match in re.finditer(pattern, text))
 
 
-def is_direct_sleep(segment: Segment, /) -> bool:
-
-    words = [word.text for word in segment.words]
-    index = 0
-    while index < len(words) and words[index] in LEADING_WORDS:
-        index += 1
-
-    return not segment.in_loop and not segment.in_group and words[index : index + 1] == ["sleep"]
-
-
-def find_sleeps(segments: list[Segment], policy: Policy, /, *, is_top_level: bool = True) -> list[bool]:
-
-    flags: list[bool] = []
-    for segment in segments:
-        command = resolve(segment, policy)
-        if os.path.basename(command.name) == "sleep":
-            flags.append(is_top_level and is_direct_sleep(segment))
-        flags.extend(find_sleeps(get_inner_segments(command), policy, is_top_level=False))
-
-    return flags
-
-
-class SleepFix(NamedTuple):
-
-    tool_input: dict
-    note: str
-
-
-def get_sleep_fix(command: str, tool_input: dict, policy: Policy, /) -> SleepFix:
-
-    flags = find_sleeps(get_segments(command), policy)
-    if flags and all(flags):
-        return SleepFix({**tool_input, "command": SLEEP_SHADOW + command}, MESSAGES["sleep"])
-
-    return SleepFix({**tool_input, "run_in_background": True}, SLEEP_BACKGROUND_NOTE)
-
-
-
-
 class Rewrite(NamedTuple):
 
     tool_input: dict
@@ -1774,9 +1800,6 @@ def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: 
             return Rewrite(tool_input, [], [ASK_RULE])
         notes.append(f"The harness guard changed this call: {MESSAGES['delay'].format(days=policy.tool_delay_days)}")
     changed = {**tool_input, "command": command} if command != original else dict(tool_input)
-    if "sleep" in breaches:
-        changed, note = get_sleep_fix(command, changed, policy)
-        notes.append(f"The harness guard changed this call: {note}")
     if PIPEFAIL_RULE in breaches:
         changed = {**changed, "command": PIPEFAIL_PREFIX + changed["command"]}
         notes.append(f"The harness guard changed this call: {MESSAGES[PIPEFAIL_RULE]}")
@@ -1825,7 +1848,7 @@ def main() -> int:
     findings = Findings([], [], [], [], [], [], [], [], [], [])
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
-        breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, findings=findings)
+        breaches = find_command_breaches(command, cwd, policy, findings=findings)
     else:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         breaches = ["temporary"] if is_temporary(resolve_path(path, cwd), policy) else []

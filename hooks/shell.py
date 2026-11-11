@@ -20,6 +20,7 @@ LOOP_KEYWORDS = frozenset({"for", "select", "until", "while"})
 POLLING_LOOPS = frozenset({"until", "while"})
 LEADING_WORDS = frozenset({"!", "{", "do", "elif", "else", "if", "then"})
 OPENING_WORDS = LEADING_WORDS | POLLING_LOOPS
+MAX_NESTING = 16
 
 
 class Word(NamedTuple):
@@ -66,9 +67,10 @@ def find_backtick_end(text: str, start: int, /) -> int:
 class Scanner:
 
     def __init__(
-        self, text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False, start: int = 0, is_nested: bool = False
+        self, text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False, start: int = 0, is_nested: bool = False, nesting: int = 0
     ) -> None:
         self.text = text
+        self.nesting = nesting
         self.index = start
         self.is_nested = is_nested
         self.is_closed = False
@@ -136,17 +138,19 @@ class Scanner:
     def read_substitution(self, start: int, /) -> int:
 
         text = self.text
+        if self.nesting >= MAX_NESTING:
+            return start + (1 if text[start] == "`" else 2)
         if text[start] == "`":
             end = find_backtick_end(text, start + 1)
             inner = re.sub(r"\\([`\\$])", r"\1", text[start + 1 : end])
-            self.segments.extend(get_segments(inner, open_loops=tuple(self.loops), in_group=True))
+            self.segments.extend(get_segments(inner, open_loops=tuple(self.loops), in_group=True, nesting=self.nesting + 1))
             return end + 1
         if text.startswith("$((", start):
             end = find_arithmetic_end(text, start + 3)
             if end >= 0:
                 self.read_expansions(start + 3, end - 2)
                 return end
-        nested = Scanner(text, open_loops=tuple(self.loops), in_group=True, start=start + 2, is_nested=True)
+        nested = Scanner(text, open_loops=tuple(self.loops), in_group=True, start=start + 2, is_nested=True, nesting=self.nesting + 1)
         self.segments.extend(nested.scan())
 
         return nested.index + 1
@@ -418,6 +422,6 @@ class Scanner:
         return self.segments
 
 
-def get_segments(text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False) -> list[Segment]:
+def get_segments(text: str, /, *, open_loops: tuple[str, ...] = (), in_group: bool = False, nesting: int = 0) -> list[Segment]:
 
-    return Scanner(text, open_loops=open_loops, in_group=in_group).scan()
+    return Scanner(text, open_loops=open_loops, in_group=in_group, nesting=nesting).scan()
