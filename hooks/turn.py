@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from common import EDIT_TOOLS, EDITS_KIND, FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, ensure_harness_folder, find_project, get_unfenced_lines, is_project_root, write_atomic
+from skill_gate import get_written_project_files
 
 MIN_CALLS = 3
 HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
@@ -518,10 +519,15 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
     return 0
 
 
-def get_call_line(event: dict, /) -> str:
+def get_call_line(event: dict, root: Path, cwd: str, /) -> str:
 
     name = event.get("tool_name") or "tool"
     tool_input = event.get("tool_input") or {}
+    if name == "Bash":
+        command = tool_input.get("command")
+        written = get_written_project_files(command, root, cwd) if isinstance(command, str) else []
+
+        return f"{name}\t{written[0]}" if written else ""
     path = tool_input.get("file_path") or tool_input.get("notebook_path")
     if name in EDIT_TOOLS and isinstance(path, str) and path:
         return f"{name}\t{path}"
@@ -539,8 +545,10 @@ def main() -> int:
     calls_path, rules_path, blocks_path = get_state_paths(event.get("session_id") or "unknown")
     if mode == "add":
         if not event.get("agent_id"):
-            with open(calls_path, "a") as file:
-                file.write(f"{get_call_line(event)}\n")
+            line = get_call_line(event, root, event.get("cwd") or os.getcwd())
+            if line:
+                with open(calls_path, "a") as file:
+                    file.write(f"{line}\n")
     elif mode == "reset":
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
         if not is_app_prompt:

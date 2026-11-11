@@ -2345,6 +2345,112 @@ BRIEF_CASES = (
 )
 
 
+def write_set_case(name: str, write_line: str, tool: str, tool_input: dict, blocks: bool, text: str = "", /, **options: object) -> Case:
+
+    first = {"type": "user", "message": {"role": "user", "content": f"Goal: x\n{write_line}\nJudge: y"}}
+    transcript = ("s/subagents/agent-a1.jsonl", json.dumps(first) + "\n")
+    options.setdefault("config", {})
+    options["files"] = (transcript, *options.get("files", ()))
+    event = {"tool_name": tool, "agent_id": "a1", "agent_type": "harness:worker", "transcript_path": "project/s.jsonl", "tool_input": tool_input}
+    if blocks:
+        return Case(name, ("delegate.py",), event, True, text or "write_set", **options)
+
+    return Case(name, ("delegate.py",), event, False, lacks="Blocked by", **options)
+
+
+def write_edit(name: str, write_line: str, path: str, blocks: bool, text: str = "", /, **options: object) -> Case:
+    return write_set_case(name, write_line, "Edit", {"file_path": path}, blocks, text, **options)
+
+
+def write_bash(name: str, write_line: str, command: str, blocks: bool, text: str = "", /, **options: object) -> Case:
+    return write_set_case(name, write_line, "Bash", {"command": command}, blocks, text, **options)
+
+
+def main_bash_edit(name: str, command: str, calls: list[str], blocks: bool, text: str = "", /, **options: object) -> Case:
+
+    event = {"session_id": SESSION, "tool_name": "Bash", "agent_id": None, "tool_input": {"command": command}}
+    counted = (CALLS_FILE, "".join(f"{call}\n" for call in calls))
+    made = (EDITS_FILE, "".join(f"{call.partition(chr(9))[2]}\n" for call in calls if call.partition(chr(9))[0] in ("Edit", "Write", "NotebookEdit")))
+    options.setdefault("config", {})
+    if blocks:
+        return Case(name, ("delegate.py",), event, True, text or "main_edits", files=(counted, made), **options)
+
+    return Case(name, ("delegate.py",), event, False, lacks="Blocked by", files=(counted, made), **options)
+
+
+WRITE_SET_CASES = (
+    write_edit("an edit outside the write set is refused", "Write set: src/a.py", "src/b.py", True, "src/b.py is outside"),
+    write_edit("the refusal names the write set and Feedback", "Write set: src/a.py, tests/t.py", "src/b.py", True, "(src/a.py, tests/t.py)"),
+    write_edit("the refusal sends the need to Feedback", "Write set: src/a.py", "src/b.py", True, "Feedback"),
+    write_edit("an edit inside the write set passes", "Write set: src/a.py", "src/a.py", False),
+    write_edit("an absolute path inside the set passes", "Write set: src/a.py", f"{ROOT}/project/src/a.py", False),
+    write_edit("an absolute path outside the set is refused", "Write set: src/a.py", f"{ROOT}/project/src/b.py", True, "src/b.py"),
+    write_edit("a glob in the set matches", "Write set: src/*.py", "src/b.py", False),
+    write_edit("a glob does not match another folder", "Write set: src/*.py", "docs/b.py", True),
+    write_edit("a folder with a slash holds its files", "Write set: every file under skills/naming/", "skills/naming/references/x.md", False),
+    write_edit("a folder with a slash does not hold a sibling of its name", "Write set: skills/naming/", "skills/naming-extra/x.md", True),
+    write_edit("a name is not a prefix of a longer name", "Write set: src/a", "src/ab.py", True),
+    write_edit("a name without a slash holds its folder", "Write set: src", "src/b/c.py", False),
+    write_edit("commas and spaces both separate", "Write set: src/a.py src/b.py,src/c.py", "src/c.py", False),
+    write_edit("the second path of a list passes", "Write set: src/a.py, src/b.py", "src/b.py", False),
+    write_edit("prose after a semicolon is not a path", "Write set: src/a.py; src/b.py is another agent's", "src/b.py", True),
+    write_edit("prose after a sentence end is not a path", "Write set: src/a.py, README.md. Not docs/index.html: rebuilt later", "docs/index.html", True),
+    write_edit("a path before the sentence end passes", "Write set: src/a.py, README.md. Not docs/index.html: rebuilt later", "README.md", False),
+    write_edit("none refuses every project file", "Write set: none; read-only.", "src/a.py", True, "(none)"),
+    write_edit("none still allows the scratch folder", "Write set: none; read-only.", "__scratch__/a.py", False),
+    write_edit("the harness folder is always allowed", "Write set: src/a.py", "__harness__/feedback/inbox.md", False),
+    write_edit("the scratch folder is always allowed", "Write set: src/a.py", "__scratch__/run/x.py", False),
+    write_edit("a markdown bold label is read", "**Write set:** src/a.py", "src/b.py", True),
+    write_edit("a bullet label is read", "- Write set: src/a.py", "src/b.py", True),
+    write_edit("a lowercase label is read", "write set: src/a.py", "src/b.py", True),
+    write_edit("no Write set line means no rule", "Judge: z", "src/b.py", False),
+    write_edit("an empty Write set line means no rule", "Write set:", "src/b.py", False),
+    write_edit("a Write set in a fence is not read", "```\nWrite set: src/a.py\n```", "src/b.py", False),
+    write_edit("a path outside the project is not judged", "Write set: src/a.py", "../elsewhere.py", False),
+    write_edit("a dot-slash path in the set matches", "Write set: ./src/a.py", "src/a.py", False),
+    write_set_case("a Write call outside is refused", "Write set: src/a.py", "Write", {"file_path": "src/b.py"}, True),
+    write_set_case("a notebook edit outside is refused", "Write set: src/a.py", "NotebookEdit", {"notebook_path": "src/b.ipynb"}, True),
+    write_set_case("a notebook edit inside passes", "Write set: src/b.ipynb", "NotebookEdit", {"notebook_path": "src/b.ipynb"}, False),
+    write_set_case("a Read is never judged", "Write set: none", "Read", {"file_path": "src/b.py"}, False),
+    Case("a missing agent transcript means no rule", ("delegate.py",), {"tool_name": "Edit", "agent_id": "a1", "agent_type": "harness:worker", "transcript_path": "project/none.jsonl", "tool_input": {"file_path": "src/b.py"}}, False, config={}, lacks="Blocked by"),
+    Case("the main session is not held to a write set", ("delegate.py",), {"tool_name": "Edit", "agent_id": None, "transcript_path": "project/s.jsonl", "tool_input": {"file_path": "src/b.py"}}, False, config={}, lacks="Blocked by", files=(("s.jsonl", json.dumps({"type": "user", "message": {"content": "Write set: none"}}) + "\n"),)),
+    write_bash("a redirect outside the set is refused", "Write set: src/a.py", "echo x > src/b.py", True, "src/b.py is outside"),
+    write_bash("an append outside the set is refused", "Write set: src/a.py", "echo x >> src/b.py", True),
+    write_bash("a redirect inside the set passes", "Write set: src/a.py", "echo x > src/a.py", False),
+    write_bash("a redirect into scratch passes", "Write set: src/a.py", "echo x > __scratch__/o.txt", False),
+    write_bash("a redirect to the null device passes", "Write set: none", "make check > /dev/null 2>&1", False),
+    write_bash("sed in place outside is refused", "Write set: src/a.py", "sed -i s/a/b/ src/b.py", True, files=(("src/b.py", "a\n"),)),
+    write_bash("tee outside is refused", "Write set: src/a.py", "echo x | tee src/b.py", True),
+    write_bash("cp outside is refused", "Write set: src/a.py", "cp src/a.py src/b.py", True, "src/b.py"),
+    write_bash("cp onto the set passes", "Write set: src/a.py", "cp __scratch__/n.py src/a.py", False),
+    write_bash("mv outside is refused", "Write set: src/a.py", "mv __scratch__/n.py src/b.py", True),
+    write_bash("a python write outside is refused", "Write set: src/a.py", "python3 - <<'EOF'\nfrom pathlib import Path\nPath('src/b.py').write_text('x')\nEOF", True, "src/b.py"),
+    write_bash("a python write inside passes", "Write set: src/a.py", "python3 - <<'EOF'\nfrom pathlib import Path\nPath('src/a.py').write_text('x')\nEOF", False),
+    write_bash("a read passes", "Write set: none", "cat src/b.py | head -n 3", False),
+    write_bash("a chained second write is judged", "Write set: src/a.py", "echo x > src/a.py && echo y > src/b.py", True, "src/b.py"),
+    write_bash("only the path outside is named", "Write set: src/a.py", "echo x > src/a.py && echo y > src/b.py", True, "src/b.py is outside"),
+    write_bash("a command with a variable path is not judged", "Write set: none", "echo x > $TARGET", False),
+    write_bash("a Bash write with no Write set passes", "Judge: z", "echo x > src/b.py", False),
+    write_bash("a Bash write to a path outside the project passes", "Write set: none", "echo x > ../elsewhere.txt", False),
+    main_bash_edit("a Bash write to a project file counts as an edit", "echo x > src/b.py", THREE_EDITS, True, "main_edits"),
+    main_bash_edit("a Bash write below the cap passes", "echo x > src/b.py", THREE_EDITS[:1], False),
+    main_bash_edit("a Bash read is not counted", "cat src/b.py", THREE_EDITS, False),
+    main_bash_edit("a Bash write into scratch is not counted", "echo x > __scratch__/o.txt", THREE_EDITS, False),
+    main_bash_edit("a Bash write to the null device is not counted", "make x > /dev/null", THREE_EDITS, False),
+    main_bash_edit("a Bash command writing two files counts both", "cp src/a.py src/b.py && echo x > src/c.py", THREE_EDITS[:2], True, "main_edits"),
+    main_bash_edit("a Bash command writing the same file twice counts once", "echo x > src/b.py && echo y >> src/b.py", THREE_EDITS[:2], False),
+    Case("a counted Bash write is recorded", ("delegate.py",), {"session_id": SESSION, "tool_name": "Bash", "agent_id": None, "tool_input": {"command": "echo x > src/b.py"}}, False, config={}, wrote=(EDITS_FILE, "src/b.py")),
+    Case("a refused Bash write is not recorded", ("delegate.py",), {"session_id": SESSION, "tool_name": "Bash", "agent_id": None, "tool_input": {"command": "echo x > src/z.py"}}, True, config={"main_edits": {"max": 1}}, files=((EDITS_FILE, "src/a.py\n"),), not_wrote=(EDITS_FILE, "src/z.py")),
+    Case("add records a Bash write to a project file", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": "echo x > src/b.py"}}, False, wrote=(CALLS_FILE, "Bash\tsrc/b.py")),
+    Case("add skips a Bash command that writes nothing", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": "ls src"}}, False, files=((CALLS_FILE, "Edit\ta\n"),), not_wrote=(CALLS_FILE, "Bash")),
+    Case("add skips a Bash write into scratch", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": "echo x > __scratch__/o.txt"}}, False, files=((CALLS_FILE, "Edit\ta\n"),), not_wrote=(CALLS_FILE, "Bash")),
+    Case("add skips a Bash write of a sub-agent", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Bash", "agent_id": "a1", "tool_input": {"command": "echo x > src/b.py"}}, False, files=((CALLS_FILE, "Edit\ta\n"),), not_wrote=(CALLS_FILE, "Bash")),
+    brief("a Write set naming nothing is noted", "worker", "Goal: x\nWrite set:\nJudge: y", True, "Write set:"),
+    brief("a Write set of none is readable", "worker", "Goal: x\nWrite set: none\nJudge: y", False),
+    brief("a Write set with paths is readable", "worker", "Goal: x\nWrite set: src/a.py\nJudge: y", False),
+)
+
+
 
 OLD, NEW = "2020-01-01T00:00:00.000Z", "2999-01-01T00:00:00.000Z"
 
@@ -3660,7 +3766,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of these hooks first, comma-separated")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
+    every = [*WRITE_SET_CASES, *COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     first = set(arguments.first.split(","))
     cases.sort(key=lambda case: not first & set(case.script))

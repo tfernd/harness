@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from budget import LABELLED_BUDGET, QUOTED, get_turn_limit
-from common import PLUGIN_PREFIX, find_project, get_unfenced_lines, make_note_output
+from common import PLUGIN_PREFIX, WRITE_SET_LINE, find_project, get_unfenced_lines, get_write_set, make_note_output
 
 DEFAULT_REQUIRED = {
     "worker": ["Goal:", "Write set:", "Judge:"],
@@ -53,6 +53,13 @@ def has_unreadable_budget(prompt: str, /) -> bool:
     return any(LABELLED_BUDGET.search(line) and get_turn_limit(line) is None for line in lines)
 
 
+def has_unreadable_write_set(prompt: str, /) -> bool:
+
+    has_label = any(WRITE_SET_LINE.match(line) for line in get_unfenced_lines(prompt))
+
+    return has_label and get_write_set(prompt) is None
+
+
 def get_roles() -> list[str]:
 
     plugin = Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
@@ -83,6 +90,8 @@ def main() -> int:
     notes = []
     if has_unreadable_budget(tool_input.get("prompt") or ""):
         notes.append("a budget counts model turns, and this brief's budget line names none, so the agent gets the default. Next time write `Budget: 30 turns`, or reword the line if it means something else.")
+    if has_unreadable_write_set(tool_input.get("prompt") or ""):
+        notes.append("the `Write set:` line names no path and not `none`, so the write-set rule cannot hold this agent to it. Next time list paths or globs relative to the project root, or `none`.")
     if missing:
         notes.append(f"a brief for {role} needs the lines {', '.join(missing)}, and this one lacks them.")
     if notes:

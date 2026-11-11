@@ -15,8 +15,10 @@ import os
 import sys
 from pathlib import Path
 
-from common import EDIT_TOOLS, EDITS_KIND, HANDLED, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_project, is_project_root, make_note_output
+from budget import get_agent_path, read_brief
+from common import EDIT_TOOLS, EDITS_KIND, HANDLED, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, make_note_output
 from shell import Segment, get_segments
+from skill_gate import get_edit_path, get_project_relative, get_written_project_files
 
 DEFAULT_BASH_ALLOW = (
     "git status",
@@ -84,7 +86,20 @@ def is_counted_edit(path: str, root: Path, allow: list[str], cwd: str, /) -> boo
     return not any(fnmatch.fnmatch(relative, pattern) for pattern in allow)
 
 
-def record_edit(session: str, edited: str, maximum: int, root: Path, allow: list[str], cwd: str, /) -> int:
+def get_edited_paths(event: dict, root: Path, cwd: str, /) -> list[str]:
+
+    tool_input = event.get("tool_input") or {}
+    command = tool_input.get("command")
+    if event.get("tool_name") == "Bash":
+        return [str(root / relative) for relative in get_written_project_files(command, root, cwd)] if isinstance(command, str) else []
+    if event.get("tool_name") in EDIT_TOOLS:
+        path = get_edit_path(event)
+        return [path] if path else []
+
+    return []
+
+
+def record_edit(session: str, edited: list[str], maximum: int, root: Path, allow: list[str], cwd: str, /) -> int:
 
     folder = data_folder() / "turns"
     folder.mkdir(exist_ok=True)
@@ -92,8 +107,8 @@ def record_edit(session: str, edited: str, maximum: int, root: Path, allow: list
         fcntl.flock(file, fcntl.LOCK_EX)
         file.seek(0)
         count = sum(bool(line) and is_counted_edit(line, root, allow, cwd) for line in file.read().splitlines())
-        if count < maximum:
-            file.write(" ".join(edited.split()) + "\n")
+        if count + len(edited) <= maximum:
+            file.writelines(" ".join(path.split()) + "\n" for path in edited)
 
     return count
 
@@ -103,15 +118,14 @@ def check_main_edits(event: dict, root: Path, config: dict, cwd: str, /) -> tupl
     settings = config.get("main_edits") or {}
     maximum = settings.get("max", DEFAULT_MAX_EDITS)
     allow = settings.get("allow", list(DEFAULT_EDIT_ALLOW))
-    tool_input = event.get("tool_input") or {}
-    path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-    if event.get("tool_name") not in EDIT_TOOLS or not path or not isinstance(path, str) or not isinstance(maximum, int) or maximum <= 0:
+    if not isinstance(maximum, int) or maximum <= 0:
         return "", ""
-    if not is_project_root(root) or not is_counted_edit(path, root, allow, cwd):
+    counted = [path for path in get_edited_paths(event, root, cwd) if is_counted_edit(path, root, allow, cwd)]
+    if not counted or not is_project_root(root):
         return "", ""
 
-    count = record_edit(event.get("session_id") or "unknown", path, maximum, root, allow, cwd)
-    if count >= maximum:
+    count = record_edit(event.get("session_id") or "unknown", counted, maximum, root, allow, cwd)
+    if count + len(counted) > maximum:
         refusal = (
             f"Blocked by the harness main_edits rule: this turn's main session has made {count} edits outside "
             f"{', '.join(allow)} and the cap is {maximum}. Hand the change to a `harness:worker` agent with a brief "
@@ -120,7 +134,7 @@ def check_main_edits(event: dict, root: Path, config: dict, cwd: str, /) -> tupl
         )
         return refusal, ""
 
-    note = f"The harness main_edits rule let this edit run: edit {count + 1} of {maximum} this turn; past it, changes go to a `harness:worker` agent (`harness:orchestrator`)."
+    note = f"The harness main_edits rule let this edit run: edit {count + len(counted)} of {maximum} this turn; past it, changes go to a `harness:worker` agent (`harness:orchestrator`)."
 
     return "", note
 
@@ -145,12 +159,51 @@ def check_delegate(event: dict, root: Path, config: dict, cwd: str, /) -> str:
     return f"The harness delegate rule let this call run, but {message}; {ADVICE}"
 
 
+def get_outside_write_set(event: dict, root: Path, cwd: str, /) -> tuple[list[str], list[str]]:
+
+    if event.get("tool_name") == "Bash":
+        command = (event.get("tool_input") or {}).get("command")
+        written = get_written_project_files(command, root, cwd) if isinstance(command, str) else []
+    elif event.get("tool_name") in EDIT_TOOLS:
+        relative = get_project_relative(get_edit_path(event), root, cwd)
+        written = [] if relative is None or is_state_folder(relative) else [relative]
+    else:
+        written = []
+    if not written:
+        return [], []
+    transcript = get_agent_path(event)
+    write_set = get_write_set(read_brief(transcript)) if transcript is not None else None
+    if write_set is None:
+        return [], []
+    patterns = [pattern.removeprefix(f"{root}/") for pattern in write_set]
+
+    return [path for path in written if not is_in_write_set(path, patterns)], write_set
+
+
+def check_write_set(event: dict, root: Path, cwd: str, /) -> str:
+
+    outside, write_set = get_outside_write_set(event, root, cwd)
+    if not outside:
+        return ""
+    listed = ", ".join(write_set) or "none"
+
+    return (
+        f"Blocked by the harness write_set rule: {', '.join(outside)} is outside this brief's `Write set:` ({listed}). "
+        f"Do not write it. Leave the file as it is, report the change it needs under Feedback or Open in your report, and carry on within the set. "
+        f"`{SCRATCH_FOLDER}/` and `{HARNESS_FOLDER}/` are always allowed."
+    )
+
+
 def main() -> int:
     event = json.load(sys.stdin)
-    if event.get("agent_id"):
-        return 0
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
+    if event.get("agent_id"):
+        refusal = check_write_set(event, root, cwd)
+        if refusal:
+            print(refusal, file=sys.stderr)
+            return 2
+        return 0
     refusal, edit_note = check_main_edits(event, root, config, cwd)
     if refusal:
         print(refusal, file=sys.stderr)

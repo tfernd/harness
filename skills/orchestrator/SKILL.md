@@ -73,7 +73,7 @@ Role:      the role, and anything the brief adds to or removes from it
 Goal:      one sentence, with the why
 Tree:      the base commit; whether others are editing live, and which folders
 Input:     the paths to read (about 8 files); never pasted code
-Write set: every file it may change, or an explicit glob, disjoint from every running agent's
+Write set: every file it may change, or an explicit glob, disjoint from every running agent's; paths relative to the project root, commas or spaces between them, `none` for read-only; a hook refuses a write outside it
 Judge:     the commands or tests that decide it is done, and the baseline of "unchanged"
 Runs:      what it may run, smallest case first; one result row per case as it finishes; a wait is by PID or done file, never a `pgrep -f` pattern
 Budget:    model turns for the whole job (`Budget: 30 turns`); a hook counts them; the brief check notes any other unit

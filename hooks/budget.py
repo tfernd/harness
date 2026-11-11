@@ -71,6 +71,18 @@ def get_brief(entry: dict, /) -> str:
     return content if isinstance(content, str) else ""
 
 
+def read_brief(path: Path, /) -> str:
+
+    with open(path, errors="replace") as file:
+        line = file.readline()
+    try:
+        first = json.loads(line)
+    except ValueError:
+        first = {}
+
+    return get_brief(first) if isinstance(first, dict) else ""
+
+
 def get_turn_limit(brief: str, /) -> int | None:
 
     for line in get_unfenced_lines(brief):
@@ -301,14 +313,8 @@ def main() -> int:
     path = get_agent_path(event)
     if path is None:
         return 0
-    with open(path, errors="replace") as file:
-        line = file.readline()
-    try:
-        first = json.loads(line)
-    except ValueError:
-        first = {}
     agent_type = event.get("agent_type") or ""
-    limit = get_turn_limit(get_brief(first))
+    limit = get_turn_limit(read_brief(path))
     if limit is None:
         limit = get_default(config, agent_type.removeprefix(PLUGIN_PREFIX))
     every = get_progress_every(config)

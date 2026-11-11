@@ -90,7 +90,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Agent|Task|Edit|Write|NotebookEdit",
+        "matcher": "Agent|Task|Edit|Write|NotebookEdit|Bash",
         "hooks": [
           {
             "type": "command",

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from budget import get_agent_path
-from common import EDIT_TOOLS, PLUGIN_PREFIX, find_project, get_scratch, make_note_output, read_tail, resolve
+from common import EDIT_TOOLS, PLUGIN_PREFIX, find_project, get_scratch, is_state_folder, make_note_output, read_tail, resolve
 from guard import Policy, get_git_subcommand, get_written_words, resolve_path
 from shell import get_segments
 
@@ -120,6 +120,28 @@ def get_bash_needs(command: str, cwd: str, /) -> BashNeeds:
         files += get_written_words(segment, call, cwd)
 
     return BashNeeds(files, is_commit)
+
+
+def get_project_relative(name: str, root: Path, cwd: str, /) -> str | None:
+
+    if not name or any(character in name for character in UNRESOLVED):
+        return None
+    absolute = resolve_path(name, cwd)
+    if not absolute.startswith(str(root) + os.sep):
+        return None
+
+    return absolute[len(str(root)) + 1 :]
+
+
+def get_written_project_files(command: str, root: Path, cwd: str, /) -> list[str]:
+
+    relatives: list[str] = []
+    for name in get_bash_needs(command, cwd).files:
+        relative = get_project_relative(name, root, cwd)
+        if relative is not None and not is_state_folder(relative) and relative not in relatives:
+            relatives.append(relative)
+
+    return relatives
 
 
 class FileSkills(NamedTuple):

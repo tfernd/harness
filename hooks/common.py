@@ -219,6 +219,49 @@ def get_unfenced_lines(text: str, /) -> list[str]:
     return [line for index, line in enumerate(lines) if index not in fenced]
 
 
+WRITE_SET_LINE = re.compile(r"^[\s\-*#]*write set\b\**\s*:\**\s*(.*)$", re.I)
+WRITE_SET_END = re.compile(r"[;:]|\.(?:\s|$)")
+WRITE_SET_SPLIT = re.compile(r"[,\s]+")
+WRITE_SET_FILLER = frozenset({"every", "file", "files", "under", "all", "the", "and", "or", "of", "in", "its", "only", "any", "a"})
+WRITE_SET_EDGES = "`'\"()[]<>*"
+WRITE_SET_NONE = "none"
+STATE_FOLDERS = (HARNESS_FOLDER, SCRATCH_FOLDER)
+
+
+def get_write_set(brief: str, /) -> list[str] | None:
+
+    for line in get_unfenced_lines(brief):
+        match = WRITE_SET_LINE.match(line)
+        if not match:
+            continue
+        listed = WRITE_SET_END.split(match.group(1), 1)[0]
+        stripped = [word.strip(WRITE_SET_EDGES).rstrip(".").removeprefix("./") for word in WRITE_SET_SPLIT.split(listed)]
+        words = [word for word in stripped if word and word.lower() not in WRITE_SET_FILLER]
+        if words[:1] and words[0].lower() == WRITE_SET_NONE:
+            return []
+
+        return words or None
+
+    return None
+
+
+def is_state_folder(relative: str, /) -> bool:
+
+    return relative.split("/", 1)[0] in STATE_FOLDERS
+
+
+def is_in_write_set(relative: str, patterns: list[str], /) -> bool:
+
+    if is_state_folder(relative):
+        return True
+    for pattern in patterns:
+        folder = pattern.rstrip("/")
+        if fnmatch.fnmatchcase(relative, pattern) or relative == folder or relative.startswith(folder + "/"):
+            return True
+
+    return False
+
+
 def read_events(path: Path, /) -> list[dict]:
 
     events: list[dict] = []
