@@ -38,6 +38,7 @@ from turn import HANDLED as HANDLED_LINE, get_items, get_seen, is_retro_due
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
 HABITS_FALLBACK = "Use few tool turns; each one costs the owner time. Load the `harness:tool-habits` skill before shell work."
+OWNERSHIP_TEXT = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."
 TOOLS_TEXT = "If Grep or Glob is not among your tools, use `rg` and `find` through Bash."
 ZSH_TEXT = "The shell is zsh: quote every glob, and read exit codes from `$pipestatus`, not `$PIPESTATUS`."
 FORM_TEXT = (
@@ -202,7 +203,9 @@ def main() -> int:
     habits = get_habits_text()
     if name == "SessionStart":
         notes = " ".join(prepare_folders(root))
-        text = "\n".join(part for part in (SESSION_TEXT, habits, get_setup_text(config), notes, get_retro_due_line(root) or get_retro_line(root)) if part)
+        is_main = not event.get("agent_id")
+        retro = (get_retro_due_line(root) or get_retro_line(root)) if is_main else ""
+        text = "\n".join(part for part in (SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits, get_setup_text(config), notes, retro) if part)
     elif name == "SubagentStart":
         agent_type = event.get("agent_type") or ""
         text = "\n\n".join(part for part in (FORM_TEXT, habits, get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type)) if part)

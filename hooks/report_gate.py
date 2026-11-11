@@ -53,6 +53,22 @@ GIT_TIMEOUT_S = 3
 MAX_WALK_FILES = 20000
 SKIPPED_FOLDERS = frozenset({"node_modules", "__pycache__"})
 MAX_REPORT_CHARS = 6000
+CANNOT_CLAIM = re.compile(r"\b(?:can['\u2019]?t|cannot|couldn['\u2019]?t|unable to|not possible|no access|not allowed|blocked)\b", re.I)
+NOT_ATTEMPTED = re.compile(r"not attempted", re.I)
+CANNOT_SKIPPED_SECTIONS = frozenset({"Verdict"})
+CANNOT_SHOWN_CHARS = 100
+NEGATION_START = r"(?:it|this|that)\s+(?:is|was)\s+not|(?:it|this|that)['\u2019]s\s+not|(?:it|this|that)\s+(?:isn['\u2019]t|wasn['\u2019]t)"
+REVEAL_START = r"(?:it|this|that)(?:['\u2019]s|\s+is|\s+was)\b"
+SENTENCE_START = r"(?:^|[.!?]\s+)"
+WRITING_TICS = {
+    "negation first, then the reveal (\"It is not X. It is Y.\")": re.compile(
+        rf"{SENTENCE_START}(?:{NEGATION_START})\s+[^.\n]{{1,80}}?(?:[.;,]\s+|\s+\u2014\s+|\s+-\s+){REVEAL_START}", re.I | re.M
+    ),
+    "a run of nots ending in just (\"Not X. Not Y. Just Z.\")": re.compile(
+        rf"{SENTENCE_START}not\s+[^.\n]{{1,60}}\.\s+not\s+[^.\n]{{1,60}}\.\s+just\b", re.I | re.M
+    ),
+}
+TICS_FILE = "skills/report/references/prose.md"
 REPORT_WAIT_S = 3
 REPORT_POLL_S = 0.25
 
@@ -457,6 +473,41 @@ def check_claims(
     return problems
 
 
+def get_cannot_path(event: dict, /) -> Path:
+
+    return get_send_backs_path(event).with_suffix(".cannot")
+
+
+def get_cannot_problems(report: str, event: dict, found: AssistantBlocks, /) -> list[Problem]:
+
+    if found.failed or not found.blocks or read_count(get_cannot_path(event)):
+        return []
+    problems: list[Problem] = []
+    for heading, lines in read_sections(report):
+        if heading in CANNOT_SKIPPED_SECTIONS:
+            continue
+        for line in lines:
+            if CANNOT_CLAIM.search(line) and not NOT_ATTEMPTED.search(line):
+                shown = " ".join(line.split())[:CANNOT_SHOWN_CHARS]
+                text = (
+                    f'the line "{shown}" says something could not be done, and no call of the transcript failed or was refused. '
+                    "Try it and quote the error, or write `not attempted: <why>`."
+                )
+                problems.append(Problem(heading if heading in ORDER else "Answer", text))
+
+    return problems
+
+
+def get_tics_note(report: str, /) -> str:
+
+    text = "\n".join(get_unfenced_lines(report))
+    found = [name for name, pattern in WRITING_TICS.items() if pattern.search(text)]
+    if not found:
+        return ""
+
+    return f"Writing tics in the report (a note, nothing is held): {'; '.join(found)}. The full list and the plain rewrite are in {TICS_FILE}."
+
+
 def get_feedback(report: str, /) -> list[str]:
 
     lines = dict(reversed(read_sections(report))).get("Feedback", [])
@@ -624,7 +675,7 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
 
     path = get_send_backs_path(event)
     send_backs = get_send_backs(event)
-    for stale in (path, get_kept_path(event), get_jobs_path(event)):
+    for stale in (path, get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):
         if stale.exists():
             stale.unlink()
     session = event.get("session_id") or "unknown"
@@ -722,9 +773,17 @@ def check_handback(event: dict, /) -> int:
     problems = get_problems(report, judged, root, config, found) if tries < MAX_SEND_BACKS else []
     running = find_running_jobs(path, found.outputs) if path is not None else []
     has_form_problem = bool(problems)
+    cannot = get_cannot_problems(report, judged, found) if tries < MAX_SEND_BACKS else []
+    problems += cannot
+    has_form_problem = has_form_problem or bool(cannot)
     problems += get_job_problems(report, running, job_tries, tries)
     if not problems:
+        note = get_tics_note(report)
+        if note:
+            print(json.dumps({"systemMessage": note}))
         return 0
+    if cannot:
+        write_atomic(get_cannot_path(event), "1")
     if running and job_tries < MAX_JOB_SEND_BACKS:
         write_atomic(get_jobs_path(event), str(job_tries + 1))
     if has_form_problem or any(problem.section == "Not proven" for problem in problems):
@@ -754,10 +813,15 @@ def main() -> int:
     sent = get_report(event, found.blocks, is_resend=kept is not None)
     report = merge_reports(kept.merged, sent) if kept and sent else (kept.merged if kept else sent)
     problems = get_problems(report, event, root, config, found)
+    cannot = get_cannot_problems(report, event, found) if tries < MAX_SEND_BACKS else []
+    problems += cannot
     extra = get_extra(event, found.blocks, found.failed, found.model, config, name, str(root))
     texts = [problem.text for problem in problems]
     if not problems:
         finish(event, str(root), name, report, [], extra)
+        note = get_tics_note(report)
+        if note:
+            print(json.dumps({"systemMessage": note}))
         return 0
     listed = "; ".join(texts)
     has_ended = bool(found.blocks) and found.blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
@@ -768,6 +832,8 @@ def main() -> int:
         print(json.dumps({"systemMessage": warning}))
         return 0
     write_atomic(get_send_backs_path(event), str(tries + 1))
+    if cannot:
+        write_atomic(get_cannot_path(event), "1")
     write_atomic(get_kept_path(event), json.dumps({"raw": sent, "merged": report}))
     reason = make_send_back(problems)
     print(json.dumps({"decision": "block", "reason": reason}))

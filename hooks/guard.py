@@ -82,6 +82,37 @@ TRASH_HELPER = (
     '*) printf "%s: cannot remove \'%s\': %s\\n" "$name" "$1" "$why" >&2; code=1;; esac; shift 2; done; return "$code"; }; '
 )
 
+PIPEFAIL_RULE = "pipefail"
+PIPEFAIL_PREFIX = "set -o pipefail; "
+PIPEFAIL_WORD = "pipefail"
+PIPEFAIL_CHECKS = {
+    "pytest": frozenset(),
+    "make": frozenset(),
+    "tsc": frozenset(),
+    "ruff": frozenset(),
+    "mypy": frozenset(),
+    "pyright": frozenset(),
+    "npm": frozenset({"test", "run"}),
+    "pnpm": frozenset({"test", "run"}),
+    "yarn": frozenset({"test", "run"}),
+    "cargo": frozenset({"test", "build", "check"}),
+    "go": frozenset({"test", "build", "vet"}),
+    "terraform": frozenset({"validate", "plan"}),
+    "dbt": frozenset({"build", "test", "run"}),
+    "gradle": frozenset({"test"}),
+    "mvn": frozenset({"test"}),
+}
+PIPEFAIL_PYTHON_NAMES = frozenset({"python", "python3"})
+PIPEFAIL_TEST_FOLDER = "tests/"
+PIPEFAIL_KEPT_OPTION = "-m"
+EARLY_GREP_OPTION = r"(?![^;&|\n]*?\s(?:-[A-Za-z]*[qlLm]|--quiet|--silent|--max-count|--files-with-matches|--files-without-match))"
+PIPEFAIL_READERS = rf"tail|grep{EARLY_GREP_OPTION}"
+PIPE_INTO_READER = re.compile(
+    rf"(?:[ \t]+(?:\d*>&\d+|&?\d*>>?[ \t]*[^\s;&|()<>]+))*[ \t]*\|&?[ \t]*(?:[A-Za-z_]\w*=\S*[ \t]+)*(?:\S*/)?(?:{PIPEFAIL_READERS})(?=$|[\s;&|)])"
+)
+KILL_VALUE_LETTERS = {"pkill": frozenset("uUgGPstF"), "killall": frozenset("suyo")}
+KILL_INFORMATION = frozenset({"V", "h"})
+KILL_INFORMATION_OPTIONS = frozenset({"--help", "--version"})
 ASK_RULE = "packages"
 CLOUD_RULE = "cloud"
 INSTALLER_RULE = "installer"
@@ -131,6 +162,11 @@ MESSAGES = {
     "search": "a search that starts at `/`, `~` or a whole system or home folder walks the entire disk and runs for minutes, mostly "
     "finding nothing. Ask for the thing directly: `command -v tsc` for a tool on PATH, `ls node_modules/.bin` for a project tool, "
     "`rg --files -g '<name>'` inside the project. If a wider look is needed, start at the project folder or add `-maxdepth 3`.",
+    "pkill": "`pkill -f`, `pkill` without `-x` and `killall -r` match a pattern against every process, and a broad pattern kills "
+    "unrelated ones (`pkill -f cat` matched \"Applications\" and closed every app). Find the process with `pgrep -x <name>` (or "
+    "`pgrep -af <pattern>` to look), then `kill <pid>`. `kill <pid>` and `pkill -x <name>` run.",
+    PIPEFAIL_RULE: "this command pipes a test, check or build into `tail`, `head` or `grep`, where the exit code is the last command's and a "
+    "failed run looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note.",
     "sleep": "`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "
     "the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "
     "notifies you on exit, and a condition runs as a background `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`.",
@@ -147,7 +183,7 @@ FIND_EXPRESSION_STARTS = frozenset({"(", "!", ")", ","})
 DEPTH_OPTIONS = {"find": frozenset({"-maxdepth"}), "fd": frozenset({"-d", "--max-depth"}), "rg": frozenset({"-d", "--max-depth", "--maxdepth"})}
 FD_VALUE_OPTIONS = frozenset({"-d", "--max-depth", "-e", "--extension", "-E", "--exclude", "-t", "--type", "-c", "--color", "-j", "--threads", "-S", "--size", "--search-path"})
 RG_VALUE_OPTIONS = frozenset({"-g", "--glob", "--iglob", "-e", "--regexp", "-f", "--file", "-t", "--type", "-T", "--type-not", "-m", "--max-count", "-A", "-B", "-C", "-d", "--max-depth", "--maxdepth", "-j", "--threads", "-M", "-r", "--replace", "--sort", "--sortr"})
-SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay")
+SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)
 NOTED_RULES = ("temporary", "repo")
 SLEEP_BACKGROUND_NOTE = (
     "this command waits with `sleep` (a polling loop, a wrapper or a nested string), so it now runs in the background and its exit "
@@ -1735,9 +1771,66 @@ def get_command_breaches(
         ("repo", is_unknown_write or any(is_repo_write(path, policy) for path in [*written, *moved])),
         ("search", is_wide_search(command)),
         ("sleep", os.path.basename(command.name) == "sleep"),
+        ("pkill", is_broad_kill(command)),
+        (PIPEFAIL_RULE, scope is not None and is_unguarded_check_pipe(segment, command, text)),
     ]
 
     return [rule for rule, is_breach in checks if is_breach]
+
+
+def get_kill_options(name: str, arguments: list[str], /) -> tuple[set[str], set[str]]:
+
+    letters: set[str] = set()
+    long_options: set[str] = set()
+    for argument in arguments:
+        if argument.startswith("--"):
+            long_options.add(argument.split("=")[0])
+        elif is_cluster(argument):
+            for letter in argument[1:]:
+                letters.add(letter)
+                if letter in KILL_VALUE_LETTERS[name]:
+                    break
+
+    return letters, long_options
+
+
+def is_broad_kill(command: Command, /) -> bool:
+
+    name = os.path.basename(command.name)
+    if name not in KILL_VALUE_LETTERS:
+        return False
+    letters, long_options = get_kill_options(name, [word.text for word in command.arguments])
+    if letters & KILL_INFORMATION or long_options & KILL_INFORMATION_OPTIONS:
+        return False
+    if name == "killall":
+        return "r" in letters or "--regexp" in long_options
+
+    return "f" in letters or "--full" in long_options or not ("x" in letters or "--exact" in long_options)
+
+
+def is_check_words(name: str, words: list[str], /, *, via_uv: bool = False) -> bool:
+
+    if name == "uv":
+        return words[:1] == ["run"] and len(words) > 1 and is_check_words(os.path.basename(words[1]), words[2:], via_uv=True)
+    if name in PIPEFAIL_PYTHON_NAMES:
+        return words[:2] == [PIPEFAIL_KEPT_OPTION, "pytest"] or (via_uv and words[:1] != [] and words[0].startswith(PIPEFAIL_TEST_FOLDER))
+    if name not in PIPEFAIL_CHECKS:
+        return False
+    subcommands = PIPEFAIL_CHECKS[name]
+
+    return not subcommands or (bool(words) and words[0] in subcommands)
+
+
+def is_unguarded_check_pipe(segment: Segment, command: Command, text: str, /) -> bool:
+
+    if PIPEFAIL_WORD in text or "|" not in text:
+        return False
+    arguments = [word.text for word in command.arguments if not word.text.startswith("-") or word.text == PIPEFAIL_KEPT_OPTION]
+    if not is_check_words(os.path.basename(command.name), arguments):
+        return False
+    pattern = get_words_pattern([word.text for word in segment.words])
+
+    return any(PIPE_INTO_READER.match(text, match.end()) for match in re.finditer(pattern, text))
 
 
 def is_direct_sleep(segment: Segment, /) -> bool:
@@ -1870,6 +1963,9 @@ def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: 
     if "sleep" in breaches:
         changed, note = get_sleep_fix(command, changed, policy)
         notes.append(f"The harness guard changed this call: {note}")
+    if PIPEFAIL_RULE in breaches:
+        changed = {**changed, "command": PIPEFAIL_PREFIX + changed["command"]}
+        notes.append(f"The harness guard changed this call: {MESSAGES[PIPEFAIL_RULE]}")
     if folder:
         ensure_harness_folder(Path(policy.root))
         changed = {**changed, "command": TRASH_HELPER + changed["command"]}

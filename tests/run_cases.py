@@ -3203,6 +3203,251 @@ COMMAND_CASES = (
 )
 
 
+PIPEFAIL_NOTE = "put in front"
+
+
+def pipefail(name: str, command: str, fixed: str | None, /, *, agent: bool = False, config: dict | None = STRICT) -> Case:
+    tool_input = {"command": command}
+    event = {"tool_name": "Bash", "tool_input": tool_input, **({"agent_id": "agent-case1"} if agent else {})}
+    if fixed is None:
+        return Case(name, ("guard.py",), event, False, config=config, is_unchanged=True, lacks=PIPEFAIL_NOTE)
+
+    return Case(name, ("guard.py",), event, False, "set -o pipefail", config, updated={"command": fixed}, context="put in front")
+
+
+def kill(name: str, command: str, blocks: bool, /, *, agent: bool = False) -> Case:
+    event = {"tool_name": "Bash", "tool_input": {"command": command}, **({"agent_id": "agent-case1"} if agent else {})}
+    if blocks:
+        return Case(name, ("guard.py",), event, True, "pgrep -x <name>", STRICT)
+
+    return Case(name, ("guard.py",), event, False, config=STRICT, is_unchanged=True)
+
+
+PIPEFAIL = "set -o pipefail; "
+PIPEFAIL_REWRITES = (
+    "pytest -q | tail -5",
+    "pytest -q 2>&1 | tail -5",
+    "pytest -q 2>&1 |tail",
+    "pytest | tail -q",
+    "python3 -m pytest -x | grep FAIL",
+    "uv run pytest tests | grep FAIL",
+    "uv run --frozen pytest | tail",
+    "uv run python tests/run_cases.py | tail -5",
+    "make test | tail",
+    "make | tail",
+    "uv run ruff check | tail",
+    "npm test | tail",
+    "pnpm test | tail",
+    "yarn run lint | tail",
+    "cargo test | tail",
+    "cargo build | tail",
+    "cargo check | tail",
+    "go test ./... | tail",
+    "go build ./... | tail",
+    "go vet ./... | tail",
+    "ruff check . | tail",
+    "mypy src | tail",
+    "pyright | tail",
+    "terraform validate | grep Error",
+    "terraform plan | tail",
+    "dbt test --target dev | tail",
+    "gradle test | tail",
+    "mvn test | tail",
+    "cd src && pytest -q | tail",
+    "FOO=1 pytest | tail",
+    "pytest | /usr/bin/tail",
+)
+PIPEFAIL_UNCHANGED = (
+    "pytest |& head",
+    "python -m pytest | head",
+    "npm run build | head",
+    "tsc --noEmit | head",
+    "pytest | head -5",
+    "pytest | grep -q passed",
+    "pytest | grep -m 1 passed",
+    "pytest | grep -l passed",
+    "pytest | grep -L passed",
+    "pytest | grep -iq passed",
+    "pytest | grep --quiet passed",
+    "pytest | grep passed -m1",
+    "rg x | head",
+    "cat f | head",
+    "git log | head",
+    "ls | grep py",
+    "pytest -q",
+    "pytest -q > out.txt; tail out.txt",
+    "pytest | wc -l",
+    "pytest || tail",
+    "pytest && tail f",
+    "set -o pipefail; pytest | tail",
+    "bash -o pipefail -c 'pytest | tail'",
+    "echo pytest | tail",
+    "npm ls | tail",
+    "cargo fmt | tail",
+    "go mod tidy | tail",
+    "terraform fmt | tail",
+    "terraform apply | tail",
+    "uv run python script.py | tail",
+    "python tests/run_cases.py | tail",
+    "sh -c 'cd src; pytest | tail -5'",
+)
+PIPEFAIL_CASES = (
+    *(pipefail(f"pipefail is set before {command!r}", command, PIPEFAIL + command) for command in PIPEFAIL_REWRITES),
+    *(pipefail(f"pipefail is not set before {command!r}", command, None) for command in PIPEFAIL_UNCHANGED),
+    pipefail("a sub-agent's check pipe gets pipefail too", "pytest | tail", PIPEFAIL + "pytest | tail", agent=True, config=None),
+    pipefail("a sub-agent's plain read keeps no pipefail", "rg x | head", None, agent=True, config=None),
+    pipefail("pipefail is set with no project file", "pytest | tail", PIPEFAIL + "pytest | tail", config=None),
+    pipefail("a heredoc body is no command", "cat <<'EOF'\npytest | tail\nEOF", None),
+)
+KILL_REFUSED = (
+    "pkill -f cat",
+    "pkill cat",
+    "pkill -9 cat",
+    "pkill -9f cat",
+    "pkill --full cat",
+    "pkill -fx cat",
+    "pkill -u me node",
+    "pkill -ux me node",
+    "pkill -TERM node",
+    "killall -r 'x.*'",
+    "killall --regexp x",
+    "killall -qr x",
+    "sudo pkill -f x",
+    "sudo -u root pkill node",
+    "env FOO=1 pkill node",
+    "nohup pkill -f x",
+    "sh -c 'pkill -f x'",
+    "bash -c 'sudo killall -r x'",
+    "echo a; pkill node",
+    "pgrep node && pkill node",
+)
+KILL_RUNS = (
+    "pkill -x node",
+    "pkill -9 -x node",
+    "pkill -x -9 node",
+    "pkill -KILL -x node",
+    "pkill --exact node",
+    "pkill -u me -x node",
+    "sudo pkill -x node",
+    "sh -c 'pkill -x node'",
+    "kill 123",
+    "kill -9 123",
+    "pgrep -x node",
+    "pgrep -af cat",
+    "killall node",
+    "killall -9 node",
+    "killall -e node",
+    "echo pkill -f cat",
+    "pkill --help",
+    "grep -r pkill .",
+)
+KILL_CASES = (
+    *(kill(f"{command!r} is refused", command, True) for command in KILL_REFUSED),
+    *(kill(f"{command!r} runs", command, False) for command in KILL_RUNS),
+    kill("a sub-agent's broad pkill is refused", "pkill -f cat", True, agent=True),
+    kill("a sub-agent's pkill -x runs", "pkill -x node", False, agent=True),
+)
+CANNOT_ASK = "Try it and quote the error, or write `not attempted: <why>`."
+CANNOT_PHRASES = ("can't", "cannot", "couldn't", "unable to", "not possible", "no access", "not allowed", "blocked")
+CLEAN_CALLS = (bash_call("t1"),)
+REFUSED_CALLS = (bash_call("t1"), bash_failed("t1", 1))
+
+
+def cannot_report(sentence: str, /) -> str:
+
+    return make_report(replace=("Answer", sentence))
+
+
+CANNOT_CASES = (
+    *(
+        gate(f"a report saying {phrase!r} with no failed call is sent back", transcript_event(cannot_report(f"I did the rest; I {phrase} reach the host.")), True, CANNOT_ASK, transcript=CLEAN_CALLS)
+        for phrase in CANNOT_PHRASES
+    ),
+    gate("the send-back quotes the line", transcript_event(cannot_report("I cannot reach the host.")), True, "I cannot reach the host", transcript=CLEAN_CALLS),
+    gate("the send-back names the section", transcript_event(make_report(fill={"Not proven": "- the live run is not possible here"})), True, "Not proven:", transcript=CLEAN_CALLS),
+    gate("a capital Cannot is read", transcript_event(cannot_report("Cannot push.")), True, CANNOT_ASK, transcript=CLEAN_CALLS),
+    gate("a curly apostrophe is read", transcript_event(cannot_report("I can’t push.")), True, CANNOT_ASK, transcript=CLEAN_CALLS),
+    gate("a not attempted line passes", transcript_event(cannot_report("I can't push: not attempted: the brief forbids git writes.")), False, transcript=CLEAN_CALLS),
+    gate("a report quoting a real refusal passes", transcript_event(cannot_report("The push was blocked: `Blocked by the harness guard`.")), False, transcript=REFUSED_CALLS),
+    gate("a failed call anywhere lets the claim pass", transcript_event(cannot_report("I cannot reach the host.")), False, transcript=(*CLEAN_CALLS, bash_call("t2"), bash_failed("t2", 7))),
+    gate("a verdict of blocked is no claim", transcript_event(make_report(replace=("Verdict", "blocked: the host is down"))), False, transcript=CLEAN_CALLS),
+    gate("a report with no such words passes", transcript_event(cannot_report("Changed one file.")), False, transcript=CLEAN_CALLS),
+    gate("words inside a fenced block are not read", transcript_event(cannot_report("Changed one file.\n```\nerror: cannot find x\n```")), False, transcript=CLEAN_CALLS),
+    gate("a report with no transcript is not judged for it", transcript_event(cannot_report("I cannot reach the host.")), False),
+    gate("a claim in a sentence of its own is read", transcript_event(cannot_report("Changed one file.\nThe deploy was not allowed.")), True, "The deploy was not allowed", transcript=CLEAN_CALLS),
+    gate(
+        "the second stop accepts the claim",
+        transcript_event(cannot_report("I cannot reach the host.")),
+        False,
+        transcript=CLEAN_CALLS,
+        before=((("report_gate.py",), transcript_event(cannot_report("I cannot reach the host."))),),
+        not_wrote=("data/send-backs/a1.cannot", "1"),
+    ),
+    gate(
+        "the first stop sends the claim back and records it",
+        transcript_event(cannot_report("I cannot reach the host.")),
+        True,
+        CANNOT_ASK,
+        transcript=CLEAN_CALLS,
+        wrote=("data/send-backs/a1.cannot", "1"),
+    ),
+    handback("a handback saying it could not is sent back", cannot_report("I cannot reach the host."), True, CANNOT_ASK, lines=CLEAN_CALLS),
+    handback("a handback quoting a refusal passes", cannot_report("I cannot reach the host."), False, lines=REFUSED_CALLS),
+    handback("a handback with not attempted passes", cannot_report("I cannot reach the host; not attempted: no key."), False, lines=CLEAN_CALLS),
+    Case(
+        "the second handback accepts the claim",
+        ("report_gate.py", "handback"),
+        handback_event(cannot_report("I cannot reach the host.")),
+        False,
+        config={},
+        files=(("s/subagents/agent-a1.jsonl", json.dumps(bash_call("t1")) + "\n"),),
+        before=((("report_gate.py", "handback"), handback_event(cannot_report("I cannot reach the host."))),),
+    ),
+)
+TICS_NOTE = "skills/report/references/prose.md"
+TICS_PASS = "Writing tics in the report"
+
+
+def tics(name: str, sentence: str, is_flagged: bool, /) -> Case:
+    event = stop_event(answer_report(sentence))
+    if is_flagged:
+        return gate(name, event, False, TICS_PASS)
+
+    return gate(name, event, False, lacks=TICS_PASS)
+
+
+TICS_CASES = (
+    tics("a negation then a reveal is noted", "It is not a bug. It is a missing guard.", True),
+    tics("a contracted negation then a reveal is noted", "It's not the cache, it's the key.", True),
+    tics("an isn't then a reveal is noted", "This isn't a fix. It's a workaround.", True),
+    tics("a was not then a reveal is noted", "That was not a crash. That was a timeout.", True),
+    tics("a run of nots ending in just is noted", "Changed one file. Not slow. Not broken. Just unfinished.", True),
+    tics("a reveal after a dash is noted", "It is not the parser — it is the lexer.", True),
+    gate("the note names the prose file", stop_event(answer_report("It is not a bug. It is a missing guard.")), False, TICS_NOTE),
+    gate("the note holds nothing back", stop_event(answer_report("It is not a bug. It is a missing guard.")), False, wrote=(LEDGER_NAME, "missing guard")),
+    gate("a note comes with the form kept", stop_event(answer_report("It is not a bug. It is a missing guard.")), False, '"systemMessage"'),
+    tics("a plain negation is not noted", "It is not set, so the guard runs.", False),
+    tics("a negation then a different subject is not noted", "The check does not pass. It fails on line 3.", False),
+    tics("a lone not is not noted", "Not done: the live run is left.", False),
+    tics("two nots without just are not noted", "Not slow. Not broken. Changed one file.", False),
+    tics("a clean report is not noted", "Changed one file.", False),
+    tics("a negation inside a sentence is not noted", "We found that it is not a cache issue, it is only a key.", False),
+    handback("a handback with a tic gets the note", answer_report("It is not a bug. It is a missing guard."), False, TICS_PASS, lines=CLEAN_CALLS),
+    tics("a negation across a long gap is not noted", "It is not " + "x" * 90 + ". It is y.", False),
+    gate("a tic inside a fenced block is not noted", stop_event(answer_report("Changed one file.\n```\nIt is not a bug. It is a missing guard.\n```")), False, lacks=TICS_PASS),
+    gate("a tic on a send-back report does not stop it being sent back", stop_event(make_report(skip="Verdict", replace=("Answer", "It is not a bug. It is a missing guard."))), True, "missing: Verdict"),
+)
+OWNERSHIP_LINE = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."
+OWNERSHIP_CASES = (
+    context("a session start says the codebase is the model's", {"hook_event_name": "SessionStart"}, OWNERSHIP_LINE),
+    context("a sub-agent start does not say it", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="This codebase is yours"),
+    context("a session event carrying an agent id gets no retro text", {"hook_event_name": "SessionStart", "agent_id": "a1"}, lacks="A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
+    context("a session event carrying an agent id gets no ownership line", {"hook_event_name": "SessionStart", "agent_id": "a1"}, lacks="This codebase is yours"),
+    context("a session event without an agent id still gets the retro text", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
+    context("a helper start does not say it", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, lacks="This codebase is yours"),
+)
+
+
 def resolve(root: Path, name: str, /) -> Path:
 
     return root / "data" / name[5:] if name.startswith("data/") else root / "project" / name
@@ -3351,6 +3596,70 @@ def run_case(case: Case, hooks: Path, /) -> str:
         return check_output(case, run, root) or check_files(case, root)
 
 
+MUTANTS_SCRIPT = Path(__file__).resolve().parent / "mutants.py"
+BROKEN_MUTANT = '    ("broken-mutant-text", "guard.py", "text that is in no hook", "x"),\n'
+
+
+def run_mutants_script(script: Path, *options: str) -> subprocess.CompletedProcess[str]:
+
+    return subprocess.run(["uv", "run", "python", str(script), *options], capture_output=True, text=True, timeout=HOOK_TIMEOUT * 6)
+
+
+def check_mutant_runner_stops_on_rot() -> str:
+
+    WORK.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=WORK) as directory:
+        root = Path(directory)
+        (root / "tests").mkdir()
+        (root / "hooks").symlink_to(HOOKS)
+        text = MUTANTS_SCRIPT.read_text()
+        assert text.count("MUTANTS = (\n") == 1
+        copy = root / "tests" / "mutants.py"
+        copy.write_text(text.replace("MUTANTS = (\n", "MUTANTS = (\n" + BROKEN_MUTANT))
+        run = run_mutants_script(copy, "--only", "broken-mutant-text")
+
+    if run.returncode != 1:
+        return f"a mutant whose text is gone must stop the run with exit 1, got {run.returncode}: {run.stdout.strip()[-200:]!r}"
+    if "broken-mutant-text" not in run.stdout or "with their text gone" not in run.stdout:
+        return f"the stop must name the mutant: {run.stdout.strip()[-200:]!r}"
+    if "survived" in run.stdout or "match --only" in run.stdout:
+        return f"no mutant may have run: {run.stdout.strip()[-200:]!r}"
+
+    return ""
+
+
+def check_mutant_runner_counts_matches() -> str:
+
+    run = run_mutants_script(MUTANTS_SCRIPT, "--only", "no-such-mutant-name")
+    if run.returncode != 1 or "0 of" not in run.stdout:
+        return f"a selector that matches nothing must say 0 matched and exit 1, got {run.returncode}: {run.stdout.strip()[-200:]!r}"
+
+    return ""
+
+
+def check_mutant_runner_selects_by_hook_file() -> str:
+
+    sys.path.insert(0, str(MUTANTS_SCRIPT.parent))
+    import mutants
+
+    chosen = mutants.get_chosen(mutants.MUTANTS, "turn.py")
+    expected = [mutant for mutant in mutants.MUTANTS if mutant[1] == "turn.py"]
+    if not expected or chosen != expected:
+        return f"--only turn.py must select the {len(expected)} mutants of turn.py, got {len(chosen)}"
+    both = mutants.get_chosen(mutants.MUTANTS, "turn.py,context.py")
+    if len(both) != len(expected) + len([mutant for mutant in mutants.MUTANTS if mutant[1] == "context.py"]):
+        return "--only takes several hook files at once"
+
+    return ""
+
+
+RUNNER_CHECKS = {
+    "a mutant whose text is gone stops the run before any mutant runs": check_mutant_runner_stops_on_rot,
+    "a selector that matches nothing says so and exits 1": check_mutant_runner_counts_matches,
+    "--only takes a hook file name": check_mutant_runner_selects_by_hook_file,
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the hook cases: what the guard refuses, when a report goes back, when the Stop hook holds a turn, what the delegate and brief rules refuse, and what the context hook says.")
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
@@ -3359,7 +3668,7 @@ def main() -> int:
     parser.add_argument("--first", default="", help="run the cases of these hooks first, comma-separated")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     first = set(arguments.first.split(","))
     cases.sort(key=lambda case: not first & set(case.script))
@@ -3371,6 +3680,12 @@ def main() -> int:
             if reason and arguments.fail_fast:
                 pool.shutdown(wait=False, cancel_futures=True)
                 break
+    if not failures and arguments.hooks == HOOKS:
+        for name, check in RUNNER_CHECKS.items():
+            if arguments.only in name:
+                reason = check()
+                failures += bool(reason)
+                print(f"FAIL {name}: {reason}" if reason else f"ok   {name}", flush=True)
     print(f"{len(cases)} cases, {failures} failed")
 
     return 1 if failures else 0

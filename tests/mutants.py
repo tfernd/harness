@@ -63,7 +63,7 @@ MUTANTS = (
     ("packages-other-rule-asks", "guard.py", 'for rule in rules if rule not in ASK_RULES)', 'for rule in rules if rule not in (*ASK_RULES, "delete"))'),
     ("context-no-tools-text", "context.py", "lines = [TOOLS_TEXT]", "lines = []"),
     ("context-zsh-always", "context.py", 'if os.path.basename(os.environ.get("SHELL") or "") == "zsh":', "if True:"),
-    ("context-no-setup-for-session", "context.py", "get_setup_text(config), notes, get_retro_due_line(root) or get_retro_line(root))", "notes, get_retro_due_line(root) or get_retro_line(root))"),
+    ("context-no-setup-for-session", "context.py", "get_setup_text(config), notes, retro)", "notes, retro)"),
     ("context-no-setup-for-agent", "context.py", "get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type))", "get_lessons(root, agent_type), get_open_problems(root, agent_type))"),
     ("context-scratch-unnamed", "context.py", 'if guard.get("scratch"):', "if False:"),
     ("context-tmp-always", "context.py", 'if guard.get("no_tmp"):', "if True:"),
@@ -116,8 +116,8 @@ MUTANTS = (
     ("soft-updated-input-loses-fields", "guard.py", '{**tool_input, "command": SLEEP_SHADOW + command}', '{"command": SLEEP_SHADOW + command}'),
     ("soft-background-input-loses-fields", "guard.py", '{**tool_input, "run_in_background": True}', '{"command": command, "run_in_background": True}'),
     ("soft-still-exits-2", "guard.py", "print(json.dumps(make_soft_output(rewrite, tool_input)))\n            return 0", "print(json.dumps(make_soft_output(rewrite, tool_input)))\n            return 2"),
-    ("soft-repo-refused-again", "guard.py", 'SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay")', 'SOFT_RULES = ("pattern", "trash", "temporary", "sleep", "delay")'),
-    ("soft-temporary-refused-again", "guard.py", 'SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay")', 'SOFT_RULES = ("pattern", "trash", "repo", "sleep", "delay")'),
+    ("soft-repo-refused-again", "guard.py", 'SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)', 'SOFT_RULES = ("pattern", "trash", "temporary", "sleep", "delay", PIPEFAIL_RULE)'),
+    ("soft-temporary-refused-again", "guard.py", 'SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)', 'SOFT_RULES = ("pattern", "trash", "repo", "sleep", "delay", PIPEFAIL_RULE)'),
     ("soft-note-dropped", "guard.py", 'output["additionalContext"] = "\\n".join(rewrite.notes)', 'output["additionalContext"] = ""'),
     ("push-cluster-not-read", "guard.py", "if is_cluster(argument) and PUSH_DENIED_LETTERS & set(argument[1:]):", "if False:"),
     ("shell-cluster-not-read", "common.py", 'has_string_option = has_string_option or (is_cluster(argument) and "c" in argument)', 'has_string_option = has_string_option or argument == "-c"'),
@@ -472,11 +472,11 @@ MUTANTS = (
     ("pipe-bash-status-unread", "nudge.py", "or BASH_STATUS.search(command):\n        return", "or False:\n        return"),
     ("nudge-bug-blocks", "nudge.py", "sys.exit(1)", "sys.exit(2)"),
     ("ledger-tool-turns-lost", "report_gate.py", "get_turn_stats(read_events(path)) if path else None", "None"),
-    ("context-session-silent", "context.py", "(SESSION_TEXT, habits,", '("", habits,'),
-    ("context-tool-turns-not-for-session", "context.py", "(SESSION_TEXT, habits,", "(SESSION_TEXT,"),
+    ("context-session-silent", "context.py", '(SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits,', '("", OWNERSHIP_TEXT if is_main else "", habits,'),
+    ("context-tool-turns-not-for-session", "context.py", '(SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits,', '(SESSION_TEXT, OWNERSHIP_TEXT if is_main else "",'),
     ("context-form-silent", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", '("", habits, get_setup_text(config), get_lessons'),
     ("context-form-only-for-workers", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", '(FORM_TEXT if agent_type == "harness:worker" else "", habits, get_setup_text(config), get_lessons'),
-    ("context-form-for-session", "context.py", "(SESSION_TEXT, habits,", "(SESSION_TEXT, FORM_TEXT, habits,"),
+    ("context-form-for-session", "context.py", '(SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits,', '(SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", FORM_TEXT, habits,'),
     ("context-tool-turns-not-for-agents", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", "(FORM_TEXT, get_setup_text(config), get_lessons"),
     ("exit-claim-matches-any-code", "report_gate.py", "if code not in seen and not re.search(PRINTED_EXIT", "if False and not re.search(PRINTED_EXIT"),
     ("failed-call-counts-as-exit-zero", "report_gate.py", "            if call_id not in failed:\n                seen.add(0)", "            if True:\n                seen.add(0)"),
@@ -530,7 +530,7 @@ MUTANTS = (
     ("report-claim-section-guessed", "report_gate.py", 'return heading if heading in ORDER else "Answer"', 'return "Answer"'),
     ("report-resend-needs-an-answer-heading", "report_gate.py", "heading = SECTION_HEADING if is_resend else ANSWER_HEADING", "heading = ANSWER_HEADING"),
     ("report-kept-never-saved", "report_gate.py", 'write_atomic(get_kept_path(event), json.dumps({"raw": sent, "merged": report}))', "pass"),
-    ("report-kept-stays-after-stop", "report_gate.py", "for stale in (path, get_kept_path(event), get_jobs_path(event)):", "for stale in (path, get_jobs_path(event)):"),
+    ("report-kept-stays-after-stop", "report_gate.py", "for stale in (path, get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):", "for stale in (path, get_jobs_path(event), get_cannot_path(event)):"),
     ("report-kept-used-without-a-send-back", "report_gate.py", "if not tries or not path.exists():", "if not path.exists():"),
     ("report-judged-message-awaited-no-more", "report_gate.py", "or (kept is not None and report == kept.raw)", ""),
     ("feedback-in-the-dot-folder", "common.py", 'FEEDBACK_FOLDER = f"{HARNESS_FOLDER}/feedback"', 'FEEDBACK_FOLDER = ".harness"'),
@@ -571,7 +571,7 @@ MUTANTS = (
     ("job-left-running-unnamed-passes", "report_gate.py", "if tries < MAX_SEND_BACKS and not names_jobs(report, commands):", "if False:"),
     ("job-left-running-any-text-names", "report_gate.py", 'return "running" in text or any(', 'return True or any('),
     ("job-form-cap-blocks-jobs", "report_gate.py", "problems = get_problems(report, judged, root, config, found) if tries < MAX_SEND_BACKS else []", "problems = get_problems(report, judged, root, config, found)\n    if tries >= MAX_SEND_BACKS:\n        return 0"),
-    ("job-count-not-cleared", "report_gate.py", "for stale in (path, get_kept_path(event), get_jobs_path(event)):", "for stale in (path, get_kept_path(event)):"),
+    ("job-count-not-cleared", "report_gate.py", "for stale in (path, get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):", "for stale in (path, get_kept_path(event), get_cannot_path(event)):"),
     ("budget-no-stop-note", "budget.py", "First stop every background command you started (TaskStop, or KillShell if that is the name in your tool list); a job left running keeps going after you report. ", ""),
     ("budget-blocks-stop-tool", "budget.py", "if event.get(\"tool_name\") in (HANDBACK_TOOL, *STOP_TOOLS):", "if event.get(\"tool_name\") == HANDBACK_TOOL:"),
     ("budget-lets-every-tool-through", "budget.py", "if event.get(\"tool_name\") in (HANDBACK_TOOL, *STOP_TOOLS):", "if event.get(\"tool_name\"):"),
@@ -722,7 +722,7 @@ MUTANTS = (
     ('delay-flagged-rewritten', 'guard.py', '("delay", delay is not None and not delay.is_flagged)', '("delay", delay is not None)'),
     ('delay-run-not-recorded', 'guard.py', 'findings.delayed.extend([delay] if delay is not None and not delay.is_flagged else [])', 'findings.delayed.extend([])'),
     ('delay-failed-fix-passes', 'guard.py', 'return Rewrite(tool_input, [], [ASK_RULE])', 'return Rewrite(tool_input, [], [])'),
-    ('delay-rule-hard', 'guard.py', '"sleep", "delay")', '"sleep")'),
+    ('delay-rule-hard', 'guard.py', '"sleep", "delay", PIPEFAIL_RULE)', '"sleep", PIPEFAIL_RULE)'),
     ('delay-note-days-fixed', 'guard.py', "MESSAGES['delay'].format(days=policy.tool_delay_days)", "MESSAGES['delay'].format(days=7)"),
     ('delay-policy-days-dropped', 'guard.py', 'tool_delay_days=get_delay_days(guard.get("tool_delay_days")),', 'tool_delay_days=0,'),
     ('delay-default-off', 'common.py', '"tool_delay_days": 7}', '"tool_delay_days": 0}'),
@@ -904,6 +904,57 @@ MUTANTS = (
     ('agent-apply-without-check-allowed', 'guard.py', '    return "--check" in split_options(rest)[0]', '    return True'),
     ('agent-apply-check-refused', 'guard.py', '    return "--check" in split_options(rest)[0]', '    return False'),
     ('agent-refusal-asks-the-owner', 'guard.py', '(AGENT_RULE, bool(agent)),', '(ASK_RULE, bool(agent)),'),
+    ("pipefail-never-added", "guard.py", "(PIPEFAIL_RULE, scope is not None and is_unguarded_check_pipe(segment, command, text)),", "(PIPEFAIL_RULE, False),"),
+    ("pipefail-added-to-plain-reads", "guard.py", "    if not is_check_words(os.path.basename(command.name), arguments):\n        return False", "    if False:\n        return False"),
+    ("pipefail-added-over-existing", "guard.py", 'if PIPEFAIL_WORD in text or "|" not in text:', 'if "|" not in text:'),
+    ("pipefail-prefix-dropped", "guard.py", 'changed = {**changed, "command": PIPEFAIL_PREFIX + changed["command"]}', "pass"),
+    ("pipefail-note-dropped", "guard.py", '        notes.append(f"The harness guard changed this call: {MESSAGES[PIPEFAIL_RULE]}")\n', ""),
+    ("pipefail-refused-instead", "guard.py", 'SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)', 'SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay")'),
+    ("pipefail-counts-wc-as-reader", "guard.py", 'PIPEFAIL_READERS = rf"tail|grep{EARLY_GREP_OPTION}"', 'PIPEFAIL_READERS = rf"tail|grep{EARLY_GREP_OPTION}|wc"'),
+    ("pipefail-counts-head-as-reader", "guard.py", 'PIPEFAIL_READERS = rf"tail|grep{EARLY_GREP_OPTION}"', 'PIPEFAIL_READERS = rf"tail|head|grep{EARLY_GREP_OPTION}"'),
+    ("pipefail-counts-early-grep-as-reader", "guard.py", 'PIPEFAIL_READERS = rf"tail|grep{EARLY_GREP_OPTION}"', 'PIPEFAIL_READERS = "tail|grep"'),
+    ("pipefail-early-option-skips-tail", "guard.py", 'PIPEFAIL_READERS = rf"tail|grep{EARLY_GREP_OPTION}"', 'PIPEFAIL_READERS = rf"(?:tail|grep){EARLY_GREP_OPTION}"'),
+    ("pipefail-reads-nested-strings", "guard.py", "(PIPEFAIL_RULE, scope is not None and is_unguarded_check_pipe(", "(PIPEFAIL_RULE, is_unguarded_check_pipe("),
+    ("pipefail-python-script-without-uv", "guard.py", "(via_uv and words[:1] != [] and words[0].startswith(PIPEFAIL_TEST_FOLDER))", "(words[:1] != [] and words[0].startswith(PIPEFAIL_TEST_FOLDER))"),
+    ("pipefail-any-subcommand", "guard.py", "return not subcommands or (bool(words) and words[0] in subcommands)", "return True"),
+    ("pipefail-uv-run-unread", "guard.py", 'return words[:1] == ["run"] and len(words) > 1 and is_check_words(', 'return False and len(words) > 1 and is_check_words('),
+    ("pipefail-module-pytest-unread", "guard.py", "return words[:2] == [PIPEFAIL_KEPT_OPTION, \"pytest\"] or", "return False or"),
+    ("pkill-never-refused", "guard.py", '("pkill", is_broad_kill(command)),', '("pkill", False),'),
+    ("pkill-full-allowed-with-exact", "guard.py", 'return "f" in letters or "--full" in long_options or not (', "return not ("),
+    ("pkill-without-exact-allowed", "guard.py", 'or not ("x" in letters or "--exact" in long_options)', "or False"),
+    ("killall-regexp-allowed", "guard.py", 'return "r" in letters or "--regexp" in long_options', "return False"),
+    ("killall-short-regexp-allowed", "guard.py", 'return "r" in letters or "--regexp" in long_options', 'return "--regexp" in long_options'),
+    ("killall-long-regexp-allowed", "guard.py", 'return "r" in letters or "--regexp" in long_options', 'return "r" in letters'),
+    ("kill-help-refused", "guard.py", "    if letters & KILL_INFORMATION or long_options & KILL_INFORMATION_OPTIONS:\n        return False", "    if False:\n        return False"),
+    ("kill-value-letter-read-as-flag", "guard.py", "                if letter in KILL_VALUE_LETTERS[name]:\n                    break", "                if False:\n                    break"),
+    ("kill-message-unnamed", "guard.py", "Find the process with `pgrep -x <name>` (or ", "Find the process (or "),
+    ("cannot-never-sent-back", "report_gate.py", "if CANNOT_CLAIM.search(line) and not NOT_ATTEMPTED.search(line):", "if False:"),
+    ("cannot-not-attempted-sent-back", "report_gate.py", "if CANNOT_CLAIM.search(line) and not NOT_ATTEMPTED.search(line):", "if CANNOT_CLAIM.search(line):"),
+    ("cannot-failed-call-ignored", "report_gate.py", "if found.failed or not found.blocks or read_count(get_cannot_path(event)):", "if not found.blocks or read_count(get_cannot_path(event)):"),
+    ("cannot-sent-back-twice", "report_gate.py", "if found.failed or not found.blocks or read_count(get_cannot_path(event)):", "if found.failed or not found.blocks:"),
+    ("cannot-no-transcript-judged", "report_gate.py", "if found.failed or not found.blocks or read_count(get_cannot_path(event)):", "if found.failed or read_count(get_cannot_path(event)):"),
+    ("cannot-verdict-read", "report_gate.py", 'CANNOT_SKIPPED_SECTIONS = frozenset({"Verdict"})', "CANNOT_SKIPPED_SECTIONS = frozenset()"),
+    ("cannot-stop-not-recorded", "report_gate.py", '    if cannot:\n        write_atomic(get_cannot_path(event), "1")\n    write_atomic(get_kept_path', "    write_atomic(get_kept_path"),
+    ("cannot-handback-not-recorded", "report_gate.py", '    if cannot:\n        write_atomic(get_cannot_path(event), "1")\n    if running', "    if running"),
+    ("cannot-marker-kept-after-stop", "report_gate.py", "for stale in (path, get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):", "for stale in (path, get_kept_path(event), get_jobs_path(event)):"),
+    ("cannot-handback-unread", "report_gate.py", "    cannot = get_cannot_problems(report, judged, found) if tries < MAX_SEND_BACKS else []", "    cannot = []"),
+    ("cannot-stop-unread", "report_gate.py", "    cannot = get_cannot_problems(report, event, found) if tries < MAX_SEND_BACKS else []", "    cannot = []"),
+    ("cannot-unable-unread", "report_gate.py", "|unable to|", "|"),
+    ("cannot-blocked-unread", "report_gate.py", "|not allowed|blocked)", "|not allowed)"),
+    ("cannot-curly-apostrophe-unread", "report_gate.py", r"can['\u2019]?t|", "can'?t|"),
+    ("cannot-ask-unworded", "report_gate.py", "Try it and quote the error, or write `not attempted: <why>`.", "Say why."),
+    ("tics-never-noted", "report_gate.py", "    if not found:\n        return \"\"", "    if True:\n        return \"\""),
+    ("tics-note-unnamed-file", "report_gate.py", "The full list and the plain rewrite are in {TICS_FILE}.", "The full list is elsewhere."),
+    ("tics-comma-reveal-unread", "report_gate.py", r"(?:[.;,]\s+|\s+\u2014", r"(?:[.;]\s+|\s+\u2014"),
+    ("tics-not-not-without-just", "report_gate.py", r"\.\s+not\s+[^.\n]{{1,60}}\.\s+just\b", r"\.\s+not\s+[^.\n]{{1,60}}\.\s+\w+"),
+    ("tics-mid-sentence-read", "report_gate.py", 'SENTENCE_START = r"(?:^|[.!?]\\s+)"', 'SENTENCE_START = r""'),
+    ("tics-fenced-read", "report_gate.py", '    text = "\\n".join(get_unfenced_lines(report))\n    found =', "    text = report\n    found ="),
+    ("tics-stop-note-dropped", "report_gate.py", "        finish(event, str(root), name, report, [], extra)\n        note = get_tics_note(report)\n        if note:\n            print(json.dumps({\"systemMessage\": note}))\n        return 0", "        finish(event, str(root), name, report, [], extra)\n        return 0"),
+    ("tics-handback-note-dropped", "report_gate.py", "    if not problems:\n        note = get_tics_note(report)\n        if note:\n            print(json.dumps({\"systemMessage\": note}))\n        return 0", "    if not problems:\n        return 0"),
+    ("retro-text-for-session-with-agent", "context.py", "if is_main else \"\"\n", "\n"),
+    ("ownership-line-dropped", "context.py", '(SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits,', "(SESSION_TEXT, habits,"),
+    ("ownership-line-for-agent-session", "context.py", 'OWNERSHIP_TEXT if is_main else ""', "OWNERSHIP_TEXT"),
+    ("ownership-line-for-agents", "context.py", "(FORM_TEXT, habits, get_setup_text(config), get_lessons", "(FORM_TEXT, OWNERSHIP_TEXT, habits, get_setup_text(config), get_lessons"),
 )
 
 
@@ -937,6 +988,13 @@ def run_mutant(name: str, script: str, old: str, new: str, /) -> MutantRun:
     return MutantRun(name, run.returncode, failed)
 
 
+def get_chosen(mutants: tuple[tuple[str, str, str, str], ...], only: str, /) -> list[tuple[str, str, str, str]]:
+
+    selectors = only.split(",")
+
+    return [mutant for mutant in mutants if any(selector in mutant[0] or selector == mutant[1] for selector in selectors)]
+
+
 def get_rotted_names() -> list[str]:
 
     rotted = []
@@ -958,7 +1016,7 @@ def get_rotted_names() -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="The control of the hook cases: each mutant breaks one rule in a copy of the hooks, and some case must then fail.")
-    parser.add_argument("--only", default="", help="run the mutants whose name holds one of these texts, comma-separated")
+    parser.add_argument("--only", default="", help="run the mutants whose name holds one of these texts, or whose hook file is one of these names (guard.py), comma-separated")
     parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help="mutants at once; each runs its cases on CASE_THREADS threads")
     parser.add_argument("--check", action="store_true", help="only find the mutants whose text is gone")
     arguments = parser.parse_args()
@@ -966,8 +1024,10 @@ def main() -> int:
     if rotted or arguments.check:
         print(f"{len(MUTANTS)} mutants, {len(rotted)} with their text gone: {rotted}")
         return 1 if rotted else 0
-    prefixes = arguments.only.split(",")
-    chosen = [mutant for mutant in MUTANTS if any(prefix in mutant[0] for prefix in prefixes)]
+    chosen = get_chosen(MUTANTS, arguments.only)
+    print(f"{len(chosen)} of {len(MUTANTS)} mutants match --only {arguments.only!r}", flush=True)
+    if not chosen:
+        return 1
     survivors = 0
     timeouts = 0
     os.nice(LOW_PRIORITY)
