@@ -31,7 +31,16 @@
     { key: "workflow", tag: "WORKFLOW", name: "workflow: review pass" },
     { key: "direct", tag: "DIRECT", name: "direct agents" },
   ];
-  const PILL_TEXT = { thinking: "THINKING", tool: "TOOL", finished: "FINISHED", failed: "FAILED" };
+  const PILL_TEXT = {
+    launched: "STARTING",
+    thinking: "THINKING",
+    tool: "RUNNING",
+    waiting: "WAITING",
+    finished: "FINISHED",
+    failed: "FAILED",
+  };
+  const MAIN_PILL_TEXT = { launched: "IDLE", thinking: "WORKING", tool: "TOOL", waiting: "NEEDS YOU" };
+  const WAIT_CHANCE = 0.15;
 
   const createRandom = (seed) => {
     let state = seed >>> 0;
@@ -49,8 +58,22 @@
 
   const planSpan = (random, kind, start) => {
     const isTool = kind === "tool";
-    const length = isTool ? between(random, 6 * SECOND, 26 * SECOND) : between(random, 8 * SECOND, 32 * SECOND);
-    return { kind, start, end: null, plannedEnd: start + length, label: isTool ? pick(random, TOOL_LABELS) : "reasoning" };
+    const length =
+      kind === "launched"
+        ? between(random, 2 * SECOND, 5 * SECOND)
+        : kind === "waiting"
+          ? between(random, 4 * SECOND, 12 * SECOND)
+          : isTool
+            ? between(random, 6 * SECOND, 26 * SECOND)
+            : between(random, 8 * SECOND, 32 * SECOND);
+    const labels = { launched: "starting", waiting: "waiting", thinking: "reasoning" };
+    return { kind, start, end: null, plannedEnd: start + length, label: isTool ? pick(random, TOOL_LABELS) : labels[kind] };
+  };
+
+  const nextKind = (random, kind) => {
+    if (kind === "launched") return "thinking";
+    if (kind === "tool") return "thinking";
+    return random() < WAIT_CHANCE && kind === "thinking" ? "waiting" : "tool";
   };
 
   const createAgent = (random, id, group, start) => ({
@@ -62,7 +85,7 @@
     endedAt: null,
     detail: "",
     limit: Math.floor(between(random, 6, 14)),
-    spans: [planSpan(random, "thinking", start)],
+    spans: [planSpan(random, "launched", start)],
   });
 
   const lastSpan = (agent) => agent.spans[agent.spans.length - 1];
@@ -84,7 +107,7 @@
         endAgent(agent, random() < FAIL_CHANCE ? "failed" : "finished", current.end);
         return;
       }
-      agent.spans.push(planSpan(random, current.kind === "tool" ? "thinking" : "tool", current.end));
+      agent.spans.push(planSpan(random, nextKind(random, current.kind), current.end));
     }
   };
 
@@ -101,6 +124,8 @@
     model.turnStart = model.now;
     model.turnEnd = model.now + WORK_MS;
     model.cacheCalledAt = model.now;
+    const idle = model.main.spans[model.main.spans.length - 1];
+    if (idle && idle.end === null) idle.end = model.now;
     model.main.spans.push(planSpan(model.random, "thinking", model.now));
     for (let count = 0; count < MIN_LIVE; count += 1) spawnAgent(model);
   };
@@ -111,6 +136,7 @@
     model.idleEnd = model.now + IDLE_MS;
     const current = lastSpan(model.main);
     if (current.end === null) current.end = Math.min(model.now, current.plannedEnd);
+    model.main.spans.push({ kind: "launched", start: current.end, end: null, plannedEnd: Number.POSITIVE_INFINITY, label: "waiting for a prompt" });
     for (const agent of liveAgents(model)) endAgent(agent, "finished", model.now);
   };
 
@@ -247,29 +273,43 @@
   };
 
   const drawSpans = (track, agent, windowStart, rangeMs, now) => {
-    const nodes = [];
+    const runs = [];
     const lastIndex = agent.spans.length - 1;
     agent.spans.forEach((span, index) => {
       const end = span.end ?? Math.min(now, span.plannedEnd);
       const start = Math.max(span.start, windowStart);
       if (end <= windowStart || end <= start) return;
       const isEndMark = index === lastIndex && agent.state !== "live";
-      const node = create("span", `ab-span is-${isEndMark ? agent.state : span.kind}`);
-      node.style.insetInlineStart = `${((start - windowStart) / rangeMs) * 100}%`;
-      node.style.inlineSize = `${((end - start) / rangeMs) * 100}%`;
-      nodes.push(node);
+      runs.push({ kind: isEndMark ? agent.state : span.kind, start, end });
     });
-    track.replaceChildren(...nodes);
+    if (runs.length === 0) {
+      track.replaceChildren();
+      return;
+    }
+    const laneStart = runs[0].start;
+    const laneEnd = runs[runs.length - 1].end;
+    const laneSpan = Math.max(1, laneEnd - laneStart);
+    const lane = create("div", "ab-lane");
+    lane.style.insetInlineStart = `${((laneStart - windowStart) / rangeMs) * 100}%`;
+    lane.style.inlineSize = `${((laneEnd - laneStart) / rangeMs) * 100}%`;
+    for (const run of runs) {
+      const node = create("span", `ab-span is-${run.kind}`);
+      node.style.insetInlineStart = `${((run.start - laneStart) / laneSpan) * 100}%`;
+      node.style.inlineSize = `${((run.end - run.start) / laneSpan) * 100}%`;
+      lane.append(node);
+    }
+    track.replaceChildren(lane);
   };
 
   const setPill = (row, agent) => {
-    const kind = currentKind(agent);
-    const isIdle = kind === "idle";
-    const visual = isIdle ? "finished" : kind;
-    row.pill.className = `ab-pill is-${visual}`;
-    row.pill.textContent = isIdle ? "IDLE" : PILL_TEXT[visual];
-    const isEnded = agent.state !== "live";
     const current = lastSpan(agent);
+    const isBetween = currentKind(agent) === "idle";
+    const kind = isBetween ? current.kind : currentKind(agent);
+    const isMain = agent.group === "main";
+    const isIdle = isMain && kind === "launched";
+    row.pill.className = `ab-pill is-${kind}`;
+    row.pill.textContent = isMain ? MAIN_PILL_TEXT[kind] : PILL_TEXT[kind];
+    const isEnded = agent.state !== "live";
     let detail = agent.detail;
     if (agent.state === "live") detail = isIdle ? "waiting for a prompt" : current.label;
     row.detail.textContent = detail;
@@ -324,19 +364,19 @@
     const live = agents.filter((agent) => agent.state === "live" || agent.endedAt > windowStart);
     const series = Array.from({ length: STRIP_BINS }, (_, bin) => {
       const at = windowStart + ((bin + 0.5) / STRIP_BINS) * rangeMs;
-      const counts = { tool: 0, thinking: 0 };
+      const counts = { tool: 0, thinking: 0, waiting: 0 };
       for (const agent of live) {
         const kind = kindAt(agent, at, now);
-        if (kind === "tool" || kind === "thinking") counts[kind] += 1;
+        if (kind === "tool" || kind === "thinking" || kind === "waiting") counts[kind] += 1;
       }
       return counts;
     });
-    const peak = Math.max(1, ...series.map((counts) => counts.tool + counts.thinking));
+    const peak = Math.max(1, ...series.map((counts) => counts.tool + counts.thinking + counts.waiting));
     const base = STRIP_HEIGHT - 1;
     const scale = (base - 1) / peak;
     const floors = series.map(() => base);
     const nodes = [];
-    for (const kind of ["tool", "thinking"]) {
+    for (const kind of ["tool", "thinking", "waiting"]) {
       const tops = series.map((counts, bin) => Number((floors[bin] - counts[kind] * scale).toFixed(2)));
       if (series.some((counts) => counts[kind] > 0)) {
         const path = document.createElementNS(SVG_NS, "path");
@@ -357,8 +397,14 @@
   const groupCountsText = (group) => {
     const live = group.agents.filter((agent) => agent.state === "live");
     const count = (kind) => live.filter((agent) => currentKind(agent) === kind).length;
-    const ended = group.agents.length - live.length;
-    return `${count("tool")} tool · ${count("thinking")} thinking · 0 waiting${ended > 0 ? ` · ${ended} ended` : ""}`;
+    const entries = [
+      [count("tool"), "tool"],
+      [count("thinking"), "think"],
+      [count("waiting"), "wait"],
+      [group.agents.length - live.length, "ended"],
+    ];
+    const parts = entries.filter(([amount]) => amount > 0).map(([amount, word]) => `${amount} ${word}`);
+    return parts.length === 0 ? "idle" : parts.join(" · ");
   };
 
   const groupSignature = (groups, collapsed) =>
