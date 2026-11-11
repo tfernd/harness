@@ -72,7 +72,7 @@
           <p class="install-note" data-mode="install">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
           <code class="install-command" data-mode="uninstall" hidden>[[@install-command claude-off]]</code>
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy claude-off]]">Copy</button>
-          <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. Each project keeps its own <code>__harness__/</code> and <code>__scratch__/</code> folders and its AGENTS.md; delete them by hand if you want them gone.</p>
+          <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. Each project keeps its state in <code>~/.local/state/harness/&lt;project&gt;/</code>, throwaway files in <code>/tmp/harness/&lt;project&gt;/</code> and its AGENTS.md; delete the state by hand if you want it gone.</p>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-cortex" aria-labelledby="install-tab-cortex" hidden>
           <code class="install-command" data-mode="install">[[@install-command cortex]]</code>

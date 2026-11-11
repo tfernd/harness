@@ -14,9 +14,9 @@ The main session asks (step 2) and does the writing; the owner approves the resu
    the project root: `ls`, and `rg --files -g '*.py' -g '*.ts' -g '*.js' -g '*.html' -g '*.css' -g '*.tf' | head`. Note
    the languages, the test folder and the check commands (Makefile, `package.json` scripts, CI files).
 2. **Ask** only what the files do not settle: the check commands.
-3. **Propose.** Write the file first to `__scratch__/init/AGENTS.md`. Replace every placeholder in angle brackets with a project fact;
+3. **Propose.** Write the file first to `/tmp/harness/<project>/init/AGENTS.md`. Replace every placeholder in angle brackets with a project fact;
    leave none. `TOPIC` is the one placeholder you leave unchanged: it names a folder the agents choose.
-4. **Diff and install.** Run `diff -u AGENTS.md __scratch__/init/AGENTS.md` (a missing target is a new
+4. **Diff and install.** Run `diff -u AGENTS.md /tmp/harness/<project>/init/AGENTS.md` (a missing target is a new
    file). An existing target is overwritten only on the owner's word: keep, replace, or merge; ask. A new file is
    installed after the owner approves it. When merging into an existing `AGENTS.md`, add the missing sections and
    leave the owner's lines as they are.
@@ -24,8 +24,8 @@ The main session asks (step 2) and does the writing; the owner approves the resu
 
 ## What the plugin keeps in the project
 
-- `__harness__/` holds the harness's state and a `README.md` that maps it.
-- `__scratch__/` holds throwaway files.
+- `~/.local/state/harness/<project>/` holds the harness's state and a `README.md` that maps it.
+- `/tmp/harness/<project>/` holds throwaway files.
 - Each folder carries its own `.gitignore` holding `*`, written by a hook when the folder is made, so git sees neither and nothing needs committing or ignoring by hand. `rg` and Glob skip ignored folders, so read their files by path.
 
 ## Overrides

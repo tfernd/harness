@@ -8,7 +8,7 @@ Field names follow the brief template of `harness:orchestrator`; `Lens:` through
 Role:      scout
 Goal:      find every <lens> finding in <scope>, so the sweep can rank them
 Tree:      base commit; nobody editing
-Input:     __scratch__/sweep/map.md and the files of the map that belong to the scope (paths only)
+Input:     /tmp/harness/<project>/sweep/map.md and the files of the map that belong to the scope (paths only)
 Lens:      the lens name and its paragraph below
 Scope:     the folders or file list this scout may read
 Quote:     both sides verbatim with path:line; the line's text, not a paraphrase

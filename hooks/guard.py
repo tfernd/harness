@@ -56,7 +56,6 @@ MOVERS = frozenset({"cp", "mv", "ln", "install", "rsync"})
 TARGET_MOVERS = frozenset({"cp", "mv", "ln", "install"})
 IN_PLACE_EDITORS = frozenset({"sed", "perl"})
 TAR_LONG_MODES = {"--extract": "x", "--create": "c", "--append": "r", "--update": "u"}
-TEMPORARY = "/tmp"
 PATTERN_COMMANDS = frozenset({"[", "[[", "case", "test"})
 GLOB_PATTERN_OPTIONS = {
     "find": {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-lname", "-ilname", "-regex", "-iregex"},
@@ -112,8 +111,8 @@ AGENT_DELETE_RULE = "agent_delete"
 REMOTE_RULES = frozenset({"denied", "hidden", "delete", AGENT_DELETE_RULE, *ASK_RULES})
 MESSAGES = {
     "delete": "Agents delete nothing. If this must go, give the owner the command in the chat and say why it is needed; the owner runs it. "
-    "Throwaway files stay in `__scratch__/`, which is never cleaned: a fresh run takes a new folder.",
-    AGENT_DELETE_RULE: "Sub-agents delete nothing. Leave the file; throwaway files stay in `__scratch__/`, and a fresh run takes a new folder.",
+    "Throwaway files stay in `/tmp/harness/<project>/`, which is never cleaned: a fresh run takes a new subfolder.",
+    AGENT_DELETE_RULE: "Sub-agents delete nothing. Leave the file; throwaway files stay in `/tmp/harness/<project>/`, and a fresh run takes a new subfolder.",
     "denied": "`{what}` rewrites history or discards uncommitted work, which is the owner's to run: leave it to them and say so "
     "in your report.",
     "hidden": "`{what}` runs where the guard cannot read the command (a variable as the command, a shell fed from stdin, a "
@@ -131,10 +130,10 @@ MESSAGES = {
     "`guard.dbt_dev_targets`, or by setting `guard.block_dbt_targets` to false, in `~/.config/harness/config.json`. `dbt parse`, "
     "`compile`, `ls`, `debug`, `deps` and `docs generate` run on any target; see `harness:code-sql`.",
     SNOW_RULE: "`{what}`: a write to Snowflake, or any use of a production connection, is the owner's to run or approve. Do not "
-    "rephrase it. Put the SQL in a file in `__scratch__/`, name the exact `snow` command and what it changes, and say so in your "
+    "rephrase it. Put the SQL in a file in `/tmp/harness/<project>/`, name the exact `snow` command and what it changes, and say so in your "
     "report. The owner runs it, or sets `guard.block_snow` to false in `~/.config/harness/config.json`. Reads (`select`, `show`, "
     "`describe`, `list`) on a non-production connection run freely; see `harness:snowflake-cli`.",
-    INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `__scratch__/`, read it, "
+    INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `/tmp/harness/<project>/`, read it, "
     "then run that file, or have the owner approve the pipe.",
     AGENT_RULE: "`{what}` writes to a repository or its history, and a sub-agent never runs a git or gh command that writes. Do not "
     "rephrase it: describe the change in your handback and the main session commits it (`harness:git`). Read forms run "
@@ -144,9 +143,8 @@ MESSAGES = {
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
     "expansion.",
-    "temporary": "the guard lets this call pass, but a write under /tmp is not where throwaway files go. Throwaway files belong in the project's `__scratch__/` folder, never under /tmp.",
     "repo": "the guard lets this call pass, but project files change with the Write tool (new file) or Edit (change); a shell "
-    "redirect, tee, sed -i, cp or mv belongs under `__scratch__/`.",
+    "redirect, tee, sed -i, cp or mv belongs under `/tmp/harness/<project>/`.",
     "search": "a search that starts at `/`, `~` or a whole system or home folder walks the entire disk and runs for minutes, mostly "
     "finding nothing. Ask for the thing directly: `command -v tsc` for a tool on PATH, `ls node_modules/.bin` for a project tool, "
     "`rg --files -g '<name>'` inside the project. If a wider look is needed, start at the project folder or add `-maxdepth 3`.",
@@ -168,15 +166,14 @@ FIND_EXPRESSION_STARTS = frozenset({"(", "!", ")", ","})
 DEPTH_OPTIONS = {"find": frozenset({"-maxdepth"}), "fd": frozenset({"-d", "--max-depth"}), "rg": frozenset({"-d", "--max-depth", "--maxdepth"})}
 FD_VALUE_OPTIONS = frozenset({"-d", "--max-depth", "-e", "--extension", "-E", "--exclude", "-t", "--type", "-c", "--color", "-j", "--threads", "-S", "--size", "--search-path"})
 RG_VALUE_OPTIONS = frozenset({"-g", "--glob", "--iglob", "-e", "--regexp", "-f", "--file", "-t", "--type", "-T", "--type-not", "-m", "--max-count", "-A", "-B", "-C", "-d", "--max-depth", "--maxdepth", "-j", "--threads", "-M", "-r", "--replace", "--sort", "--sortr"})
-SOFT_RULES = ("pattern", "temporary", "repo", "delay", PIPEFAIL_RULE)
-NOTED_RULES = ("temporary", "repo")
+SOFT_RULES = ("pattern", "repo", "delay", PIPEFAIL_RULE)
+NOTED_RULES = ("repo",)
 
 
 class Policy(NamedTuple):
 
     root: str = ""
     scratch: str = ""
-    no_tmp: bool = False
     ask_packages: bool = False
     ask_cloud: bool = False
     ask_installers: bool = False
@@ -205,7 +202,6 @@ def get_policy(cwd: str, /) -> Policy:
     return Policy(
         root=str(root),
         scratch=get_scratch(root, config),
-        no_tmp=bool(guard.get("no_tmp")),
         ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),
         ask_cloud=bool(guard.get("ask_cloud")),
         ask_installers=bool(guard.get("ask_installers")),
@@ -1365,10 +1361,6 @@ def is_under(path: str, folder: str, /) -> bool:
     return path == folder or path.startswith(folder + os.sep)
 
 
-def is_temporary(path: str, policy: Policy, /) -> bool:
-    return policy.no_tmp and is_under(path, os.path.realpath(TEMPORARY))
-
-
 def is_repo_write(path: str, policy: Policy, /) -> bool:
 
     return bool(policy.scratch) and is_under(path, policy.root) and not is_under(path, policy.scratch)
@@ -1684,7 +1676,6 @@ def get_command_breaches(
         (SNOW_RULE, bool(snow)),
         ("glob", bool(missing)),
         ("pattern", bool(patterns)),
-        ("temporary", any(is_temporary(path, policy) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path, policy) for path in [*written, *moved])),
         ("search", is_wide_search(command)),
         ("pkill", is_broad_kill(command)),
@@ -1850,8 +1841,7 @@ def main() -> int:
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, findings=findings)
     else:
-        path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-        breaches = ["temporary"] if is_temporary(resolve_path(path, cwd), policy) else []
+        breaches = []
     hard = [rule for rule in breaches if rule not in SOFT_RULES]
     if not hard:
         rewrite = get_rewrite(breaches, tool_input, findings, cwd, policy)

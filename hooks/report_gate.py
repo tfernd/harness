@@ -59,6 +59,8 @@ GIT_TIMEOUT_S = 3
 MAX_WALK_FILES = 20000
 SKIPPED_FOLDERS = frozenset({"node_modules", "__pycache__"})
 MAX_REPORT_CHARS = 6000
+REPORT_CAP_TOLERANCE = 1.1
+REPORT_CAP_LINE = re.compile(r"^[\s\-*#]*report cap\b\**\s*:\**\s*`?(\d+)", re.I)
 CANNOT_CLAIM = re.compile(r"\b(?:can['\u2019]?t|cannot|couldn['\u2019]?t|unable to|not possible|no access|not allowed|blocked)\b", re.I)
 NOT_ATTEMPTED = re.compile(r"not attempted", re.I)
 CANNOT_SKIPPED_SECTIONS = frozenset({"Verdict"})
@@ -458,16 +460,62 @@ def get_max_chars(settings: object, /) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else MAX_REPORT_CHARS
 
 
+def get_report_cap(brief: str, /) -> int | None:
+
+    for line in get_unfenced_lines(brief):
+        match = REPORT_CAP_LINE.match(line)
+        if match:
+            return int(match.group(1))
+
+    return None
+
+
+def get_cap(event: dict, settings: object, /) -> int:
+
+    base = get_max_chars(settings)
+    path = get_agent_path(event)
+    if path is None:
+        return base
+    try:
+        with open(path, errors="replace") as file:
+            raised = get_report_cap(get_brief(json.loads(file.readline())))
+    except (OSError, ValueError, AttributeError):
+        return base
+
+    return max(base, raised) if raised else base
+
+
+def get_report_length(report: str, /) -> int:
+
+    return len("\n".join(get_unfenced_lines(report)))
+
+
+def get_length_note(report: str, cap: int, /) -> str:
+
+    count = get_report_length(report)
+    if count <= cap or count > cap * REPORT_CAP_TOLERANCE:
+        return ""
+
+    return f"The report is {count} characters, over its cap of {cap} but within 10%, so it passes: keep the next one shorter."
+
+
+def get_pass_note(report: str, event: dict, config: dict, /) -> str:
+
+    notes = (get_tics_note(report), get_length_note(report, get_cap(event, config.get("report", {}))))
+
+    return " ".join(note for note in notes if note)
+
+
 def check_length(report: str, limit: int, /) -> list[Problem]:
 
-    count = len("\n".join(get_unfenced_lines(report)))
-    if count <= limit:
+    count = get_report_length(report)
+    if count <= limit * REPORT_CAP_TOLERANCE:
         return []
     sections = read_sections(report)
     longest = max(sections, key=lambda section: len("\n".join(section[1])))[0] if sections else "Answer"
     text = (
-        f"the report is {count} characters, over the limit of {limit}: cut repeated detail, keep each claim with its evidence, "
-        "move long lists to a file in `__scratch__/` and name it"
+        f"the report is {count} characters, over the limit of {limit} (up to {int(limit * REPORT_CAP_TOLERANCE)} passes): cut repeated detail, keep each claim with its evidence, "
+        "move long lists to a file in `/tmp/harness/<project>/` and name it; a brief line `Report cap: N` raises the cap"
     )
 
     return [Problem(longest, text)]
@@ -707,7 +755,7 @@ def get_problems(report: str, event: dict, root: Path, config: dict, found: Assi
     causes = "|".join(re.escape(cause) for cause in (*CAUSES, *settings.get("causes", ())))
     cause_pattern = re.compile(rf"cause:\s*({causes})(?![a-z]|\s*\|)", re.I)
     problems = check_report(report, cause_pattern)
-    problems += check_length(report, get_max_chars(settings))
+    problems += check_length(report, get_cap(event, settings))
     problems += check_claims(report, event, str(root), get_scratch(root, config), found.blocks, found.failed, found.outputs)
 
     return problems
@@ -778,7 +826,7 @@ def check_handback(event: dict, /) -> int:
     has_form_problem = has_form_problem or bool(cannot)
     problems += get_job_problems(report, running, job_tries, tries)
     if not problems:
-        note = get_tics_note(report)
+        note = get_pass_note(report, event, config)
         if note:
             print(json.dumps({"systemMessage": note}))
         return 0
@@ -819,7 +867,7 @@ def main() -> int:
     texts = [problem.text for problem in problems]
     if not problems:
         finish(event, str(root), name, report, [], extra)
-        note = get_tics_note(report)
+        note = get_pass_note(report, event, config)
         if note:
             print(json.dumps({"systemMessage": note}))
         return 0

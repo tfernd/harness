@@ -64,7 +64,7 @@ trailer, `--trailer` or `--author` whose name is an AI tool or model (`Jean-Clau
   a push unless the owner says so in words.
 - A history rewrite the owner asked for runs in a mirror clone first, and each branch's trees are compared before and after; the working repo moves only once the push is done.
 - Commit on a branch when the project uses them; don't commit to the default branch unasked.
-- Pass a long message with `-F` from a file in `__scratch__/` written in an earlier call, or with a quoted heredoc. The hook
+- Pass a long message with `-F` from a file in `/tmp/harness/<project>/` written in an earlier call, or with a quoted heredoc. The hook
   refuses a message it cannot read: an editor, a variable or `$(...)`, or a file the same command writes.
 - After the commit, `git show --stat HEAD` must list the expected paths.
 
@@ -87,7 +87,7 @@ Preparing is a doer's job; applying it (commit, push, `gh pr create`, merge, tag
 
 - Units, message form and the attribution ban: above.
 - Split the diff by purpose, not by file count: a fix, a refactor and a doc change are three units even in one file set.
-- The plan is a list in `__scratch__/`: for each unit the paths and the full message. A file in two units is split
+- The plan is a list in `/tmp/harness/<project>/`: for each unit the paths and the full message. A file in two units is split
   by hunk, and the plan says which hunks.
 - Generated files go in the unit of their source, or in their own unit after it; never alone first.
 - Order units so each passes the project's check by itself, where that is cheap to show.
@@ -114,7 +114,7 @@ Written like a commit body for a reader who never saw the conversation (The body
 
 Every claim in it is backed by a command you ran. No AI attribution.
 
-Draft the body in `__scratch__/`, offer it with the push question, and keep it there until the PR merges; then it is the owner's to delete. The main session opens the PR
+Draft the body in `/tmp/harness/<project>/`, offer it with the push question, and keep it there until the PR merges; then it is the owner's to delete. The main session opens the PR
 (`gh pr create`) on the owner's word.
 
 CI file basics (pins, permissions, concurrency): `harness:code-yaml`.

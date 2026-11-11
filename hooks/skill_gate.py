@@ -108,9 +108,9 @@ class BashNeeds(NamedTuple):
     is_commit: bool
 
 
-def get_bash_needs(command: str, cwd: str, /) -> BashNeeds:
+def get_bash_needs(command: str, cwd: str, /, *, includes_scripts: bool = True) -> BashNeeds:
 
-    files = get_script_files(command)
+    files = get_script_files(command) if includes_scripts else []
     is_commit = False
     for segment in get_segments(command):
         call = resolve(segment, Policy())
@@ -136,7 +136,7 @@ def get_project_relative(name: str, root: Path, cwd: str, /) -> str | None:
 def get_written_project_files(command: str, root: Path, cwd: str, /) -> list[str]:
 
     relatives: list[str] = []
-    for name in get_bash_needs(command, cwd).files:
+    for name in get_bash_needs(command, cwd, includes_scripts=False).files:
         relative = get_project_relative(name, root, cwd)
         if relative is not None and not is_state_folder(relative) and relative not in relatives:
             relatives.append(relative)

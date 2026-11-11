@@ -8,7 +8,7 @@ Use when a number can say whether a change helped (speed, score, size, pass rate
    ends the loop and starts a new one with a new baseline.
 2. Run it on the untouched tree and record the baseline. Run it twice; the gap is the noise, and a gain smaller than the
    noise is not a gain.
-3. Write the stop predicate (below) and the decision log in `__scratch__/`.
+3. Write the stop predicate (below) and the decision log in `/tmp/harness/<project>/`.
 
 ## The loop
 
@@ -36,7 +36,7 @@ the best kept result and what was tried; do not raise the cap alone.
 
 ## The decision log
 
-One file in `__scratch__/`, one row per attempt, written right after the measurement:
+One file in `/tmp/harness/<project>/`, one row per attempt, written right after the measurement:
 
 | # | change | metric | kept or reverted | why |
 |---|---|---|---|---|

@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from budget import get_agent_path, read_brief
-from common import EDIT_TOOLS, EDITS_KIND, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_git_root, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, make_note_output
+from common import EDIT_TOOLS, EDITS_KIND, HARNESS_FOLDER, SCRATCH_FOLDER, STATE_FOLDER_DISPLAY, data_folder, find_git_root, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, is_throwaway_path, make_note_output
 from shell import Segment, get_segments
 from skill_gate import get_edit_path, get_project_relative, get_written_project_files
 
@@ -67,6 +67,8 @@ def check_bash(command: str, settings: dict, /) -> str:
 def is_allowed_path(path: str, root: Path, settings: dict, cwd: str, /) -> bool:
 
     resolved = Path(os.path.realpath(os.path.join(cwd, path)))
+    if is_throwaway_path(str(resolved), root):
+        return True
     if root not in resolved.parents:
         return False
     relative = resolved.relative_to(root).as_posix()
@@ -188,7 +190,7 @@ def check_write_set(event: dict, root: Path, cwd: str, /) -> str:
     return (
         f"Blocked by the harness write_set rule: {', '.join(outside)} is outside this brief's `Write set:` ({listed}). "
         f"Do not write it. Leave the file as it is, report the change it needs under Feedback or Open in your report, and carry on within the set. "
-        f"`{SCRATCH_FOLDER}/` and `{HARNESS_FOLDER}/` are always allowed."
+        f"`/tmp/harness/{root.name}/`, `{STATE_FOLDER_DISPLAY}/{root.name}/`, `{SCRATCH_FOLDER}/` and `{HARNESS_FOLDER}/` are always allowed."
     )
 
 

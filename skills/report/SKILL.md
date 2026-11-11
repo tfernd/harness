@@ -13,8 +13,8 @@ fixed. A report sent back after you stopped: send only those sections again; the
 ## The form
 
 Title, then these sections under their exact `##` headings, in this order. Leave out a section marked "if any" when it has
-nothing to say, and add no other `##` heading. The report is at most 6000 characters outside fenced blocks; cut repeated
-detail first, and move long lists to a file in `__scratch__/` and name it.
+nothing to say, and add no other `##` heading. The report is at most 6000 characters outside fenced blocks (a brief line `Report cap: N` raises it; up to 10% over passes with a note); cut repeated
+detail first, and move long lists to a file in `/tmp/harness/<project>/` and name it.
 
 ```markdown
 # Report: <role>, <task in six words>
@@ -56,7 +56,7 @@ left to the main session, a path not exercised) without making the verdict `part
 ## What the hook checks against your transcript
 
 - Each file you changed through Edit, Write, NotebookEdit or a Bash command (a redirect, `tee`, `sed -i`, a script that
-  writes) is named by its absolute or project-relative path, unless it lies under `__scratch__/`.
+  writes) is named by its absolute or project-relative path, unless it lies under `/tmp/harness/<project>/`.
 - A claim that tests, lint, a check, a gate or a build passed needs an earlier Bash call of yours that runs a check: a
   test runner, linter, type checker, build, `make` with a target, or a script under `tests/`. `ls` or `true` is none.
 - Each `exit <N>` you write is the result of a Bash call: the code a failed call printed (`Exit code N`), 0 for a call

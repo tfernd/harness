@@ -4,7 +4,7 @@ A restart or a compaction drops what the session knew. A medium or large job (ti
 
 ## Where
 
-One file in `__scratch__/` (cleaned at the end of the job; use the project's plan file when the file must outlive it), or the project's plan file when it has one. Never two copies. A hillclimb's decision log
+One file in `/tmp/harness/<project>/` (cleaned at the end of the job; use the project's plan file when the file must outlive it), or the project's plan file when it has one. Never two copies. A hillclimb's decision log
 (`harness:workflows`) stays its own file and the resume file points to it.
 
 ## What it holds

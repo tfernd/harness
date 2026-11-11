@@ -14,11 +14,10 @@ import sys
 from pathlib import Path
 
 from common import (
-    IGNORE_FILE,
-    SCRATCH_FOLDER,
-    ensure_harness_folder,
-    ensure_ignored_folder,
+    ensure_scratch_folder,
+    ensure_state_folder,
     find_project,
+    get_scratch_folder,
     is_project_root,
 )
 
@@ -33,35 +32,23 @@ FORM_TEXT = (
     "only if they have something to say Problems, Next time, Open and Feedback, then Verdict, which opens with done, partial or "
     "blocked. A hook sends back a report that breaks the form."
 )
-OLD_SCRATCH = "scratch"
 
 
-def get_setup_text(config: dict, /) -> str:
+def get_setup_text(root: Path, /) -> str:
 
-    guard = config.get("guard", {})
     lines = [TOOLS_TEXT]
     if os.path.basename(os.environ.get("SHELL") or "") == "zsh":
         lines.append(ZSH_TEXT)
-    if guard.get("scratch"):
-        lines.append(f"Throwaway files go in `{guard['scratch']}/`.")
-    if guard.get("no_tmp"):
-        lines.append(f"A write under `/tmp` runs, with a note: throwaway files go in `{guard.get('scratch') or SCRATCH_FOLDER}/`, even where the environment names a scratchpad under `/tmp`.")
+    lines.append(f"Throwaway files go in `{get_scratch_folder(root)}/`, a subfolder per run, even where the environment names a scratchpad elsewhere.")
 
     return " ".join(lines)
 
 
-def prepare_folders(root: Path, /) -> list[str]:
+def prepare_folders(root: Path, /) -> None:
 
-    if not is_project_root(root):
-        return []
-
-    notes: list[str] = []
-    if (root / OLD_SCRATCH).is_dir() and not (root / SCRATCH_FOLDER / IGNORE_FILE).exists():
-        notes.append(f"The old `{OLD_SCRATCH}/` folder is left alone; throwaway files go in `{SCRATCH_FOLDER}/` now.")
-    ensure_harness_folder(root)
-    ensure_ignored_folder(root / SCRATCH_FOLDER)
-
-    return notes
+    if is_project_root(root):
+        ensure_state_folder(root)
+        ensure_scratch_folder(root)
 
 
 def get_habits_text() -> str:
@@ -78,16 +65,16 @@ def get_habits_text() -> str:
 
 def main() -> int:
     event = json.load(sys.stdin)
-    root, config = find_project(event.get("cwd") or os.getcwd())
+    root, _ = find_project(event.get("cwd") or os.getcwd())
     name = event.get("hook_event_name")
     text = ""
     habits = get_habits_text()
     if name == "SessionStart":
-        notes = " ".join(prepare_folders(root))
+        prepare_folders(root)
         is_main = not event.get("agent_id")
-        text = "\n".join(part for part in (SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits, get_setup_text(config), notes) if part)
+        text = "\n".join(part for part in (SESSION_TEXT, OWNERSHIP_TEXT if is_main else "", habits, get_setup_text(root)) if part)
     elif name == "SubagentStart":
-        text = "\n\n".join(part for part in (FORM_TEXT, habits, get_setup_text(config)) if part)
+        text = "\n\n".join(part for part in (FORM_TEXT, habits, get_setup_text(root)) if part)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 

@@ -29,7 +29,7 @@ Briefs use the template of `harness:orchestrator`; the lens brief's fields are i
 
 1. **Map the rule homes.** Every place a rule is written (instruction files, skills, docs, README, templates, config)
    and every place one is enforced or tested (hooks, linters, CI, tests, pre-commit). The map is a file list saved as
-   `__scratch__/sweep/map.md`. Each scout returns the files it read and the files it did not; a second wave targets the
+   `/tmp/harness/<project>/sweep/map.md`. Each scout returns the files it read and the files it did not; a second wave targets the
    unread ones, since a first pass skips whole reference folders.
 2. **Lenses.** One read-only scout per lens, in parallel:
    - Contradiction: two homes give opposite instructions for the same subject, scope and condition.
@@ -47,7 +47,7 @@ Briefs use the template of `harness:orchestrator`; the lens brief's fields are i
 4. **Verify.** A reviewer, cold and with only the finding, re-reads each A and B finding and marks it CONFIRMED or
    REJECTED with its own quote. C findings are not verified. The main session spot-checks the A findings itself. A cheap
    scout over-calls; the boundary of a contradiction is in `lenses.md`.
-5. **Rank.** One table, A first, saved as `__scratch__/sweep/findings.md`, so workers and the verifier read it by path.
+5. **Rank.** One table, A first, saved as `/tmp/harness/<project>/sweep/findings.md`, so workers and the verifier read it by path.
    REJECTED findings stay in it with the verifier's reason, so a later sweep does not raise them again; they are not
    fixed. Decisions only the owner can make are listed apart, each as one question with the main session's pick first;
    they are asked, never assumed.

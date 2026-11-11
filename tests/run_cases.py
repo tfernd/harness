@@ -32,7 +32,6 @@ ROOT = "@ROOT@"
 STRICT = {
     "guard": {
         "scratch": "__scratch__",
-        "no_tmp": True,
         "deny_packages": True,
     },
 }
@@ -196,8 +195,8 @@ GUARD_CASES = (
     bash("rm in a root-level scratch folder is refused at the filesystem root", "rm /__scratch__/x.txt", True, DELETE, config=None, cwd="/"),
     bash("the scratch rule is off at the filesystem root", "echo hi > /etc/harness-case-x", False, config=None, cwd="/", lacks=REPO),
     bash("an override turns the scratch rule off", "echo hi > AGENTS.md", False, config={"guard": {"scratch": ""}}, lacks=REPO),
-    bash("a /tmp write is noted with no project file", "echo hi > /tmp/x", False, "__scratch__", config=None),
-    bash("an override turns the /tmp note off", "echo hi > /tmp/x", False, config={"guard": {"no_tmp": False, "scratch": ""}}, is_unchanged=True),
+    bash("a /tmp write gets no note", "echo hi > /tmp/x", False, config=None, is_silent=True),
+    bash("a write under the harness scratch folder gets no note", "echo hi > /tmp/harness/project/x", False, is_silent=True),
     bash("uvx asks the owner when the delay is off", "uvx ruff check src", True, '"permissionDecision": "ask"', config=NO_DELAY),
     bash("uv tool run asks the owner", "uv --quiet tool run ruff check src", True, '"permissionDecision": "ask"'),
     bash("uv tool install asks the owner", "uv tool install ruff", True, '"permissionDecision": "ask"'),
@@ -213,12 +212,12 @@ GUARD_CASES = (
     bash("a bare bash -c does not crash", "bash -c", False),
     bash("a script named like a command is no command string", 'bash -x "pip install y"', False),
     bash("the words of a plain find run nothing", "find . pip install y", False),
-    Case("a notebook under the temporary folder runs with a note", ("guard.py",), {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/n.ipynb"}}, False, config=STRICT, is_unchanged=True, context="let this run"),
+    Case("a notebook under the temporary folder runs with no note", ("guard.py",), {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/tmp/n.ipynb"}}, False, config=STRICT, is_silent=True),
     bash("an escaped letter stays in its word", r"p\ip install x", True),
     bash("git with options alone passes", "git --version", False),
     bash("uv with options alone passes", "uv --version", False),
     bash("a positional parameter stays in a path", "echo a > /$1tmp/y", False),
-    bash("a tar made under the temporary folder runs with a note", "tar -cf /tmp/a.tar b", False, is_unchanged=True, context="let this run"),
+    bash("a tar made under the temporary folder runs with no note", "tar -cf /tmp/a.tar b", False, is_silent=True),
     bash("a cd in a subshell does not move the next step", "(cd __scratch__); echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("an open backtick does not crash", "echo `ls", False),
     bash("a command after a parameter is still read", "echo ${X}; uv pip install y", True),
@@ -338,13 +337,11 @@ GUARD_CASES = (
     pattern("grep --include with a glob that matches is quoted", "grep --include *.py x .", "grep --include '*.py' x .", files=(("a.py", ""),)),
     bash("a matching glob after another command's -name is allowed", "ls -name *.py", False, files=(("a.py", ""),)),
     bash("$? is no glob", "echo $?", False),
-    bash("a redirect into /tmp runs with a note", "echo hi > /tmp/x", False, "never under /tmp", is_unchanged=True),
     bash("a redirect over a project file runs with a note", "echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("a redirect into scratch is allowed", "echo hi > __scratch__/t/x.txt", False),
     bash("sed -i on a project file runs with a note", "sed -i s/a/b/ AGENTS.md", False, REPO, is_unchanged=True),
     bash("a repo write beside a delete is refused with the delete message only", "echo hi > AGENTS.md; rm x", True, DELETE, lacks="lets this call pass"),
     bash("a repo write note never claims the call ran", "echo hi > AGENTS.md", False, config=None, is_unchanged=True, context="the guard lets this call pass", context_lacks="went through"),
-    bash("a temporary write note never claims the call ran", "tar -cf /tmp/a.tar b", False, is_unchanged=True, context="the guard lets this call pass", context_lacks="went through"),
     bash("python -c is not read as a shell", "python3 -c 'print(2 > 1)'", False),
     bash("a python heredoc is not read as a shell", HEREDOC.format(call="print(2 > 1)"), False),
     bash("a heredoc body is no command", "cat <<'EOF'\nrm x\nEOF", False),
@@ -354,7 +351,7 @@ GUARD_CASES = (
     bash("a plain git reset is allowed", "git reset HEAD~1", False),
     bash("git rm is allowed", "git rm -q __scratch__/x", False),
     bash("a project write inside bash -c runs with a note", "bash -c 'echo hi > AGENTS.md'", False, REPO, is_unchanged=True),
-    write_call("a Write under /tmp runs with a note", "/tmp/x.txt", False, "never under /tmp", is_unchanged=True),
+    write_call("a Write under /tmp runs with no note", "/tmp/x.txt", False, is_silent=True),
     write_call("a Write of a project file is allowed", "AGENTS.md", False),
     bash("rm is refused with no project", "rm x", True, DELETE, config=None),
     bash("a forced push is refused with no project", "git push -f", True, "owner's to run", config=None),
@@ -731,7 +728,7 @@ GUARD_CASES = (
     )),
     bash("snow: a relative file after a cd to an unknown folder is not read", 'cd "$WORK" && snow sql -c dev -f write.sql', False, config=None, files=SNOW_WRITE_FILES, start="project"),
     bash("snow: the refusal names the statement and the skill", 'snow sql -c dev -q "drop table t"', True, "snow sql (DROP)", config=None),
-    bash("snow: the refusal says to propose a file in scratch", 'snow sql -c dev -q "drop table t"', True, "__scratch__/", config=None),
+    bash("snow: the refusal says to propose a file in scratch", 'snow sql -c dev -q "drop table t"', True, "/tmp/harness/<project>/", config=None),
     bash("snow: the refusal says how the owner allows it", 'snow sql -c dev -q "drop table t"', True, "guard.block_snow", config=None),
     bash("snow: the refusal names the production connection", 'snow sql -c prod -q "select 1"', True, "production connection prod", config=None),
     bash("snow: a refusal is hard", 'snow sql -c dev -q "drop table t"', True, "Blocked by the harness guard", config=None, lacks="permissionDecision"),
@@ -938,7 +935,7 @@ GUARD_CASES = (
     bash("a delete with a variable set to a literal is refused", 'd=build && rm -rf "$d"', True, DELETE, config=None),
     bash("shred is refused", "shred x.txt", True, DELETE, config=None),
     bash("git clean is refused", "git clean -fd", True, DELETE, config=None),
-    bash("the refusal names no trash folder and no rm in scratch", "rm a.txt", True, "a fresh run takes a new folder", config=None, lacks="__harness__/trash"),
+    bash("the refusal names no trash folder and no rm in scratch", "rm a.txt", True, "a fresh run takes a new subfolder", config=None, lacks="__harness__/trash"),
     bash("rm of a scratch variable is refused", 'd=__scratch__/x && rm -rf "$d"', True, DELETE),
     bash("the fresh-run form of a scratch reset is refused", 'd=__scratch__/ctl && rm -rf "$d" && mkdir -p "$d"', True, DELETE),
     bash("rm -rf of a scratch path is refused", "rm -rf __scratch__/x", True, DELETE),
@@ -993,6 +990,9 @@ def answer_report(answer: str, /) -> str:
 def exit_report(*codes: int) -> str:
 
     return answer_report("Changed one file. " + " ".join(f"Command {number} exit {code}." for number, code in enumerate(codes, 1)))
+
+
+BRIEF_CAP = {"message": {"content": "Goal: x\nReport cap: 8000"}}
 
 
 def sized_report(size: int, /) -> str:
@@ -1087,7 +1087,14 @@ GATE_CASES = (
     ),
     gate("a complete report is accepted", stop_event(make_report()), False),
     gate("a report just under the length limit passes", stop_event(sized_report(6000)), False, lacks="characters, over the limit"),
-    gate("a report just over the length limit goes back with the count", stop_event(sized_report(6001)), True, "the report is 6001 characters, over the limit of 6000"),
+    gate("a report just over the length limit passes with a note", stop_event(sized_report(6001)), False, "within 10%"),
+    gate("a report 10% over the cap passes", stop_event(sized_report(6600)), False),
+    gate("a report past 10% over goes back with the count and the cap", stop_event(sized_report(6601)), True, "the report is 6601 characters, over the limit of 6000"),
+    gate("a report under the cap has no length note", stop_event(sized_report(6000)), False, lacks="within 10%"),
+    gate("a brief Report cap raises the cap", transcript_event(sized_report(7000)), False, lacks="over the limit", transcript=(BRIEF_CAP,)),
+    gate("a brief Report cap never lowers the default", transcript_event(sized_report(2000)), False, transcript=({"message": {"content": "Goal: x\nReport cap: 1000"}},)),
+    gate("a report 10% over a raised cap passes with a note", transcript_event(sized_report(8700)), False, "over its cap of 8000", transcript=(BRIEF_CAP,)),
+    gate("a report past 10% over a raised cap goes back with both numbers", transcript_event(sized_report(8801)), True, "the report is 8801 characters, over the limit of 8000", transcript=(BRIEF_CAP,)),
     gate("a long fenced block does not count toward the length", stop_event(fenced_report(20000)), False),
     gate("report.max_chars raises the limit", stop_event(sized_report(7000)), False, config={"report": {"max_chars": 8000}}),
     gate("report.max_chars lowers the limit", stop_event(sized_report(2000)), True, "over the limit of 1000", config={"report": {"max_chars": 1000}}),
@@ -2055,6 +2062,7 @@ DELEGATE_CASES = (
     main_call("a symlinked path is read resolved", "Write", {"file_path": "link/a.py"}, True, "write_allow", settings=ONLY_DOCS, links=(("project/link", "project/src"),)),
     main_call("a path outside the project is noted whatever the glob", "Write", {"file_path": "../x"}, True, "write_allow", settings={"write_allow": ["*"]}),
     main_call("a harness folder file is not", "Edit", {"file_path": "__harness__/notes.md"}, True, "write_allow"),
+    main_call("a file in the harness scratch folder is allowed", "Write", {"file_path": "/tmp/harness/project/x.md"}, False, settings=ONLY_DOCS),
     Case("a sub-agent's edit passes", ("delegate.py",), {"tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/a.py"}}, False, config={"delegate": {}}, lacks="delegate rule"),
     Case("a sub-agent's command passes", ("delegate.py",), {"tool_name": "Bash", "agent_id": "a1", "tool_input": {"command": "make x"}}, False, config={"delegate": {}}, lacks="delegate rule"),
     main_call("no delegate key means no rule", "Edit", {"file_path": "src/a.py"}, False, config={}),
@@ -2266,7 +2274,13 @@ WRITE_SET_CASES = (
     write_bash("cp outside is refused", "Write set: src/a.py", "cp src/a.py src/b.py", True, "src/b.py"),
     write_bash("cp onto the set passes", "Write set: src/a.py", "cp __scratch__/n.py src/a.py", False),
     write_bash("mv outside is refused", "Write set: src/a.py", "mv __scratch__/n.py src/b.py", True),
-    write_bash("a python write outside is refused", "Write set: src/a.py", "python3 - <<'EOF'\nfrom pathlib import Path\nPath('src/b.py').write_text('x')\nEOF", True, "src/b.py"),
+    write_bash("a python heredoc is not read for files", "Write set: src/a.py", "python3 - <<'EOF'\nfrom pathlib import Path\nPath('src/b.py').write_text('x')\nEOF", False),
+    write_bash("a python heredoc with quoted paths and a write call is not counted", "Write set: src/a.py", "python3 - <<'EOF'\nfrom pathlib import Path\nprint(Path('src/b.py').with_suffix('.x'), open('src/c.py'))\nsys.stdout.write('x')\nEOF", False),
+    write_bash("a heredoc into a file outside the set is refused", "Write set: src/a.py", "cat > src/b.py <<'EOF'\nx\nEOF", True, "src/b.py"),
+    write_bash("a heredoc into a file inside the set passes", "Write set: src/a.py", "cat > src/a.py <<EOF\nx\nEOF", False),
+    write_bash("a write under the harness scratch folder passes", "Write set: src/a.py", "echo x > /tmp/harness/project/o.txt", False),
+    write_edit("the harness scratch folder is always allowed", "Write set: src/a.py", "/tmp/harness/project/run/x.py", False),
+    write_edit("the harness state folder is always allowed", "Write set: src/a.py", f"{ROOT}/state/harness/project/notes.md", False),
     write_bash("a python write inside passes", "Write set: src/a.py", "python3 - <<'EOF'\nfrom pathlib import Path\nPath('src/a.py').write_text('x')\nEOF", False),
     write_bash("a read passes", "Write set: none", "cat src/b.py | head -n 3", False),
     write_bash("a chained second write is judged", "Write set: src/a.py", "echo x > src/a.py && echo y > src/b.py", True, "src/b.py"),
@@ -2278,6 +2292,10 @@ WRITE_SET_CASES = (
     main_bash_edit("a Bash write below the cap passes", "echo x > src/b.py", THREE_EDITS[:1], False),
     main_bash_edit("a Bash read is not counted", "cat src/b.py", THREE_EDITS, False),
     main_bash_edit("a Bash write into scratch is not counted", "echo x > __scratch__/o.txt", THREE_EDITS, False),
+    main_bash_edit("a Bash write into the harness scratch folder is not counted", "echo x > /tmp/harness/project/o.txt", THREE_EDITS, False),
+    main_bash_edit("a python heredoc with quoted paths is not counted", "python3 - <<'EOF'\nprint(Path('src/b.py').with_suffix('.x'))\nsys.stdout.write('x')\nEOF", THREE_EDITS, False),
+    main_bash_edit("a heredoc into a project file is counted", "cat > src/b.py <<EOF\nx\nEOF", THREE_EDITS, True, "main_edits"),
+    edit_call("an edit in the harness scratch folder is never counted", "/tmp/harness/project/x.py", THREE_EDITS, False),
     main_bash_edit("a Bash write to the null device is not counted", "make x > /dev/null", THREE_EDITS, False),
     main_bash_edit("a Bash command writing two files counts both", "cp src/a.py src/b.py && echo x > src/c.py", THREE_EDITS[:2], True, "main_edits"),
     main_bash_edit("a Bash command writing the same file twice counts once", "echo x > src/b.py && echo y >> src/b.py", THREE_EDITS[:2], False),
@@ -2559,15 +2577,13 @@ CONTEXT_CASES = (
     context("a session is told what stands in for Grep", {"hook_event_name": "SessionStart"}, "use `rg` and `find`"),
     context("a zsh user's agent is told the shell", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "The shell is zsh"),
     context("another shell is not called zsh", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="The shell is zsh", shell="/bin/bash"),
-    context("the scratch folder is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "Throwaway files go in `__scratch__/`", config={"guard": {"scratch": "__scratch__"}}),
-    context("no scratch folder, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="Throwaway", config={"guard": {"scratch": ""}}),
-    context("the temporary folder rule is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "A write under `/tmp` runs, with a note", config={"guard": {"no_tmp": True}}),
-    context("no temporary folder rule, no line", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="/tmp", config={"guard": {"no_tmp": False}}),
-    context("a session start makes the harness folder ignore itself", {"hook_event_name": "SessionStart"}, wrote=("__harness__/.gitignore", "*")),
-    context("a session start makes the scratch folder ignore itself", {"hook_event_name": "SessionStart"}, wrote=("__scratch__/.gitignore", "*")),
-    context("a session start leaves a map of the harness folder", {"hook_event_name": "SessionStart"}, wrote=("__harness__/README.md", "plugin's data folder")),
-    context("a session start in the home folder makes no folder", {"hook_event_name": "SessionStart"}, cwd="", not_wrote=("../__harness__/.gitignore", "*")),
-    context("a session start notes an old scratch folder", {"hook_event_name": "SessionStart"}, "The old `scratch/` folder is left alone", files=(("scratch/a.txt", ""),)),
+    context("the scratch folder is named", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "Throwaway files go in `/tmp/harness/project/`"),
+    context("the old temporary folder note is gone", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="runs, with a note"),
+    context("a session start makes the state folder with a map", {"hook_event_name": "SessionStart"}, wrote=("state/harness/project/README.md", "kept outside the project")),
+    context("a session start makes no folder in the project", {"hook_event_name": "SessionStart"}, not_wrote=("__harness__/README.md", "harness")),
+    context("a session start copies an old harness folder when the new one is empty", {"hook_event_name": "SessionStart"}, wrote=("state/harness/project/notes.md", "old"), files=(("__harness__/notes.md", "old"),)),
+    context("a session start leaves the old harness folder in place", {"hook_event_name": "SessionStart"}, wrote=("__harness__/notes.md", "old"), files=(("__harness__/notes.md", "old"),)),
+    context("a session start does not copy into a state folder that holds files", {"hook_event_name": "SessionStart"}, not_wrote=("state/harness/project/notes.md", "old"), files=(("state/harness/project/keep.md", "x"), ("__harness__/notes.md", "old"))),
     context("a session start names the orchestrator", {"hook_event_name": "SessionStart"}, "harness:orchestrator"),
     context("a session start's output is hook-specific", {"hook_event_name": "SessionStart"}, '"hookEventName": "SessionStart"'),
     *(
@@ -3295,6 +3311,9 @@ OWNERSHIP_CASES = (
 
 def resolve(root: Path, name: str, /) -> Path:
 
+    if name.startswith("state/"):
+        return root / name
+
     return root / "data" / name[5:] if name.startswith("data/") else root / "project" / name
 
 
@@ -3405,7 +3424,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
             if name:
                 (root / name).mkdir(parents=True, exist_ok=True)
         (root / "transcript.jsonl").write_text("".join(f"{json.dumps(line)}\n" for line in case.transcript).replace(ROOT, str(root)))
-        environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root / case.home), "UV_CACHE_DIR": UV_CACHE, "HARNESS_CONFIG": str(root / "data" / "user.json")}
+        environment = {**os.environ, "CLAUDE_PLUGIN_DATA": str(root / "data"), "CLAUDE_PLUGIN_ROOT": str(Path(__file__).resolve().parent.parent), "HOME": str(root / case.home), "XDG_STATE_HOME": str(root / "state"), "UV_CACHE_DIR": UV_CACHE, "HARNESS_CONFIG": str(root / "data" / "user.json")}
         environment.pop("CLAUDE_PROJECT_DIR", None)
         if case.script[0] == "hooks.json":
             environment["CLAUDE_PLUGIN_ROOT"] = str(hooks.parent)

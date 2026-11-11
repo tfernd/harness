@@ -91,8 +91,8 @@ git diff --stat
 
 ## Clean
 
-- `__scratch__/` is the temp folder for probes and one-off output (a hook makes it and its `.gitignore`) and is never
-  cleaned: make a subfolder per run (`mktemp -d __scratch__/name.XXXX`) instead of deleting and recreating, and do not
+- `/tmp/harness/<project>/` (`<project>` is the git root's folder name) is the temp folder for probes and one-off output (a hook makes it) and is never
+  cleaned by an agent: make a subfolder per run (`mktemp -d /tmp/harness/<project>/name.XXXX`) instead of deleting and recreating, and do not
   tidy it afterwards.
 - Agents delete nothing: the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `truncate`, `find -delete`, `git clean`, `make clean`, a delete over `ssh` or `busybox`, a variable that names a deleter, and Python that calls `os.remove`, `shutil.rmtree` or `Path.unlink`, everywhere. The
   main session whose file must go gives the owner the exact command in the chat, with why it is needed, and the owner runs

@@ -11,6 +11,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 from collections.abc import Set
 from pathlib import Path
 from typing import NamedTuple
@@ -19,7 +20,7 @@ from shell import Segment, Word, get_segments
 
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 DEFAULTS: dict = {
-    "guard": {"scratch": "__scratch__", "no_tmp": True, "ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
+    "guard": {"scratch": "__scratch__", "ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
     "brief": {},
     "progress": {"every": 10},
     "tests_kept": {"enabled": True},
@@ -59,12 +60,14 @@ EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
 EDITS_KIND = "edits"
 HARNESS_FOLDER = "__harness__"
 SCRATCH_FOLDER = "__scratch__"
+SCRATCH_ROOT = Path("/tmp/harness")
+STATE_FOLDER_NAME = "harness"
+STATE_FOLDER_DISPLAY = "~/.local/state/harness"
 IGNORE_FILE = ".gitignore"
 IGNORE_TEXT = "*\n"
-HARNESS_README = """# __harness__
+HARNESS_README = """# harness state
 
-State of the harness plugin in this project. Git ignores this whole folder (its `.gitignore` holds `*`), and `rg` and Glob skip
-ignored folders too, so read these files by path.
+State of the harness plugin for this project, kept outside the project so git never sees it. Read these files by path.
 
 Per-machine data (the ledger of reports, turn counters, send-backs, progress) lives in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`,
 else `~/.cache/harness`), not here.
@@ -154,10 +157,51 @@ def ensure_ignored_folder(folder: Path, readme: str = "", /) -> None:
         pass
 
 
-def ensure_harness_folder(base: Path, /) -> Path:
+def get_scratch_folder(root: Path, /) -> Path:
 
-    folder = base / HARNESS_FOLDER
-    ensure_ignored_folder(folder, HARNESS_README)
+    return SCRATCH_ROOT / root.name
+
+
+def get_state_folder(root: Path, /) -> Path:
+
+    base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+
+    return base / STATE_FOLDER_NAME / root.name
+
+
+def is_throwaway_path(path: str, root: Path, /) -> bool:
+
+    resolved = os.path.realpath(path)
+    folders = (get_scratch_folder(root), get_state_folder(root))
+
+    return any(resolved == os.path.realpath(folder) or resolved.startswith(os.path.realpath(folder) + os.sep) for folder in folders)
+
+
+def ensure_scratch_folder(root: Path, /) -> Path:
+
+    folder = get_scratch_folder(root)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        os.chmod(SCRATCH_ROOT, 0o1777)
+    except OSError:
+        pass
+
+    return folder
+
+
+def ensure_state_folder(root: Path, /) -> Path:
+
+    folder = get_state_folder(root)
+    old = root / HARNESS_FOLDER
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        if old.is_dir() and not any(folder.iterdir()):
+            shutil.copytree(old, folder, dirs_exist_ok=True)
+        readme = folder / "README.md"
+        if not readme.exists():
+            readme.write_text(HARNESS_README)
+    except OSError:
+        pass
 
     return folder
 

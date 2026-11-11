@@ -10,7 +10,7 @@ Behaviour stays; only the structure moves. Medium and large jobs follow `harness
 - If the code to move has no test that would fail when its behaviour changes, write a characterisation test first: it
   records what the code does today, right or wrong. Commit it apart from the move.
 - Record a baseline of what must not change, whatever fits the code: the output of the command on fixed inputs saved in
-  `__scratch__/`, the public names (`rg` the exports), the generated file, the schema, the log lines.
+  `/tmp/harness/<project>/`, the public names (`rg` the exports), the generated file, the schema, the log lines.
 - List every caller before the change (`rg` the name over source, tests, scripts, docs, config, the build). A caller
   found late is a behaviour change found late.
 

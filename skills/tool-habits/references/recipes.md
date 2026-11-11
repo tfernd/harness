@@ -30,10 +30,10 @@ the call's exit code honest.
 
 ```bash
 set -o pipefail
-mkdir -p __scratch__/gate && rc=0
+mkdir -p /tmp/harness/<project>/gate && rc=0
 for g in lint types test build; do
-  if make "$g" >"__scratch__/gate/$g.log" 2>&1; then print -r -- "$g ok"
-  else rc=1; print -r -- "$g FAILED"; tail -20 "__scratch__/gate/$g.log"; fi
+  if make "$g" >"/tmp/harness/<project>/gate/$g.log" 2>&1; then print -r -- "$g ok"
+  else rc=1; print -r -- "$g FAILED"; tail -20 "/tmp/harness/<project>/gate/$g.log"; fi
 done
 (( rc == 0 ))
 ```
@@ -43,7 +43,7 @@ Gates that depend on each other (format, then lint, then test) chain with `&&` i
 ## A one-line edit: assert before and after
 
 One exact change is the Edit tool. Several changes, or an edit joined to a check, use the Python edit form of the body
-(`sub(...)` asserts each target occurs once). `sed -i` is for files under `__scratch__/` only: the guard refuses it
+(`sub(...)` asserts each target occurs once). `sed -i` is for files under `/tmp/harness/<project>/` only: the guard refuses it
 elsewhere.
 
 ```bash
@@ -80,7 +80,7 @@ gh api "repos/$REPO/pulls?state=open" --jq '.[] | [.number, .title] | @tsv' | he
 ## An ML probe: project root, GPU snapshot, timeout, assert, capped tail
 
 Run the probe through stdin from the project root: Python puts the folder of a script file on `sys.path`, so a probe
-saved under `__scratch__/` cannot import the project's packages, while a stdin script imports from the current folder.
+saved under `/tmp/harness/<project>/` cannot import the project's packages, while a stdin script imports from the current folder.
 
 ```bash
 set -o pipefail

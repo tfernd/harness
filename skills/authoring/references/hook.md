@@ -24,9 +24,9 @@ The hooks of a plugin sit in `hooks/hooks.json`: one entry per command, each wit
 - **Budget.** A hook runs under a timeout of 10 seconds on every call. No work at hook time that grows with a
   project's history: no scan of a whole transcript or tree; keep a small state file and read that.
 - **State:** per-machine data lives in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`), which survives updates; project
-  state lives in the project's git-ignored `__harness__/` (`HARNESS_FOLDER` in `hooks/common.py`). Never in the plugin's
+  state lives in `~/.local/state/harness/<project>/` (`get_state_folder` in `hooks/common.py`). Never in the plugin's
   own folder or tracked files. A test fixture that runs a hook which writes project state lives outside the repo tree: the
-  hook walks up from the cwd to the project and writes into the real `__harness__/`.
+  hook walks up from the cwd to the project and writes into the real state folder.
 - **A refusal message names the rule and the change to make** ("blocked by <rule>: use X instead"), so the agent fixes
   the call at once. The same command in other words must not slip through, nor a harmless one be caught.
 - **Soft against hard.** A hard rule (refuse) is for what is dangerous or wrong whatever the intent: a delete, a

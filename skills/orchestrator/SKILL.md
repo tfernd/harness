@@ -11,7 +11,7 @@ commits, pushes and opens pull requests on the owner's word (`harness:git`; sub-
 session edits itself only: a plan file, a commit message, the lessons of the closing status, and a few small
 edits that a brief would cost more than. A hook counts the main session's own edits per turn and
 refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/config.json`), default 3 edits a turn; files under
-`__harness__/` and `__scratch__/` do not count). Models per role: Models below. Job shapes and size tiers: `harness:workflows`.
+the old `__harness__` and `__scratch__` folders, `/tmp/harness/<project>/` and the state folder do not count). Models per role: Models below. Job shapes and size tiers: `harness:workflows`.
 
 ## What each round costs
 
@@ -143,7 +143,7 @@ Read each report's Problems, Next time and Feedback in the same turn and act on 
   signed percent against a named baseline. A cause told to the owner is probed first.
 - An owner's ask about how to work (use sub-agents, use the repo's make targets) holds for the whole task, not one
   step; check it again at each new unit.
-- Work down the plan without asking. Ask only before an irreversible or outward step (delete outside `__scratch__/`, push,
+- Work down the plan without asking. Ask only before an irreversible or outward step (delete outside `/tmp/harness/<project>/`, push,
   install, permissions) or a change of direction or format; decide any other choice and state its cost in one line.
 - Ask what must be true of the product, never which tests to use.
-- Settings files are written as a proposal in `__scratch__/`; the owner applies them.
+- Settings files are written as a proposal in `/tmp/harness/<project>/`; the owner applies them.

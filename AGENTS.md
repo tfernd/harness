@@ -5,7 +5,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Skills, agents, hooks and templates for spec-driven multi-agent work. `README.md` says what ships and what it blocks; install and project setup are below.
 - Every push reaches every project that has it installed, so run `uv run python tests/run_cases.py` and `uv run python tests/check_leaks.py` before pushing.
 - Once per clone: `make setup` (it runs `git config core.hooksPath .githooks`, the pre-push check). `make help` lists the
-  targets; `make check` is what the push runs. `make clean` empties `__scratch__/`, so run it only when you own the folder.
+  targets; `make check` is what the push runs. `make clean` empties `__scratch__/`, an old folder of this repo, so run it only when you own it.
 - This repo runs under its own plugin, with the defaults. A hook or skill that gets in the way here
   gets in the way everywhere, so fix it in the plugin.
 
@@ -40,7 +40,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Each new rule gets a case in `tests/run_cases.py`; a new check is shown to fail once on a deliberate bug (`harness:testing`).
 - A rule is built when it has passed cases, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
 - A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.
-- The plugin keeps its state in `__harness__/` and throwaway files in `__scratch__/`, each ignored by git through its own `.gitignore` (`*`); a hook makes both.
+- The plugin keeps its state in `~/.local/state/harness/<project>/` (`$XDG_STATE_HOME` is honoured) and throwaway files in `/tmp/harness/<project>/`; a hook makes both, copies an old `__harness__/` into the new state folder once, and no agent deletes either.
 
 ## Ports and sync
 - The Claude plugin (`skills/`, `agents/`, `hooks/`) is the only source. `bin/harness-port` (runs `port/harness_port.py`) converts it into `~/.kiro` or `~/.snowflake/cortex`; rerun it after `git pull`, since hook commands point at the checkout.
@@ -65,5 +65,5 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## Files
 - `.claude-plugin/marketplace.json` and `plugin.json` carry no `version`, on purpose: each commit is a version.
-- Throwaway files go in `__scratch__/`, never `/tmp`.
+- Throwaway files go in `/tmp/harness/<project>/` (`<project>` is the git root's folder name), a subfolder per run.
 - Check the plugin with `claude plugin validate .`.
