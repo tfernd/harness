@@ -40,7 +40,7 @@ svg{width:100%;height:auto;display:block}
 <defs id="defs"></defs><g id="edges"></g><g id="nodes"></g></svg>
 <div id="info"></div>
 </main>
-<script>
+<script type="module">
 const KIND = {
   spawn: {c:"#7F77DD", w:2.2, d:"", label:"main session spawns an agent"},
   preload: {c:"#888780", w:1.3, d:"", label:"agent preloads a skill"},
@@ -70,8 +70,8 @@ const make = (tag, attrs) => { const element = document.createElementNS(NS, tag)
 const defs = document.getElementById("defs");
 Object.entries(KIND).forEach(([key,kind]) => { const marker = make("marker",{id:"arrow-"+key,viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"}); marker.appendChild(make("path",{d:"M1 1L9 5L1 9",fill:"none",stroke:kind.c,"stroke-width":1.6,"stroke-linecap":"round","stroke-linejoin":"round"})); defs.appendChild(marker); });
 const columns = {h:{x:30,w:190,title:"Hooks"}, a:{x:400,w:200,title:"Main session and agents"}, s:{x:800,w:170,title:"Skills"}};
-const top = 50, span = 690, place = {};
-function layout(list, column, height) { const step = span / list.length; list.forEach((item, index) => { const name = Array.isArray(item) ? item[0] : item; place[column+":"+name] = {x:columns[column].x, y:top+index*step+(step-height)/2, w:columns[column].w, h:height, name:name, sub:Array.isArray(item)?item[1]:"", column:column}; }); }
+const firstRow = 50, span = 690, place = {};
+function layout(list, column, height) { const step = span / list.length; list.forEach((item, index) => { const name = Array.isArray(item) ? item[0] : item; place[column+":"+name] = {x:columns[column].x, y:firstRow+index*step+(step-height)/2, w:columns[column].w, h:height, name:name, sub:Array.isArray(item)?item[1]:"", column:column}; }); }
 layout(hooks,"h",54); layout(actors,"a",54); layout(skills,"s",24);
 const edgeLayer = document.getElementById("edges"), nodeLayer = document.getElementById("nodes");
 Object.values(columns).forEach(c => { const text = make("text",{class:"colhead",x:c.x+c.w/2,y:28,"text-anchor":"middle"}); text.textContent = c.title; nodeLayer.appendChild(text); });
