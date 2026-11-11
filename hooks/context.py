@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from common import (
     get_feedback_root,
     is_project_root,
 )
+from turn import HANDLED as HANDLED_LINE, get_items, get_seen, is_retro_due
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
@@ -57,6 +59,10 @@ AUTO_PREFIX = "[auto]"
 MAX_LESSONS = 5
 MAX_LESSONS_CHARS = 600
 RETRO_ROWS = 10
+RETRO_DUE_TEXT = (
+    f"A retro is due: launch `harness:analyst` in the background on the items waiting in {INBOX}, apply or reject each "
+    f"proposal, then add a line for every item to {HANDLED}."
+)
 OLD_SCRATCH = "scratch"
 RETRO_MARKER = "retro-marker"
 INBOX_LINE = re.compile(r"^- id=([0-9a-f]{8}) session=\S+ agent=(\S+) (?:time=\S+ )?(.+)$", re.M)
@@ -150,6 +156,20 @@ def get_open_problems(root: Path, agent_type: str, /) -> str:
     return PROBLEMS_HEADING + "".join(f"\n- {line}" for line in lines) if lines else ""
 
 
+def get_retro_due_line(root: Path, /) -> str:
+
+    feedback = get_feedback_root(root)
+    try:
+        items = get_items((feedback / INBOX).read_text(errors="replace"))
+        handled_text = (feedback / HANDLED).read_text(errors="replace") if (feedback / HANDLED).exists() else ""
+        seen = get_seen(feedback, len(items))
+    except (OSError, ValueError):
+        return ""
+    handled = {match.group(1) for match in HANDLED_LINE.finditer(handled_text)}
+
+    return RETRO_DUE_TEXT if is_retro_due(items, seen, handled, time.time(), 0) else ""
+
+
 def get_retro_line(root: Path, /) -> str:
 
     folder = data_folder()
@@ -182,7 +202,7 @@ def main() -> int:
     habits = get_habits_text()
     if name == "SessionStart":
         notes = " ".join(prepare_folders(root))
-        text = "\n".join(part for part in (SESSION_TEXT, habits, get_setup_text(config), notes, get_retro_line(root)) if part)
+        text = "\n".join(part for part in (SESSION_TEXT, habits, get_setup_text(config), notes, get_retro_due_line(root) or get_retro_line(root)) if part)
     elif name == "SubagentStart":
         agent_type = event.get("agent_type") or ""
         text = "\n\n".join(part for part in (FORM_TEXT, habits, get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type)) if part)

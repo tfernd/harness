@@ -10,11 +10,16 @@ stays a sentence is not a result.
 
 ## The checkpoint
 
-When 20 items wait in `__harness__/feedback/inbox.md` past the count in `__harness__/feedback/retro-mark`, the Stop hook holds a
-session that filed one. Run one `harness:analyst`; apply or reject each proposal; keep its open problems in
+A retro is due when 10 or more items wait in `__harness__/feedback/inbox.md` past the count in `__harness__/feedback/retro-mark`,
+or the oldest waiting item is 3 or more days old, or a session ran 10 or more agents and any item waits. The Stop hook files
+each bullet under the main session's closing `Lessons` heading into the inbox (`agent=main`), once per bullet. SessionStart
+and the Stop hold tell the main session to launch `harness:analyst` in the background; the hold fires for any session, once
+per turn, at the end of a turn with no agent running, never in a sub-agent. The owner saying "skip retro" silences it for
+that session. Apply or reject each proposal; keep its open problems in
 `__harness__/feedback/open.md`, one `- <role or all>: <problem>` per line, and delete a line once a rule fixes it. Then add the
 line the hook names to `__harness__/feedback/handled.md`: `retro-<N>: rule written in FILE`, where FILE is a rule file changed
-this turn, or `retro-<N>: rejected: REASON` of 3 or more words that no other line uses. The hook moves the mark; with no
+this turn, or `retro-<N>: rejected: REASON` of 3 or more words that no other line uses; an item id works as well as
+`retro-<N>`. The hold clears when every waiting item has a line. The hook moves the mark only then; with no
 mark yet, the window is every inbox item `handled.md` does not name. Write these files with Write or Edit, not the shell. The folder is ignored by git, so `rg` and Glob skip it: read the files by path.
 `retro-mark` (in the project's `__harness__/feedback/`) and `retro-marker` (in the plugin data folder, touched in the last
 step) are different files.

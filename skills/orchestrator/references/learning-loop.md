@@ -9,5 +9,7 @@
    deleted in the same change.
 4. Each Feedback item lands in `__harness__/feedback/inbox.md`: the project's own (the plugin's data folder when the start folder is `/` or the home folder). Open items stay in the report: put
    them to the owner.
-5. No item needs a verdict of its own. When a retro is due, the Stop hook holds a session that filed one until it is done: the
-   trigger and the procedure are in `harness:retro`.
+5. The Stop hook files each bullet under the closing `Lessons` heading into the inbox. No item needs a verdict of its own.
+   When a retro is due (10 items wait, the oldest is 3 days old, or a session ran 10 agents), launch `harness:analyst` in
+   the background; the Stop hook holds the turn until every waiting item has a `handled.md` line. The trigger and the
+   procedure are in `harness:retro`.

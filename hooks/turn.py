@@ -13,6 +13,8 @@ import json
 import os
 import re
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
@@ -37,10 +39,17 @@ AGENT_TOOLS = frozenset({"Agent", "Task"})
 AGENTS_HEADING = "## Agents"
 HANDLED = re.compile(r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))$", re.M)
 MIN_REASON_WORDS = 3
-RETRO_ITEMS = 20
+RETRO_ITEMS = 10
+RETRO_DAYS = 3
+RETRO_AGENTS = 10
+SECONDS_PER_DAY = 86400
+TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+MAIN_ROLE = "main"
+SKIP_RETRO = re.compile(r"skip retro", re.I)
+BULLET = re.compile(r"^\s*(?:[-*]|[0-9]+[.)])\s+(\S.*)$")
 RETRO_KEY = re.compile(r"retro-([0-9]+)")
 REFUSAL = re.compile(r"PreToolUse:\w+ hook error:.*?Blocked by the harness", re.S)
-ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+) ", re.M)
+ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+)(?: agent=\S+ time=(\S+))? ", re.M)
 
 
 class StatePaths(NamedTuple):
@@ -314,26 +323,133 @@ def get_covered(keys: set[str], /) -> int:
     return max((int(match.group(1)) for key in keys if (match := RETRO_KEY.fullmatch(key))), default=0)
 
 
-def get_open_feedback(root: Path, session: str, released: set[str], handled: set[str], /) -> list[str]:
+class Item(NamedTuple):
+
+    item_id: str
+    session: str
+    stamp: float | None
+
+
+def get_stamp(text: str | None, /) -> float | None:
+
+    try:
+        return datetime.strptime(text, TIME_FORMAT).timestamp() if text else None
+    except ValueError:
+        return None
+
+
+def get_items(text: str, /) -> list[Item]:
+
+    return [Item(match.group(1), match.group(2), get_stamp(match.group(3))) for match in ITEM_ID.finditer(text)]
+
+
+def get_seen(feedback: Path, count: int, /) -> int:
+
+    mark = feedback / RETRO_MARK
+    text = mark.read_text().strip() if mark.exists() else ""
+
+    return int(text) if text.isdecimal() and text.isascii() and int(text) <= count else 0
+
+
+def has_open_items(items: list[Item], seen: int, handled: set[str], /) -> bool:
+
+    covered = get_covered(handled)
+
+    return any(index >= covered and item.item_id not in handled for index, item in enumerate(items) if index >= seen)
+
+
+def is_retro_due(items: list[Item], seen: int, handled: set[str], now: float, num_agents: int, /) -> bool:
+
+    waiting = items[seen:]
+    stamps = [item.stamp for item in waiting if item.stamp is not None]
+    is_old = bool(stamps) and now - min(stamps) >= RETRO_DAYS * SECONDS_PER_DAY
+    is_big = len(waiting) >= RETRO_ITEMS or num_agents >= RETRO_AGENTS
+
+    return has_open_items(items, seen, handled) and (is_big or is_old)
+
+
+def get_open_feedback(root: Path, released: set[str], handled: set[str], num_agents: int, /) -> list[str]:
 
     inbox = root / INBOX
     if not inbox.exists():
         return []
-    items = ITEM_ID.findall(inbox.read_text(errors="replace"))
-    mark = root / RETRO_MARK
-    text = mark.read_text().strip() if mark.exists() else ""
-    seen = int(text) if text.isdecimal() and text.isascii() and int(text) <= len(items) else 0
-    closed = min(get_covered(handled), len(items))
-    if closed > seen:
-        ensure_harness_folder(root)
-        write_atomic(mark, str(closed))
-        seen = closed
-    waiting = items[seen:]
-    is_mine = any(owner == session for _, owner in waiting)
-    if len(waiting) < RETRO_ITEMS or not is_mine or get_covered(released) > seen:
+    items = get_items(inbox.read_text(errors="replace"))
+    seen = get_seen(root, len(items))
+    if not has_open_items(items, seen, handled):
+        if len(items) > seen:
+            ensure_harness_folder(root)
+            write_atomic(root / RETRO_MARK, str(len(items)))
+        return []
+    if not is_retro_due(items, seen, handled, time.time(), num_agents) or get_covered(released) >= len(items):
         return []
 
     return [f"retro-{len(items)}"]
+
+
+def get_lesson_bullets(message: str, /) -> list[str]:
+
+    bullets = [match.group(1).strip() for line in get_lessons(message).splitlines() if (match := BULLET.match(line))]
+
+    return [bullet for bullet in dict.fromkeys(bullets) if not bullet.lower().startswith("none")]
+
+
+def file_lessons(root: Path, session: str, message: str, /) -> None:
+
+    bullets = get_lesson_bullets(message)
+    if not bullets:
+        return
+    inbox = root / INBOX
+    known = inbox.read_text(errors="replace") if inbox.exists() else ""
+    for bullet in bullets:
+        item_id = hashlib.sha1(bullet.encode()).hexdigest()[:8]
+        if f"id={item_id} session={session} " in known:
+            continue
+        ensure_harness_folder(root)
+        inbox.parent.mkdir(exist_ok=True)
+        with open(inbox, "a") as file:
+            file.write(f"- id={item_id} session={session} agent={MAIN_ROLE} time={time.strftime(TIME_FORMAT)} {bullet}\n")
+
+
+def count_agent_calls(transcript: list[dict], /) -> int:
+
+    calls = 0
+    for line in transcript:
+        content = line.get("message", {}).get("content")
+        blocks = content if line.get("type") == "assistant" and isinstance(content, list) else []
+        calls += sum(1 for block in blocks if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") in AGENT_TOOLS)
+
+    return calls
+
+
+def is_retro_skipped(transcript: list[dict], skip_path: Path, /) -> bool:
+
+    if skip_path.exists():
+        return True
+    for line in reversed(transcript):
+        if line.get("type") != "user":
+            continue
+        text = get_user_text(line)
+        if text.strip() and not APP_PROMPT.search(text[:APP_PROMPT_HEAD]):
+            if SKIP_RETRO.search(text):
+                write_atomic(skip_path, "1")
+                return True
+            return False
+
+    return False
+
+
+def get_retro_ids(root: Path, event: dict, session: str, message: str, transcript: list[dict], released: set[str], handled: set[str], /) -> list[str]:
+
+    if event.get("agent_id"):
+        return []
+    try:
+        file_lessons(root, session, message)
+        if is_retro_skipped(transcript, get_state_path(session, "skipped")):
+            return []
+
+        return get_open_feedback(root, released, handled, count_agent_calls(transcript))
+    except (OSError, ValueError):
+        return []
 
 
 def stop(event: dict, root: Path, config: dict, /) -> int:
@@ -369,14 +485,14 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
     if is_project_root(root):
         soft += check_lessons(message, rules_path, root, config, transcript)
         handled, invalid = get_handled(root, rules_path, config)
-        open_ids = get_open_feedback(root, session, released, handled)
+        open_ids = get_retro_ids(root, event, session, message, transcript, released, handled)
     if open_ids and count_running_agents(transcript) > 0:
         open_ids = []
     if open_ids:
         hard.append(
-            f"a retro is due: at least {RETRO_ITEMS} feedback items wait in {INBOX}. Run one `harness:analyst` on them, apply or reject its "
+            f"a retro is due: feedback items wait in {INBOX}. Launch `harness:analyst` in the background on them, apply or reject its "
             f'proposals, then add "{open_ids[0]}: rule written in FILE" (FILE changed this turn) or "{open_ids[0]}: rejected: REASON" '
-            f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}"
+            f"(at least {MIN_REASON_WORDS} words) to {HANDLED_NAME}; or the owner says \"skip retro\""
         )
     hard += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
     count = blocks_path.read_text().strip() if blocks_path.exists() else ""

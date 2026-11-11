@@ -261,7 +261,7 @@ a failing command quoted with its exit code&gt;
 - &lt;file to change&gt;: &lt;the change, and the problem it would have prevented&gt;
 ## Verdict
 &lt;done | partial | blocked&gt;: &lt;one sentence that fits everything above&gt;</code></pre><div class="full-table" tabindex="0"><table><thead><tr><th>Section</th><th>When</th><th>Rule</th></tr></thead><tbody><tr><td>Answer</td><td>Always</td><td>States what happened, not how good it is; the judgement waits for Verdict</td></tr><tr><td>Not proven</td><td>Always</td><td>Never bare: &quot;nothing&quot; needs its reason</td></tr><tr><td>Problems</td><td>If any</td><td>One cause from the list per item, and the words &quot;would have helped&quot; with what would have</td></tr><tr><td>Next time</td><td>If different</td><td>Left out when you would do the same</td></tr><tr><td>Open</td><td>If any</td><td>Includes a change needed outside your write set, with its file</td></tr><tr><td>Feedback</td><td>If any</td><td>Each item names a file to change; it goes to <code>__harness__/feedback/inbox.md</code> for a retro: the project&#x27;s (the plugin&#x27;s data folder when the start folder is <code>/</code> or the home folder)</td></tr><tr><td>Verdict</td><td>Always</td><td>Last. <code>done</code>, <code>partial</code> or <code>blocked</code>, then one sentence</td></tr></tbody></table></div><p>Write the Verdict after the rest and let it follow from it. If Not proven holds something the job needed, the word is <code>partial</code>. An owner reads the Verdict first, so it must be true on its own.</p><h4>What the hook checks against your transcript</h4><ul><li>Each file you changed through Edit, Write or NotebookEdit is named by its absolute or project-relative path, unless it lies under <code>__scratch__/</code>.</li><li>A claim that tests, lint, a check, a gate or a build passed needs a Bash call of yours.</li><li>Each <code>exit &lt;N&gt;</code> you write is the result of a Bash call: the code a failed call printed (<code>Exit code N</code>), 0 for a call that did not fail, or a code a call printed itself (<code>rg exit 1</code>, make&#x27;s <code>Error 2</code>). Describing a code, write &quot;exits with 2&quot;.</li><li>A mark READ <code>`path:line`</code>, when you use one, names an existing file with at least that many lines, by its path from the project root or an end of path only one project file has; <code>path:a-b</code> checks <code>b</code>. A text quoted right after it, in &quot;...&quot; or backticks, must lie on that line or within 3 lines.</li></ul><h4>Filling it</h4><ul><li>Send the report only after every background job you started has ended or been stopped; a stray job wakes you again after the report. A job still needed is stopped and listed under Not proven with the command to rerun it.</li><li>Keep notes as you work: each retry, failed call and rule that pulled the other way; a report written from memory drops them.</li><li>&quot;The agent itself&quot; is a cause, and the most useful one to admit. A mistake left out is the worse failure.</li><li>Mark a claim that isn&#x27;t obvious as READ, DERIVED or PROBED (<code>harness:evidence</code>), with <code>path:line</code> or the command.</li></ul></template></li>
-<li class="chip-item"><button type="button" class="chip" data-item="skill:retro" data-levels="advice" aria-describedby="tip-skill-retro">retro</button><div class="tip kind-skill" id="tip-skill-retro" role="group" aria-label="retro" hidden><p class="tip-strip"><span class="tip-kind">skill</span><span class="tip-name">retro</span><button type="button" class="tip-switch" data-full="tip-skill-retro-full" aria-expanded="false" aria-controls="tip-skill-retro-view">Full text</button></p><div class="tip-body"><p class="tip-job">Turns the ledger of past agent reports into rule changes</p><dl class="tip-grid"><dt><svg class="icon" width="14" height="14" aria-hidden="true"><use href="#i-kind"/></svg>Kind</dt><dd>advice</dd><dt><svg class="icon" width="14" height="14" aria-hidden="true"><use href="#i-load"/></svg>Loaded</dt><dd>preloaded by analyst</dd><dt><svg class="icon" width="14" height="14" aria-hidden="true"><use href="#i-when"/></svg>Load</dt><dd>Load for a retrospective, after a big job, or when the same problem comes back.</dd></dl></div><div class="tip-view" id="tip-skill-retro-view" role="region" aria-label="Full text of retro" tabindex="0" hidden></div></div><template id="tip-skill-retro-full"><h3>Retro</h3><p>A retro reads facts from the ledger and ends with changes to a rule, hook, gate, brief template or role. A lesson that stays a sentence is not a result.</p><h4>The checkpoint</h4><p>When 20 items wait in <code>__harness__/feedback/inbox.md</code> past the count in <code>__harness__/feedback/retro-mark</code>, the Stop hook holds a session that filed one. Run one <code>harness:analyst</code>; apply or reject each proposal; keep its open problems in <code>__harness__/feedback/open.md</code>, one <code>- &lt;role or all&gt;: &lt;problem&gt;</code> per line, and delete a line once a rule fixes it. Then add the line the hook names to <code>__harness__/feedback/handled.md</code>: <code>retro-&lt;N&gt;: rule written in FILE</code>, where FILE is a rule file changed this turn, or <code>retro-&lt;N&gt;: rejected: REASON</code> of 3 or more words that no other line uses. The hook moves the mark; with no mark yet, the window is every inbox item <code>handled.md</code> does not name. Write these files with Write or Edit, not the shell. The folder is ignored by git, so <code>rg</code> and Glob skip it: read the files by path. <code>retro-mark</code> (in the project&#x27;s <code>__harness__/feedback/</code>) and <code>retro-marker</code> (in the plugin data folder, touched in the last step) are different files.</p><h4>The ledger</h4><p><code>ledger.jsonl</code> in the plugin&#x27;s data folder (<code>$CLAUDE_PLUGIN_DATA</code>; <code>~/.cache/harness</code> when unset). One JSON row per stopped agent, written by <code>hooks/report_gate.py</code>; past reports come in through <code>bin/harness-import</code> (rows carry <code>&quot;imported&quot;: true</code>, <code>accepted</code> true and <code>send_backs</code> 0, so they say nothing about the gate).</p><p>Fields: <code>time</code>, <code>project</code>, <code>session</code>, <code>agent_id</code>, <code>role</code>, <code>accepted</code>, <code>send_backs</code>, <code>open_problems</code>, <code>verdict</code> (<code>done</code>, <code>partial</code> or <code>blocked</code>, null on an old row), <code>causes</code>, <code>feedback_ids</code>, <code>tool_turns</code> (<code>turns</code>, <code>calls</code>, <code>one_call_turns</code>, <code>longest_small_run</code>, <code>small_reads</code>, <code>repeats</code>), <code>report</code> (full text). Read rows with <code>uv run python</code>; <code>references/queries.md</code> holds the queries.</p><h4>Steps</h4><ol><li><strong>Scope.</strong> Pick a project and a window (a session, or the rows since the last retro). Say the row count. Drop rows with <code>imported</code> unless the question is about past reports; keep them apart from live rows.</li><li><strong>Group by cause.</strong> Count <code>causes</code> per cause, then per role, then per brief (the brief is the task named in the report&#x27;s first line, <code># Report: &lt;role&gt;, &lt;task&gt;</code>). A cause named once is a note; twice is a pattern.</li><li><strong>Read the reports behind a pattern.</strong> Open the <code>report</code> text of at least two rows per pattern. A count with no quoted problem line is not a finding.</li><li><strong>Compare verdicts.</strong> An auditor&#x27;s report holds one line, for example <code>Grade: 3/5 for worker fix the parser</code>, where the unit is the exact task text of the author&#x27;s <code># Report: &lt;role&gt;, &lt;task&gt;</code> title. A role whose <code>done</code> gets a grade of 3 or less twice is overrating its work: the fix is a stricter judge or report line, not a reminder. Units with no grade are listed as unaudited.</li><li><strong>Check the send-backs.</strong> <code>open_problems</code> is filled only when the gate stops sending back (the cap), so read it only on rows with <code>accepted</code> false; a row with <code>send_backs</code> above 0 and <code>accepted</code> true names no rule. A report rule failed twice is a rule agents cannot read: rewrite it in <code>harness:report</code> or give the gate a clearer message.</li><li><strong>Check the tool turns.</strong> Per role, from <code>tool_turns</code>: calls per turn, repeats per agent and the share of calls that are small reads, each beside the last retro&#x27;s value. One-call turns alone prove nothing, since many need the previous result. A figure that got worse is a pattern; read two of its transcripts.</li><li><strong>Check the rules.</strong> In the project&#x27;s <code>AGENTS.md</code>, each rule has an enforcer in its rule-to-enforcer table (hook, test, lint, review or none). A rule broken again whose enforcer is none is a repeat: raise it a level in the same change. A rule whose mistake can no longer happen is dropped.</li><li><strong>Find no-ops and bloat.</strong> Steering lines that change no behaviour (no row, no reviewer finding, no hook ever tied to them) and an <code>AGENTS.md</code> that grew since the last retro: propose deleting them. A line kept must earn its place.</li><li><strong>Propose changes.</strong> One per pattern, in the form below.</li></ol><h4>Proposal form</h4><pre class="full-code" tabindex="0"><code>Pattern: &lt;cause&gt;, &lt;role&gt;, &lt;n&gt; rows (ids)
+<li class="chip-item"><button type="button" class="chip" data-item="skill:retro" data-levels="advice" aria-describedby="tip-skill-retro">retro</button><div class="tip kind-skill" id="tip-skill-retro" role="group" aria-label="retro" hidden><p class="tip-strip"><span class="tip-kind">skill</span><span class="tip-name">retro</span><button type="button" class="tip-switch" data-full="tip-skill-retro-full" aria-expanded="false" aria-controls="tip-skill-retro-view">Full text</button></p><div class="tip-body"><p class="tip-job">Turns the ledger of past agent reports into rule changes</p><dl class="tip-grid"><dt><svg class="icon" width="14" height="14" aria-hidden="true"><use href="#i-kind"/></svg>Kind</dt><dd>advice</dd><dt><svg class="icon" width="14" height="14" aria-hidden="true"><use href="#i-load"/></svg>Loaded</dt><dd>preloaded by analyst</dd><dt><svg class="icon" width="14" height="14" aria-hidden="true"><use href="#i-when"/></svg>Load</dt><dd>Load for a retrospective, after a big job, or when the same problem comes back.</dd></dl></div><div class="tip-view" id="tip-skill-retro-view" role="region" aria-label="Full text of retro" tabindex="0" hidden></div></div><template id="tip-skill-retro-full"><h3>Retro</h3><p>A retro reads facts from the ledger and ends with changes to a rule, hook, gate, brief template or role. A lesson that stays a sentence is not a result.</p><h4>The checkpoint</h4><p>A retro is due when 10 or more items wait in <code>__harness__/feedback/inbox.md</code> past the count in <code>__harness__/feedback/retro-mark</code>, or the oldest waiting item is 3 or more days old, or a session ran 10 or more agents and any item waits. The Stop hook files each bullet under the main session&#x27;s closing <code>Lessons</code> heading into the inbox (<code>agent=main</code>), once per bullet. SessionStart and the Stop hold tell the main session to launch <code>harness:analyst</code> in the background; the hold fires for any session, once per turn, at the end of a turn with no agent running, never in a sub-agent. The owner saying &quot;skip retro&quot; silences it for that session. Apply or reject each proposal; keep its open problems in <code>__harness__/feedback/open.md</code>, one <code>- &lt;role or all&gt;: &lt;problem&gt;</code> per line, and delete a line once a rule fixes it. Then add the line the hook names to <code>__harness__/feedback/handled.md</code>: <code>retro-&lt;N&gt;: rule written in FILE</code>, where FILE is a rule file changed this turn, or <code>retro-&lt;N&gt;: rejected: REASON</code> of 3 or more words that no other line uses; an item id works as well as <code>retro-&lt;N&gt;</code>. The hold clears when every waiting item has a line. The hook moves the mark only then; with no mark yet, the window is every inbox item <code>handled.md</code> does not name. Write these files with Write or Edit, not the shell. The folder is ignored by git, so <code>rg</code> and Glob skip it: read the files by path. <code>retro-mark</code> (in the project&#x27;s <code>__harness__/feedback/</code>) and <code>retro-marker</code> (in the plugin data folder, touched in the last step) are different files.</p><h4>The ledger</h4><p><code>ledger.jsonl</code> in the plugin&#x27;s data folder (<code>$CLAUDE_PLUGIN_DATA</code>; <code>~/.cache/harness</code> when unset). One JSON row per stopped agent, written by <code>hooks/report_gate.py</code>; past reports come in through <code>bin/harness-import</code> (rows carry <code>&quot;imported&quot;: true</code>, <code>accepted</code> true and <code>send_backs</code> 0, so they say nothing about the gate).</p><p>Fields: <code>time</code>, <code>project</code>, <code>session</code>, <code>agent_id</code>, <code>role</code>, <code>accepted</code>, <code>send_backs</code>, <code>open_problems</code>, <code>verdict</code> (<code>done</code>, <code>partial</code> or <code>blocked</code>, null on an old row), <code>causes</code>, <code>feedback_ids</code>, <code>tool_turns</code> (<code>turns</code>, <code>calls</code>, <code>one_call_turns</code>, <code>longest_small_run</code>, <code>small_reads</code>, <code>repeats</code>), <code>report</code> (full text). Read rows with <code>uv run python</code>; <code>references/queries.md</code> holds the queries.</p><h4>Steps</h4><ol><li><strong>Scope.</strong> Pick a project and a window (a session, or the rows since the last retro). Say the row count. Drop rows with <code>imported</code> unless the question is about past reports; keep them apart from live rows.</li><li><strong>Group by cause.</strong> Count <code>causes</code> per cause, then per role, then per brief (the brief is the task named in the report&#x27;s first line, <code># Report: &lt;role&gt;, &lt;task&gt;</code>). A cause named once is a note; twice is a pattern.</li><li><strong>Read the reports behind a pattern.</strong> Open the <code>report</code> text of at least two rows per pattern. A count with no quoted problem line is not a finding.</li><li><strong>Compare verdicts.</strong> An auditor&#x27;s report holds one line, for example <code>Grade: 3/5 for worker fix the parser</code>, where the unit is the exact task text of the author&#x27;s <code># Report: &lt;role&gt;, &lt;task&gt;</code> title. A role whose <code>done</code> gets a grade of 3 or less twice is overrating its work: the fix is a stricter judge or report line, not a reminder. Units with no grade are listed as unaudited.</li><li><strong>Check the send-backs.</strong> <code>open_problems</code> is filled only when the gate stops sending back (the cap), so read it only on rows with <code>accepted</code> false; a row with <code>send_backs</code> above 0 and <code>accepted</code> true names no rule. A report rule failed twice is a rule agents cannot read: rewrite it in <code>harness:report</code> or give the gate a clearer message.</li><li><strong>Check the tool turns.</strong> Per role, from <code>tool_turns</code>: calls per turn, repeats per agent and the share of calls that are small reads, each beside the last retro&#x27;s value. One-call turns alone prove nothing, since many need the previous result. A figure that got worse is a pattern; read two of its transcripts.</li><li><strong>Check the rules.</strong> In the project&#x27;s <code>AGENTS.md</code>, each rule has an enforcer in its rule-to-enforcer table (hook, test, lint, review or none). A rule broken again whose enforcer is none is a repeat: raise it a level in the same change. A rule whose mistake can no longer happen is dropped.</li><li><strong>Find no-ops and bloat.</strong> Steering lines that change no behaviour (no row, no reviewer finding, no hook ever tied to them) and an <code>AGENTS.md</code> that grew since the last retro: propose deleting them. A line kept must earn its place.</li><li><strong>Propose changes.</strong> One per pattern, in the form below.</li></ol><h4>Proposal form</h4><pre class="full-code" tabindex="0"><code>Pattern: &lt;cause&gt;, &lt;role&gt;, &lt;n&gt; rows (ids)
 Evidence: &lt;quoted problem line&gt; (&lt;agent_id&gt;)
 Level: &lt;cause removed | types or lint | hook or test | text&gt;, and why a higher one did not work
 Change: &lt;hook | gate | rule | brief template | role | skill&gt; in &lt;file&gt;
@@ -4275,6 +4275,7 @@ REPORT_POLL_S = <span class="tok-number">0.25</span>
 <span class="tok-keyword">import</span> os
 <span class="tok-keyword">import</span> re
 <span class="tok-keyword">import</span> sys
+<span class="tok-keyword">import</span> time
 <span class="tok-keyword">from</span> datetime <span class="tok-keyword">import</span> datetime
 <span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
 
@@ -4295,6 +4296,7 @@ REPORT_POLL_S = <span class="tok-number">0.25</span>
     get_feedback_root,
     is_project_root,
 )
+<span class="tok-keyword">from</span> turn <span class="tok-keyword">import</span> HANDLED <span class="tok-keyword">as</span> HANDLED_LINE, get_items, get_seen, is_retro_due
 
 SESSION_TEXT = <span class="tok-string">"This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."</span>
 HABITS_SKILL = Path(<span class="tok-string">"skills"</span>) / <span class="tok-string">"tool-habits"</span> / <span class="tok-string">"SKILL.md"</span>
@@ -4320,6 +4322,10 @@ AUTO_PREFIX = <span class="tok-string">"[auto]"</span>
 MAX_LESSONS = <span class="tok-number">5</span>
 MAX_LESSONS_CHARS = <span class="tok-number">600</span>
 RETRO_ROWS = <span class="tok-number">10</span>
+RETRO_DUE_TEXT = (
+    <span class="tok-string">f"</span><span class="tok-string">A retro is due: launch `harness:analyst` in the background on the items waiting in </span>{INBOX}<span class="tok-string">, apply or reject each </span><span class="tok-string">"</span>
+    <span class="tok-string">f"</span><span class="tok-string">proposal, then add a line for every item to </span>{HANDLED}<span class="tok-string">.</span><span class="tok-string">"</span>
+)
 OLD_SCRATCH = <span class="tok-string">"scratch"</span>
 RETRO_MARKER = <span class="tok-string">"retro-marker"</span>
 INBOX_LINE = re.compile(<span class="tok-string">r"^- id=([0-9a-f]{8}) session=\S+ agent=(\S+) (?:time=\S+ )?(.+)$"</span>, re.M)
@@ -4413,6 +4419,20 @@ LEDGER_TIME = <span class="tok-string">"%Y-%m-%dT%H:%M:%S%z"</span>
     <span class="tok-keyword">return</span> PROBLEMS_HEADING + <span class="tok-string">""</span>.join(<span class="tok-string">f"</span><span class="tok-string">\n- </span>{line}<span class="tok-string">"</span> <span class="tok-keyword">for</span> line <span class="tok-keyword">in</span> lines) <span class="tok-keyword">if</span> lines <span class="tok-keyword">else</span> <span class="tok-string">""</span>
 
 
+<span class="tok-keyword">def</span> get_retro_due_line(root: Path, /) -&gt; <span class="tok-builtin">str</span>:
+
+    feedback = get_feedback_root(root)
+    <span class="tok-keyword">try</span>:
+        items = get_items((feedback / INBOX).read_text(errors=<span class="tok-string">"replace"</span>))
+        handled_text = (feedback / HANDLED).read_text(errors=<span class="tok-string">"replace"</span>) <span class="tok-keyword">if</span> (feedback / HANDLED).exists() <span class="tok-keyword">else</span> <span class="tok-string">""</span>
+        seen = get_seen(feedback, <span class="tok-builtin">len</span>(items))
+    <span class="tok-keyword">except</span> (<span class="tok-builtin">OSError</span>, <span class="tok-builtin">ValueError</span>):
+        <span class="tok-keyword">return</span> <span class="tok-string">""</span>
+    handled = {match.group(<span class="tok-number">1</span>) <span class="tok-keyword">for</span> match <span class="tok-keyword">in</span> HANDLED_LINE.finditer(handled_text)}
+
+    <span class="tok-keyword">return</span> RETRO_DUE_TEXT <span class="tok-keyword">if</span> is_retro_due(items, seen, handled, time.time(), <span class="tok-number">0</span>) <span class="tok-keyword">else</span> <span class="tok-string">""</span>
+
+
 <span class="tok-keyword">def</span> get_retro_line(root: Path, /) -&gt; <span class="tok-builtin">str</span>:
 
     folder = data_folder()
@@ -4445,7 +4465,7 @@ LEDGER_TIME = <span class="tok-string">"%Y-%m-%dT%H:%M:%S%z"</span>
     habits = get_habits_text()
     <span class="tok-keyword">if</span> name == <span class="tok-string">"SessionStart"</span>:
         notes = <span class="tok-string">" "</span>.join(prepare_folders(root))
-        text = <span class="tok-string">"\n"</span>.join(part <span class="tok-keyword">for</span> part <span class="tok-keyword">in</span> (SESSION_TEXT, habits, get_setup_text(config), notes, get_retro_line(root)) <span class="tok-keyword">if</span> part)
+        text = <span class="tok-string">"\n"</span>.join(part <span class="tok-keyword">for</span> part <span class="tok-keyword">in</span> (SESSION_TEXT, habits, get_setup_text(config), notes, get_retro_due_line(root) <span class="tok-keyword">or</span> get_retro_line(root)) <span class="tok-keyword">if</span> part)
     <span class="tok-keyword">elif</span> name == <span class="tok-string">"SubagentStart"</span>:
         agent_type = event.get(<span class="tok-string">"agent_type"</span>) <span class="tok-keyword">or</span> <span class="tok-string">""</span>
         text = <span class="tok-string">"\n\n"</span>.join(part <span class="tok-keyword">for</span> part <span class="tok-keyword">in</span> (FORM_TEXT, habits, get_setup_text(config), get_lessons(root, agent_type), get_open_problems(root, agent_type)) <span class="tok-keyword">if</span> part)
@@ -4896,6 +4916,8 @@ RUN_TEXT = (
 <span class="tok-keyword">import</span> os
 <span class="tok-keyword">import</span> re
 <span class="tok-keyword">import</span> sys
+<span class="tok-keyword">import</span> time
+<span class="tok-keyword">from</span> datetime <span class="tok-keyword">import</span> datetime
 <span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
 <span class="tok-keyword">from</span> typing <span class="tok-keyword">import</span> NamedTuple
 
@@ -4920,10 +4942,17 @@ AGENT_TOOLS = <span class="tok-builtin">frozenset</span>({<span class="tok-strin
 AGENTS_HEADING = <span class="tok-string">"## Agents"</span>
 HANDLED = re.compile(<span class="tok-string">r"^(retro-[0-9]+|[0-9a-f]{8}): (?:rule written in[ \t]*(?P&lt;file&gt;\S*)|rejected:(?P&lt;reason&gt;.*))$"</span>, re.M)
 MIN_REASON_WORDS = <span class="tok-number">3</span>
-RETRO_ITEMS = <span class="tok-number">20</span>
+RETRO_ITEMS = <span class="tok-number">10</span>
+RETRO_DAYS = <span class="tok-number">3</span>
+RETRO_AGENTS = <span class="tok-number">10</span>
+SECONDS_PER_DAY = <span class="tok-number">86400</span>
+TIME_FORMAT = <span class="tok-string">"%Y-%m-%dT%H:%M:%S%z"</span>
+MAIN_ROLE = <span class="tok-string">"main"</span>
+SKIP_RETRO = re.compile(<span class="tok-string">r"skip retro"</span>, re.I)
+BULLET = re.compile(<span class="tok-string">r"^\s*(?:[-*]|[0-9]+[.)])\s+(\S.*)$"</span>)
 RETRO_KEY = re.compile(<span class="tok-string">r"retro-([0-9]+)"</span>)
 REFUSAL = re.compile(<span class="tok-string">r"PreToolUse:\w+ hook error:.*?Blocked by the harness"</span>, re.S)
-ITEM_ID = re.compile(<span class="tok-string">r"^- id=([0-9a-f]{8}) session=(\S+) "</span>, re.M)
+ITEM_ID = re.compile(<span class="tok-string">r"^- id=([0-9a-f]{8}) session=(\S+)(?: agent=\S+ time=(\S+))? "</span>, re.M)
 
 
 <span class="tok-keyword">class</span> StatePaths(NamedTuple):
@@ -5197,26 +5226,133 @@ ITEM_ID = re.compile(<span class="tok-string">r"^- id=([0-9a-f]{8}) session=(\S+
     <span class="tok-keyword">return</span> <span class="tok-builtin">max</span>((<span class="tok-builtin">int</span>(match.group(<span class="tok-number">1</span>)) <span class="tok-keyword">for</span> key <span class="tok-keyword">in</span> keys <span class="tok-keyword">if</span> (match := RETRO_KEY.fullmatch(key))), default=<span class="tok-number">0</span>)
 
 
-<span class="tok-keyword">def</span> get_open_feedback(root: Path, session: <span class="tok-builtin">str</span>, released: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], handled: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
+<span class="tok-keyword">class</span> Item(NamedTuple):
+
+    item_id: <span class="tok-builtin">str</span>
+    session: <span class="tok-builtin">str</span>
+    stamp: <span class="tok-builtin">float</span> | <span class="tok-keyword">None</span>
+
+
+<span class="tok-keyword">def</span> get_stamp(text: <span class="tok-builtin">str</span> | <span class="tok-keyword">None</span>, /) -&gt; <span class="tok-builtin">float</span> | <span class="tok-keyword">None</span>:
+
+    <span class="tok-keyword">try</span>:
+        <span class="tok-keyword">return</span> datetime.strptime(text, TIME_FORMAT).timestamp() <span class="tok-keyword">if</span> text <span class="tok-keyword">else</span> <span class="tok-keyword">None</span>
+    <span class="tok-keyword">except</span> <span class="tok-builtin">ValueError</span>:
+        <span class="tok-keyword">return</span> <span class="tok-keyword">None</span>
+
+
+<span class="tok-keyword">def</span> get_items(text: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-builtin">list</span>[Item]:
+
+    <span class="tok-keyword">return</span> [Item(match.group(<span class="tok-number">1</span>), match.group(<span class="tok-number">2</span>), get_stamp(match.group(<span class="tok-number">3</span>))) <span class="tok-keyword">for</span> match <span class="tok-keyword">in</span> ITEM_ID.finditer(text)]
+
+
+<span class="tok-keyword">def</span> get_seen(feedback: Path, count: <span class="tok-builtin">int</span>, /) -&gt; <span class="tok-builtin">int</span>:
+
+    mark = feedback / RETRO_MARK
+    text = mark.read_text().strip() <span class="tok-keyword">if</span> mark.exists() <span class="tok-keyword">else</span> <span class="tok-string">""</span>
+
+    <span class="tok-keyword">return</span> <span class="tok-builtin">int</span>(text) <span class="tok-keyword">if</span> text.isdecimal() <span class="tok-keyword">and</span> text.isascii() <span class="tok-keyword">and</span> <span class="tok-builtin">int</span>(text) &lt;= count <span class="tok-keyword">else</span> <span class="tok-number">0</span>
+
+
+<span class="tok-keyword">def</span> has_open_items(items: <span class="tok-builtin">list</span>[Item], seen: <span class="tok-builtin">int</span>, handled: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">bool</span>:
+
+    covered = get_covered(handled)
+
+    <span class="tok-keyword">return</span> <span class="tok-builtin">any</span>(index &gt;= covered <span class="tok-keyword">and</span> item.item_id <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> handled <span class="tok-keyword">for</span> index, item <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(items) <span class="tok-keyword">if</span> index &gt;= seen)
+
+
+<span class="tok-keyword">def</span> is_retro_due(items: <span class="tok-builtin">list</span>[Item], seen: <span class="tok-builtin">int</span>, handled: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], now: <span class="tok-builtin">float</span>, num_agents: <span class="tok-builtin">int</span>, /) -&gt; <span class="tok-builtin">bool</span>:
+
+    waiting = items[seen:]
+    stamps = [item.stamp <span class="tok-keyword">for</span> item <span class="tok-keyword">in</span> waiting <span class="tok-keyword">if</span> item.stamp <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>]
+    is_old = <span class="tok-builtin">bool</span>(stamps) <span class="tok-keyword">and</span> now - <span class="tok-builtin">min</span>(stamps) &gt;= RETRO_DAYS * SECONDS_PER_DAY
+    is_big = <span class="tok-builtin">len</span>(waiting) &gt;= RETRO_ITEMS <span class="tok-keyword">or</span> num_agents &gt;= RETRO_AGENTS
+
+    <span class="tok-keyword">return</span> has_open_items(items, seen, handled) <span class="tok-keyword">and</span> (is_big <span class="tok-keyword">or</span> is_old)
+
+
+<span class="tok-keyword">def</span> get_open_feedback(root: Path, released: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], handled: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], num_agents: <span class="tok-builtin">int</span>, /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
 
     inbox = root / INBOX
     <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> inbox.exists():
         <span class="tok-keyword">return</span> []
-    items = ITEM_ID.findall(inbox.read_text(errors=<span class="tok-string">"replace"</span>))
-    mark = root / RETRO_MARK
-    text = mark.read_text().strip() <span class="tok-keyword">if</span> mark.exists() <span class="tok-keyword">else</span> <span class="tok-string">""</span>
-    seen = <span class="tok-builtin">int</span>(text) <span class="tok-keyword">if</span> text.isdecimal() <span class="tok-keyword">and</span> text.isascii() <span class="tok-keyword">and</span> <span class="tok-builtin">int</span>(text) &lt;= <span class="tok-builtin">len</span>(items) <span class="tok-keyword">else</span> <span class="tok-number">0</span>
-    closed = <span class="tok-builtin">min</span>(get_covered(handled), <span class="tok-builtin">len</span>(items))
-    <span class="tok-keyword">if</span> closed &gt; seen:
-        ensure_harness_folder(root)
-        write_atomic(mark, <span class="tok-builtin">str</span>(closed))
-        seen = closed
-    waiting = items[seen:]
-    is_mine = <span class="tok-builtin">any</span>(owner == session <span class="tok-keyword">for</span> _, owner <span class="tok-keyword">in</span> waiting)
-    <span class="tok-keyword">if</span> <span class="tok-builtin">len</span>(waiting) &lt; RETRO_ITEMS <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> is_mine <span class="tok-keyword">or</span> get_covered(released) &gt; seen:
+    items = get_items(inbox.read_text(errors=<span class="tok-string">"replace"</span>))
+    seen = get_seen(root, <span class="tok-builtin">len</span>(items))
+    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> has_open_items(items, seen, handled):
+        <span class="tok-keyword">if</span> <span class="tok-builtin">len</span>(items) &gt; seen:
+            ensure_harness_folder(root)
+            write_atomic(root / RETRO_MARK, <span class="tok-builtin">str</span>(<span class="tok-builtin">len</span>(items)))
+        <span class="tok-keyword">return</span> []
+    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> is_retro_due(items, seen, handled, time.time(), num_agents) <span class="tok-keyword">or</span> get_covered(released) &gt;= <span class="tok-builtin">len</span>(items):
         <span class="tok-keyword">return</span> []
 
     <span class="tok-keyword">return</span> [<span class="tok-string">f"</span><span class="tok-string">retro-</span>{<span class="tok-builtin">len</span>(items)}<span class="tok-string">"</span>]
+
+
+<span class="tok-keyword">def</span> get_lesson_bullets(message: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
+
+    bullets = [match.group(<span class="tok-number">1</span>).strip() <span class="tok-keyword">for</span> line <span class="tok-keyword">in</span> get_lessons(message).splitlines() <span class="tok-keyword">if</span> (match := BULLET.match(line))]
+
+    <span class="tok-keyword">return</span> [bullet <span class="tok-keyword">for</span> bullet <span class="tok-keyword">in</span> <span class="tok-builtin">dict</span>.fromkeys(bullets) <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> bullet.lower().startswith(<span class="tok-string">"none"</span>)]
+
+
+<span class="tok-keyword">def</span> file_lessons(root: Path, session: <span class="tok-builtin">str</span>, message: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-keyword">None</span>:
+
+    bullets = get_lesson_bullets(message)
+    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> bullets:
+        <span class="tok-keyword">return</span>
+    inbox = root / INBOX
+    known = inbox.read_text(errors=<span class="tok-string">"replace"</span>) <span class="tok-keyword">if</span> inbox.exists() <span class="tok-keyword">else</span> <span class="tok-string">""</span>
+    <span class="tok-keyword">for</span> bullet <span class="tok-keyword">in</span> bullets:
+        item_id = hashlib.sha1(bullet.encode()).hexdigest()[:<span class="tok-number">8</span>]
+        <span class="tok-keyword">if</span> <span class="tok-string">f"</span><span class="tok-string">id=</span>{item_id}<span class="tok-string"> session=</span>{session}<span class="tok-string"> </span><span class="tok-string">"</span> <span class="tok-keyword">in</span> known:
+            <span class="tok-keyword">continue</span>
+        ensure_harness_folder(root)
+        inbox.parent.mkdir(exist_ok=<span class="tok-keyword">True</span>)
+        <span class="tok-keyword">with</span> <span class="tok-builtin">open</span>(inbox, <span class="tok-string">"a"</span>) <span class="tok-keyword">as</span> file:
+            file.write(<span class="tok-string">f"</span><span class="tok-string">- id=</span>{item_id}<span class="tok-string"> session=</span>{session}<span class="tok-string"> agent=</span>{MAIN_ROLE}<span class="tok-string"> time=</span>{time.strftime(TIME_FORMAT)}<span class="tok-string"> </span>{bullet}<span class="tok-string">\n</span><span class="tok-string">"</span>)
+
+
+<span class="tok-keyword">def</span> count_agent_calls(transcript: <span class="tok-builtin">list</span>[<span class="tok-builtin">dict</span>], /) -&gt; <span class="tok-builtin">int</span>:
+
+    calls = <span class="tok-number">0</span>
+    <span class="tok-keyword">for</span> line <span class="tok-keyword">in</span> transcript:
+        content = line.get(<span class="tok-string">"message"</span>, {}).get(<span class="tok-string">"content"</span>)
+        blocks = content <span class="tok-keyword">if</span> line.get(<span class="tok-string">"type"</span>) == <span class="tok-string">"assistant"</span> <span class="tok-keyword">and</span> <span class="tok-builtin">isinstance</span>(content, <span class="tok-builtin">list</span>) <span class="tok-keyword">else</span> []
+        calls += <span class="tok-builtin">sum</span>(<span class="tok-number">1</span> <span class="tok-keyword">for</span> block <span class="tok-keyword">in</span> blocks <span class="tok-keyword">if</span> <span class="tok-builtin">isinstance</span>(block, <span class="tok-builtin">dict</span>) <span class="tok-keyword">and</span> block.get(<span class="tok-string">"type"</span>) == <span class="tok-string">"tool_use"</span> <span class="tok-keyword">and</span> block.get(<span class="tok-string">"name"</span>) <span class="tok-keyword">in</span> AGENT_TOOLS)
+
+    <span class="tok-keyword">return</span> calls
+
+
+<span class="tok-keyword">def</span> is_retro_skipped(transcript: <span class="tok-builtin">list</span>[<span class="tok-builtin">dict</span>], skip_path: Path, /) -&gt; <span class="tok-builtin">bool</span>:
+
+    <span class="tok-keyword">if</span> skip_path.exists():
+        <span class="tok-keyword">return</span> <span class="tok-keyword">True</span>
+    <span class="tok-keyword">for</span> line <span class="tok-keyword">in</span> <span class="tok-builtin">reversed</span>(transcript):
+        <span class="tok-keyword">if</span> line.get(<span class="tok-string">"type"</span>) != <span class="tok-string">"user"</span>:
+            <span class="tok-keyword">continue</span>
+        text = get_user_text(line)
+        <span class="tok-keyword">if</span> text.strip() <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> APP_PROMPT.search(text[:APP_PROMPT_HEAD]):
+            <span class="tok-keyword">if</span> SKIP_RETRO.search(text):
+                write_atomic(skip_path, <span class="tok-string">"1"</span>)
+                <span class="tok-keyword">return</span> <span class="tok-keyword">True</span>
+            <span class="tok-keyword">return</span> <span class="tok-keyword">False</span>
+
+    <span class="tok-keyword">return</span> <span class="tok-keyword">False</span>
+
+
+<span class="tok-keyword">def</span> get_retro_ids(root: Path, event: <span class="tok-builtin">dict</span>, session: <span class="tok-builtin">str</span>, message: <span class="tok-builtin">str</span>, transcript: <span class="tok-builtin">list</span>[<span class="tok-builtin">dict</span>], released: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], handled: <span class="tok-builtin">set</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
+
+    <span class="tok-keyword">if</span> event.get(<span class="tok-string">"agent_id"</span>):
+        <span class="tok-keyword">return</span> []
+    <span class="tok-keyword">try</span>:
+        file_lessons(root, session, message)
+        <span class="tok-keyword">if</span> is_retro_skipped(transcript, get_state_path(session, <span class="tok-string">"skipped"</span>)):
+            <span class="tok-keyword">return</span> []
+
+        <span class="tok-keyword">return</span> get_open_feedback(root, released, handled, count_agent_calls(transcript))
+    <span class="tok-keyword">except</span> (<span class="tok-builtin">OSError</span>, <span class="tok-builtin">ValueError</span>):
+        <span class="tok-keyword">return</span> []
 
 
 <span class="tok-keyword">def</span> stop(event: <span class="tok-builtin">dict</span>, root: Path, config: <span class="tok-builtin">dict</span>, /) -&gt; <span class="tok-builtin">int</span>:
@@ -5252,14 +5388,14 @@ ITEM_ID = re.compile(<span class="tok-string">r"^- id=([0-9a-f]{8}) session=(\S+
     <span class="tok-keyword">if</span> is_project_root(root):
         soft += check_lessons(message, rules_path, root, config, transcript)
         handled, invalid = get_handled(root, rules_path, config)
-        open_ids = get_open_feedback(root, session, released, handled)
+        open_ids = get_retro_ids(root, event, session, message, transcript, released, handled)
     <span class="tok-keyword">if</span> open_ids <span class="tok-keyword">and</span> count_running_agents(transcript) &gt; <span class="tok-number">0</span>:
         open_ids = []
     <span class="tok-keyword">if</span> open_ids:
         hard.append(
-            <span class="tok-string">f"</span><span class="tok-string">a retro is due: at least </span>{RETRO_ITEMS}<span class="tok-string"> feedback items wait in </span>{INBOX}<span class="tok-string">. Run one `harness:analyst` on them, apply or reject its </span><span class="tok-string">"</span>
+            <span class="tok-string">f"</span><span class="tok-string">a retro is due: feedback items wait in </span>{INBOX}<span class="tok-string">. Launch `harness:analyst` in the background on them, apply or reject its </span><span class="tok-string">"</span>
             <span class="tok-string">f'</span><span class="tok-string">proposals, then add "</span>{open_ids[<span class="tok-number">0</span>]}<span class="tok-string">: rule written in FILE" (FILE changed this turn) or "</span>{open_ids[<span class="tok-number">0</span>]}<span class="tok-string">: rejected: REASON" </span><span class="tok-string">'</span>
-            <span class="tok-string">f"</span><span class="tok-string">(at least </span>{MIN_REASON_WORDS}<span class="tok-string"> words) to </span>{HANDLED_NAME}<span class="tok-string">"</span>
+            <span class="tok-string">f"</span><span class="tok-string">(at least </span>{MIN_REASON_WORDS}<span class="tok-string"> words) to </span>{HANDLED_NAME}<span class="tok-string">; or the owner says \"skip retro\"</span><span class="tok-string">"</span>
         )
     hard += [<span class="tok-string">f"</span>{item_id}<span class="tok-string">: the line in </span>{HANDLED_NAME}<span class="tok-string"> does not count, </span>{invalid[item_id]}<span class="tok-string">"</span> <span class="tok-keyword">for</span> item_id <span class="tok-keyword">in</span> open_ids <span class="tok-keyword">if</span> item_id <span class="tok-keyword">in</span> invalid]
     count = blocks_path.read_text().strip() <span class="tok-keyword">if</span> blocks_path.exists() <span class="tok-keyword">else</span> <span class="tok-string">""</span>

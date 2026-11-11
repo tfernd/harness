@@ -1784,9 +1784,10 @@ def turn(
     calls: list[str] | None = None,
     transcript: tuple[dict, ...] = (),
     files: tuple[tuple[str, str], ...] = (),
+    extra: dict | None = None,
     **options: object,
 ) -> Case:
-    event = {"session_id": SESSION, "last_assistant_message": message, "transcript_path": "transcript.jsonl"}
+    event = {"session_id": SESSION, "last_assistant_message": message, "transcript_path": "transcript.jsonl", **(extra or {})}
     counted = (f"data/turns/{SESSION}.calls", "".join(f"{call}\n" for call in calls or []))
     options.setdefault("config", {})
 
@@ -1798,7 +1799,28 @@ def waiting(count: int, session: str = SESSION, /) -> str:
     return "".join(f"- id={index:08x} session={session} agent=worker item {index}\n" for index in range(count))
 
 
+def stamped(days: float, /) -> str:
+
+    moment = datetime.now().astimezone() - timedelta(days=days)
+
+    return f"- id=0000aaaa session=other agent=worker time={moment.strftime('%Y-%m-%dT%H:%M:%S%z')} an old item\n"
+
+
+def distinct_reasons(count: int, /) -> str:
+
+    return "".join(f"{index:08x}: rejected: reason number {index} stands\n" for index in range(count))
+
+
+def agent_calls(count: int, /) -> tuple[dict, ...]:
+
+    return tuple(launch(f"a{index}", is_background=False)[0] for index in range(count))
+
+
 INBOX = (INBOX_NAME, waiting(20))
+SKIPPED_FILE = f"data/turns/{SESSION}.skipped"
+SKIP_PROMPT = {"type": "user", "message": {"content": "skip retro, please"}}
+LESSON_BULLETS = "## Lessons\n- check the unit twice\n- name the file in the brief\n"
+BULLET_ID = hashlib.sha1(b"check the unit twice").hexdigest()[:8]
 REFUSED = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "PreToolUse:Bash hook error: [guard.py]: Blocked by the harness guard: no"}]}}
 QUOTED_REFUSAL = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "FAIL expected Blocked by the harness guard"}]}}
 OWNER_PROMPT = {"type": "user", "message": {"content": "the next job"}}
@@ -1899,7 +1921,7 @@ TURN_CASES = (
     turn("lessons with a rule change are allowed", LESSONS, False, files=(RULES_OTHER,), config=NO_RULE_PATHS),
     turn("a change under skills counts as a rule change by default", LESSONS, False, files=((RULES_FILE, '{"@ROOT@/project/AGENTS.md": "caa155adf81fddd29ab4b21a147927fb0295eb53"}'), ("skills/x/SKILL.md", "new rule\n")), config=None),
     turn("with only AGENTS.md unchanged the lessons get a note by default", LESSONS, False, "no change to show", files=((RULES_FILE, '{"@ROOT@/project/AGENTS.md": "caa155adf81fddd29ab4b21a147927fb0295eb53"}'),), config=None),
-    turn("Lessons: none is allowed", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS),
+    turn("Lessons: none is allowed", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, lacks="no change to show"),
     turn(
         "the third block is the last",
         PROGRESS,
@@ -1917,12 +1939,42 @@ TURN_CASES = (
         wrote=(RELEASED_FILE, "retro-20"),
     ),
     turn("a released id holds no more, with no warning", PROGRESS, False, files=(INBOX, RELEASED_FILE_ITEM), lacks="open checks"),
-    turn("nineteen waiting items hold nothing", PROGRESS, False, files=((INBOX_NAME, waiting(19)),), lacks="open checks"),
-    turn("another session's items never hold this one", PROGRESS, False, files=((INBOX_NAME, waiting(20, "other")),), lacks="open checks"),
-    turn("one item of this session among others holds it", PROGRESS, True, "retro-21", files=((INBOX_NAME, waiting(20, "other") + waiting(1)),)),
+    turn("nine waiting items hold nothing", PROGRESS, False, files=((INBOX_NAME, waiting(9)),), lacks="open checks"),
+    turn("ten waiting items hold the turn", PROGRESS, True, "retro-10", files=((INBOX_NAME, waiting(10)),)),
+    turn("another session's items hold this one too", PROGRESS, True, "retro-20", files=((INBOX_NAME, waiting(20, "other")),)),
+    turn("the hold says to launch the analyst in the background", PROGRESS, True, "Launch `harness:analyst` in the background", files=(INBOX,)),
+    turn("an item three days old holds the turn", PROGRESS, True, "retro-1", files=((INBOX_NAME, stamped(3.1)),)),
+    turn("the oldest of fresh and old items decides", PROGRESS, True, "retro-2", files=((INBOX_NAME, stamped(0.1) + stamped(9)),)),
+    turn("a none bullet files nothing", "## Lessons\n- none\n", False, not_wrote=(INBOX_NAME, "agent=main")),
+    turn("an item two days old holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(2.9)),), lacks="open checks"),
+    turn("an old item past the mark holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(9) + waiting(2)), (MARK_NAME, "3")), lacks="open checks"),
+    turn("an old item that is handled holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(9)), (HANDLED_NAME, "0000aaaa: rejected: it does not apply\n")), lacks="open checks"),
+    turn("a sub-agent is never held for a retro", PROGRESS, False, files=(INBOX,), extra={"agent_id": "agent-x"}, lacks="open checks"),
+    turn("a sub-agent files no lesson", LESSON_BULLETS, False, extra={"agent_id": "agent-x"}, not_wrote=(INBOX_NAME, "agent=main")),
+    turn("the owner's skip retro silences the hold", PROGRESS, False, files=(INBOX,), transcript=(SKIP_PROMPT,), lacks="open checks"),
+    turn("the owner's skip retro is kept for the session", PROGRESS, False, files=(INBOX,), transcript=(SKIP_PROMPT,), wrote=(SKIPPED_FILE, "1")),
+    turn("a kept skip silences a later turn", PROGRESS, False, files=(INBOX, (SKIPPED_FILE, "1")), lacks="open checks"),
+    turn("a skip in an earlier prompt does not count", PROGRESS, True, "retro-20", files=(INBOX,), transcript=(SKIP_PROMPT, OWNER_PROMPT)),
+    turn("a skip in another session is not kept", PROGRESS, True, "retro-20", files=(INBOX, ("data/turns/other.skipped", "1"))),
+    turn("a line for one item id closes only that item", PROGRESS, True, "retro-10", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "00000009: rejected: it does not apply\n"))),
+    turn("a partly handled retro still holds", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, distinct_reasons(19)))),
+    turn("a partly handled retro leaves the mark", PROGRESS, True, files=(INBOX, (HANDLED_NAME, distinct_reasons(19))), not_wrote=(MARK_NAME, "20")),
+    turn("every item handled by its own id moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=(MARK_NAME, "20"), lacks="open checks"),
+    turn("ten agents in the session hold for a retro when one item waits", PROGRESS, True, "retro-1", files=((INBOX_NAME, waiting(1)),), transcript=agent_calls(10)),
+    turn("nine agents in the session hold nothing for one item", PROGRESS, False, files=((INBOX_NAME, waiting(1)),), transcript=agent_calls(9), lacks="open checks"),
+    turn("ten agents hold nothing when no item waits", PROGRESS, False, files=((INBOX_NAME, ""),), transcript=agent_calls(10), lacks="open checks"),
+    turn("ten agents hold nothing when every item is handled", PROGRESS, False, files=((INBOX_NAME, waiting(1)), (HANDLED_NAME, distinct_reasons(1))), transcript=agent_calls(10), lacks="open checks"),
+    turn("a lesson bullet is filed as from the main session", LESSON_BULLETS, False, files=(), wrote=(INBOX_NAME, f"id={BULLET_ID} session={SESSION} agent=main time=")),
+    turn("each lesson bullet is filed", LESSON_BULLETS, False, wrote=(INBOX_NAME, "name the file in the brief\n")),
+    turn("a lesson bullet is filed once on a re-held turn", LESSON_BULLETS, False, files=((INBOX_NAME, f"- id={BULLET_ID} session={SESSION} agent=main time=2099-01-01T00:00:00+0000 check the unit twice\n"),), not_wrote=(INBOX_NAME, "check the unit twice\n- id=" + BULLET_ID)),
+    turn("a lesson bullet already filed is not refiled but a new one is", LESSON_BULLETS, False, files=((INBOX_NAME, f"- id={BULLET_ID} session={SESSION} agent=main time=2099-01-01T00:00:00+0000 check the unit twice\n"),), wrote=(INBOX_NAME, "name the file in the brief\n")),
+    turn("a lesson bullet of another session is filed again", LESSON_BULLETS, False, files=((INBOX_NAME, f"- id={BULLET_ID} session=other agent=main time=2099-01-01T00:00:00+0000 check the unit twice\n"),), wrote=(INBOX_NAME, f"id={BULLET_ID} session={SESSION} ")),
+    turn("a none lesson files nothing", "Lessons: none\n", False, not_wrote=(INBOX_NAME, "agent=main")),
+    turn("a bullet outside the Lessons section is not filed", "## Done\n- finished the unit\n", False, not_wrote=(INBOX_NAME, "agent=main")),
+    turn("lessons in a home folder file nothing", LESSON_BULLETS, False, cwd="", config=None, not_wrote=("../" + INBOX_NAME, "agent=main")),
     turn("a closing line moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), wrote=(MARK_NAME, "20")),
     turn("a moved mark leaves the harness folder ignoring itself", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), wrote=("__harness__/.gitignore", "*")),
-    turn("the mark hides what it covers", PROGRESS, False, files=(INBOX, (MARK_NAME, "1")), lacks="open checks"),
+    turn("the mark hides what it covers", PROGRESS, False, files=(INBOX, (MARK_NAME, "15")), lacks="open checks"),
     turn("twenty past the mark are due", PROGRESS, True, "retro-40", files=((INBOX_NAME, waiting(40)), (MARK_NAME, "20"))),
     turn("a line for an item id closes no retro", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply\n"))),
     turn("a running agent puts the retro off", PROGRESS, False, files=(INBOX,), transcript=(launch("t1")[0],), lacks="a retro is due"),
@@ -1935,10 +1987,10 @@ TURN_CASES = (
     ),
     turn("a mark past the inbox is ignored", PROGRESS, True, "retro-20", files=(INBOX, (MARK_NAME, "80"))),
     turn("a line cannot cover items not yet filed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-9999: rejected: it does not apply\n")), wrote=(MARK_NAME, "20")),
-    turn("a failed command quoting a refusal is no refusal", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(QUOTED_REFUSAL,)),
+    turn("a failed command quoting a refusal is no refusal", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(QUOTED_REFUSAL,), lacks="refused this turn"),
     turn("a bare none after a refusal gets a note", "Lessons: none\n", False, "refused this turn", files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,)),
-    turn("a none with its reason after a refusal is allowed", "Lessons: none: the guard worked as it should\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,)),
-    turn("a refusal before the owner's prompt does not count", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED, OWNER_PROMPT)),
+    turn("a none with its reason after a refusal is allowed", "Lessons: none: the guard worked as it should\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,), lacks="refused this turn"),
+    turn("a refusal before the owner's prompt does not count", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED, OWNER_PROMPT), lacks="refused this turn"),
     turn("an old line with no session never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef agent=worker add a rule\n"),)),
     turn("another session's line never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef session=other agent=worker a\n"),)),
     turn("a project's headings replace the status", "## Result\nall of it", False, calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
@@ -2979,6 +3031,14 @@ LOOP_CASES = (
     context("loop: another project's reports do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME, project="/elsewhere"),)),
     context("loop: reports older than the marker do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME), ("data/retro-marker", ""))),
     context("loop: reports newer than the marker count", {"hook_event_name": "SessionStart"}, "12 reports since", files=(ledger(12, NEW_TIME), ("data/retro-marker", ""))),
+    context("loop: ten waiting items tell the session to launch the analyst", {"hook_event_name": "SessionStart"}, "launch `harness:analyst` in the background", files=((INBOX_NAME, waiting(10)),)),
+    context("loop: nine waiting items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(9)),)),
+    context("loop: an item three days old tells the session", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
+    context("loop: an item two days old tells nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, stamped(2.9)),)),
+    context("loop: handled items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "retro-10: rejected: it does not apply\n"))),
+    context("loop: items before the mark tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(12)), (MARK_NAME, "5"))),
+    context("loop: a sub-agent start gets no due line", SUB_WORKER, lacks="A retro is due", files=((INBOX_NAME, waiting(10)),)),
+    context("loop: a due retro replaces the report-count line", {"hook_event_name": "SessionStart"}, lacks="reports since", files=((INBOX_NAME, waiting(10)), ledger(10, OLD_TIME))),
     context("loop: the retro line keeps the orchestrator line", {"hook_event_name": "SessionStart"}, "harness:orchestrator", files=(ledger(10, OLD_TIME),)),
     context("loop: a subagent start gets no retro line", SUB_WORKER, lacks="retro", files=(ledger(10, OLD_TIME),)),
 )
