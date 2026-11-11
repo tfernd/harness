@@ -21,10 +21,8 @@ from shell import Segment, Word, get_segments
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 DEFAULTS: dict = {
     "guard": {"ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
-    "brief": {},
     "progress": {"every": 10},
     "tests_kept": {"enabled": True},
-    "main_edits": {"max": 3, "allow": []},
     "skill_gate": {
         "*.py": ["harness:code-python"],
         "*.js": ["harness:code-js"],
@@ -56,7 +54,6 @@ DEFAULTS: dict = {
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
 EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
-EDITS_KIND = "edits"
 HARNESS_FOLDER = "__harness__"
 SCRATCH_ROOT = Path("/tmp/harness")
 STATE_FOLDER_NAME = "harness"
@@ -149,14 +146,6 @@ def get_state_folder(root: Path, /) -> Path:
     base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
 
     return base / STATE_FOLDER_NAME / root.name
-
-
-def is_throwaway_path(path: str, root: Path, /) -> bool:
-
-    resolved = os.path.realpath(path)
-    folders = (get_scratch_folder(root), get_state_folder(root))
-
-    return any(resolved == os.path.realpath(folder) or resolved.startswith(os.path.realpath(folder) + os.sep) for folder in folders)
 
 
 def ensure_scratch_folder(root: Path, /) -> Path:

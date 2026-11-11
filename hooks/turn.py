@@ -15,11 +15,11 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from common import EDIT_TOOLS, EDITS_KIND, data_folder, find_project, get_unfenced_lines, write_atomic
+from common import EDIT_TOOLS, data_folder, find_project, get_unfenced_lines, write_atomic
 from skill_gate import get_written_project_files
 
 MIN_CALLS = 3
-HEADINGS = ("Verdict", "Done", "Needs you", "Next", "Lessons")
+HEADINGS = ("Verdict", "Done", "Needs you", "Next")
 MAX_BLOCKS = 3
 APP_PROMPT = re.compile(r"<task-notification>|<agent-message ")
 APP_PROMPT_HEAD = 600
@@ -188,7 +188,6 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
         return 0
     if calls >= min_calls and not is_deferred:
         write_atomic(calls_path, "")
-        write_atomic(get_state_path(session, EDITS_KIND), "")
     if not is_deferred and deferred_path.exists():
         deferred_path.unlink()
     write_atomic(blocks_path, "0")
@@ -232,8 +231,6 @@ def main() -> int:
                     file.write(f"{line}\n")
     elif mode == "reset":
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
-        if not is_app_prompt:
-            write_atomic(get_state_path(event.get("session_id") or "unknown", EDITS_KIND), "")
         if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
             write_atomic(calls_path, "")
         write_atomic(blocks_path, "0")

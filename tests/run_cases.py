@@ -42,7 +42,7 @@ OWNER_PROJECT_ENTRY = ("data/user.json", json.dumps({"projects": {ROOT + "/proje
 GIT_MARK = (".git/HEAD", "ref: refs/heads/main\n")
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": "case", "GIT_AUTHOR_EMAIL": "case@localhost", "GIT_COMMITTER_NAME": "case", "GIT_COMMITTER_EMAIL": "case@localhost"}
 BUSY_CALLS = ("Agent", "Edit", "Edit")
-FULL_STATUS = "\n".join(f"## {heading}\nnothing" for heading in ("Verdict", "Done", "Needs you", "Next", "Lessons"))
+FULL_STATUS = "\n".join(f"## {heading}\nnothing" for heading in ("Verdict", "Done", "Needs you", "Next"))
 PROGRESS = "Progress: two files are written, the third agent is still running."
 OLD_CARD = (
     "| Score | Value | Why |\n| --- | --- | --- |\n| Task | 5/5 | done |\n| Brief | 4/5 | clear |\n| Ease | 5 | easy |\n\n"
@@ -1561,7 +1561,6 @@ QUOTED_REFUSAL = {"type": "user", "message": {"content": [{"type": "tool_result"
 OWNER_PROMPT = {"type": "user", "message": {"content": "the next job"}}
 BLOCKS_FILE = f"data/turns/{SESSION}.blocks"
 CALLS_FILE = f"data/turns/{SESSION}.calls"
-EDITS_FILE = f"data/turns/{SESSION}.edits"
 RULES_FILE = f"data/turns/{SESSION}.rules"
 DEFERRED_FILE = f"data/turns/{SESSION}.deferred"
 RULE_FILE_BEFORE = ("AGENTS.md", "a rule\n")
@@ -1787,257 +1786,6 @@ TURN_CASES = (
     ),
 )
 
-
-
-
-def main_call(name: str, tool: str, tool_input: dict, is_noted: bool, text: str = "", /, *, settings: object = None, **options: object) -> Case:
-
-    options.setdefault("config", {"delegate": settings if settings is not None else {}})
-    event = {"tool_name": tool, "agent_id": None, "tool_input": tool_input}
-    if is_noted:
-        return Case(name, ("delegate.py",), event, False, is_unchanged=True, context=text or "delegate rule", **options)
-
-    return Case(name, ("delegate.py",), event, False, lacks="delegate rule", is_unchanged=True, **options)
-
-
-def main_bash(name: str, command: str, is_noted: bool, /, **options: object) -> Case:
-    return main_call(name, "Bash", {"command": command}, is_noted, "main-session commands" if is_noted else "", **options)
-
-
-ONLY_DOCS = {"write_allow": ["docs/*"], "bash_allow": ["make check"]}
-def edit_call(name: str, path: str, calls: list[str], blocks: bool, text: str = "", /, **options: object) -> Case:
-
-    event = {"session_id": SESSION, "tool_name": "Edit", "agent_id": None, "tool_input": {"file_path": path}}
-    counted = (CALLS_FILE, "".join(f"{call}\n" for call in calls))
-    made = (EDITS_FILE, "".join(f"{call.partition(chr(9))[2]}\n" for call in calls if call.partition(chr(9))[0] in ("Edit", "Write", "NotebookEdit")))
-    options.setdefault("config", {})
-    if blocks:
-        return Case(name, ("delegate.py",), event, True, text or "main_edits", files=(counted, made), **options)
-
-    return Case(name, ("delegate.py",), event, False, lacks="Blocked by", is_unchanged=True, context=text, files=(counted, made), **options)
-
-
-def edit_event(path: str, /) -> dict:
-    return {"session_id": SESSION, "tool_name": "Edit", "agent_id": None, "tool_input": {"file_path": path}}
-
-
-THREE_EDITS = ["Edit\tsrc/a.py", "Write\tsrc/b.py", "NotebookEdit\tn.ipynb"]
-MAIN_EDIT_CASES = (
-    edit_call("the 4th counted edit is refused", "src/d.py", THREE_EDITS, True, "3 edits"),
-    edit_call("the refusal names the cap, the worker and the config key", "src/d.py", THREE_EDITS, True, '"main_edits": {"max": N}'),
-    edit_call("the 3rd counted edit is noted", "src/c.py", THREE_EDITS[:2], False, "edit 3 of 3"),
-    edit_call("the 1st counted edit is noted", "src/c.py", [], False, "edit 1 of 3"),
-    edit_call("agent lines do not count", "src/d.py", ["Agent\taudit", "Agent\tfind", *THREE_EDITS[:2]], False, "edit 3 of 3"),
-    edit_call("max 0 turns the rule off", "src/d.py", THREE_EDITS, False, config={"main_edits": {"max": 0}}),
-    edit_call("a project raises the cap", "src/d.py", THREE_EDITS, False, "edit 4 of 5", config={"main_edits": {"max": 5}}),
-    edit_call("a project lowers the cap", "src/b.py", THREE_EDITS[:1], True, "cap is 1", config={"main_edits": {"max": 1}}),
-    edit_call("a project replaces the allow list", "docs/a.md", THREE_EDITS, False, config={"main_edits": {"allow": ["docs/*"]}}),
-    Case("a sub-agent's edit is never refused", ("delegate.py",), {"session_id": SESSION, "tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/d.py"}}, False, config={}, lacks="main_edits", files=((CALLS_FILE, "".join(f"{call}\n" for call in THREE_EDITS)),)),
-    Case("a Bash call is out of the cap", ("delegate.py",), {"session_id": SESSION, "tool_name": "Bash", "agent_id": None, "tool_input": {"command": "make x"}}, False, config={}, lacks="main_edits", files=((CALLS_FILE, "".join(f"{call}\n" for call in THREE_EDITS)),)),
-    edit_call("a path outside the project is neither counted nor noted", "../x.py", THREE_EDITS, False, context_lacks="main_edits"),
-    edit_call("an earlier edit outside the project does not count", "src/d.py", ["Write\t../memory.md", "Write\t/elsewhere/n.md", *THREE_EDITS[:2]], False, "edit 3 of 3"),
-    Case(
-        "edits sent in one message are counted before they run",
-        ("delegate.py",),
-        edit_event("src/d.py"),
-        True,
-        "3 edits",
-        config={},
-        before=tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")),
-    ),
-    Case("a counted edit is recorded before it runs", ("delegate.py",), edit_event("src/a.py"), False, config={}, wrote=(EDITS_FILE, "src/a.py")),
-    Case("a refused edit is not recorded", ("delegate.py",), edit_event("src/z.py"), True, config={"main_edits": {"max": 1}}, files=((EDITS_FILE, "src/a.py\n"),), not_wrote=(EDITS_FILE, "src/z.py")),
-    Case("the home folder as the root is never counted", ("delegate.py",), edit_event("src/d.py"), False, config={}, cwd=".", files=((EDITS_FILE, "a\nb\nc\n"),), lacks="main_edits"),
-    Case(
-        "an owner prompt empties the edit count while a status is due",
-        ("delegate.py",),
-        edit_event("src/d.py"),
-        False,
-        config={},
-        files=((DEFERRED_FILE, "1"),),
-        before=(*tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "go on"})),
-        context="edit 1 of 3",
-    ),
-    Case(
-        "a notification keeps the edit count",
-        ("delegate.py",),
-        edit_event("src/d.py"),
-        True,
-        "3 edits",
-        config={},
-        files=((DEFERRED_FILE, "1"),),
-        before=(*tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "<task-notification>\n<status>completed</status>"})),
-    ),
-    Case(
-        "the 4th edit within one turn is refused after a prompt",
-        ("delegate.py",),
-        edit_event("src/e.py"),
-        True,
-        "3 edits",
-        config={},
-        before=(
-            (("turn.py", "reset"), {"session_id": SESSION, "prompt": "go on"}),
-            *tuple((("delegate.py",), edit_event(f"src/{name}.py")) for name in ("a", "b", "c")),
-        ),
-    ),
-    edit_call("the cap holds with no project file", "src/d.py", THREE_EDITS, True, "3 edits", config=None),
-)
-DELEGATE_CASES = (
-    main_call("an edit with an empty allow list is noted", "Edit", {"file_path": "src/a.py"}, True, "write_allow"),
-    main_call("a write outside the allow list is noted", "Write", {"file_path": "src/a.py"}, True, "write_allow", settings=ONLY_DOCS),
-    main_call("a write inside the allow list is allowed", "Write", {"file_path": "docs/a.md"}, False, settings=ONLY_DOCS),
-    main_call("a notebook edit outside is noted", "NotebookEdit", {"notebook_path": "n.ipynb"}, True, "write_allow", settings=ONLY_DOCS),
-    main_call("an absolute path inside the allow list is allowed", "Write", {"file_path": f"{ROOT}/project/docs/b.md"}, False, settings=ONLY_DOCS),
-    main_call("a symlinked path is read resolved", "Write", {"file_path": "link/a.py"}, True, "write_allow", settings=ONLY_DOCS, links=(("project/link", "project/src"),)),
-    main_call("a path outside the project is noted whatever the glob", "Write", {"file_path": "../x"}, True, "write_allow", settings={"write_allow": ["*"]}),
-    main_call("a harness folder file is not", "Edit", {"file_path": "__harness__/notes.md"}, True, "write_allow"),
-    main_call("a file in the harness scratch folder is allowed", "Write", {"file_path": "/tmp/harness/project/x.md"}, False, settings=ONLY_DOCS),
-    Case("a sub-agent's edit passes", ("delegate.py",), {"tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/a.py"}}, False, config={"delegate": {}}, lacks="delegate rule"),
-    Case("a sub-agent's command passes", ("delegate.py",), {"tool_name": "Bash", "agent_id": "a1", "tool_input": {"command": "make x"}}, False, config={"delegate": {}}, lacks="delegate rule"),
-    main_call("no delegate key means no rule", "Edit", {"file_path": "src/a.py"}, False, config={}),
-    main_call("no project means no edit rule", "Edit", {"file_path": "src/a.py"}, False, config=None),
-    *(main_bash(f"delegate allows: {command!r}", command, False) for command in (
-        "git status",
-        "git log -3",
-        "git diff HEAD~1",
-        "git show HEAD",
-        "git add -A",
-        "git commit -m x",
-        "gh pr list",
-        "ls -la",
-        "rg x src",
-        "head -3 a.txt",
-        "wc -l a.txt",
-        "git status && git log -3 | head -3",
-        COMMIT.format(body="subject\n\nbody 1) with \"quotes\""),
-        "git log > /dev/null 2>&1",
-    )),
-    *(main_bash(f"delegate notes: {command!r}", command, True) for command in (
-        "git logs",
-        "git status && make x",
-        "make x; git status",
-        "git log $(make x)",
-        "make x",
-        "cat a.txt",
-        "git log > out.txt",
-        "> out.txt",
-    )),
-    main_bash("git options before an allowed command pass", "git -C docs status", False),
-    main_bash("git options do not free a push", "git -C docs push", True),
-    main_bash("a push is noted by default", "git push origin topic", True),
-    main_bash("a push is noted after other defaults", "git add -A && git push", True),
-    main_bash("a project may list a push", "git push origin topic", False, settings={"bash_allow": ["git push"]}),
-    main_bash("add and commit pass by default", "git add -A && git commit -m x", False),
-    main_bash("bash_allow adds a prefix", "make check -j2", False, settings=ONLY_DOCS),
-    main_bash("bash_allow matches whole words", "make checks", True, settings=ONLY_DOCS),
-    main_bash("bash_allow keeps the default list", "git status", False, settings=ONLY_DOCS),
-    main_bash("the project variable pins the rule", "make x", True, cwd="elsewhere", project_dir="project"),
-)
-
-
-
-
-def brief(name: str, role: str, prompt: str, is_noted: bool, text: str = "", /, **options: object) -> Case:
-
-    options.setdefault("config", {"brief": {}})
-    event = {"tool_name": "Agent", "tool_input": {"subagent_type": role, "prompt": prompt}}
-    if is_noted:
-        return Case(name, ("brief_lint.py",), event, False, is_unchanged=True, context=text or "brief rule", **options)
-
-    return Case(name, ("brief_lint.py",), event, False, lacks="brief rule", is_unchanged=True, **options)
-
-
-GOOD_BRIEF = "Do it.\nGoal: x\nJudge: z\n"
-BRIEF_CASES = (
-    brief("a fence with a language hides a budget", "scout", "Goal: x\n```python\nBudget: 5 minutes\n```", False),
-    brief("a whole worker brief passes", "worker", GOOD_BRIEF, False),
-    brief("a budget in turns passes", "scout", "Goal: x\nBudget: 5 turns", False),
-    brief("a bare budget passes", "scout", "Goal: x\nBudget: 5", False),
-    brief("a sentence opening with the word passes", "scout", "Goal: x\nBudget is 30 turns, roughly", False),
-    brief("prose about a budget passes", "scout", "Goal: x\nWe are over budget: three things", False),
-    brief("a quoted budget passes", "scout", "Goal: x\nThe old form was `Do x. Budget: 5 minutes` here", False),
-    brief("a budget in a fence passes", "scout", "Goal: x\n```\nBudget: 5 minutes\n```", False),
-    brief("a prefixed worker is the worker", "harness:worker", "Goal: x", True, "Judge:"),
-    brief("a worker brief without Judge is noted", "worker", "Goal: x", True, "Judge:"),
-    brief("a label in the middle of a line does not count", "scout", "The Goal: is x", True, "Goal:"),
-    brief("a bold label counts", "scout", "**Goal:** x", False),
-    brief("a reviewer brief without Input is noted", "reviewer", "Goal: x\nTree: y", True, "Input:"),
-    brief("a reviewer brief without Tree is noted", "harness:reviewer", "Goal: x\nInput: y", True, "Tree:"),
-    brief("a whole reviewer brief passes", "reviewer", "Goal: x\nInput: y\nTree: z", False),
-    Case("a Plan agent is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "Plan", "prompt": "Goal: x"}}, True, "`Plan` has no harness role", config={"brief": {}}),
-    brief("a whole designer brief passes", "designer", "Goal: x", False),
-    brief("a scout needs Goal", "scout", "Look at x", True, "Goal:"),
-    brief("a prefixed reviewer needs Goal", "harness:reviewer", "Look at x", True, "Goal:"),
-    brief("a scout with Goal passes", "scout", "Goal: x", False),
-    Case("a general-purpose agent is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "Goal: x"}}, True, "harness:scout", config={"brief": {}}),
-    Case("an Explore agent is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "Explore", "prompt": "Goal: x"}}, True, "`Explore` has no harness role", config={"brief": {}}),
-    *(
-        Case(f"the type {given!r} is read without case or spaces", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": given, "prompt": "Goal: x"}}, True, "no harness role", config={"brief": {}})
-        for given in ("General-Purpose", "explore", "Explore ", " PLAN", "CLAUDE")
-    ),
-    Case("a type that is no string is refused as no type", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": 5, "prompt": "Goal: x"}}, True, "an agent with no type", config={"brief": {}}),
-    Case("a harness type with no agent file is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "harness:nonexistent", "prompt": "Goal: x"}}, True, "holds no agents/nonexistent.md", config={"brief": {}}),
-    Case("a harness type with no agent file is refused without the brief key", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "harness:nonexistent", "prompt": "Goal: x"}}, True, "harness:worker", config=None),
-    Case("a bare harness prefix is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "harness:", "prompt": "Goal: x"}}, True, "is no agent of this plugin", config={"brief": {}}),
-    Case("an agents folder the plugin lacks refuses no harness type", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "harness:nonexistent", "prompt": "Goal: x"}}, False, config={"brief": {}}, plugin_root="project/plug", lacks="Blocked by"),
-    Case("an agent with no type is refused", ("brief_lint.py",), {"tool_name": "Task", "tool_input": {"prompt": "Goal: x"}}, True, "an agent with no type", config={"brief": {}}),
-    Case("a generic agent is refused without the brief key", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "x"}}, True, "no harness role", config={}),
-    Case("a generic agent is refused with no project file", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "x"}}, True, "no harness role", config=None),
-    brief("a project's own agent type needs a Goal line", "builder", "Look at x", True, "Goal:"),
-    brief("another plugin's worker needs a Goal line", "other:worker", "Look at x", True, "Goal:"),
-    brief("a project's own agent type with a Goal passes", "builder", "Goal: look at x", False),
-    brief("no brief key still notes", "worker", "Look at x", True, "Goal:", config={}),
-    brief("no project file still notes", "worker", "Look at x", True, "Goal:", config=None),
-    brief("the owner's file replaces the default", "worker", "Goal: x", True, "Plan:", config=None, files=(("data/user.json", '{"brief": {"required": {"worker": ["Plan:"]}}}'),)),
-    brief(
-        "the projects entry beats the owner's top level",
-        "worker",
-        "Goal: x",
-        False,
-        config=None,
-        files=(("data/user.json", json.dumps({"brief": {"required": {"worker": ["Plan:"]}}, "projects": {ROOT + "/project": {"brief": {"required": {"worker": ["Goal:"]}}}}})),),
-    ),
-    brief(
-        "brief.required replaces the default",
-        "worker",
-        "Goal: x",
-        True,
-        "Plan:",
-        config={"brief": {"required": {"worker": ["Plan:"], "*": []}}},
-    ),
-    brief("brief.required with no entry for a role asks nothing", "scout", "Look", False, config={"brief": {"required": {"worker": ["Goal:"]}}}),
-    Case(
-        "a sub-agent's call passes",
-        ("brief_lint.py",),
-        {"tool_name": "Agent", "agent_id": "a1", "tool_input": {"subagent_type": "worker", "prompt": "x"}},
-        False,
-        config={"brief": {}},
-        lacks="brief rule",
-    ),
-)
-
-
-
-
-
-
-
-
-def main_bash_edit(name: str, command: str, calls: list[str], blocks: bool, text: str = "", /, **options: object) -> Case:
-
-    event = {"session_id": SESSION, "tool_name": "Bash", "agent_id": None, "tool_input": {"command": command}}
-    counted = (CALLS_FILE, "".join(f"{call}\n" for call in calls))
-    made = (EDITS_FILE, "".join(f"{call.partition(chr(9))[2]}\n" for call in calls if call.partition(chr(9))[0] in ("Edit", "Write", "NotebookEdit")))
-    options.setdefault("config", {})
-    if blocks:
-        return Case(name, ("delegate.py",), event, True, text or "main_edits", files=(counted, made), **options)
-
-    return Case(name, ("delegate.py",), event, False, lacks="Blocked by", files=(counted, made), **options)
-
-
-
-
-
 OLD, NEW = "2020-01-01T00:00:00.000Z", "2999-01-01T00:00:00.000Z"
 
 
@@ -2097,87 +1845,6 @@ BUDGET_CASES = (
     budget("a missing transcript passes the budget", "Goal: x", False, files=()),
     budget("an empty transcript has the role's default", "Goal: x", False, files=(("s/subagents/agent-a1.jsonl", ""),)),
     budget("a broken transcript has the role's default", "Goal: x", False, files=(("s/subagents/agent-a1.jsonl", "{not json\n"),)),
-)
-
-
-
-
-def read_call(call_id: str, path: str = "", /) -> dict:
-    return {"type": "tool_use", "id": call_id, "name": "Read", "input": {"file_path": path or f"{call_id}.py"}}
-
-
-def shell_call(call_id: str, command: str, /) -> dict:
-    return {"type": "tool_use", "id": call_id, "name": "Bash", "input": {"command": command}}
-
-
-def make_reads(count: int, /) -> list[list[dict]]:
-    return [[read_call(f"r{index}")] for index in range(count)]
-
-
-def nudge(name: str, turns: list[list[dict]], text: str = "", /, *, path: str = "s/subagents/agent-a1.jsonl", **options: object) -> Case:
-
-    lines = [json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": [call]}}) for index, turn in enumerate(turns) for call in turn]
-    options.setdefault("config", {})
-    options.setdefault("files", ((path, "\n".join(lines) + "\n"),))
-    event = {"hook_event_name": "PostToolUse", "tool_name": "Read", "agent_id": "a1", "agent_type": "harness:worker", "transcript_path": "project/s.jsonl", "tool_use_id": turns[-1][-1]["id"]}
-
-    return Case(name, ("nudge.py",), {**event, **options.pop("event", {})}, False, text, **options)
-
-
-REPEATED = ([read_call("r0", "a.py")], [read_call("r1", "a.py")], [read_call("r2", "a.py")], [read_call("r3", "a.py")])
-NUDGE_CASES = (
-    nudge(
-        "a repeat with its keys in another order is a repeat",
-        [[{"type": "tool_use", "id": "r0", "name": "Read", "input": {"file_path": "a.py", "limit": 1}}], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"limit": 1, "file_path": "a.py"}}]],
-        "already made this same read",
-    ),
-    nudge("three single reads in a row are nudged", make_reads(3), "one small read each"),
-    nudge("the nudge is hook context", make_reads(3), '"hookEventName": "PostToolUse"'),
-    nudge("two single reads are not", make_reads(2), lacks="additionalContext"),
-    nudge("two reads in one message break the run", [*make_reads(2), [read_call("x1"), read_call("x2")]], lacks="additionalContext", event={"tool_use_id": "x1"}),
-    nudge("a batched command breaks the run", [*make_reads(2), [shell_call("b1", "cat a; cat b")]], lacks="additionalContext"),
-    nudge("a sed -i is no read", [[shell_call(f"b{index}", f"sed -i s/a/b/ f{index}.py")] for index in range(3)], lacks="additionalContext"),
-    nudge("single shell reads count", [[shell_call(f"b{index}", f"cd /repo && cat f{index}.py")] for index in range(3)], "one small read each"),
-    nudge("a read after cd and a semicolon counts", [[shell_call(f"b{index}", f"cd /repo; cat f{index}.py")] for index in range(3)], "one small read each"),
-    nudge(
-        "a line with no call does not break the run",
-        make_reads(3),
-        "one small read each",
-        files=(("s/subagents/agent-a1.jsonl", "".join(json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": [call]}}) + "\n" + json.dumps({"type": "assistant", "message": {"id": f"t{index}", "content": [{"type": "text", "text": "x"}]}}) + "\n" for index, [call] in enumerate(make_reads(3)))),),
-    ),
-    nudge("a repeated read is nudged", REPEATED[:2], "same read"),
-    nudge("the same read after a command is a repeat", [REPEATED[0], [shell_call("c1", "python3 x.py")], REPEATED[1]], "same read"),
-    nudge("the same read after an edit is not", [REPEATED[0], [{"type": "tool_use", "id": "e1", "name": "Edit", "input": {}}], REPEATED[1]], lacks="additionalContext"),
-    nudge("another range of the file is not a repeat", [[read_call("r0", "a.py")], [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"file_path": "a.py", "offset": 9}}]], lacks="additionalContext"),
-    nudge("the second nudge still speaks", REPEATED[:3], "one small read each"),
-    nudge("the third nudge is silent", REPEATED, lacks="additionalContext"),
-    nudge("a call that is not the wasteful one hears nothing", REPEATED[:2], lacks="additionalContext", event={"tool_use_id": "r0"}),
-    nudge("the main session is nudged from its transcript", REPEATED[:2], "same read", path="s.jsonl", event={"agent_id": None}),
-    nudge("a sub-agent is not judged by the session's transcript", REPEATED[:2], lacks="additionalContext", path="s.jsonl"),
-    nudge("no project file still nudges", REPEATED[:2], "same read", config=None),
-    nudge(
-        "a transcript past the size limit gets no nudge",
-        REPEATED[:2],
-        lacks="additionalContext",
-        files=(("s/subagents/agent-a1.jsonl", json.dumps({"type": "user", "message": {"content": "x" * 1048576}}) + "\n" + "".join(json.dumps({"type": "assistant", "message": {"id": f"m{index}", "content": turn}}) + "\n" for index, turn in enumerate(REPEATED[:2]))),),
-    ),
-    nudge("a missing transcript passes", REPEATED[:2], lacks="additionalContext", files=()),
-    nudge("a torn transcript line is skipped", REPEATED[:2], lacks="additionalContext", files=(("s/subagents/agent-a1.jsonl", "{not json\n"),)),
-    nudge("a test piped into tail is noted", [[shell_call("b0", "uv run pytest -q | tail -5")]], "set -o pipefail"),
-    nudge("the note names zsh's pipestatus", [[shell_call("b0", "uv run pytest -q | tail -5")]], "$pipestatus"),
-    nudge("a make piped into head is noted", [[shell_call("b0", "cd /repo && make check 2>&1 | head -20")]], "set -o pipefail"),
-    nudge("a tests script piped into tail is noted", [[shell_call("b0", "uv run python tests/run_cases.py | tail -3")]], "set -o pipefail"),
-    nudge("a cargo test piped into tail is noted", [[shell_call("b0", "cargo test | tail")]], "set -o pipefail"),
-    nudge("pipefail set first keeps the pipe quiet", [[shell_call("b0", "set -o pipefail; uv run pytest -q | tail -5")]], lacks="additionalContext"),
-    nudge("a read pipestatus keeps the pipe quiet", [[shell_call("b0", "uv run pytest -q | tail -5; echo $pipestatus")]], lacks="additionalContext"),
-    nudge("a pipe of a plain command is quiet", [[shell_call("b0", "ls | head")]], lacks="additionalContext"),
-    nudge("a gate piped into another filter is quiet", [[shell_call("b0", "uv run pytest -q | grep FAILED")]], lacks="additionalContext"),
-    nudge("a gate before the list separator is quiet", [[shell_call("b0", "uv run pytest -q && ls | tail -5")]], lacks="additionalContext"),
-    nudge("a pipe inside quotes is quiet", [[shell_call("b0", "pytest -k 'a | tail -5'")]], lacks="additionalContext"),
-    nudge("the pipe note is given once", [[shell_call("b0", "pytest | tail")], [shell_call("b1", "pytest | tail")]], lacks="additionalContext", event={"tool_use_id": "b1"}),
-    nudge("a call after the noted one hears nothing", [[shell_call("b0", "pytest | tail")], [shell_call("b1", "ls")]], lacks="additionalContext", event={"tool_use_id": "b1"}),
-    nudge("zsh with PIPESTATUS in capitals is told", [[shell_call("b0", "pytest | tail; echo ${PIPESTATUS[1]}")]], "is empty there"),
-    nudge("bash reads PIPESTATUS in capitals", [[shell_call("b0", "pytest | tail; echo ${PIPESTATUS[1]}")]], lacks="additionalContext", shell="/bin/bash"),
 )
 
 
@@ -2661,7 +2328,7 @@ SKILL_GATE_CASES = (
 def hook_command(name: str, blocks: bool, text: str, /, **options: object) -> Case:
     event = {"tool_name": "Bash", "tool_input": {"command": "git reset --hard HEAD~1"}}
 
-    return Case(name, ("hooks.json", "guard.py"), event, blocks, text, STRICT, is_silent=not blocks, **options)
+    return Case(name, ("hooks.json", "PreToolUse"), event, blocks, text, STRICT, is_silent=not blocks, **options)
 
 
 COMMAND_CASES = (
@@ -2669,6 +2336,26 @@ COMMAND_CASES = (
     hook_command("hooks.json command: a missing hook script lets the call through, silent", False, "", plugin_root="plug", files=(("../plug/keep", ""),)),
 )
 
+
+DISPATCH_CRASH = (("data/progress/case-session.jsonl", "{}\n"), ("data/progress/case-session.offset/blocked", ""))
+
+
+def dispatched(name: str, command: str, blocks: bool, text: str = "", /, *, event: dict | None = None, **options: object) -> Case:
+    tool_event = {"tool_name": "Bash", "tool_input": {"command": command}, **(event or {})}
+    options.setdefault("config", STRICT)
+
+    return Case(name, ("dispatch.py", "PreToolUse"), tool_event, blocks, text, **options)
+
+
+DISPATCH_CASES = (
+    dispatched("dispatcher: a guard refusal still refuses", "git reset --hard HEAD~1", True, "history"),
+    dispatched("dispatcher: the commit rule still refuses", "git commit -m 'bad title'", True, "commit rule", git=("git init -q",)),
+    dispatched("dispatcher: a changed command and its note arrive together", "uv run pytest -q | tail -5", False, "set -o pipefail", updated={"command": "set -o pipefail; uv run pytest -q | tail -5"}, context="put in front"),
+    dispatched("dispatcher: a plain call passes in silence", "ls", False, is_silent=True),
+    dispatched("dispatcher: a crashing hook does not stop the guard", "git reset --hard HEAD~1", True, "failed and let the call run", event={"session_id": SESSION}, files=DISPATCH_CRASH),
+    dispatched("dispatcher: a crashing hook lets a plain call through", "ls", False, "failed and let the call run", event={"session_id": SESSION}, files=DISPATCH_CRASH),
+    Case("dispatcher: the turn hook runs from its event", ("dispatch.py", "Stop"), {"session_id": SESSION}, False, is_silent=True),
+)
 
 PIPEFAIL_NOTE = "put in front"
 
@@ -3027,7 +2714,7 @@ def check_files(case: Case, root: Path, /) -> str:
 def get_hook_command(hooks: Path, name: str, /) -> str:
 
     events = json.loads((hooks / "hooks.json").read_text())["hooks"]
-    commands = [hook["command"] for groups in events.values() for group in groups for hook in group["hooks"] if f'hooks/{name}"' in hook["command"]]
+    commands = [hook["command"] for groups in events.values() for group in groups for hook in group["hooks"] if f'hooks/dispatch.py" {name}' in hook["command"]]
     assert commands, name
 
     return commands[0]
@@ -3118,12 +2805,12 @@ def run_case(case: Case, hooks: Path, /) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the hook cases: what the guard refuses, when a report goes back, when the Stop hook holds a turn, what the delegate and brief rules refuse, and what the context hook says.")
+    parser = argparse.ArgumentParser(description="Run the hook cases: what the guard refuses, when a report goes back, when the Stop hook holds a turn, and what the context hook says.")
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

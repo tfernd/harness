@@ -33,6 +33,7 @@ BAND_PAGE = Path("docs") / "band.html"
 PAGES = ((TEMPLATE, PAGE), (BAND_TEMPLATE, BAND_PAGE))
 ASSETS = (Path("docs") / "style.css", Path("docs") / "script.js")
 FINGERPRINT_LENGTH = 10
+DISPATCH_COMMAND = re.compile(r"hooks/dispatch\.py\"\s+(\w+)")
 HOOK_COMMAND = re.compile(r"uv run --script \"[^\"]*hooks/([\w-]+\.py)\"(?:\s+(\S+))?")
 SLOT = re.compile(r"\[\[@([a-z-]+)([^\]]*?)\]\]")
 FACT = re.compile(r"\{\{(\w+)\}\}")
@@ -204,21 +205,18 @@ SKILL_KINDS = (
     Kind("Habits", "Cheap tool calls, every session.", ("tool-habits",)),
 )
 HOOK_KINDS = (
-    Kind("Guards", "Refuse a risky call before it runs.", ("guard.py", "commit_gate.py", "delegate.py")),
-    Kind("Gates", "Check what crosses a hand-off.", ("brief_lint.py", "report_gate.py")),
-    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "nudge.py", "budget.py")),
+    Kind("Guards", "Refuse a risky call before it runs.", ("guard.py", "commit_gate.py")),
+    Kind("Gates", "Check what crosses a hand-off.", ("report_gate.py",)),
+    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "budget.py")),
     Kind("Closers", "Hold the turn until it is recorded.", ("turn.py",)),
 )
 HOOK_JOBS = {
     "guard.py": "Refuses deletes, history rewrites and wildcards the shell would get wrong; asks you before a package is added or removed.",
     "commit_gate.py": "Refuses a commit message out of form or crediting an AI, and a commit that drops tests without saying why.",
-    "delegate.py": "Caps the main session's own edits in one turn, so a bigger change goes to a worker.",
     "budget.py": "Tells the main session what each agent is doing.",
-    "brief_lint.py": "Refuses an agent with no harness role, and adds a note when a brief lacks a line its role needs.",
     "report_gate.py": "Sends a report back when its form breaks or a claim is not backed by the agent's own calls.",
     "context.py": "Starts every session and agent with the tool habits and what it owes.",
     "skill_gate.py": "Hands an agent the rules for a kind of file before its first edit of one, and the commit rules before a commit.",
-    "nudge.py": "Adds one line when an agent wastes tool turns, such as reading the same small file twice.",
     "turn.py": "Holds the main session's turn until it ends with a closing status.",
 }
 LEVELS = (
@@ -250,23 +248,17 @@ RULES = (
     Rule("Deleting files is refused, except named files inside the scratch folder", "stopped", "guard.py"),
     Rule("Rewriting shared history is refused", "stopped", "guard.py"),
     Rule("A wildcard the shell would get wrong is refused", "stopped", "guard.py"),
-    Rule("An agent without a harness role is refused", "stopped", "brief_lint.py"),
     Rule("A commit message out of form, or crediting an AI, is refused", "stopped", "commit_gate.py"),
     Rule("A commit that leaves fewer tests without saying why is refused", "stopped", "commit_gate.py"),
-    Rule("The main session's edits past a few in one turn go to a worker", "stopped", "delegate.py"),
     Rule("Adding or removing packages asks you first", "asks", "guard.py"),
     Rule("A report needs its parts and a verdict", "sent-back", "report_gate.py"),
     Rule("Each claim of a report must match what the agent did", "sent-back", "report_gate.py"),
     Rule("A report stays short", "sent-back", "report_gate.py"),
     Rule("A long turn ends with a closing status", "turn", "turn.py"),
     Rule("A turn that ran agents names each one with its verdict", "turn", "turn.py"),
-    Rule("A lesson changes a rule file, or the status says none", "turn", "turn.py"),
     Rule("The rules for a kind of file arrive before its first edit", "reminder", "skill_gate.py"),
-    Rule("A brief missing a line its role needs gets a note", "reminder", "brief_lint.py"),
-    Rule("Wasted reads and hidden failures get a note", "reminder", "nudge.py"),
     Rule("The main session gets a note of what each agent is doing", "reminder", "budget.py"),
     Rule("A shell write outside the scratch folder gets a note", "reminder", "guard.py"),
-    Rule("The main session editing files itself gets a note", "reminder", "delegate.py"),
     Rule("The tool habits go in front of every session and agent", "advice", "context.py"),
 )
 PORTS = (Port("claude", "Claude"), Port("cortex", "Cortex"), Port("kiro", "Kiro"))
@@ -372,9 +364,29 @@ def get_skills(root: Path, /) -> dict[str, Skill]:
     return skills
 
 
-def get_hooks(root: Path, /) -> tuple[Hook, ...]:
+def get_events(root: Path, /) -> dict[str, list[dict]]:
 
     events = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+    routes = get_constant(root / "hooks" / "dispatch.py", "ROUTES", dict)
+    expanded: dict[str, list[dict]] = {}
+    for event, groups in events.items():
+        expanded[event] = []
+        for group in groups:
+            for command in group["hooks"]:
+                match = DISPATCH_COMMAND.search(command["command"])
+                if match is None:
+                    expanded[event].append({**group, "hooks": [command]})
+                    continue
+                for matcher, script, argument in routes[match.group(1)]:
+                    run = f'uv run --script "hooks/{script}"' + (f" {argument}" if argument else "")
+                    expanded[event].append({"matcher": matcher or group.get("matcher", ""), "hooks": [{"type": "command", "command": run}]})
+
+    return expanded
+
+
+def get_hooks(root: Path, /) -> tuple[Hook, ...]:
+
+    events = get_events(root)
     hooks = []
     for event, groups in events.items():
         for group in groups:
@@ -464,7 +476,7 @@ def get_agent_reach(port: ModuleType, root: Path, name: str, target: str, /) -> 
 
 def get_reach(port: ModuleType, root: Path, agents: tuple[Agent, ...], skills: Iterable[str], scripts: Iterable[str], /) -> dict[str, dict[str, Reach]]:
 
-    events = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+    events = get_events(root)
     plan = port.Plan()
     port.plan_skills(plan, PORT_DEST)
     written = {path.parent.name for path in plan.files if path.name == "SKILL.md"}
@@ -491,7 +503,6 @@ def get_facts(root: Path, /) -> Facts:
     skills = get_skills(root)
     hooks = get_hooks(root)
     scripts = list(dict.fromkeys(hook.script for hook in hooks))
-    required = get_constant(hooks_folder / "brief_lint.py", "DEFAULT_REQUIRED", dict)
     port = import_path(root / "port" / "harness_port.py")
     reach = get_reach(port, root, agents, skills, scripts)
 
@@ -504,7 +515,6 @@ def get_facts(root: Path, /) -> Facts:
         "max_blocks": get_constant(turn, "MAX_BLOCKS", int),
         "min_calls": get_constant(turn, "MIN_CALLS", int),
         "headings": ", ".join(get_constant(turn, "HEADINGS", tuple)),
-        "brief_worker": ", ".join(required.get("worker", required.get("*", []))),
         "style_hash": get_fingerprint(root / ASSETS[0]),
         "script_hash": get_fingerprint(root / ASSETS[1]),
     }

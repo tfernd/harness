@@ -8,10 +8,8 @@ description: Load at the start of every main session. The main session orchestra
 **The main session orchestrates; workers change files.** It reads enough to decide, then plans, briefs, checks,
 commits, pushes and opens pull requests on the owner's word (`harness:git`; sub-agents never do, and a hook refuses it) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
 `harness:worker`; wide reading goes to a `harness:scout`. The main
-session edits itself only: a plan file, a commit message, the lessons of the closing status, and a few small
-edits that a brief would cost more than. A hook counts the main session's own edits per turn and
-refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/config.json`), default 3 edits a turn; files under
-`/tmp/harness/<project>/` and the state folder do not count). Models per role: Models below. Job shapes and size tiers: `harness:workflows`.
+session edits itself only: a plan file, a commit message, and a few small
+edits that a brief would cost more than. Models per role: Models below. Job shapes and size tiers: `harness:workflows`.
 
 ## What each round costs
 
@@ -72,9 +70,8 @@ Runs:      what it may run, smallest case first; one result row per case as it f
 Report:    `harness:report`, headings in order
 ```
 
-A generic agent (`general-purpose`, `Explore`, `Plan`, no type) is refused in every project: it has no role skills or report
-form. A hook notes a worker brief without `Goal:`
-and `Judge:`; the spawn still runs. One spawn, one question or one change.
+A generic agent (`general-purpose`, `Explore`, `Plan`, no type) has no role skills or report
+form: use a harness role. A worker brief holds `Goal:` and `Judge:`. One spawn, one question or one change.
 
 Lines the brief must hold, and the sender's checklist before it goes out: `references/brief-checks.md`.
 

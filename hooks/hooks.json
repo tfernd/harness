@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" SessionStart",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/context.py\"",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" SubagentStart",
             "timeout": 10
           }
         ]
@@ -27,57 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/budget.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/budget.py\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "SubagentHandback",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\" handback",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\"",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/brief_lint.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/brief_lint.py\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/commit_gate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/commit_gate.py\"",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" PreToolUse",
             "timeout": 10
           }
         ]
@@ -89,17 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" add",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Read|Grep|Glob|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/nudge.py\"",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" PostToolUse",
             "timeout": 10
           }
         ]
@@ -110,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" reset",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" UserPromptSubmit",
             "timeout": 10
           }
         ]
@@ -121,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/report_gate.py\"",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" SubagentStop",
             "timeout": 10
           }
         ]
@@ -132,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/turn.py\" stop",
+            "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.py\" Stop",
             "timeout": 10
           }
         ]

@@ -57,8 +57,7 @@ Briefs use the template of `harness:orchestrator`; the lens brief's fields are i
 7. **Prevent.** A drift that can come back is fixed by a check, or by generating the text from its source, not only by
    editing the line again.
 8. **Record.** The verifier's report carries one Feedback line per CONFIRMED finding that needs a rule, naming the file
-   to change and the problem it would have prevented (`harness:report`), so the learning loop files it. The main
-   session's own findings go in its closing Lessons.
+   to change and the problem it would have prevented (`harness:report`), so the main session files it.
 
 ## Done when
 

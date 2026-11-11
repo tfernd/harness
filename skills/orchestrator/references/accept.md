@@ -19,7 +19,7 @@
 Due after a turn that ran agents or edited many files, once no background agent is still running. A turn that ends while agents run is a progress note of a few lines with no status headings; a quick answer does not need it either. The Stop hook asks for the status when it is due, so never write it ahead of that.
 
 Plain words first, then narrow tables, under these exact `##` headings in this order. Required: `## Verdict`,
-`## Done`, `## Needs you`, `## Next`, `## Lessons`. The others are left out when empty.
+`## Done`, `## Needs you`, `## Next`. The others are left out when empty.
 
 1. `## Verdict`: one or two sentences: done, partial or blocked, and the one thing that matters most.
 2. `## Done`: table Item | Result (done, partly, failed) | Evidence (the proposal file, or the command and exit code).
@@ -39,9 +39,6 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
 6. Optional: `## Not proven` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
    against a named baseline with its command).
 7. `## Next`: the one thing to do next, with its cost.
-8. `## Lessons`: each lesson and the rule file written this turn. A Lessons section should show a rule-file change made in the
-   turn; with none, the body of the `## Lessons` section is the single line `Lessons: none`. The Stop hook only notes a
-   Lessons section that lacks a change; it does not hold the turn.
 
 Rules: say what a thing does before its jargon. Report failures and bent rules as plainly as successes. Mark each claim
 measured (ran, with the command) or read (seen, not run).
