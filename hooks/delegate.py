@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from budget import get_agent_path, read_brief
-from common import EDIT_TOOLS, EDITS_KIND, HANDLED, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, make_note_output
+from common import EDIT_TOOLS, EDITS_KIND, HANDLED, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_git_root, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, make_note_output
 from shell import Segment, get_segments
 from skill_gate import get_edit_path, get_project_relative, get_written_project_files
 
@@ -199,7 +199,8 @@ def main() -> int:
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
     if event.get("agent_id"):
-        refusal = check_write_set(event, root, cwd)
+        worktree_root = find_git_root(Path(cwd).resolve()) or root
+        refusal = check_write_set(event, worktree_root, cwd)
         if refusal:
             print(refusal, file=sys.stderr)
             return 2

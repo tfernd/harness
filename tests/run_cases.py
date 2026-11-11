@@ -2415,6 +2415,8 @@ WRITE_SET_CASES = (
     write_edit("the refusal names the write set and Feedback", "Write set: src/a.py, tests/t.py", "src/b.py", True, "(src/a.py, tests/t.py)"),
     write_edit("the refusal sends the need to Feedback", "Write set: src/a.py", "src/b.py", True, "Feedback"),
     write_edit("an edit inside the write set passes", "Write set: src/a.py", "src/a.py", False),
+    write_edit("a worktree edit inside the write set passes", "Write set: src/a.py", f"{ROOT}/project/.claude/worktrees/w1/src/a.py", False, cwd="project/.claude/worktrees/w1", project_dir="project", files=((".claude/worktrees/w1/.git", "gitdir: x\n"),)),
+    write_edit("a worktree edit outside the write set is refused", "Write set: src/a.py", f"{ROOT}/project/.claude/worktrees/w1/src/b.py", True, "src/b.py is outside", cwd="project/.claude/worktrees/w1", project_dir="project", files=((".claude/worktrees/w1/.git", "gitdir: x\n"),)),
     write_edit("an absolute path inside the set passes", "Write set: src/a.py", f"{ROOT}/project/src/a.py", False),
     write_edit("an absolute path outside the set is refused", "Write set: src/a.py", f"{ROOT}/project/src/b.py", True, "src/b.py"),
     write_edit("a glob in the set matches", "Write set: src/*.py", "src/b.py", False),
