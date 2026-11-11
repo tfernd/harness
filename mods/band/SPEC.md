@@ -1,6 +1,6 @@
 # Agent band: spec
 
-The frozen look is `__scratch__/band-mocks/v4.html` (screenshots `v4-unfolded-light.png`, `v4-folded-dark.png`).
+The frozen look is `docs/band.html`.
 This file holds the owner's words and what they settle. Nothing goes in that the owner did not ask for.
 
 ## The owner's words

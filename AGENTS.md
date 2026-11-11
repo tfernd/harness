@@ -8,6 +8,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
   targets; `make check` is what the push runs. `make clean` empties `__scratch__/`, an old folder of this repo, so run it only when you own it.
 - This repo runs under its own plugin, with the defaults. A hook or skill that gets in the way here
   gets in the way everywhere, so fix it in the plugin.
+- `mods/band` is `harness-band`, a TypeScript Claude Code UI mod (a band above the prompt showing agent state); `make band` is its check (`claude plugin test` and `tsc --noEmit`), run by `make check` only when it changed.
 
 ## Install, update, set up a project
 - Needs Claude Code, `uv` on `PATH` (hooks run as `uv run --script`) and git access to this repo (`gh auth setup-git` for a private one).

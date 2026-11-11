@@ -1,7 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { EMPTY_GAUGES, cacheClockOf, cacheRefreshMs } from '../hooks/gauges'
-import { EMPTY_ROSTER, EMPTY_STORE, addAgent, layoutBand, moveMain, newAgent, rosterOf, themeOf } from '../hooks/model'
+import { EMPTY_ROSTER, EMPTY_STORE, addAgent, moveMain, newAgent, rosterOf } from '../hooks/model'
+import { layoutBand } from '../hooks/layout'
+import { themeOf } from '../hooks/format'
 import { listedGroupsOf, piecesOf, refreshAfterMs } from '../hooks/svg-band'
 import { FOLDED_CONTENT_INSET, FOLDED_GAP, FOLDED_STATUS_WIDTH, FOLDED_UNFOLD_WIDTH, foldedTracesWidth, gaugeSpecs } from '../hooks/svg-strip'
 import { bandColorsOf } from '../hooks/svg-theme'
@@ -44,7 +46,7 @@ const TURN = { turnId: 't1', answer: '', durationMs: 1, isAborted: false } as co
 
 test('the fold toggle flips the band between unfolded and folded', async ($, on) => {
   mock.clock(on)
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -63,7 +65,7 @@ test('the fold toggle flips the band between unfolded and folded', async ($, on)
 
 test('a range button changes the timeline scale', async ($, on) => {
   mock.clock(on)
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -80,11 +82,11 @@ test('a range button changes the timeline scale', async ($, on) => {
 
 test('an agent going live then done moves the counts', async ($, on) => {
   mock.clock(on)
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
-  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.start', (_, event) => ({ turnId: event.turnId }))
   on('turn.complete', () => ({ text: '' }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -104,10 +106,10 @@ test('an agent going live then done moves the counts', async ($, on) => {
 
 const countRenders = (on: Parameters<typeof mock.clock>[0]) => {
   const seen = { renders: 0, blits: 0 }
-  on('state.get', (_, e, next) => {
-    if (e.key === 'isFolded') seen.renders += 1
+  on('state.get', (_, event, next) => {
+    if (event.key === 'isFolded') seen.renders += 1
 
-    return next(e)
+    return next(event)
   })
   on('ui.blit', () => {
     seen.blits += 1
@@ -119,12 +121,12 @@ const countRenders = (on: Parameters<typeof mock.clock>[0]) => {
 }
 
 const baseHooks = (on: Parameters<typeof mock.clock>[0]) => {
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.end', (_, e) => ({ sessionId: e.sessionId }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
+  on('session.end', (_, event) => ({ sessionId: event.sessionId }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
   on('agent.list', () => ({ value: [] }))
-  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.start', (_, event) => ({ turnId: event.turnId }))
   on('turn.complete', () => ({ text: '' }))
 }
 
@@ -154,11 +156,17 @@ test('a tool that ends after an abort leaves the agent failed', async ($, on) =>
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
   let release: () => void = () => {}
   let enter: () => void = () => {}
-  const entered = new Promise<void>(resolve => { enter = resolve })
-  on('tool.call', () => new Promise(resolve => {
-    release = () => resolve({ result: 'ok' })
-    enter()
-  }))
+  const entered = new Promise<void>(resolve => {
+    enter = resolve
+  })
+  on(
+    'tool.call',
+    () =>
+      new Promise(resolve => {
+        release = () => resolve({ result: 'ok' })
+        enter()
+      }),
+  )
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await $.agent.spawn(SPAWN)
@@ -238,8 +246,7 @@ test('a narrow band drops the week, then 5h, then cache, then context, never the
 
 type Mounted = { findAll: (query: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }
 
-const svgProps = async (ui: Mounted, altStart: string): Promise<Record<string, unknown> | undefined> =>
-  (await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props['alt']).startsWith(altStart))?.props
+const svgProps = async (ui: Mounted, altStart: string): Promise<Record<string, unknown> | undefined> => (await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props['alt']).startsWith(altStart))?.props
 
 const sourceOf = async (ui: Mounted): Promise<string> =>
   (await ui.findAll({ type: 'Svg' }))
@@ -296,11 +303,17 @@ test('a held sub-agent tool call shows RUNNING with its command in the desktop t
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
   let release: () => void = () => {}
   let enter: () => void = () => {}
-  const entered = new Promise<void>(resolve => { enter = resolve })
-  on('tool.call', () => new Promise(resolve => {
-    release = () => resolve({ result: 'ok' })
-    enter()
-  }))
+  const entered = new Promise<void>(resolve => {
+    enter = resolve
+  })
+  on(
+    'tool.call',
+    () =>
+      new Promise(resolve => {
+        release = () => resolve({ result: 'ok' })
+        enter()
+      }),
+  )
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await $.agent.spawn(SPAWN)
@@ -487,8 +500,7 @@ test('an agent that ended 2 min ago is hidden in range 1m, shown in 5m, and coun
 const SECONDS_PER_MINUTE = 60
 
 test('a row that left the 1m window 4.9 s ago is still drawn, one that left 5.1 s ago is not', () => {
-  const at = (secondsAgo: number) =>
-    sourceOfPiece({ ...SVG_INPUT, ...endedAgo(secondsAgo / SECONDS_PER_MINUTE) } as never, 'timeline-rows-direct')
+  const at = (secondsAgo: number) => sourceOfPiece({ ...SVG_INPUT, ...endedAgo(secondsAgo / SECONDS_PER_MINUTE) } as never, 'timeline-rows-direct')
 
   expect(at(60 + 4.9)).toContain('old-1')
   expect(at(60 + 5.1)).not.toContain('old-1')
@@ -518,11 +530,17 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   baseHooks(on)
   let release: () => void = () => {}
   let enter: () => void = () => {}
-  const entered = new Promise<void>(resolve => { enter = resolve })
-  on('tool.call', () => new Promise(resolve => {
-    release = () => resolve({ result: 'ok' })
-    enter()
-  }))
+  const entered = new Promise<void>(resolve => {
+    enter = resolve
+  })
+  on(
+    'tool.call',
+    () =>
+      new Promise(resolve => {
+        release = () => resolve({ result: 'ok' })
+        enter()
+      }),
+  )
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   const titleOf = async (): Promise<string> => {
@@ -579,11 +597,7 @@ test('a main tool call rebuilds the timeline alone, never a ring', () => {
 })
 
 const stateRoster = (states: readonly ('tool' | 'thinking' | 'waiting' | 'done')[]) => {
-  const store = states.reduce(
-    (current, _, index) =>
-      addAgent(current, newAgent({ id: `s${index}`, label: `agent-${index}`, group: 'direct', groupLabel: 'direct agents', now: NOW - 40_000 })),
-    EMPTY_STORE,
-  )
+  const store = states.reduce((current, _, index) => addAgent(current, newAgent({ id: `s${index}`, label: `agent-${index}`, group: 'direct', groupLabel: 'direct agents', now: NOW - 40_000 })), EMPTY_STORE)
   const rows = new Map(
     store.rows.map((row, index): [string, (typeof store.rows)[number]] => {
       const state = states[index] ?? 'thinking'
@@ -733,9 +747,11 @@ const OWNER_GAUGES = {
 }
 
 test('the folded band keeps its live traces at 800 px and 1500 px with one live agent, shrunk to fit, and drops them when nothing fits', () => {
-  const folded = (width: number) =>
-    ({ ...SVG_INPUT, width, isFolded: true, roster: rosterOf(LIVE_STORE), rows: new Map([['live-1', LIVE_STORE.rows[0]]]), gauges: OWNER_GAUGES }) as never
-  const traces = (width: number) => piecesOf(folded(width)).find(spec => spec.key === 'traces')?.build().width
+  const folded = (width: number) => ({ ...SVG_INPUT, width, isFolded: true, roster: rosterOf(LIVE_STORE), rows: new Map([['live-1', LIVE_STORE.rows[0]]]), gauges: OWNER_GAUGES }) as never
+  const traces = (width: number) =>
+    piecesOf(folded(width))
+      .find(spec => spec.key === 'traces')
+      ?.build().width
 
   expect(traces(800)).toBeGreaterThanOrEqual(56)
   expect(traces(1500)).toBeGreaterThan(traces(800) ?? 0)
@@ -795,11 +811,11 @@ test('a session end leaves no open segment, no live agent and no turn clock', as
   baseHooks(on)
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
   const written = { agents: [] as string[], turnStartedAt: [] as string[] }
-  on('state.set', (_, e, next) => {
-    if (e.key === 'agents') written.agents.push(JSON.stringify(e.value))
-    if (e.key === 'turnStartedAt') written.turnStartedAt.push(JSON.stringify(e.value))
+  on('state.set', (_, event, next) => {
+    if (event.key === 'agents') written.agents.push(JSON.stringify(event.value))
+    if (event.key === 'turnStartedAt') written.turnStartedAt.push(JSON.stringify(event.value))
 
-    return next(e)
+    return next(event)
   })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })

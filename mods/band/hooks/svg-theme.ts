@@ -108,18 +108,9 @@ const TONES = ['quiet', 'needs'] as const
 
 const perTone = (): string => TONES.map(tone => `.pb-${tone}{fill:var(--pill-${tone}-bg)}.pf-${tone}{fill:var(--pill-${tone}-fg)}`).join('')
 
-const perState = (): string =>
-  perTone() +
-  STATES.map(
-    state =>
-      `.pb-${state}{fill:var(--pill-${state}-bg)}.pf-${state}{fill:var(--pill-${state}-fg)}` +
-      `.sg-${state}{fill:var(--seg-${state})}.tx-${state}{fill:var(--seg-${state})}`,
-  ).join('')
+const perState = (): string => perTone() + STATES.map(state => `.pb-${state}{fill:var(--pill-${state}-bg)}.pf-${state}{fill:var(--pill-${state}-fg)}` + `.sg-${state}{fill:var(--seg-${state})}.tx-${state}{fill:var(--seg-${state})}`).join('')
 
-const rootRules = (setting: ThemeSetting): string =>
-  setting === 'auto'
-    ? `:root{${variables('light')}}@media (prefers-color-scheme:dark){:root{${variables('dark')}}}`
-    : `:root{${variables(setting)}}`
+const rootRules = (setting: ThemeSetting): string => (setting === 'auto' ? `:root{${variables('light')}}@media (prefers-color-scheme:dark){:root{${variables('dark')}}}` : `:root{${variables(setting)}}`)
 
 export const styleFor = (setting: ThemeSetting): string =>
   rootRules(setting) +
@@ -131,7 +122,7 @@ export const styleFor = (setting: ThemeSetting): string =>
   '.chev{stroke:currentColor;fill:none}' +
   '.ring-t{fill:none;stroke:var(--lane);stroke-width:4}.nowl{stroke:var(--now);stroke-width:1;fill:none}.ring-v{fill:none;stroke-width:4;stroke-linecap:round}' +
   '.r-ok{stroke:var(--accent)}.r-warn{stroke:var(--seg-waiting)}.r-bad{stroke:var(--seg-failed)}' +
-    '.dot{fill:var(--accent)}.bad{fill:var(--seg-failed)}' +
+  '.dot{fill:var(--accent)}.bad{fill:var(--seg-failed)}' +
   '.ico{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.ic-ok{stroke:var(--seg-tool)}.ic-bad{stroke:var(--seg-failed)}.ic-live{fill:var(--seg-thinking)}.ic-dim{opacity:.4}' +
   '.hit{fill:transparent}.row:hover .hit,.gauge:hover .hit{fill:var(--hover)}' +
   '.card .face{stroke:var(--line);stroke-width:1}.card:hover .face{stroke:var(--line-strong)}' +

@@ -3,19 +3,8 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import {
-  EMPTY_STORE,
-  MAIN_ID,
-  addAgent,
-  endBackgroundTask,
-  finishAgent,
-  moveAgent,
-  newAgent,
-  rosterOf,
-  startBackgroundTask,
-  stateWordOf,
-  countAgents,
-} from '../hooks/model'
+import { EMPTY_STORE, MAIN_ID, addAgent, endBackgroundTask, finishAgent, moveAgent, newAgent, rosterOf, startBackgroundTask, stateWordOf } from '../hooks/model'
+import { countAgents } from '../hooks/layout'
 
 const BAND = {
   plugin: 'harness-band',
@@ -52,8 +41,7 @@ const SPAWN = {
 
 const TURN = { turnId: 't1', answer: '', durationMs: 1, isAborted: false } as const
 
-const withAgent = (): AgentStore =>
-  addAgent(EMPTY_STORE, newAgent({ id: 'a', label: 'a', group: 'direct', groupLabel: 'direct agents', now: 0 }))
+const withAgent = (): AgentStore => addAgent(EMPTY_STORE, newAgent({ id: 'a', label: 'a', group: 'direct', groupLabel: 'direct agents', now: 0 }))
 
 const liveOf = (store: AgentStore): number => countAgents(rosterOf(store).rows).live
 
@@ -117,13 +105,13 @@ test('a working agent with a background command keeps its own state word', () =>
 test('through the hooks, a sub-agent that answered stays live while its background command runs, until the notice', async ($, on) => {
   const clock = mock.clock(on)
   const status: AgentStatus = 'completed'
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
-  on('agent.list', () => ({ value: [{ id: 'sub1', type: 'scout', status }] }))
+  on('agent.list', () => ({ value: [{ id: 'sub1', type: 'scout', description: 'scout', status }] }))
   on('agent.spawn', () => ({ model: 'm', agentId: 'sub1' }))
   on('tool.call', () => ({ result: { backgroundTaskId: 'bg9', stdout: '', stderr: '', interrupted: false } }))
-  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.start', (_, event) => ({ turnId: event.turnId }))
   on('turn.complete', () => ({ text: '' }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount(BAND)
@@ -135,6 +123,9 @@ test('through the hooks, a sub-agent that answered stays live while its backgrou
   expect(await ui.find({ type: 'Text', text: '● 1 live' })).toBeDefined()
 
   await $.session.append({
+    door: 'delivery',
+    origin: { kind: 'task-notification' },
+    uuid: 'notice-1',
     message: {
       type: 'user',
       content: [{ type: 'text', text: '<task-notification><task-id>bg9</task-id><status>completed</status></task-notification>' }],

@@ -1,25 +1,14 @@
 import type { AgentRow, AgentState, Range, RosterRow } from '../types'
 
-import { DIRECT_GROUP, MAIN_ID, MAIN_LABEL, MAIN_STATE_WORD, NEEDS_YOU_WORD, STATE_ICON, earliestStart, formatSpan, groupAgents, isLive, splitByWindow, stateWordOf, windowFor } from './model'
-import {
-  type Ctx,
-  type Track,
-  driftGroup,
-  fit,
-  horizontalLine,
-  label,
-  laneMarkup,
-  nowMarker,
-  num,
-  rect,
-  statePill,
-} from './svg-parts'
+import { DIRECT_GROUP, MAIN_ID, MAIN_LABEL, MAIN_STATE_WORD, NEEDS_YOU_WORD, STATE_ICON, isLive, stateWordOf } from './model'
+import { earliestStart, groupAgents, splitByWindow, windowFor } from './layout'
+import { formatSpan } from './format'
+import { type SvgContext, type Track, driftGroup, fit, horizontalLine, label, laneMarkup, nowMarker, roundTenth, rect, statePill } from './svg-parts'
 import type { StripInput } from './svg-strip'
 
 export type TimelineInput = StripInput & { range: Range; foldedGroups: readonly string[]; sessionStart: number }
 
 export const HEAD_HEIGHT = 22
-export const GROUP_HEIGHT = 22
 export const ROW_HEIGHT = 24
 export const MORE_HEIGHT = 22
 
@@ -54,9 +43,7 @@ const GLYPH_CLASS: Record<AgentState, string> = {
   failed: 'bad b',
 }
 
-const rowMarkup = (
-  input: { agent: RosterRow; row: AgentRow | undefined; y: number; width: number; columns: Columns; now: number },
-): string => {
+const rowMarkup = (input: { agent: RosterRow; row: AgentRow | undefined; y: number; width: number; columns: Columns; now: number }): string => {
   const { agent, row, y, width, columns } = input
   const isMain = agent.id === MAIN_ID
   const fallback: AgentState = isMain ? 'launched' : agent.phase === 'failed' ? 'failed' : agent.phase === 'done' ? 'done' : 'thinking'
@@ -70,38 +57,18 @@ const rowMarkup = (
   const isQuiet = !isMain && isEnded
   const hasGlyph = columns.stateWidth === 0
   const labelX = PAD + (hasGlyph ? GLYPH_WIDTH : 0)
-  const stateColumn =
-    columns.stateWidth === 0
-      ? ''
-      : statePill({ x: stateX, y: y + (ROW_HEIGHT - PILL_HEIGHT) / 2, width: PILL_WIDTH, height: PILL_HEIGHT }, state, word, tone) +
-        (row?.command == null
-          ? ''
-          : label(textX, baseline, isQuiet ? 'm' : '', fit(row.command, columns.stateWidth - PILL_WIDTH - PILL_GAP - PAD, 12)))
+  const stateColumn = columns.stateWidth === 0 ? '' : statePill({ x: stateX, y: y + (ROW_HEIGHT - PILL_HEIGHT) / 2, width: PILL_WIDTH, height: PILL_HEIGHT }, state, word, tone) + (row?.command == null ? '' : label(textX, baseline, isQuiet ? 'm' : '', fit(row.command, columns.stateWidth - PILL_WIDTH - PILL_GAP - PAD, 12)))
 
-  return (
-    '<g class="row">' +
-    rect({ x: 0, y, width, height: ROW_HEIGHT }, 'hit') +
-    horizontalLine(y, 0, width) +
-    (hasGlyph ? label(PAD + 4, baseline, GLYPH_CLASS[state], STATE_ICON[state], ' text-anchor="middle"') : '') +
-    label(labelX, baseline, isQuiet ? 'm' : isMain ? '' : 'b', fit(agent.label, columns.labelWidth - labelX - PAD, 12)) +
-    stateColumn +
-    '</g>'
-  )
+  return '<g class="row">' + rect({ x: 0, y, width, height: ROW_HEIGHT }, 'hit') + horizontalLine(y, 0, width) + (hasGlyph ? label(PAD + 4, baseline, GLYPH_CLASS[state], STATE_ICON[state], ' text-anchor="middle"') : '') + label(labelX, baseline, isQuiet ? 'm' : isMain ? '' : 'b', fit(agent.label, columns.labelWidth - labelX - PAD, 12)) + stateColumn + '</g>'
 }
 
 const MAIN_ROSTER_ROW: RosterRow = { id: MAIN_ID, label: MAIN_LABEL, group: MAIN_ID, groupLabel: MAIN_LABEL, phase: 'live' }
 
-const laneBlockMarkup = (
-  ctx: Ctx,
-  input: { lanes: readonly string[]; top: number; bottom: number; columns: Columns; track: Track },
-): string => {
+const laneBlockMarkup = (context: SvgContext, input: { lanes: readonly string[]; top: number; bottom: number; columns: Columns; track: Track }): string => {
   const { columns, top, bottom } = input
   const height = bottom - top
 
-  return (
-    driftGroup(ctx, { x: columns.labelWidth, y: top, width: columns.trackWidth, height }, input.track, input.lanes.join('')) +
-    nowMarker({ x: columns.labelWidth + columns.trackWidth, y: top, height })
-  )
+  return driftGroup(context, { x: columns.labelWidth, y: top, width: columns.trackWidth, height }, input.track, input.lanes.join('')) + nowMarker({ x: columns.labelWidth + columns.trackWidth, y: top, height })
 }
 
 const headMarkup = (input: { columns: Columns; width: number; top: number; spanMs: number; range: Range }): string => {
@@ -109,14 +76,7 @@ const headMarkup = (input: { columns: Columns; width: number; top: number; spanM
   const trackEnd = columns.labelWidth + columns.trackWidth
   const baseline = top + HEAD_HEIGHT / 2 + TEXT_DROP - 1
 
-  return (
-    horizontalLine(top, 0, input.width) +
-    label(PAD, baseline, 'm b s cap', 'AGENT') +
-    label(columns.labelWidth, baseline, 'm s', `-${formatSpan(input.spanMs)}`) +
-    label(columns.labelWidth + columns.trackWidth / 2, baseline, 'm s mid', `-${formatSpan(input.spanMs / 2)}`) +
-    label(trackEnd - 6, baseline, 'm s end b', 'now') +
-    (columns.stateWidth > 0 ? label(trackEnd + PAD, baseline, 'm b s cap', 'STATE') : '')
-  )
+  return horizontalLine(top, 0, input.width) + label(PAD, baseline, 'm b s cap', 'AGENT') + label(columns.labelWidth, baseline, 'm s', `-${formatSpan(input.spanMs)}`) + label(columns.labelWidth + columns.trackWidth / 2, baseline, 'm s mid', `-${formatSpan(input.spanMs / 2)}`) + label(trackEnd - 6, baseline, 'm s end b', 'now') + (columns.stateWidth > 0 ? label(trackEnd + PAD, baseline, 'm b s cap', 'STATE') : '')
 }
 
 export type TimelinePiece = { markup: string; height: number }
@@ -165,45 +125,36 @@ export const planGroups = (input: TimelineInput, now: number, rowLimit: number):
   return { groups, hidden }
 }
 
-export const timelineHeadMarkup = (ctx: Ctx, input: TimelineInput): TimelinePiece => {
+export const timelineHeadMarkup = (context: SvgContext, input: TimelineInput): TimelinePiece => {
   const columns = columnsFor(input.width, input.isWide)
-  const window = windowOf(input, ctx.now)
+  const window = windowOf(input, context.now)
   const track: Track = { x: columns.labelWidth, width: columns.trackWidth, window }
   const mainRow = input.rows.get(MAIN_ID)
   const mainTop = HEAD_HEIGHT
   const mainBottom = mainTop + ROW_HEIGHT
 
   return {
-    markup:
-      headMarkup({ columns, width: input.width, top: 0, spanMs: window.end - window.start, range: input.range }) +
-      rowMarkup({ agent: MAIN_ROSTER_ROW, row: mainRow, y: mainTop, width: input.width, columns, now: ctx.now }) +
-      laneBlockMarkup(ctx, {
-        lanes: [laneMarkup(ctx, mainRow, track, { y: mainTop + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 })],
-        top: mainTop,
-        bottom: mainBottom,
-        columns,
-        track,
-      }),
+    markup: headMarkup({ columns, width: input.width, top: 0, spanMs: window.end - window.start, range: input.range }) + rowMarkup({ agent: MAIN_ROSTER_ROW, row: mainRow, y: mainTop, width: input.width, columns, now: context.now }) + laneBlockMarkup(context, { lanes: [laneMarkup(context, mainRow, track, { y: mainTop + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 })], top: mainTop, bottom: mainBottom, columns, track }),
     height: mainBottom,
   }
 }
 
-export const groupRowsMarkup = (ctx: Ctx, input: TimelineInput, plan: GroupPlan): TimelinePiece => {
+export const groupRowsMarkup = (context: SvgContext, input: TimelineInput, plan: GroupPlan): TimelinePiece => {
   const columns = columnsFor(input.width, input.isWide)
-  const track: Track = { x: columns.labelWidth, width: columns.trackWidth, window: windowOf(input, ctx.now) }
+  const track: Track = { x: columns.labelWidth, width: columns.trackWidth, window: windowOf(input, context.now) }
   const parts: string[] = []
   const lanes: string[] = []
   let y = 0
 
   for (const agent of plan.shown) {
     const row = input.rows.get(agent.id)
-    parts.push(rowMarkup({ agent, row, y, width: input.width, columns, now: ctx.now }))
-    lanes.push(laneMarkup(ctx, row, track, { y: y + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 }))
+    parts.push(rowMarkup({ agent, row, y, width: input.width, columns, now: context.now }))
+    lanes.push(laneMarkup(context, row, track, { y: y + LANE_INSET, height: TRACK_LANE, radius: TRACK_LANE / 2 }))
     y += ROW_HEIGHT
   }
 
   if (y > 0) {
-    parts.push(laneBlockMarkup(ctx, { lanes, top: 0, bottom: y, columns, track }))
+    parts.push(laneBlockMarkup(context, { lanes, top: 0, bottom: y, columns, track }))
   }
 
   if (plan.earlier > 0) {
@@ -214,11 +165,9 @@ export const groupRowsMarkup = (ctx: Ctx, input: TimelineInput, plan: GroupPlan)
   return { markup: parts.join(''), height: y }
 }
 
-const moreLine = (y: number, width: number, text: string): string =>
-  horizontalLine(y, 0, width) + label(PAD, y + MORE_HEIGHT / 2 + TEXT_DROP, 'm s', text)
+const moreLine = (y: number, width: number, text: string): string => horizontalLine(y, 0, width) + label(PAD, y + MORE_HEIGHT / 2 + TEXT_DROP, 'm s', text)
 
-export const hiddenAgentsMarkup = (input: TimelineInput, hidden: number): TimelinePiece =>
-  hidden > 0 ? { markup: moreLine(0, input.width, `+${hidden} more agents not drawn`), height: MORE_HEIGHT } : { markup: '', height: 0 }
+export const hiddenAgentsMarkup = (input: TimelineInput, hidden: number): TimelinePiece => (hidden > 0 ? { markup: moreLine(0, input.width, `+${hidden} more agents not drawn`), height: MORE_HEIGHT } : { markup: '', height: 0 })
 
 export const DENSITY_HEIGHT = 12
 export const GROUP_PIECE_HEIGHT = 24
@@ -311,22 +260,22 @@ const countsOverTime = (input: TimelineInput, agents: readonly RosterRow[], bins
 }
 
 const stepArea = (bins: number, binWidth: number, top: readonly number[], bottom: readonly number[]): string => {
-  const x = (bin: number): number => num(bin * binWidth)
-  let path = `M0 ${num(top[0] ?? 0)}`
+  const x = (bin: number): number => roundTenth(bin * binWidth)
+  let path = `M0 ${roundTenth(top[0] ?? 0)}`
 
   for (let bin = 0; bin < bins; bin += 1) {
     const next = top[bin + 1]
     if (next === undefined || next !== top[bin]) {
-      path += `H${x(bin + 1)}${next === undefined ? '' : `V${num(next)}`}`
+      path += `H${x(bin + 1)}${next === undefined ? '' : `V${roundTenth(next)}`}`
     }
   }
 
-  path += `V${num(bottom[bins - 1] ?? 0)}`
+  path += `V${roundTenth(bottom[bins - 1] ?? 0)}`
 
   for (let bin = bins - 1; bin >= 0; bin -= 1) {
     const previous = bottom[bin - 1]
     if (previous === undefined || previous !== bottom[bin]) {
-      path += `H${x(bin)}${previous === undefined ? '' : `V${num(previous)}`}`
+      path += `H${x(bin)}${previous === undefined ? '' : `V${roundTenth(previous)}`}`
     }
   }
 

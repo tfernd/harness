@@ -2,45 +2,10 @@ import type { Color, Elements, RenderElement } from 'claude-code'
 
 import type { AgentRow, AgentState, Gauges, Phase, Range, Roster, Scheme } from '../types'
 
-import {
-  type BandPartName,
-  FOLDED_RANGE,
-  RANGES,
-  STATE_ICON,
-  barText,
-  countAgents,
-  earliestStart,
-  formatClock,
-  formatReset,
-  formatShort,
-  formatTokens,
-  groupAgents,
-  MAIN_ID,
-  MAIN_LABEL,
-  MAIN_STATE_WORD,
-  stateWordOf,
-  splitByWindow,
-  tracedRows,
-  layoutBand,
-  partWidth,
-  windowFor,
-} from './model'
-import {
-  type Frame,
-  type Grid,
-  type Palette,
-  type TextAlign,
-  type TextSpan,
-  PALETTES,
-  encodeGrid,
-  frameAt,
-  hexOf,
-  laneColors,
-  paintLanes,
-  paintTextRows,
-  paintTraces,
-  runsOf,
-} from './paint'
+import { type BandPartName, FOLDED_RANGE, RANGES, countAgents, earliestStart, groupAgents, splitByWindow, tracedRows, layoutBand, partWidth, windowFor } from './layout'
+import { STATE_ICON, MAIN_ID, MAIN_LABEL, MAIN_STATE_WORD, stateWordOf } from './model'
+import { barText, formatClock, formatReset, formatShort, formatTokens } from './format'
+import { type Frame, type Grid, type Palette, type TextAlign, type TextSpan, PALETTES, encodeGrid, frameAt, hexOf, laneColors, paintLanes, paintTextRows, paintTraces, runsOf } from './paint'
 
 export type Table = Elements['terminal'] | Elements['desktop'] | Elements['vscode'] | Elements['mobile']
 
@@ -144,8 +109,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
     return <Raster key={block.key} columns={block.columns} rows={block.rowCount} cells={cells} />
   }
 
-  const windowAt = (range: Range, frame: Frame, rows: Rows) =>
-    windowFor(range, frame.now, earliestStart([...rows.values()], sessionStart))
+  const windowAt = (range: Range, frame: Frame, rows: Rows) => windowFor(range, frame.now, earliestStart([...rows.values()], sessionStart))
 
   const membersOf = (ids: readonly string[], rows: Rows): (AgentRow | undefined)[] => ids.map(id => rows.get(id))
 
@@ -177,21 +141,10 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
   const laneRuns = (agent: AgentRow, columns: number, range: Range, frame: Frame) => {
     const colors = laneColors(agent, windowAt(range, frame, input.rows), columns, palette, frame)
 
-    return runsOf(colors).map(run => (
-      <Text color={hexOf(run.color)}>
-        {'█'.repeat(run.length)}
-      </Text>
-    ))
+    return runsOf(colors).map(run => <Text color={hexOf(run.color)}>{'█'.repeat(run.length)}</Text>)
   }
 
-  const gauge = (
-    name: BandPartName,
-    label: string,
-    percent: number,
-    detail: RenderElement | null,
-    hasDetail: boolean,
-    color: Color,
-  ) => (
+  const gauge = (name: BandPartName, label: string, percent: number, detail: RenderElement | null, hasDetail: boolean, color: Color) => (
     <Box key={name} flexDirection="column" width={partWidth(name, hasDetail)} paddingRight={1}>
       <Box flexDirection="row">
         <Text bold color={color}>
@@ -203,12 +156,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
     </Box>
   )
 
-  const resetCell = (name: BandPartName, resetsAt: number | null, hasDetail: boolean) =>
-    !hasDetail || resetsAt === null
-      ? null
-      : textBlock({ key: `reset-${name}`, columns: RESET_COLUMNS, rowCount: 1, align: 'left' }, frame => [
-          { text: ` in ${formatReset(resetsAt - frame.now)}`, color: null },
-        ])
+  const resetCell = (name: BandPartName, resetsAt: number | null, hasDetail: boolean) => (!hasDetail || resetsAt === null ? null : textBlock({ key: `reset-${name}`, columns: RESET_COLUMNS, rowCount: 1, align: 'left' }, frame => [{ text: ` in ${formatReset(resetsAt - frame.now)}`, color: null }]))
 
   const present: BandPartName[] = ['status']
   const { gauges } = input
@@ -221,8 +169,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
 
   const bandLayout = layoutBand(innerColumns, present)
 
-  const statusColor = (word: string): number =>
-    word === 'WORKING' ? palette.thinking : word === 'WAITING' ? palette.waiting : palette.launched
+  const statusColor = (word: string): number => (word === 'WORKING' ? palette.thinking : word === 'WAITING' ? palette.waiting : palette.launched)
 
   const partFor = (name: BandPartName, hasDetail: boolean) => {
     if (name === 'status') {
@@ -244,9 +191,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
     }
 
     if (name === 'context' && gauges.contextPercent !== null) {
-      const used = gauges.contextTokens !== null && gauges.contextWindow !== null
-        ? `${formatTokens(gauges.contextTokens)}/${formatTokens(gauges.contextWindow)}`
-        : ''
+      const used = gauges.contextTokens !== null && gauges.contextWindow !== null ? `${formatTokens(gauges.contextTokens)}/${formatTokens(gauges.contextWindow)}` : ''
       const from = gauges.compactedFrom !== null ? ` ↻${formatTokens(gauges.compactedFrom)}` : ''
       const detail = hasDetail && `${used}${from}` !== '' ? <Text dimColor>{` ${used}${from}`}</Text> : null
 
@@ -306,11 +251,12 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
 
     const columns = Math.max(MIN_TRACK_COLUMNS, innerColumns - TRACE_LABEL_COLUMNS - 1)
     const hidden = liveRoster.length - shown.length
+    const shownIds = shown.map(row => row.id)
 
     return (
       <Box key="traces" flexDirection="row" gap={1}>
         <Text dimColor>{hidden > 0 ? `live +${hidden}` : 'live 1m'}</Text>
-        {lanes('traces', shown.map(row => row.id), columns, FOLDED_RANGE, true)}
+        {lanes('traces', shownIds, columns, FOLDED_RANGE, true)}
       </Box>
     )
   }
@@ -332,7 +278,9 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
         {shown.map(agent => (
           <Box key={`card-${agent.id}`} flexDirection="column" borderStyle="round" borderColor="inactive" width={width} paddingX={1}>
             <Box flexDirection="row" justifyContent="space-between">
-              <Text bold wrap="truncate-end">{agent.label}</Text>
+              <Text bold wrap="truncate-end">
+                {agent.label}
+              </Text>
               {textBlock({ key: `elapsed-${agent.id}`, columns: ELAPSED_COLUMNS, rowCount: 1, align: 'right' }, (frame, rows) => {
                 const row = rows.get(agent.id)
 
@@ -355,11 +303,7 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
     <Box key="ranges" flexDirection="row" gap={1}>
       <Text dimColor>range</Text>
       {RANGES.map(name => (
-        <Button
-          key={`range-${name}`}
-          variant={name === input.range ? 'primary' : 'secondary'}
-          onPress={() => input.actions.setRange(name)}
-        >
+        <Button key={`range-${name}`} variant={name === input.range ? 'primary' : 'secondary'} onPress={() => input.actions.setRange(name)}>
           {name}
         </Button>
       ))}
@@ -437,14 +381,12 @@ export const buildBand = (input: ViewInput, painters: Map<string, Painter>): Ren
                   </Box>
                   {lanes(`lanes-${group.id}`, ids, trackColumns, input.range, false)}
                   {stateColumns > 0
-                    ? textBlock(
-                        { key: `states-${group.id}`, columns: stateColumns, rowCount: Math.max(1, ids.length), align: 'left' },
-                        (frame, rows) =>
-                          ids.map(id => {
-                            const row = rows.get(id)
+                    ? textBlock({ key: `states-${group.id}`, columns: stateColumns, rowCount: Math.max(1, ids.length), align: 'left' }, (frame, rows) =>
+                        ids.map(id => {
+                          const row = rows.get(id)
 
-                            return row === undefined ? { text: '', color: null } : { text: stateWordOf(row, frame.now), color: palette[row.state] }
-                          }),
+                          return row === undefined ? { text: '', color: null } : { text: stateWordOf(row, frame.now), color: palette[row.state] }
+                        }),
                       )
                     : null}
                 </Box>

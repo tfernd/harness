@@ -1,6 +1,6 @@
 import type { AgentRow, AgentState, Scheme } from '../types'
 
-import { type Window, stateInSlice } from './model'
+import { type Window, stateInSlice } from './layout'
 
 export const TICK_MS = 200
 export const BLINK_MS = 600
@@ -80,13 +80,7 @@ const shade = (palette: Palette, state: AgentState, column: number, columns: num
   return base
 }
 
-export const laneColors = (
-  agent: AgentRow,
-  window: Window,
-  columns: number,
-  palette: Palette,
-  frame: Frame,
-): number[] => {
+export const laneColors = (agent: AgentRow, window: Window, columns: number, palette: Palette, frame: Frame): number[] => {
   const span = (window.end - window.start) / columns
 
   return Array.from({ length: columns }, (_, column) => {
@@ -110,11 +104,7 @@ export const createGrid = (columns: number, rows: number, background: number): G
   return { columns, rows, words }
 }
 
-export const setCell = (
-  grid: Grid,
-  position: { column: number; row: number },
-  cell: { glyph: number; foreground: number; background: number },
-): void => {
+export const setCell = (grid: Grid, position: { column: number; row: number }, cell: { glyph: number; foreground: number; background: number }): void => {
   if (position.column < 0 || position.column >= grid.columns || position.row < 0 || position.row >= grid.rows) {
     return
   }
@@ -147,10 +137,7 @@ export const encodeGrid = (grid: Grid): string => {
   return text
 }
 
-export const paintLanes = (
-  agents: readonly (AgentRow | undefined)[],
-  options: { columns: number; window: Window; palette: Palette; frame: Frame },
-): Grid => {
+export const paintLanes = (agents: readonly (AgentRow | undefined)[], options: { columns: number; window: Window; palette: Palette; frame: Frame }): Grid => {
   const grid = createGrid(options.columns, Math.max(1, agents.length), options.palette.lane)
 
   agents.forEach((agent, row) => {
@@ -158,36 +145,22 @@ export const paintLanes = (
       return
     }
 
-    laneColors(agent, options.window, options.columns, options.palette, options.frame).forEach((color, column) =>
-      setCell(grid, { column, row }, { glyph: GLYPH_BLOCK, foreground: color, background: options.palette.lane }),
-    )
+    laneColors(agent, options.window, options.columns, options.palette, options.frame).forEach((color, column) => setCell(grid, { column, row }, { glyph: GLYPH_BLOCK, foreground: color, background: options.palette.lane }))
   })
 
   return grid
 }
 
-export const paintTraces = (
-  agents: readonly (AgentRow | undefined)[],
-  options: { columns: number; window: Window; palette: Palette; frame: Frame },
-): Grid => {
+export const paintTraces = (agents: readonly (AgentRow | undefined)[], options: { columns: number; window: Window; palette: Palette; frame: Frame }): Grid => {
   const rows = Math.max(1, Math.ceil(agents.length / 2))
   const grid = createGrid(options.columns, rows, options.palette.lane)
-  const colorsOf = (agent: AgentRow | undefined): number[] =>
-    agent === undefined
-      ? Array.from({ length: options.columns }, () => options.palette.lane)
-      : laneColors(agent, options.window, options.columns, options.palette, options.frame)
+  const colorsOf = (agent: AgentRow | undefined): number[] => (agent === undefined ? Array.from({ length: options.columns }, () => options.palette.lane) : laneColors(agent, options.window, options.columns, options.palette, options.frame))
 
   for (let row = 0; row < rows; row += 1) {
     const upper = colorsOf(agents[row * 2])
     const lower = colorsOf(agents[row * 2 + 1])
 
-    upper.forEach((color, column) =>
-      setCell(
-        grid,
-        { column, row },
-        { glyph: GLYPH_UPPER_HALF, foreground: color, background: lower[column] ?? options.palette.lane },
-      ),
-    )
+    upper.forEach((color, column) => setCell(grid, { column, row }, { glyph: GLYPH_UPPER_HALF, foreground: color, background: lower[column] ?? options.palette.lane }))
   }
 
   return grid
@@ -209,15 +182,7 @@ const fitText = (text: string, columns: number, align: TextAlign): string[] => {
 export const paintTextRows = (spans: readonly TextSpan[], columns: number, align: TextAlign): Grid => {
   const grid = createGrid(columns, Math.max(1, spans.length), DEFAULT_COLOR)
 
-  spans.forEach((span, row) =>
-    fitText(span.text, columns, align).forEach((glyph, column) =>
-      setCell(
-        grid,
-        { column, row },
-        { glyph: glyph.codePointAt(0) ?? GLYPH_SPACE, foreground: span.color ?? DEFAULT_COLOR, background: DEFAULT_COLOR },
-      ),
-    ),
-  )
+  spans.forEach((span, row) => fitText(span.text, columns, align).forEach((glyph, column) => setCell(grid, { column, row }, { glyph: glyph.codePointAt(0) ?? GLYPH_SPACE, foreground: span.color ?? DEFAULT_COLOR, background: DEFAULT_COLOR })))
 
   return grid
 }

@@ -3,33 +3,11 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { AgentState, AgentStore, Gauges, Range, Roster } from '../types'
 
+import { type OpenCall, activityOf, withCall, withoutCall } from './calls'
 import { EMPTY_GAUGES, isSameGauges, withCache, withCompaction, withUsage } from './gauges'
-import {
-  DIRECT_GROUP,
-  DIRECT_LABEL,
-  EMPTY_ROSTER,
-  EMPTY_STORE,
-  type MainActivity,
-  addAgent,
-  closeOpen,
-  lastEventAt,
-  applyListing,
-  MAIN_ID,
-  endBackgroundTask,
-  finishAgent,
-  startBackgroundTask,
-  isSameRoster,
-  moveAgent,
-  OWNER_QUESTION_TOOLS,
-  moveMain,
-  nextLeaveMs,
-  nextQuietChangeMs,
-  newAgent,
-  rosterOf,
-  sessionTotal,
-  terminalSchemeOf,
-  themeOf,
-} from './model'
+import { DIRECT_GROUP, DIRECT_LABEL, EMPTY_ROSTER, EMPTY_STORE, type MainActivity, addAgent, agentTypeName, closeOpen, lastEventAt, applyListing, MAIN_ID, endBackgroundTask, finishAgent, startBackgroundTask, isSameRoster, moveAgent, OWNER_QUESTION_TOOLS, moveMain, nextQuietChangeMs, newAgent, rosterOf, sessionTotal } from './model'
+import { nextLeaveMs } from './layout'
+import { terminalSchemeOf, themeOf } from './format'
 import { TICK_MS, frameAt } from './paint'
 import { columnsToWidth, refreshAfterMs } from './svg-band'
 import { type PieceCache, chooseBand } from './svg-cache'
@@ -84,16 +62,13 @@ type Runtime = {
   isDrawnByTree: boolean
   isClearing: boolean
   listedIds: Set<string>
+  openCalls: Map<string, readonly OpenCall[]>
+  callSerial: number
 }
 
-const indexRows = (store: AgentStore | null): Rows =>
-  new Map([...(store?.main ? [store.main] : []), ...(store?.rows ?? [])].map(row => [row.id, row]))
+const indexRows = (store: AgentStore | null): Rows => new Map([...(store?.main ? [store.main] : []), ...(store?.rows ?? [])].map(row => [row.id, row]))
 
-const mutateAgents = async (
-  $: EngineInterface,
-  runtime: Runtime,
-  change: (store: AgentStore, now: number) => AgentStore,
-): Promise<void> => {
+const mutateAgents = async ($: EngineInterface, runtime: Runtime, change: (store: AgentStore, now: number) => AgentStore): Promise<void> => {
   const run = async (): Promise<void> => {
     const now = await $.clock.now()
 
@@ -126,17 +101,9 @@ const mutateAgents = async (
   return queued
 }
 
-const setAgentState = (
-  $: EngineInterface,
-  runtime: Runtime,
-  change: { id: string; state: AgentState; command: string | null; from?: AgentState },
-): Promise<void> => mutateAgents($, runtime, (store, now) => moveAgent(store, { ...change, now }))
+const setAgentState = ($: EngineInterface, runtime: Runtime, change: { id: string; state: AgentState; command: string | null; from?: AgentState }): Promise<void> => mutateAgents($, runtime, (store, now) => moveAgent(store, { ...change, now }))
 
-const setMainActivity = (
-  $: EngineInterface,
-  runtime: Runtime,
-  change: { activity: MainActivity; from?: AgentState },
-): Promise<void> => mutateAgents($, runtime, (store, now) => moveMain(store, { ...change, now }))
+const setMainActivity = ($: EngineInterface, runtime: Runtime, change: { activity: MainActivity; from?: AgentState }): Promise<void> => mutateAgents($, runtime, (store, now) => moveMain(store, { ...change, now }))
 
 const writeGauges = async ($: EngineInterface, next: (current: Gauges) => Gauges): Promise<void> => {
   const current = await read($, gauges)
@@ -195,11 +162,7 @@ const finishedTaskIdOf = (blocks: readonly unknown[]): string | null => {
   return null
 }
 
-const noteBackgroundStart = async (
-  $: EngineInterface,
-  runtime: Runtime,
-  input: { owner: string; call: Record<string, unknown>; outcome: unknown },
-): Promise<void> => {
+const noteBackgroundStart = async ($: EngineInterface, runtime: Runtime, input: { owner: string; call: Record<string, unknown>; outcome: unknown }): Promise<void> => {
   const taskId = backgroundTaskIdOf(input.call, input.outcome)
 
   if (taskId !== null) {
@@ -223,6 +186,20 @@ const reconcile = async ($: EngineInterface, runtime: Runtime): Promise<void> =>
     }
   } finally {
     runtime.isReconciling = false
+  }
+}
+
+const showOpenCalls = async ($: EngineInterface, runtime: Runtime, input: { owner: string; isEnd: boolean }): Promise<void> => {
+  const activity = activityOf(runtime.openCalls.get(input.owner) ?? [])
+
+  if (input.owner !== MAIN_ID) {
+    await setAgentState($, runtime, { id: input.owner, ...activity, ...(input.isEnd ? { from: 'tool' as const } : {}) })
+
+    return
+  }
+
+  for (const from of input.isEnd ? (['tool', 'waiting'] as const) : [undefined]) {
+    await setMainActivity($, runtime, { activity, ...(from === undefined ? {} : { from }) })
   }
 }
 
@@ -281,9 +258,7 @@ const startClocks = ($: EngineInterface, runtime: Runtime): void => {
   }
 
   runtime.timers.push($.clock.every(TICK_MS, () => void tick($, runtime).catch(cause => reportFailure($, 'tick', cause))))
-  runtime.timers.push(
-    $.clock.every(RECONCILE_MS, () => void reconcile($, runtime).catch(cause => reportFailure($, 'reconcile', cause))),
-  )
+  runtime.timers.push($.clock.every(RECONCILE_MS, () => void reconcile($, runtime).catch(cause => reportFailure($, 'reconcile', cause))))
 }
 
 export const register: Register = on => {
@@ -302,10 +277,12 @@ export const register: Register = on => {
     isDrawnByTree: false,
     isClearing: false,
     listedIds: new Set(),
+    openCalls: new Map(),
+    callSerial: 0,
   }
 
-  on('session.start', async ($, e, next) => {
-    const result = await next(e)
+  on('session.start', async ($, event, next) => {
+    const result = await next(event)
 
     if (!runtime.isClearing) {
       await mutateAgents($, runtime, (store, now) => closeOpen(store, store.main === null ? now : lastEventAt(store.main)))
@@ -321,11 +298,11 @@ export const register: Register = on => {
     return result
   })
 
-  on('session.end', async ($, e, next) => {
-    runtime.isClearing = e.reason === 'clear'
+  on('session.end', async ($, event, next) => {
+    runtime.isClearing = event.reason === 'clear'
 
-    if (e.reason === 'clear') {
-      return next(e)
+    if (event.reason === 'clear') {
+      return next(event)
     }
 
     stopTimers(runtime)
@@ -334,148 +311,116 @@ export const register: Register = on => {
     await mutateAgents($, runtime, (store, now) => closeOpen(store, now))
     await update($, turnStartedAt, () => null)
 
-    return next(e)
+    return next(event)
   })
 
-  on('config.set', { key: 'theme' }, async ($, e, next) => {
-    const result = await next(e)
+  on('config.set', { key: 'theme' }, async ($, event, next) => {
+    const result = await next(event)
     const rows = await $.config.list()
     await update($, scheme, () => themeOf(rows.find(row => row.key === 'theme')?.value))
 
     return result
   })
 
-  on('agent.spawn', async ($, e, next) => {
+  on('agent.spawn', async ($, event, next) => {
     startClocks($, runtime)
-    const result = await next(e)
+    const result = await next(event)
 
     if (result.agentId !== undefined) {
       const id = result.agentId
-      const group = e.workflow === undefined ? DIRECT_GROUP : e.workflow.runId
-      const groupLabel = e.workflow === undefined ? DIRECT_LABEL : `workflow ${e.workflow.runId.replace(/^wf_/, '').slice(0, 8)}`
+      const group = event.workflow === undefined ? DIRECT_GROUP : event.workflow.runId
+      const groupLabel = event.workflow === undefined ? DIRECT_LABEL : `workflow ${event.workflow.runId.replace(/^wf_/, '').slice(0, 8)}`
 
-      await mutateAgents($, runtime, (store, now) =>
-        addAgent(
-          store,
-          newAgent({ id, label: `${e.name ?? e.subagentType}-${sessionTotal(store) + 1}`, group, groupLabel, now }),
-        ),
-      )
+      await mutateAgents($, runtime, (store, now) => addAgent(store, newAgent({ id, label: `${event.name ?? agentTypeName(event.subagentType)}-${sessionTotal(store) + 1}`, group, groupLabel, now })))
     }
 
     return result
   })
 
-  on('turn.start', async ($, e, next) => {
+  on('turn.start', async ($, event, next) => {
     startClocks($, runtime)
 
-    if (e.agentId === undefined) {
+    if (event.agentId === undefined) {
       const now = await $.clock.now()
       await update($, turnStartedAt, () => now)
       await setMainActivity($, runtime, { activity: { state: 'thinking', command: null } })
     } else {
-      await setAgentState($, runtime, { id: e.agentId, state: 'thinking', command: null })
+      await setAgentState($, runtime, { id: event.agentId, state: 'thinking', command: null })
     }
 
-    return next(e)
+    return next(event)
   })
 
-  on('tool.call', async ($, e, next) => {
+  on('tool.call', async ($, event, next) => {
     startClocks($, runtime)
-    const id = e.agentId
-    const stoppedId = stoppedTaskIdOf(e)
+    const stoppedId = stoppedTaskIdOf(event)
 
     if (stoppedId !== null) {
-      const outcome = await next(e)
-      await mutateAgents($, runtime, (store, now) => endBackgroundTask(store, { taskId: stoppedId, now })).catch(cause =>
-        reportFailure($, 'background stop', cause),
-      )
+      const outcome = await next(event)
+      await mutateAgents($, runtime, (store, now) => endBackgroundTask(store, { taskId: stoppedId, now })).catch(cause => reportFailure($, 'background stop', cause))
 
       return outcome
     }
 
-    if (id === undefined) {
-      const isQuestion = OWNER_QUESTION_TOOLS.includes(e.tool)
-      const started: MainActivity = isQuestion ? { state: 'waiting', command: null } : { state: 'tool', command: describeCall(e) }
-      await setMainActivity($, runtime, { activity: started }).catch(cause => reportFailure($, 'main tool start', cause))
-
-      try {
-        const outcome = await next(e)
-        await noteBackgroundStart($, runtime, { owner: MAIN_ID, call: e, outcome }).catch(cause =>
-          reportFailure($, 'main background start', cause),
-        )
-
-        return outcome
-      } finally {
-        for (const from of ['tool', 'waiting'] as const) {
-          await setMainActivity($, runtime, { activity: { state: 'thinking', command: null }, from }).catch(cause =>
-            reportFailure($, 'main tool end', cause),
-          )
-        }
-      }
-    }
-
-    await setAgentState($, runtime, { id, state: 'tool', command: describeCall(e) }).catch(cause =>
-      reportFailure($, 'tool start', cause),
-    )
+    const owner = event.agentId ?? MAIN_ID
+    runtime.callSerial += 1
+    const call: OpenCall = { token: runtime.callSerial, command: describeCall(event), isQuestion: owner === MAIN_ID && OWNER_QUESTION_TOOLS.includes(event.tool) }
+    runtime.openCalls.set(owner, withCall(runtime.openCalls.get(owner) ?? [], call))
+    await showOpenCalls($, runtime, { owner, isEnd: false }).catch(cause => reportFailure($, 'tool start', cause))
 
     try {
-      const outcome = await next(e)
-      await noteBackgroundStart($, runtime, { owner: id, call: e, outcome }).catch(cause =>
-        reportFailure($, 'background start', cause),
-      )
+      const outcome = await next(event)
+      await noteBackgroundStart($, runtime, { owner, call: event, outcome }).catch(cause => reportFailure($, 'background start', cause))
 
       return outcome
     } finally {
-      await setAgentState($, runtime, { id, state: 'thinking', command: null, from: 'tool' }).catch(cause =>
-        reportFailure($, 'tool end', cause),
-      )
+      runtime.openCalls.set(owner, withoutCall(runtime.openCalls.get(owner) ?? [], call.token))
+      await showOpenCalls($, runtime, { owner, isEnd: true }).catch(cause => reportFailure($, 'tool end', cause))
     }
   })
 
-  on('turn.complete', async ($, e, next) => {
+  on('turn.complete', async ($, event, next) => {
     startClocks($, runtime)
 
-    if (e.agentId === undefined) {
+    if (event.agentId === undefined) {
       await update($, turnStartedAt, () => null)
       await setMainActivity($, runtime, { activity: null })
-      const usage = e.usage
+      const usage = event.usage
 
       if (usage !== undefined) {
         const calledAt = await $.clock.now()
         await writeGauges($, current => withCache(current, usage, calledAt))
       }
     } else {
-      const agentId = e.agentId
-      const state = e.reason === 'answer' ? 'done' : 'failed'
+      const agentId = event.agentId
+      const state = event.reason === 'answer' ? 'done' : 'failed'
       await mutateAgents($, runtime, (store, now) => finishAgent(store, { id: agentId, state, now }))
     }
 
-    return next(e)
+    return next(event)
   })
 
-  on('session.append', async ($, e, next) => {
-    const taskId = finishedTaskIdOf(e.message.content)
+  on('session.append', async ($, event, next) => {
+    const taskId = finishedTaskIdOf(event.message.content)
 
     if (taskId !== null) {
-      await mutateAgents($, runtime, (store, now) => endBackgroundTask(store, { taskId, now })).catch(cause =>
-        reportFailure($, 'background end', cause),
-      )
+      await mutateAgents($, runtime, (store, now) => endBackgroundTask(store, { taskId, now })).catch(cause => reportFailure($, 'background end', cause))
     }
 
-    return next(e)
+    return next(event)
   })
 
-  on('session.measure', async ($, e, next) => {
+  on('session.measure', async ($, event, next) => {
     startClocks($, runtime)
-    await writeGauges($, current => withUsage(current, e))
+    await writeGauges($, current => withUsage(current, event))
 
-    return next(e)
+    return next(event)
   })
 
-  on('session.compact', async ($, e, next) => {
-    const result = await next(e)
+  on('session.compact', async ($, event, next) => {
+    const result = await next(event)
 
-    if (e.trigger !== 'precompute' && result.messages !== undefined && e.agentId === undefined) {
+    if (event.trigger !== 'precompute' && result.messages !== undefined && event.agentId === undefined) {
       const tokensBefore = result.tokensBefore
       await writeGauges($, current => withCompaction(current, tokensBefore))
     }
@@ -483,36 +428,27 @@ export const register: Register = on => {
     return result
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) {
-      return next(e)
+  on('ui.render', { component: 'AbovePrompt' }, async ($, event, next) => {
+    if (event.props.hasSurvey) {
+      return next(event)
     }
 
     startClocks($, runtime)
-    const ui = $.ui.resolve(e)
+    const ui = $.ui.resolve(event)
     const hasRaster = 'Raster' in ui
-    const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue] = await Promise.all([
-      read($, isFolded),
-      read($, range),
-      read($, foldedGroups),
-      read($, roster),
-      read($, gauges),
-      read($, turnStartedAt),
-      read($, scheme),
-    ])
+    const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue] = await Promise.all([read($, isFolded), read($, range), read($, foldedGroups), read($, roster), read($, gauges), read($, turnStartedAt), read($, scheme)])
     const store = hasRaster ? runtime.store : await read($, agents)
     const now = await $.clock.now()
     const actions: Actions = {
       toggleFold: () => void update($, isFolded, current => !current),
       setRange: (chosen: Range) => void update($, range, () => chosen),
-      toggleGroup: (id: string) =>
-        void update($, foldedGroups, current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id])),
+      toggleGroup: (id: string) => void update($, foldedGroups, current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id])),
     }
     const rowIndex = indexRows(store)
 
-    if (e.surface !== 'terminal') {
+    if (event.surface !== 'terminal') {
       const svgInput = {
-        width: columnsToWidth(e.props.bodyColumns),
+        width: columnsToWidth(event.props.bodyColumns),
         now,
         isFolded: folded,
         range: rangeValue,
@@ -520,7 +456,7 @@ export const register: Register = on => {
         roster: rosterValue,
         rows: rowIndex,
         gauges: gaugeValues,
-        isWorking: e.props.isWorking,
+        isWorking: event.props.isWorking,
         turnStartedAt: startedAt,
         scheme: schemeValue,
       }
@@ -530,38 +466,36 @@ export const register: Register = on => {
       runtime.refreshAt = wait === null ? null : now + wait
       scheduleRetry($, runtime, choice.retryInMs)
       runtime.painters = new Map()
-      runtime.requestId = e.requestId
+      runtime.requestId = event.requestId
       runtime.isDrawnByTree = true
 
-      return buildDesktopBand({ ui: $.ui.resolve(e), svgs: choice.svgs, input: svgInput, actions })
+      return buildDesktopBand({ ui: $.ui.resolve(event), svgs: choice.svgs, input: svgInput, actions })
     }
 
     const nextPainters = new Map<string, Painter>()
-    const tree = buildBand(
-      {
-        ui,
-        columns: e.props.bodyColumns,
-        now,
-        isFolded: folded,
-        range: rangeValue,
-        foldedGroups: groups,
-        roster: rosterValue,
-        rows: rowIndex,
-        gauges: gaugeValues,
-        isWorking: e.props.isWorking,
-        turnStartedAt: startedAt,
-        scheme: terminalSchemeOf(schemeValue),
-        actions,
-      },
-      nextPainters,
-    )
+    const terminalInput = {
+      ui,
+      columns: event.props.bodyColumns,
+      now,
+      isFolded: folded,
+      range: rangeValue,
+      foldedGroups: groups,
+      roster: rosterValue,
+      rows: rowIndex,
+      gauges: gaugeValues,
+      isWorking: event.props.isWorking,
+      turnStartedAt: startedAt,
+      scheme: terminalSchemeOf(schemeValue),
+      actions,
+    }
+    const tree = buildBand(terminalInput, nextPainters)
 
     const leaveWait = nextLeaveMs(rowIndex.values(), rangeValue, now, folded)
     const quietWait = nextQuietChangeMs(rowIndex.values(), now)
     const waits = [leaveWait, quietWait].filter(wait => wait !== null)
     runtime.refreshAt = waits.length === 0 ? null : now + Math.min(...waits)
     runtime.painters = nextPainters
-    runtime.requestId = e.requestId
+    runtime.requestId = event.requestId
     runtime.isDrawnByTree = false
 
     return tree

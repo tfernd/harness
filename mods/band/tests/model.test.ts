@@ -2,12 +2,13 @@ import { expect, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import { LINGER_MS, MAX_AGENTS, MAX_SEGMENTS, addAgent, nextLeaveMs, tracedRows, moveMain, countAgents, orderAgents, splitByWindow, EMPTY_STORE, formatClock, moveAgent, newAgent, rosterOf, stateFromStatus, closeOpen, finishAgent } from '../hooks/model'
+import { LINGER_MS, MAX_AGENTS, MAX_SEGMENTS, addAgent, moveMain, EMPTY_STORE, moveAgent, newAgent, rosterOf, stateFromStatus, closeOpen, finishAgent } from '../hooks/model'
+import { nextLeaveMs, tracedRows, countAgents, orderAgents, splitByWindow } from '../hooks/layout'
+import { formatClock } from '../hooks/format'
 import { paintTextRows } from '../hooks/paint'
 import { CLOCK_COLUMNS } from '../hooks/view'
 
-const agentNamed = (id: string, now: number) =>
-  newAgent({ id, label: id, group: 'direct', groupLabel: 'direct agents', now })
+const agentNamed = (id: string, now: number) => newAgent({ id, label: id, group: 'direct', groupLabel: 'direct agents', now })
 
 const textOf = (spans: Parameters<typeof paintTextRows>[0], columns: number): string => {
   const grid = paintTextRows(spans, columns, 'left')
@@ -111,7 +112,12 @@ test('the main row keeps a thinking span, a tool span with its command, an open 
 test('inside a group live agents come first by start, then ended ones by latest end, before the window split', () => {
   let store: AgentStore = EMPTY_STORE
 
-  for (const [id, start] of [['a', 10], ['b', 20], ['c', 30], ['d', 40]] as const) {
+  for (const [id, start] of [
+    ['a', 10],
+    ['b', 20],
+    ['c', 30],
+    ['d', 40],
+  ] as const) {
     store = addAgent(store, agentNamed(id, start))
   }
 

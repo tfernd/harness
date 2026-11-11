@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks skills map check check-all replay clean
+.PHONY: help setup init validate test leaks skills map band check check-all replay clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -30,19 +30,27 @@ skills: ## Fail when a skill or agent leaves the form AGENTS.md demands
 map: ## Rebuild the Harness Map page (docs/index.html) from the agents, skills, hooks and tests
 	uv run python docs/build_map.py
 
+TSC ?= tsc
+
+band: ## Test and type-check the band mod (mods/band)
+	claude plugin test mods/band
+	$(TSC) --noEmit -p mods/band
+
 CHANGED = $(shell { git diff --name-only @{u}...HEAD 2>/dev/null; git diff --name-only HEAD; } | sort -u)
 
-check: ## What the pre-push hook runs: map, skill form, leaks; cases only when hooks changed
+check: ## What the pre-push hook runs: map, skill form, leaks; cases only when hooks changed, band only when mods/band changed
 	uv run python docs/build_map.py --check
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	@if printf '%s\n' $(CHANGED) | grep -qE '^(hooks/|tests/run_cases)'; then uv run python tests/run_cases.py; else echo "cases skipped: no hook changed"; fi
+	@if printf '%s\n' $(CHANGED) | grep -q '^mods/band/'; then $(MAKE) band; else echo "band skipped: mods/band unchanged"; fi
 
 check-all: ## Every check, whatever changed
 	uv run python docs/build_map.py --check
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	uv run python tests/run_cases.py
+	$(MAKE) band
 
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py

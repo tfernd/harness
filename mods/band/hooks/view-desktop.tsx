@@ -2,10 +2,10 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { AgentState } from '../types'
 
-import { RANGES, countAgents, tracedRows } from './model'
+import { RANGES, countAgents, tracedRows } from './layout'
 import { COUNTS_KEY, captionOf, statusOf, HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupLabelColumnOf, groupRowsKey, groupCountsKey, listedGroupsOf, timelineInputOf } from './svg-band'
 import type { BandSvg, SvgInput } from './svg-band'
-import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
+import { type GaugeSpec, foldedDetail, gaugeSpecs, stripDetailOf } from './svg-strip'
 import { bandColorsOf } from './svg-theme'
 import { type GroupPlan, groupCountsText, groupCountsWidthOf, groupTitleOf, liveStateCounts } from './svg-timeline'
 import type { Actions } from './view'
@@ -28,8 +28,6 @@ const STATE_COLOR: Record<AgentState, string> = {
   failed: 'error',
 }
 
-const foldedDetailOf = (spec: GaugeSpec): string => spec.detail.replace(/\s*↻.*$/, '')
-
 const HEADER_PAD_COLUMNS = 2
 const PX_PER_COLUMN = 8
 const RING_SLOT_COLUMNS = 4
@@ -45,13 +43,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const counts = countAgents(input.roster.rows, { done: input.roster.evictedDone, failed: input.roster.evictedFailed })
   const status = statusOf(input)
   const specs = gaugeSpecs(input.gauges, input.now)
-  const detailOf = isFolded
-    ? foldedDetailOf
-    : stripDetailOf(specs, {
-        width: input.width,
-        statusChars: Math.max(status.word.length, captionOf(input).length),
-        countsChars: 4,
-      })
+  const detailOf = isFolded ? foldedDetail : stripDetailOf(specs, { width: input.width, statusChars: Math.max(status.word.length, captionOf(input).length), countsChars: 4 })
 
   const colors = bandColorsOf(input.scheme)
   const fill = (color: string | undefined) => (color === undefined ? {} : { backgroundColor: color })
@@ -125,13 +117,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
         <Box key={key} flexDirection="row" alignItems="center" {...tinted}>
           {toggle}
           <Box flexGrow={1} flexShrink={1} />
-          <Box
-            key={`group-counts-${group.id}`}
-            width={stateColumns === 0 ? undefined : stateColumns}
-            flexShrink={0}
-            paddingLeft={stateColumns === 0 ? 0 : HEADER_PAD_COLUMNS}
-            paddingRight={stateColumns === 0 ? HEADER_PAD_COLUMNS : 0}
-          >
+          <Box key={`group-counts-${group.id}`} width={stateColumns === 0 ? undefined : stateColumns} flexShrink={0} paddingLeft={stateColumns === 0 ? 0 : HEADER_PAD_COLUMNS} paddingRight={stateColumns === 0 ? HEADER_PAD_COLUMNS : 0}>
             <Text dimColor wrap="truncate-end">{`${group.counts.live} live · ${ended} ended`}</Text>
           </Box>
         </Box>
@@ -164,11 +150,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const timelineRegion = (
     <Box key="timeline" flexDirection="column">
       {svgOf(TIMELINE_KEY, `Agent timeline over ${input.range}`)}
-      {listedGroupsOf(input).flatMap(group => [
-        ruleFor(`rule-${group.id}`),
-        groupHeader(group),
-        group.isFolded ? null : svgOf(groupRowsKey(group.id), `Agent rows: ${group.name}`),
-      ])}
+      {listedGroupsOf(input).flatMap(group => [ruleFor(`rule-${group.id}`), groupHeader(group), group.isFolded ? null : svgOf(groupRowsKey(group.id), `Agent rows: ${group.name}`)])}
       {svgOf(HIDDEN_KEY, 'Agents not drawn')}
     </Box>
   )

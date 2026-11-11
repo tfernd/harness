@@ -33,10 +33,7 @@ const limitOf = (limits: readonly SessionRateLimit[], kind: string): Limit | nul
   return { percent: found.percentUsed, resetsAt: Number.isNaN(resetsAt) ? null : resetsAt }
 }
 
-export const withUsage = (
-  gauges: Gauges,
-  usage: { context: SessionContextUsage; rateLimits: readonly SessionRateLimit[]; startedAt?: number },
-): Gauges => ({
+export const withUsage = (gauges: Gauges, usage: { context: SessionContextUsage; rateLimits: readonly SessionRateLimit[]; startedAt?: number }): Gauges => ({
   ...gauges,
   contextPercent: usage.context.percent ?? null,
   contextTokens: usage.context.tokens ?? null,
@@ -50,8 +47,7 @@ export const withUsage = (
 export const withCache = (gauges: Gauges, usage: TurnUsage, now: number): Gauges => {
   const total = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
 
-  return total === 0 ? gauges
-    : { ...gauges, lastCallAt: now, cachePercent: Math.round((100 * usage.cache_read_input_tokens) / total) }
+  return total === 0 ? gauges : { ...gauges, lastCallAt: now, cachePercent: Math.round((100 * usage.cache_read_input_tokens) / total) }
 }
 
 export const withCompaction = (gauges: Gauges, tokensBefore: number | undefined): Gauges => ({

@@ -29,17 +29,17 @@ const TURN = { turnId: 't1', answer: '', durationMs: 1, isAborted: false } as co
 test('a background agent launched async stays live between its turns until its completion event', async ($, on) => {
   const clock = mock.clock(on)
   let status: AgentStatus = 'running'
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
-  on('agent.list', () => ({ value: [{ id: 'bg1', type: 'scout', status }] }))
+  on('agent.list', () => ({ value: [{ id: 'bg1', type: 'scout', description: 'scout', status }] }))
   on('tool.call', () => ({ result: 'Async agent launched successfully. agentId: bg1' }))
-  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.start', (_, event) => ({ turnId: event.turnId }))
   on('turn.complete', () => ({ text: '' }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount(BAND)
 
-  await $.tool.call({ tool: 'Agent', description: 'scout', run_in_background: true })
+  await $.tool.call({ tool: 'Agent', description: 'scout', prompt: 'look' })
   await clock.advance(1000)
   expect(await ui.find({ type: 'Text', text: '● 1 live' })).toBeDefined()
 
@@ -62,10 +62,10 @@ test('a background agent launched async stays live between its turns until its c
 test('a live agent missing from the listing is failed, not left live', async ($, on) => {
   const clock = mock.clock(on)
   let listed = true
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
-  on('agent.list', () => ({ value: listed ? [{ id: 'bg1', type: 'scout', status: 'running' }] : [] }))
+  on('agent.list', () => ({ value: listed ? [{ id: 'bg1', type: 'scout', description: 'scout', status: 'running' }] : [] }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount(BAND)
 
