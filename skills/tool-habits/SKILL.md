@@ -86,13 +86,14 @@ git diff --stat
   chain once, or put the edit and the check in one script.
 - Read the output before saying "done". Without `pipefail`, a pipe into `tail` hides a test's exit code. Do not end a
   check in `|| true` or `|| echo`, and do not print `echo ----` separators.
-- Say what ran with its exit code, and what did not run and why. "Done" with no gate named is a claim, not a result.
+- Say what ran with its exit code, and what did not run and why; "done" with no gate named is a claim.
 - One-call recipes for discovery, independent gates, an asserted edit, web calls and an ML probe: `references/recipes.md`.
 
 ## Clean
 
-- Keep probes and one-off output in `__scratch__/`; a hook makes the folder and its `.gitignore`. `rm` deletes named paths
-  there and in the Claude scratchpad, also by a variable the same command set to a literal (`d=__scratch__/x && rm -rf "$d"`).
+- `__scratch__/` is the temp folder for probes and one-off output (a hook makes it and its `.gitignore`) and is never
+  cleaned: make a subfolder per run (`mktemp -d __scratch__/name.XXXX`) instead of deleting and recreating, and do not
+  tidy it afterwards.
 - Elsewhere in the project the guard moves what `rm` or `rmdir` names into `__harness__/trash/<call id>/`, which the owner
   empties. It refuses a delete it cannot move: a glob or an unknown variable, the project root, a path outside the project or
   under `node_modules`, `dist`, `.venv` or `.git`, and `git clean`, `find -delete` or `shred`. A tracked file that must go
@@ -101,7 +102,8 @@ git diff --stat
 
 ## Shell
 
-- Use absolute paths; a `cd` may not carry to the next call.
+- Use absolute paths; a `cd` may not carry to the next call. Write paths out, not in a variable: a variable, `$(...)` or a
+  `;` chain makes the owner approve the call by hand.
 - A list of files goes in an array (`files=(a.py b.py)`, then `"${files[@]}"`) or a Python script: zsh does not split
   `$files` into words, so the command gets one name with spaces in it.
 - Quote every glob: zsh refuses one that matches nothing. Read exit codes from `$pipestatus` in zsh.
@@ -136,5 +138,6 @@ Nothing needs it:
 - A glob that matches nothing is refused with the folder it was matched from: `cd` to the right one, or list files with
   `rg --files -g '<pattern>'` or `git ls-files`.
 - A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position
-  (`--include`, `-name`, `-g`), moves a delete to the trash (Clean) and drops a foreground `sleep` (Waiting). Write the
+  (`--include`, `-name`, `-g`), moves a delete to the trash (Clean), drops a foreground `sleep` (Waiting) and adds
+  `set -o pipefail` to a test, check or build piped into `tail`, `head` or `grep`. Write the
   call that way next time.

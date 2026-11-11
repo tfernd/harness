@@ -45,6 +45,10 @@ a failing command quoted with its exit code>
 | Feedback | If any | Each item names a file to change; it goes to `__harness__/feedback/inbox.md` for a retro: the project's (the plugin's data folder when the start folder is `/` or the home folder) |
 | Verdict | Always | Last. `done`, `partial` or `blocked`, then one sentence |
 
+A claim that something could not be done needs the quoted error of a real attempt; otherwise write
+`not attempted: <why>`, never "can't". A restriction is a conclusion earned from a real failure. A hook sends back a "can't"
+with no failed call, once.
+
 Write the Verdict after the rest and let it follow from it. If Not proven holds something the job needed, the word is
 `partial`. An owner reads the Verdict first, so it must be true on its own.
 
@@ -65,4 +69,5 @@ Write the Verdict after the rest and let it follow from it. If Not proven holds 
 
 - Keep notes as you work: each retry, failed call and rule that pulled the other way; a report written from memory drops them.
 - "The agent itself" is a cause, and the most useful one to admit. A mistake left out is the worse failure.
+- Writing tics to avoid, each with a plain form: `references/prose.md`.
 - Mark a claim that isn't obvious as READ, DERIVED or PROBED (`harness:evidence`), with `path:line` or the command.

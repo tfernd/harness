@@ -24,6 +24,8 @@ the plan: report it with the cause. Never skip, loosen or replace the check.
 
 ## The PR body
 
+Written like a commit body for a reader who never saw the conversation (`harness:git-commit`, The body).
+
 ```
 ## What and why
 <what changed, in plain words, and why it was needed>

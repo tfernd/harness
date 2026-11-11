@@ -34,7 +34,8 @@ feat(scope): add the thing
 - A blank line after the subject, then at least one `* ` bullet (`- ` also counts). A long bullet continues on an indented line.
 - Say what was done and why, including the reason the diff can't show, and evidence where it matters: the check that ran, a
   measured number with its baseline.
-- It describes only what this commit holds.
+- It describes only what this commit holds. Write it for a reader who never saw the conversation: no "as discussed", "the
+  user asked", "per the chat", no history of attempts; the why of the change stays.
 - A commit that leaves fewer tests in its changed test files than HEAD needs the bullet `* Tests removed: <reason>`. A move
   that keeps the count passes. A test whose body is only `pass`, `...` or a docstring counts for nothing.
 - Below the bullets, after a blank line, a footer may hold `Refs: #123` and `BREAKING CHANGE: <what>`.
