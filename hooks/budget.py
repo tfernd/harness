@@ -20,7 +20,7 @@ from typing import NamedTuple
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_turns, get_unfenced_lines, make_note_output, read_tail, write_atomic
 
 MIN_TURNS_LEFT = 3
-DEFAULT_BUDGET = {"scout": 35, "cold-reader": 20, "runner": 30, "reviewer": 35, "auditor": 35, "worker": 70, "designer": 70, "releaser": 40, "planner": 30, "researcher": 30, "*": 40}
+DEFAULT_BUDGET = {"scout": 35, "reviewer": 35, "worker": 70, "designer": 70, "planner": 30, "researcher": 30, "*": 40}
 STOP_TOOLS = ("TaskStop", "KillShell")
 BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
 LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + r"\**\s*:", re.I)

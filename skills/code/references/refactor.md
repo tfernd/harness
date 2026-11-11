@@ -1,8 +1,3 @@
----
-name: refactor
-description: How to change structure without changing behaviour - tests green before and after, a baseline, one kind of change per commit, scripted mechanical edits, every caller updated, no fix or feature mixed in. Load before moving, renaming, splitting or merging code.
----
-
 # Refactoring
 
 Behaviour stays; only the structure moves. Medium and large jobs follow `harness:workflows`; the judge rules are in
@@ -24,7 +19,7 @@ Behaviour stays; only the structure moves. Medium and large jobs follow `harness
 - The kinds: a rename, a move, an extract, an inline, a split, a merge, a signature change, a delete of dead code.
   One kind per commit, so a reviewer reads the diff as one idea and a revert takes one thing out.
 - No feature and no bug fix in the same commit. A bug met on the way is written down and fixed afterwards, with its
-  own failing test (`harness:debug`).
+  own failing test (`harness:review` (references/debug.md)).
 - Formatting-only changes are their own commit, made before or after, never inside.
 - A move is `git mv` with no edits in the same commit.
 - Do not tidy what you pass by. A line outside the one kind of change goes in the report, not in the diff.
@@ -56,7 +51,7 @@ Behaviour stays; only the structure moves. Medium and large jobs follow `harness
 ## Stop and report when
 
 - A test fails after the move and the cause is not the move itself: the behaviour changed, so undo the step and
-  narrow it (`harness:debug`).
+  narrow it (`harness:review` (references/debug.md)).
 - The change grows a second kind. Split it into units and report the split.
 
 ## What no tool checks

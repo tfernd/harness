@@ -5,7 +5,7 @@ description: Makefile, GNUmakefile and .mk rules - a help target built from `##`
 
 # Makefile
 
-No comments or docstrings: `harness:comments`. The `## ` text after a target is data that `make help` prints, so it stays.
+No comments or docstrings: `harness:code`. The `## ` text after a target is data that `make help` prints, so it stays.
 Recipes are shell: `harness:code-shell`.
 
 ## Header

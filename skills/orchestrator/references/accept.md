@@ -1,39 +1,20 @@
----
-name: accept
-description: Load to accept a unit, to write its commit proposal, and before the closing status of a big job (Verdict, Done, Needs you, Next, Lessons, Agents): the proposal after each unit, the closing status after a batch. Main session only.
----
+# Accepting a unit and the closing status
 
-# Accept a unit
-
-The main session accepts: it reads and judges, and makes the wiring, the fixes and the plan update itself.
-
-## 1. Accepting a unit
+## Accepting a unit
 
 1. Read the diff of the write set, new files included, and the report's Not proven and Problems. A change outside
    the write set is sent back, not kept.
 2. Future-reader test: would a fresh agent reading this cold find it easier or harder? Names say what a thing is, docs
    are true of the code under them. If harder, the unit goes back to its writer.
 3. Gates follow the unit's tier in `harness:workflows`. Small: the project's own checks alone. Medium and large: the
-   product run, the checks, then one `reviewer` at the end of the round (`harness:review`); an `auditor`
-   (`harness:audit`) only when a worker's report is the sole evidence of a claim. The main session reruns each finding's command and drops one whose output does not show it, then applies the rest
+   product run, the checks, then one `reviewer` at the end of the round (`harness:review`); the main session reruns the worker's Judge only when its report is the sole evidence of a claim. The main session reruns each finding's command and drops one whose output does not show it, then applies the rest
    and compares the test count and deleted files with the baseline. A gate that could not run is accepted only as "not
    run" and listed.
 4. Update the plan: the unit's row leaves "Next", a decision it settled is recorded, a line it made
    false is deleted in the same proposal.
-5. Write the proposal (section 2) before the next unit starts.
+5. Write the commit proposal (`harness:git`) before the next unit starts.
 
-## 2. The commit proposal
-
-The main session commits and pushes when the owner asks (git rules: `harness:git-commit`).
-
-- One accepted unit per proposal (it passed section 1); two units are two proposals. Read state with `git status --short -- <paths>`,
-  `git diff -- <paths>` and `git log -n 5 --pretty=format:'%s'` for the subject style.
-- Layout: `Paths:` (every file of the unit, one per line from the repository root, a removed tracked file marked
-  `(removed)`; no folder, glob or `.`), a blank line, `Left out:` if a file is not the unit's, then `Message:`.
-- Message: by `harness:git-commit`. A unit that works but is messy says `messy: <what>` in the body.
-- After the commit, `git show --stat HEAD` must list the proposal's paths; a difference goes to the owner.
-
-## 3. The closing status
+## The closing status
 
 Due after a turn that ran agents or edited many files, once no background agent is still running. A turn that ends while agents run is a progress note of a few lines with no status headings; a quick answer does not need it either. The Stop hook asks for the status when it is due, so never write it ahead of that.
 
@@ -53,7 +34,7 @@ Plain words first, then narrow tables, under these exact `##` headings in this o
    | Agent (role, model) | Task | Result | Quality 1-5 | What went wrong | Brief fix |
    |---|---|---|---|---|---|
 
-   Quality is the auditor's `Grade: N/5` where there is one, else yours. Say when the agent's Verdict disagrees with it.
+   Quality is your reading of the agent's work, 1 to 5. Say when the agent's Verdict disagrees with it.
 5. `## Needs you`: actions only the owner can take, each with what happens if they do nothing; "nothing" when empty.
 6. Optional: `## Not proven` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
    against a named baseline with its command).

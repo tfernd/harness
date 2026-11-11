@@ -5,7 +5,7 @@ description: Python style and checkable rules - names, signatures, types, functi
 
 # Python
 
-No comments or docstrings: `harness:comments`. Tests: `harness:testing`.
+No comments or docstrings: `harness:code`. Tests: `harness:testing`.
 
 ## Procedure
 
@@ -18,7 +18,7 @@ No comments or docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Names
 
-- What a name must say, and the verbs and booleans: `harness:naming`.
+- What a name must say, and the verbs and booleans: `harness:code`.
 - Casing: `snake_case` functions and variables, `PascalCase` classes, `UPPER_SNAKE` constants; a count is
   `num_<things>` (`num_files`).
 

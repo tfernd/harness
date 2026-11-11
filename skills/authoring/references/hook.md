@@ -1,9 +1,4 @@
----
-name: hook-authoring
-description: How to write a Claude Code hook that is safe to ship - events and what each can do, matchers, the time budget, fail open, refusal messages, soft against hard rules, and the proof a rule needs. Load before adding, changing or reviewing a hook in any plugin or project.
----
-
-# Hook authoring
+# Writing a hook
 
 A hook runs on every matching call, for every agent. A wrong one slows or blocks all of them, so it is small, fast and
 fails open.
@@ -60,4 +55,4 @@ A judge that imports a hook by path loads the hook's sibling modules first.
 ## What no tool checks
 
 Whether a message is clear to an agent that has only that text, and whether a rule is worth the friction it causes.
-Read the message cold (`harness:cold-read`), and let the ledger show a rule that keeps firing on good calls.
+Give the message to a fresh agent with nothing else, and let the ledger show a rule that keeps firing on good calls.

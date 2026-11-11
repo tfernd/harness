@@ -1,12 +1,7 @@
----
-name: explore
-description: The mock-first process for anything visual or interactive: offer mocks, diverge, pick and merge, freeze a spec, build logic then view, polish last. Load before building a game, page, dashboard, UI or diagram.
----
-
 # Explore before building
 
 Building before the look is chosen costs days. Choose the look on cheap mocks, freeze it, then build.
-Designer-side rules for a variant: `harness:design`. Games: `references/games.md`.
+Designer-side rules for a variant: `harness:design`. Games: `games.md`.
 
 ## The loop
 
@@ -34,7 +29,7 @@ Designer-side rules for a variant: `harness:design`. Games: `references/games.md
    not fall back to a poorer one. Check it by screenshot at phone and desktop width
    against the mock, and by opening the page; tests alone do not show a look
    (https://code.claude.com/docs/en/best-practices: "A browser screenshot next to the mockup").
-8. **Polish and optimize last.** One auditor per built unit (`harness:audit`).
+8. **Polish and optimize last.** One reviewer per built unit (`harness:review`).
 
 ## Failure modes
 

@@ -137,7 +137,7 @@ MESSAGES = {
     INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `__scratch__/`, read it, "
     "then run that file, or have the owner approve the pipe.",
     AGENT_RULE: "`{what}` writes to a repository or its history, and a sub-agent never runs a git or gh command that writes. Do not "
-    "rephrase it: describe the change in your handback and the main session commits it (`harness:git-commit`). Read forms run "
+    "rephrase it: describe the change in your handback and the main session commits it (`harness:git`). Read forms run "
     "freely: `git status`, `git diff`, `git log`, `git show`, `git branch --list`, `git stash list`, `git config --get <key>`, "
     "`gh pr view`, `gh pr list`, `gh api <path>` (a GET).",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "

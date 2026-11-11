@@ -186,22 +186,22 @@ class PortNote(NamedTuple):
 
 
 AGENT_KINDS = (
-    Kind("Thinkers", "Work out what to do; write no files.", ("planner", "cold-reader")),
+    Kind("Thinkers", "Work out what to do; write no files.", ("planner",)),
     Kind("Finders", "Look things up and answer with sources.", ("scout", "researcher")),
-    Kind("Doers", "Change files or run commands inside their write set.", ("worker", "designer", "releaser", "runner")),
-    Kind("Checkers", "Test someone else's work, claim by claim.", ("reviewer", "auditor")),
+    Kind("Doers", "Change files inside their write set.", ("worker", "designer")),
+    Kind("Checkers", "Test someone else's work.", ("reviewer",)),
 )
 SKILL_KINDS = (
-    Kind("Run the job", "Plan, brief, accept, set up.", ("orchestrator", "workflows", "explore", "models", "accept", "init")),
-    Kind("Think", "Settle facts and causes first.", ("evidence", "debug", "spec", "cold-read")),
+    Kind("Run the job", "Plan, brief, accept, set up.", ("orchestrator", "workflows", "init")),
+    Kind("Think", "Settle facts and causes first.", ("evidence", "spec")),
     Kind(
         "Build",
         "Write code, commits and pages.",
-        ("code-python", "code-js", "code-html-css", "code-shell", "code-terraform", "code-sql", "code-yaml", "code-make", "refactor", "comments", "naming", "git-commit", "design", "release"),
+        ("code-python", "code-js", "code-html-css", "code-shell", "code-terraform", "code-sql", "code-yaml", "code-make", "code", "git", "design"),
     ),
     Kind("Tools", "Run a command-line tool without breaking an account.", ("aws-cli", "snowflake-cli")),
-    Kind("Check", "Judge work against its spec.", ("testing", "review", "audit", "sweep")),
-    Kind("Report", "Close a job; write hooks, skills and agents.", ("report", "hook-authoring", "skill-authoring", "agent-authoring")),
+    Kind("Check", "Judge work against its spec.", ("testing", "review")),
+    Kind("Report", "Close a job; write hooks, skills and agents.", ("report", "authoring")),
     Kind("Habits", "Cheap tool calls, every session.", ("tool-habits",)),
 )
 HOOK_KINDS = (

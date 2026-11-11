@@ -20,17 +20,14 @@ from common import PLUGIN_PREFIX, WRITE_SET_LINE, find_project, get_unfenced_lin
 DEFAULT_REQUIRED = {
     "worker": ["Goal:", "Write set:", "Judge:"],
     "reviewer": ["Goal:", "Input:", "Tree:"],
-    "auditor": ["Goal:", "Input:", "Judge:"],
-    "runner": ["Goal:", "Runs:"],
     "designer": ["Goal:", "Write set:"],
-    "releaser": ["Goal:", "Write set:"],
     "*": ["Goal:"],
 }
 GENERIC_AGENTS = frozenset({"", "general-purpose", "explore", "plan", "claude"})
 GENERIC_REFUSAL = (
     "Blocked by the harness brief rule: {name} has no harness role, so it gets no role skills, no report form and no turn budget. "
-    "Send the same brief to a role: harness:scout finds a fact, harness:worker makes a change, harness:runner runs checks, "
-    "harness:reviewer reviews, harness:planner plans, harness:researcher reads outside sources, harness:designer designs, harness:releaser releases."
+    "Send the same brief to a role: harness:scout finds a fact, harness:worker makes a change, "
+    "harness:reviewer reviews, harness:planner plans, harness:researcher reads outside sources, harness:designer designs."
 )
 MISSING_AGENT_REFUSAL = (
     "Blocked by the harness brief rule: {name} is no agent of this plugin (it holds no agents/{role}.md). "

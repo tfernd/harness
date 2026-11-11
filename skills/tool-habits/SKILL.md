@@ -125,7 +125,7 @@ its exit wakes you. Nothing needs it:
 
 ## Git
 
-- Before any commit, load `harness:git-commit`; it holds the AI-attribution ban.
+- Before any commit, load `harness:git`; it holds the AI-attribution ban.
 
 ## When a call is refused
 

@@ -14,7 +14,7 @@ when it is removed. For the last, name the test and the bug it would catch; one 
 
 ## The adversary's inputs
 
-The adversary is a runner stepped up to Sonnet. It runs the check's own command on a scratch copy of its input, never
+The adversary is a reviewer. It runs the check's own command on a scratch copy of its input, never
 against a remote, a CI service, a deploy or real data, and never pushes. It records the input and the result for each try. For each enforced rule try:
 
 - other spellings: case, a long option written short, a path with `./`, `..` or a trailing slash, quoting, unicode

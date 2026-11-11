@@ -1,6 +1,6 @@
 # Naming by language
 
-Casing and idiom only; the meaning rules are in `harness:naming`.
+Casing and idiom only; the meaning rules are in `harness:code`.
 
 | Place | Form |
 |---|---|

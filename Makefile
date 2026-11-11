@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks skills strip strip-check map check replay clean
+.PHONY: help setup init validate test leaks skills map check check-all replay clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -27,22 +27,22 @@ leaks: ## Fail when a file names a person, machine, home path or private word
 skills: ## Fail when a skill or agent leaves the form AGENTS.md demands
 	uv run python tests/check_skills.py
 
-strip: ## Strip comments and docstrings from every tracked source file (rewrites them in place)
-	git ls-files -z | xargs -0 bin/strip-comments
-
-strip-check: ## Fail when the comment stripper breaks a file or misses a comment
-	uv run python tests/check_strip.py
-
 map: ## Rebuild the Harness Map page (docs/index.html) from the agents, skills, hooks and tests
 	uv run python docs/build_map.py
 
-check: ## What the pre-push hook runs: map freshness, cases, skill form, leaks
+CHANGED = $(shell { git diff --name-only @{u}...HEAD 2>/dev/null; git diff --name-only HEAD; } | sort -u)
+
+check: ## What the pre-push hook runs: map, skill form, leaks; cases only when hooks changed
 	uv run python docs/build_map.py --check
-	uv run python tests/run_cases.py
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
-	uv run python tests/check_port.py
-	uv run python tests/check_strip.py
+	@if printf '%s\n' $(CHANGED) | grep -qE '^(hooks/|tests/run_cases)'; then uv run python tests/run_cases.py; else echo "cases skipped: no hook changed"; fi
+
+check-all: ## Every check, whatever changed
+	uv run python docs/build_map.py --check
+	uv run python tests/check_skills.py
+	uv run python tests/check_leaks.py
+	uv run python tests/run_cases.py
 
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py

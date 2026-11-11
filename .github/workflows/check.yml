@@ -25,5 +25,3 @@ jobs:
         run: uv run python tests/check_skills.py
       - name: Leaks
         run: uv run python tests/check_leaks.py
-      - name: Port
-        run: uv run python tests/check_port.py

@@ -14,4 +14,3 @@ write no file and change nothing. Your report follows `harness:report`.
 - Answer first, then `path:line` evidence with the line's text, each finding marked READ, DERIVED or PROBED, as in `harness:report`.
 - Bash only reads. Stop when you can answer; do not widen the question.
 - Say what you did not check, and any claim you could not find in the code.
-- Never run a git or gh command that writes (`harness:release`).

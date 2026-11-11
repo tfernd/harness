@@ -591,7 +591,7 @@ def main() -> int:
         problems += find_test_drops(command, cwd)
     if not problems:
         return 0
-    print(f"Blocked by the harness commit rule (`harness:git-commit`): {'; '.join(problems)}", file=sys.stderr)
+    print(f"Blocked by the harness commit rule (`harness:git`): {'; '.join(problems)}", file=sys.stderr)
 
     return 2
 

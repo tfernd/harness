@@ -1,12 +1,12 @@
 ---
 name: review
-description: How a unit, design, branch or pull request is reviewed against its spec - order, severities A to C, finding form, lenses, a layout survey. Also the worker's steps for fixing its own failing test or gate. Load to review, or to fix a failure whose cause is known (`harness:debug` when it is not).
+description: How a unit, design, branch or pull request is reviewed against its spec - order, severities A to C, finding form, lenses, a layout survey; the worker's steps for fixing its own failing test or gate; how to find a bug's cause when it is not known (reproduce, hypotheses, bisect); and the whole-repo sweep. Load to review, to fix a failure, to debug, or to sweep a repo before a release.
 ---
 
 # Reviewing
 
 A reviewer reads code against its spec or brief. It never edits, is never the author, does one round and does not
-rewrite. Audit is different: `harness:audit` tests a report's claims, review reads the code. A **cell** is one scout's
+rewrite. A report's own claims are checked by rerunning its Judge, not by review. A **cell** is one scout's
 or reviewer's slice of a fan-out (a folder, or a kind of problem across files). Fixing a failure is the worker's job,
 not the reviewer's: see the last section.
 
@@ -27,7 +27,7 @@ issues. Detail: `references/rules.md`.
    oracle defined from the code under test); a tunable constant no test defends (`harness:testing`).
 4. **Layout and style:** the project's rules and the style tools they name (the `code-*` skills and the project's
    gates). A "pure move" is checked by diffing the moved code at its old and new home with comments stripped.
-   A misleading, generic or abbreviated name, or a comment standing in for one, is a B finding (`harness:naming`).
+   A misleading, generic or abbreviated name, or a comment standing in for one, is a B finding (`harness:code`).
 5. **Docs:** a README or docs section false of the code.
 
 ## Severities
@@ -57,7 +57,7 @@ One entry: `path:line` with the line's text (lines move), the severity, the comm
 no test would catch it), a one-line fix. Findings are sorted A, B, C. A finding survives only with that command and
 output; a suspicion without them is reported as unsure, not as a finding: unsure items go in a separate list after C.
 "No findings" is a valid result; never pad a review to look thorough. The main session reruns a finding's command
-before relaying it (`harness:accept`).
+before relaying it (`harness:orchestrator`).
 
 ## Lenses a brief may add (on its `Role:` line, for example `Role: reviewer, lens: Interface`)
 
@@ -66,9 +66,9 @@ before relaying it (`harness:accept`).
   values).
 - **Concurrency:** shared state, ordering, a resource released on every path, a retry that repeats a side effect.
 - **Interface:** what a caller can now do that it could not, an old caller that breaks, a name that lies.
-- **Adversarial:** try to break the change with real inputs; detail in the adversary and matrix reference of `harness:sweep`.
-- **Holes:** what the change promises that nothing checks; detail in the lens reference of `harness:sweep`.
-- **Drift:** which docs, examples or counts the change makes false; detail in the lens reference of `harness:sweep`.
+- **Adversarial:** try to break the change with real inputs; detail in the adversary and matrix reference (`references/holes.md`).
+- **Holes:** what the change promises that nothing checks; detail in the lens reference (`references/lenses.md`).
+- **Drift:** which docs, examples or counts the change makes false; detail in the lens reference (`references/lenses.md`).
 - **Security:** untrusted input reaching a shell, path, query or template; a secret in a log. Checklist and what not to report: `references/security.md`.
 
 ## The layout survey
@@ -87,7 +87,7 @@ pull request. Scope, run, read order and checklist: `references/branch.md`.
 
 ## Fixing a failure (the worker's job)
 
-For the worker or author fixing its own failing test or gate; a reviewer or auditor only reports.
+For the worker or author fixing its own failing test or gate; a reviewer only reports.
 
 1. **Reproduce** with the smallest case (one test id, one input); one you cannot reproduce is reported.
 2. **Read the failure** (summary and last frames; one error at one line is one cause) and **find the cause** (the line
@@ -97,4 +97,12 @@ For the worker or author fixing its own failing test or gate; a reviewer or audi
 4. **Grep the callers,** verify again once. A failed call is split, never retried unchanged.
 
 A third failing run of the judge stops the worker: it reports what fails, the cause and what it tried. Two failed fixes
-on one hypothesis end the work too (`harness:debug`).
+on one hypothesis end the work too (`references/debug.md`).
+
+## Finding a cause not yet known
+
+Reproduce, one hypothesis at a time, bisect, fix the cause with a test that failed first: `references/debug.md`.
+
+## Sweeping a repo against itself
+
+A whole-repo self-audit (rules, docs, config and checks against each other), before a release or when the same problem comes back: `references/sweep.md`.

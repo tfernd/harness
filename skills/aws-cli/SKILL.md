@@ -5,7 +5,7 @@ description: Safe AWS work - read-only first, no write to an account without the
 
 # AWS
 
-No comments or docstrings: `harness:comments`. Templates in Terraform: `harness:code-terraform`. Scripts: `harness:code-shell`.
+No comments or docstrings: `harness:code`. Templates in Terraform: `harness:code-terraform`. Scripts: `harness:code-shell`.
 
 ## Read first, write with the owner
 

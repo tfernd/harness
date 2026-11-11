@@ -8,7 +8,7 @@ description: General JavaScript and TypeScript rules - strict TS, named exports,
 Goal: code a reader checks by eye or a tool checks for them: types that cannot lie, errors that surface, modules with
 one job. Long lists and tool starters: `references/rules.md`, `references/biome-tsconfig.md`.
 
-No comments or docstrings: `harness:comments`. Web pages: `harness:code-html-css`.
+No comments or docstrings: `harness:code`. Web pages: `harness:code-html-css`.
 
 ## Runtime and form
 
@@ -47,7 +47,7 @@ No comments or docstrings: `harness:comments`. Web pages: `harness:code-html-css
 
 ## Names
 
-- What a name must say, and the verbs and booleans: `harness:naming`.
+- What a name must say, and the verbs and booleans: `harness:code`.
 - Types, classes: PascalCase. Functions, variables, methods: lowerCamel. Fixed numbers: UPPER_SNAKE. Folders lower
   case; an acronym is a word (`Svg`, `toSvg`).
 - A name never shadows a type or a global (`number`, `string`, `name`).

@@ -1,9 +1,4 @@
----
-name: agent-authoring
-description: How to write a sub-agent file for a plugin or project - frontmatter fields and the ones a plugin ignores, least tools, model by role, preloaded skills, the body, and the tables a new role must be added to. Load before adding or changing an agent.
----
-
-# Agent authoring
+# Writing an agent
 
 An agent is a role: a fixed tool set, model and skill set, and a short standing order. The brief gives it the task.
 
@@ -16,7 +11,7 @@ An agent is a role: a fixed tool set, model and skill set, and a short standing 
 | `name` | Equal to the file name |
 | `description` | When to use the role and when not; the main session reads it to choose |
 | `tools` | The least the job needs: a reader gets read tools, a writer adds Edit and Write, `Skill` only if it loads skills |
-| `model` | By role: the cheapest model that does the job (`harness:models`) |
+| `model` | By role: the cheapest model that does the job (`harness:orchestrator`, Models) |
 | `skills` | Preloaded skills, always including `report`, so every run ends in the report form |
 
 `hooks`, `mcpServers` and `permissionMode` are ignored in a plugin agent: never use them. A rule an agent must follow
@@ -38,7 +33,7 @@ Do not repeat what a preloaded skill says; point to it by its full skill name (f
 
 One role appears in several lists. Add it to each, in the same change, or a gate or a page will not know it:
 
-- the models table (`harness:models`),
+- the models table (`harness:orchestrator`, Models),
 - the orchestrator's roles table (`harness:orchestrator`),
 - the hook budget table (the default turns per role),
 - the project's page or docs that list agents.

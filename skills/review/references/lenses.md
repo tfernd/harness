@@ -49,7 +49,7 @@ config side, then the text; the text usually changes. Include tables listing thi
 
 ## Holes
 
-Build the enforcement matrix (`references/holes.md`). A rule only text enforces, a check no stated rule asks for, and
+Build the enforcement matrix (`holes.md`). A rule only text enforces, a check no stated rule asks for, and
 an enforcement with no test are each a hole. A rule every document states and nothing enforces is the worst kind.
 
 ## Duplication

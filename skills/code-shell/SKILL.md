@@ -5,7 +5,7 @@ description: Shell script rules for bash - when shell fits, strict mode, quoting
 
 # Shell
 
-No comments or docstrings: `harness:comments`. One-off commands in a tool call: `harness:tool-habits`.
+No comments or docstrings: `harness:code`. One-off commands in a tool call: `harness:tool-habits`.
 
 ## When shell fits
 

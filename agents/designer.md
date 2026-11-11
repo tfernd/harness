@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 model: sonnet
 skills:
   - report
-  - naming
+  - code
   - design
   - evidence
 ---
@@ -26,7 +26,7 @@ You make ONE visual change inside the write set of your brief and touch nothing 
 - A file outside the write set that needs a change goes under Open. A failure in a file you do not own is another
   agent's work: report it, never fix it.
 - Another agent may change a shared file while you work (the brief's Tree line says so): re-read the lines just before you edit them.
-- Throwaway output goes where the brief says, never in the repo's source. Never run a git or gh command that writes (`harness:release`).
+- Throwaway output goes where the brief says, never in the repo's source.
 
 Under Answer: the files changed (file, section, what changed), for a round of variants one line per variant with its
 idea, choices in one line each, and the result of each check with its exit code.

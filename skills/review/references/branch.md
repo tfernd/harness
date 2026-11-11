@@ -28,7 +28,7 @@ The same review as `harness:review`, over a whole branch. One reviewer, at the e
 - Every changed public name has its callers updated (`rg` for the old name over source, tests, docs, scripts).
 - New code has a test that could fail (`harness:testing`).
 - No secret, and no generated or build file, in the diff.
-- Commit messages follow `harness:git-commit`.
+- Commit messages follow `harness:git`.
 - The written standards: the project's `AGENTS.md` and the `code-*` skills for the languages in the diff.
 
 ## Findings

@@ -1,9 +1,9 @@
 ---
-name: git-commit
-description: How to write a commit - a Conventional Commits subject, a body of bullets saying what and why, one unit per commit, no AI attribution. Load before any git commit or commit proposal, and when a hook refuses a commit message.
+name: git
+description: How to commit and release - a Conventional Commits subject, a body of bullets saying what and why, one unit per commit, no AI attribution, the commit proposal after an accepted unit, a PR body, CI basics, reading a failed run. Never a force push; the owner decides push and merge. Load before any git commit or commit proposal, when splitting a diff, drafting a PR, writing CI files or reading CI results, and when a hook refuses a commit message.
 ---
 
-# Git commits
+# Git
 
 A commit is read later by someone asking why the code is this way. In every project, a hook refuses a message
 that breaks the form below or carries AI attribution.
@@ -67,3 +67,67 @@ trailer, `--trailer` or `--author` whose name is an AI tool or model (`Jean-Clau
 - Pass a long message with `-F` from a file in `__scratch__/` written in an earlier call, or with a quoted heredoc. The hook
   refuses a message it cannot read: an editor, a variable or `$(...)`, or a file the same command writes.
 - After the commit, `git show --stat HEAD` must list the expected paths.
+
+## The commit proposal
+
+The main session commits and pushes when the owner asks (the rules above).
+
+- One accepted unit per proposal (it was accepted, `harness:orchestrator`); two units are two proposals. Read state with `git status --short -- <paths>`,
+  `git diff -- <paths>` and `git log -n 5 --pretty=format:'%s'` for the subject style.
+- Layout: `Paths:` (every file of the unit, one per line from the repository root, a removed tracked file marked
+  `(removed)`; no folder, glob or `.`), a blank line, `Left out:` if a file is not the unit's, then `Message:`.
+- Message: by the rules above. A unit that works but is messy says `messy: <what>` in the body.
+- After the commit, `git show --stat HEAD` must list the proposal's paths; a difference goes to the owner.
+
+## Releasing
+
+Preparing is a doer's job; applying it (commit, push, `gh pr create`, merge, tag) is the main session's, on the owner's word.
+
+## Commit units
+
+- Units, message form and the attribution ban: above.
+- Split the diff by purpose, not by file count: a fix, a refactor and a doc change are three units even in one file set.
+- The plan is a list in `__scratch__/`: for each unit the paths and the full message. A file in two units is split
+  by hunk, and the plan says which hunks.
+- Generated files go in the unit of their source, or in their own unit after it; never alone first.
+- Order units so each passes the project's check by itself, where that is cheap to show.
+
+## The pre-push check
+
+Run the project's own check (named in `AGENTS.md`; often a `make check`) once, and quote its exit code. A failure stops
+the plan: report it with the cause. Never skip, loosen or replace the check.
+
+## The PR body
+
+Written like a commit body for a reader who never saw the conversation (The body above).
+
+```
+## What and why
+<what changed, in plain words, and why it was needed>
+
+## Checks run
+- <command>: exit <code>
+
+## Not proven
+- <what was not run or shown, and why>
+```
+
+Every claim in it is backed by a command you ran. No AI attribution.
+
+Draft the body in `__scratch__/`, offer it with the push question, and keep it there until the PR merges; then it is the owner's to delete. The main session opens the PR
+(`gh pr create`) on the owner's word.
+
+CI file basics (pins, permissions, concurrency): `harness:code-yaml`.
+
+## Reading a failed run
+
+1. `gh run list --limit 5`, then `gh run view <id>` for the failing job.
+2. `gh run view <id> --log-failed | head -n 200` for the lines that say why; the first error line, not the last.
+3. Say whether the cause is the change, the workflow or the environment (a runner, a network call, a version), with
+   the line that shows it. Reproduce it locally before proposing a fix.
+
+## What the owner decides
+
+- A force push is never part of a plan. If history must change, say so under Open and stop.
+- Push, opening the PR (`gh pr create`), merge, tag and release are the owner's words, relayed by the main session.
+- A review of the branch or PR before merge: `harness:review` (the branch and pull request steps).

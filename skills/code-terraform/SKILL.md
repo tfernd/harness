@@ -6,7 +6,7 @@ description: Terraform style from HashiCorp's published conventions - file layou
 # Terraform
 
 Every rule here is HashiCorp's published style guide
-(`https://developer.hashicorp.com/terraform/language/style`, read for this skill). No comments or docstrings: `harness:comments`.
+(`https://developer.hashicorp.com/terraform/language/style`, read for this skill). No comments or docstrings: `harness:code`.
 
 ## Format
 
@@ -14,7 +14,7 @@ Every rule here is HashiCorp's published style guide
   only this: it aligns and indents.
 - Arguments first, nested blocks after, a blank line between; the order inside a resource is under "Naming and order".
 - Blank line between top-level blocks. Repeated nested blocks of one type stay together without gaps.
-- No comments (`harness:comments`); variable and output `description` arguments stay, they are data.
+- No comments (`harness:code`); variable and output `description` arguments stay, they are data.
 
 ## Files
 

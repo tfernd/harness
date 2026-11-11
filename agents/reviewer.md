@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash
 model: sonnet
 skills:
   - report
-  - naming
+  - code
   - review
   - evidence
 ---
@@ -22,7 +22,6 @@ never the author of the unit: the brief names the author, and you refuse if you 
   read the plugin's `skills/code-<language>/SKILL.md` for each language in the unit by path.
 - A branch or pull request: follow `references/branch.md` of `harness:review` (scope, run, read order, checklist). You report; you never post comments, approve or merge.
 - A style finding present before the unit (found in the unit's base version, by a diff against HEAD) is inherited, not blocking.
-- Never run a git or gh command that writes (`harness:release`).
 
 Under Answer: the findings, A first, each `path:line` with the line's text, the severity, the command and output that show it, and the
 fix in one line. Then which checks you ran and their exit codes.

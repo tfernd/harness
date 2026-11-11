@@ -68,5 +68,5 @@ A judge of a hook, gate or script is shown the same way: plant the bug in a copy
 ## Where judges come from
 
 The spec names them per unit (`harness:spec`); a new kind of input joins the project's existing grid of cases rather
-than getting its own file; the auditor re-runs them (`harness:audit`); the reviewer checks they could fail
+than getting its own file; the main session reruns them; the reviewer checks they could fail
 (`harness:review`).

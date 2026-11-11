@@ -38,6 +38,17 @@ The orchestrator decides what goes in and briefs a worker to write the file. Siz
 
 ## Checking a spec
 
-A spec is accepted only after a cold read (`harness:cold-read`; two readers on a large job) and a review
+A spec is accepted only after a cold read and a review
 (`harness:review`, Interface lens). The reviewer checks that the write sets are disjoint, that every unit has a judge, and
 that no decision contradicts another.
+
+## The cold read
+
+A cold reader is a `scout` that has only the spec (or brief) and the tree, none of the author's reasoning; it edits
+nothing and runs only commands that read. Two readers on a large job, run apart. It returns: the goal in one sentence;
+the files it would touch; the judge and result that count as done; a GUESS list of every decision it would have to
+guess (a name, a signature, a default, an order, a file not assigned, a word with two readings); and for every path,
+function, command, test id and flag the spec names, whether it exists, with the matching `path:line` quoted (a claim
+with no quoted line counts as not checked). Where two readers differ, the text is ambiguous there: fix the text. The
+main session checks a claimed name by one grep before changing the spec. A cold read finds gaps in the text, not a
+misreading of the owner (that is the read-back in `harness:orchestrator`).

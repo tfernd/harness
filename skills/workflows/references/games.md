@@ -1,6 +1,6 @@
 # Exploring a game
 
-Add these to the loop in `harness:explore`.
+Add these to the loop in `references/explore.md`.
 
 - **Find the fun before the engine.** Ask what the player does each second and why it is worth repeating.
 - **One prototype per mechanic.** Scope is the difference between a prototype and a feature

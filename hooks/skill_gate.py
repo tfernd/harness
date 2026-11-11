@@ -23,7 +23,7 @@ from shell import get_segments
 
 EDIT_PATH_KEYS = ("file_path", "notebook_path")
 COMMAND_TAG = re.compile(r"<command-name>/?([^<\s]+)</command-name>")
-COMMIT_SKILL = "harness:git-commit"
+COMMIT_SKILL = "harness:git"
 MARKER = "Harness skill text: "
 MARKER_TAG = re.compile(r"Harness skill text: ([\w:-]+)")
 MAX_INJECTED = 9500

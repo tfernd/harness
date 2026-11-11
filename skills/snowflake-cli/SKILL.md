@@ -5,7 +5,7 @@ description: Safe use of the Snowflake CLI (`snow`) - name the connection, role 
 
 # Snowflake CLI
 
-SQL itself (DDL, dynamic tables, procedures, cost): `harness:code-sql`. No comments in files: `harness:comments`.
+SQL itself (DDL, dynamic tables, procedures, cost): `harness:code-sql`. No comments in files: `harness:code`.
 
 ## Name everything
 

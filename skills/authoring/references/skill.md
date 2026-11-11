@@ -1,16 +1,11 @@
----
-name: skill-authoring
-description: How to write a skill that agents read and follow - frontmatter, a description that says when to load, a short body with detail in references, one home per fact, no project domain. Load before adding, splitting, shortening or reviewing a SKILL.md in any plugin or project.
----
-
-# Skill authoring
+# Writing a skill
 
 A skill is read by an agent in the middle of a job. It must be short, general and checkable.
 
 ## Form
 
 - `skills/<name>/SKILL.md`, `name` equal to the folder. Frontmatter holds `name` and `description` only.
-- **Description:** at most 300 characters, one or two sentences: what the skill gives, then when to load it ("Load
+- **Description:** what the skill gives, then when to load it ("Load
   before ..."). The description is the only text an agent sees when deciding; a vague one means a skill never loads.
 - **Body:** at most 150 lines, a title, short sections, tables for lookups, steps for procedures. Detail that only
   some readers need goes in `references/<file>`, named from the body so a reader knows when to open it.
@@ -31,10 +26,9 @@ A skill is read by an agent in the middle of a job. It must be short, general an
 ## Keeping it true
 
 - **A rule that keeps failing becomes a hook.** If agents break the same rule twice with the skill loaded, text is the
-  wrong tool: find the pattern in the ledger and propose a check (`harness:hook-authoring`).
+  wrong tool: find the pattern in the ledger and propose a check (`hook.md`).
   Then shorten the skill to the line the hook cannot enforce.
-- **Test a skill with a cold read** (`harness:cold-read`): give a fresh agent only the skill and a task, and list what it
-  had to guess. Each guess is a missing line.
+- **Test a skill cold:** give a fresh agent only the skill and a task, and list what it had to guess. Each guess is a missing line.
 - When a skill grows past the limit, move detail to `references/` before cutting rules.
 - The project's skill check (a script that reads frontmatter, lengths and every pointer) runs before pushing.
 

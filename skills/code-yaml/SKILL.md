@@ -5,7 +5,7 @@ description: YAML traps and safe pipelines - typed scalars, quoting, indentation
 
 # YAML
 
-No comments or docstrings: `harness:comments` (a YAML comment is a comment too). CI file basics: `harness:release`.
+No comments or docstrings: `harness:code` (a YAML comment is a comment too). CI file basics: the last section.
 
 ## Traps
 
@@ -49,7 +49,7 @@ Keep a script in a `run:` block short; a long one is a file under `scripts/` (`h
 
 ## GitHub Actions
 
-- SHA pins, `permissions:` and `concurrency:`: `harness:release`.
+- SHA pins, `permissions:` and `concurrency:`: CI file basics, below.
 - Never put `${{ }}` of untrusted input (`github.event.*.title`, `body`, branch names, `head_ref`) inside `run:`:
   it is script injection. Pass it through `env:` and use the shell variable.
 - `timeout-minutes` on each job.
@@ -65,3 +65,22 @@ Keep a script in a `run:` block short; a long one is a file under `scripts/` (`h
 
 Whether a quoted value is needed for the tool that reads it, whether a secret reference points at the right scope, and
 whether a pinned SHA belongs to the release you meant.
+
+## CI file basics
+
+- Run the project's own check target (`make check`), so CI and a laptop agree; no second copy of the commands.
+- Pin every third-party action to a full commit SHA, with the tag in a trailing comment (`@<sha> # v4.1.0`), which Dependabot and Renovate read.
+- Give the workflow the least permission it needs (`permissions:` at the top, read-only by default).
+- No secret is printed: no `echo` of one, no `set -x` near one, no secret in an argument that logs.
+- A slow job caches what is slow and cancels a superseded run (`concurrency`):
+
+  ```yaml
+  permissions:
+    contents: read
+  concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+  ```
+
+- `actions/checkout` takes `persist-credentials: false` unless the job pushes; never run untrusted PR code under
+  `pull_request_target`.

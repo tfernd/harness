@@ -1,8 +1,3 @@
----
-name: debug
-description: How to find a bug's cause - reproduce, one hypothesis at a time, bisect, read the real error, fix the cause with a test that failed first. Load when something fails and the cause is not yet known, or before a second attempt at a fix.
----
-
 # Debugging
 
 Finding the cause. The job shape and the order "failing test, fix, gates" are in `harness:workflows` (Bug fix); the
@@ -64,4 +59,4 @@ claim ladder is `harness:evidence`. This skill is what happens before the test c
 ## What no tool checks
 
 Whether the test fails for the real cause rather than for a nearby one: undo the fix and read the failure message
-(`harness:review`, a failing gate). Whether the hypothesis list is honest is for the reader of the report.
+(Fixing a failure in `harness:review`). Whether the hypothesis list is honest is for the reader of the report.

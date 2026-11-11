@@ -6,12 +6,12 @@ description: Load at the start of every main session. The main session orchestra
 # The orchestrator
 
 **The main session orchestrates; workers change files.** It reads enough to decide, then plans, briefs, checks,
-commits, pushes and opens pull requests on the owner's word (`harness:accept`; sub-agents never do, and a hook refuses it) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
+commits, pushes and opens pull requests on the owner's word (`harness:git`; sub-agents never do, and a hook refuses it) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
 `harness:worker` with a write set disjoint from every running agent's; wide reading goes to a `harness:scout`. The main
 session edits itself only: a plan file, a commit message, the lessons of the closing status, and a few small
 edits that a brief would cost more than. A hook counts the main session's own edits per turn and
 refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/config.json`), default 3 edits a turn; files under
-`__harness__/` and `__scratch__/` do not count). Models per role: `harness:models`. Job shapes and size tiers: `harness:workflows`.
+`__harness__/` and `__scratch__/` do not count). Models per role: Models below. Job shapes and size tiers: `harness:workflows`.
 
 ## What each round costs
 
@@ -22,7 +22,7 @@ refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/c
 | **Agents in parallel where it pays** | Independent, large units get one worker each, disjoint write sets; the shared plumbing goes first, to one worker |
 | **Tight briefs** | Exact files, the contract and the done check, so an agent re-reads little |
 | **One round, one goal** | Never renames, contracts and clean-up together; small commits, each one usable |
-| **Mocks before building** | Before building anything visual or interactive, offer mocks first (`harness:explore`) |
+| **Mocks before building** | Before building anything visual or interactive, offer mocks first (`harness:workflows`, its explore reference) |
 | **Run it first** | Start the product (a headless smoke test in the gate) before any review; polish waits until it runs |
 | **One reviewer at the end** | One read of the whole diff, a branch or a pull request, high severity only (`harness:review`); a worker applies each fix |
 | **Rounds are capped** | The limit and what to do at it: `harness:review` |
@@ -50,17 +50,13 @@ starts.
 | Kind | Role | Does |
 |---|---|---|
 | Thinker | `planner` | read-only; turns a request into options, one recommendation, an order and judges |
-| Thinker | `cold-reader` | read-only; has only the brief (`harness:cold-read`) |
 | Finder | `scout` | read-only; one fact with `path:line` evidence |
 | Finder | `researcher` | read-only; answers one question from outside sources, each claim with its URL |
 | Doer | `worker` | one change inside a write set, with its tests |
 | Doer | `designer` | pages, layouts, diagrams and mock-ups inside a write set; N distinct variants when asked (`harness:design`) |
-| Doer | `releaser` | commit units, PR body and CI files; never commits, pushes or merges (`harness:release`) |
-| Doer | `runner` | runs the commands its brief lists, sorts failures, edits nothing |
 | Checker | `reviewer` | read-only; reads code against its spec (`harness:review`), never the author |
-| Checker | `auditor` | re-runs the judges and marks each claim of a report true or false (`harness:audit`) |
 
-The model of each role, and its default, are in the table of `harness:models`. Spawn a role by name: an unnamed
+The model of each role is in Models below. Spawn a role by name: an unnamed
 or general-purpose agent still owes a report but has no role's skills. When a brief steps a role up or down, it says so and why.
 
 ## The brief
@@ -85,11 +81,32 @@ form or turn budget. A hook notes a worker brief without `Goal:`,
 
 Lines the brief must hold, and the sender's checklist before it goes out: `references/brief-checks.md`.
 
-## Cold read
+## Models
 
-Whether a job gets a cold read is decided by its size tier (`harness:workflows`). Before reading the reader's output,
-write down the fixes you expect. Check every claim the reader makes against the tree: a claim with no quoted line counts
-as not run. Fix the brief, then send it.
+Haiku is for narrow, mechanical work whose result a person or a script can check. Sonnet is for edits and judgement.
+Opus is the step-up for design with several valid answers; no role runs on it by default. Lower effort before changing
+model. A role's model is set in `agents/<name>.md` (`model:`, the alias `haiku`, `sonnet` or `opus`); this table is the
+one source.
+
+| Role | Model | Why |
+|---|---|---|
+| planner | sonnet | weighs options against the code it reads |
+| scout | haiku | one narrow fact with a quoted line |
+| researcher | sonnet | weighs outside sources and separates documented from inferred |
+| worker | sonnet | edits code inside a write set; wrong code costs more than the model |
+| designer | sonnet | visual work inside a write set; Opus is the step-up for a hard case |
+| reviewer | sonnet | reads code against its spec |
+
+A brief steps a worker down to Haiku when every change is an exact rewrite with no judgement. It passes `model: opus`
+for one agent only on a named trigger written in the brief: the same unit came back twice with a failure whose cause is
+`the agent itself` and whose brief held no gap; the unit is a design or public contract with several valid answers; or
+the judge cannot be run by the agent. A brief gap is never fixed by a bigger model: fix the brief. Step back down after
+the unit. Change a role's model in the same edit as its agent file.
+
+## Accepting a unit
+
+The main session accepts a unit and gives the closing status after a batch: `references/accept.md`. A report that is the
+only evidence of a claim is checked by rerunning the brief's Judge once.
 
 ## Running agents
 
@@ -111,7 +128,7 @@ as not run. Fix the brief, then send it.
 ## Checkpoints
 
 After a batch or a big job: launch nothing new, run the project's full check, route the reports (the
-report routing below), give the owner the closing status (`harness:accept`), and go on only on their word.
+report routing below), give the owner the closing status (`references/accept.md`), and go on only on their word.
 
 A medium or large job (tiers in `harness:workflows`) keeps a resume file so a restart or compaction loses nothing; write
 it after each accepted unit, always naming the next step, and read it first on resume: `references/resume.md`.

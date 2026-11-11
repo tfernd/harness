@@ -20,12 +20,12 @@ A **unit** is one change that one worker can finish inside one write set.
 Large steps, each with its owner:
 
 1. Read-back and a budget for the round (main session).
-2. Spec (main session), then a cold read of it by two readers (`harness:cold-read`).
+2. Spec (main session), then a cold read of it by two scouts (`harness:spec`).
 3. A script for everything mechanical (a worker).
 4. The plumbing and every serial step (one worker each); parallel workers for units that are independent and large.
-5. Run the product: a smoke test first, then the gates (main session runs them, or a runner).
+5. Run the product: a smoke test first, then the gates (main session runs them).
 6. One review at the end (reviewer), then each fix (a worker); the rule is in `harness:orchestrator`.
-7. Full test (main session, or a runner when it is long).
+7. Full test (main session, in the background when it is long).
 
 The read-back is one sentence of what stays and what goes (`harness:orchestrator`). The gates are the project's checks,
 named in its `AGENTS.md`.
@@ -56,18 +56,18 @@ A bug claim is probed before any fix (`harness:evidence`).
 
 ## Whole-repo self-audit
 
-A sweep of a repo's rules, docs and checks against each other is `harness:sweep`.
+A sweep of a repo's rules, docs and checks against each other is in `harness:review` (its sweep reference).
 
 ## Spec-first feature
 
 1. Write the spec (`harness:spec`): goal, non-goals, decisions, write sets, judges.
-2. Cold read of the spec as a brief (`harness:cold-read`); settle the differences.
+2. Cold read of the spec as a brief (`harness:spec`); settle the differences.
 3. Build against the judges, with workers (in parallel where units are independent). Run the product, then one reviewer reads against
    the spec (`harness:review`).
 
 ## Visual or interactive build
 
-A game, page, dashboard or UI: offer mocks and choose the look before any build (`harness:explore`).
+A game, page, dashboard or UI: offer mocks and choose the look before any build: `references/explore.md`.
 
 ## Spike
 
@@ -86,7 +86,7 @@ Use when the way is unknown.
 Use when units are independent.
 
 1. Contract: one file naming each unit, its write set, names shared between units, the judges.
-2. Cold read of the contract.
+2. Cold read of the contract (`harness:spec`).
 3. Disjoint write sets: no path appears in two. A change needed outside a write set is reported, not made.
 4. Workers run in one message, in the background.
 5. Check each unit's judges.
@@ -110,9 +110,9 @@ Steps and the log: `references/hillclimb.md`.
 - Split by work, not by topic: a unit that will not fit its turn budget is split before it goes out. Many fixes in one file, a rewrite and a measurement are three units.
 - Every brief states a budget in model turns, and asks for a partial report when it runs out: done, not done, what is on disk. A stopped agent with no report leaves the main session guessing.
 - At the budget, check the tree (run the judges) instead of waiting; work on disk counts.
-- Never hold fast units for a slow one. Start each stage's units as soon as what they need exists; audit finished units while others still build.
+- Never hold fast units for a slow one. Start each stage's units as soon as what they need exists; review finished units while others still build.
 - Give the slowest unit its own write set and start it first, so it does not gate the rest.
-- A stronger model buys judgment, not speed: step up for a hard decision, not for a large job (`harness:models`).
+- A stronger model buys judgment, not speed: step up for a hard decision, not for a large job (`harness:orchestrator`, Models).
 - Tell the owner the expected turns and tokens at launch, and say so as soon as a unit runs over.
 
 The shape of a dynamic workflow script: `references/dynamic.md`.

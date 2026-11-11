@@ -5,7 +5,7 @@ description: HTML and CSS rules for any web repo, with or without a framework - 
 
 # HTML and CSS
 
-Script side: `harness:code-js`. No comments or docstrings: `harness:comments`. Long lists and examples: `references/html.md`,
+Script side: `harness:code-js`. No comments or docstrings: `harness:code`. Long lists and examples: `references/html.md`,
 `references/css.md`. A rule marked (if) applies only when the project has the thing it names.
 
 ## HTML

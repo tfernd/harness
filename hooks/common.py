@@ -50,7 +50,6 @@ DEFAULTS: dict = {
         "*.sh": ["harness:code-shell"],
         "*.bash": ["harness:code-shell"],
         "tests/*.py": ["harness:testing", "harness:code-python"],
-        ".github/workflows/*": ["harness:release"],
     },
     "stop": {"rule_paths": ["AGENTS.md", "CLAUDE.md", "skills", "agents", "hooks", "templates", ".claude"]},
 }

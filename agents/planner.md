@@ -16,4 +16,3 @@ nothing: the main session decides and acts on your plan.
 - Plan in this order: what stays and what goes; options, each with its cost; one recommendation and why; the files touched; the order of the work; the judges that show it done.
 - Settle every "or" you can from the code; list the rest as open choices with a cost each.
 - Bash only reads. Say what you did not check.
-- Never run a git or gh command that writes (`harness:release`).

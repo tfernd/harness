@@ -61,8 +61,8 @@ REPORT_SECTIONS = (
 )
 REQUIRED_HEADINGS = ("Answer", "Not proven", "Verdict")
 OPTIONAL_HEADINGS = ("Problems", "Next time", "Open", "Feedback")
-AGENT_TYPES = ("harness:worker", "harness:scout", "harness:cold-reader", "harness:reviewer", "harness:auditor", "runner", "Explore", "custom")
-HARNESS_AGENTS = ("harness:worker", "harness:scout", "harness:cold-reader", "harness:reviewer", "harness:auditor", "harness:runner")
+AGENT_TYPES = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "Explore", "custom")
+HARNESS_AGENTS = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "harness:researcher")
 HELPED = "A clearer brief would have helped."
 
 
@@ -2130,14 +2130,8 @@ BRIEF_CASES = (
     brief("a reviewer brief without Input is noted", "reviewer", "Goal: x\nTree: y", True, "Input:"),
     brief("a reviewer brief without Tree is noted", "harness:reviewer", "Goal: x\nInput: y", True, "Tree:"),
     brief("a whole reviewer brief passes", "reviewer", "Goal: x\nInput: y\nTree: z", False),
-    brief("an auditor brief without Judge is noted", "auditor", "Goal: x\nInput: y", True, "Judge:"),
-    brief("an auditor brief without Input is noted", "harness:auditor", "Goal: x\nJudge: y", True, "Input:"),
-    brief("a whole auditor brief passes", "auditor", "Goal: x\nInput: y\nJudge: z", False),
-    brief("a runner brief without Runs is noted", "runner", "Goal: x", True, "Runs:"),
-    brief("a whole runner brief passes", "harness:runner", "Goal: x\nRuns: y", False),
     Case("a Plan agent is refused", ("brief_lint.py",), {"tool_name": "Agent", "tool_input": {"subagent_type": "Plan", "prompt": "Goal: x"}}, True, "`Plan` has no harness role", config={"brief": {}}),
     brief("a designer brief without Write set is noted", "harness:designer", "Goal: x", True, "Write set:"),
-    brief("a releaser brief without Write set is noted", "releaser", "Goal: x", True, "Write set:"),
     brief("a whole designer brief passes", "designer", "Goal: x\nWrite set: y", False),
     brief("a scout needs Goal", "scout", "Look at x", True, "Goal:"),
     brief("a prefixed reviewer needs Goal", "harness:reviewer", "Look at x", True, "Goal:"),
@@ -2922,10 +2916,10 @@ SHELL_CONFIG = {"skill_gate": {"*.sh": ["harness:code-shell"]}}
 PADDING = {"type": "user", "message": {"content": "x" * 2200000}}
 PY_EDIT = "python3 - <<'EOF'\np = 'src/app.py'\ns = open(p).read()\nopen(p, 'w').write(s)\nEOF"
 SKILL_GATE_CASES = (
-    shell_gate("a commit needs its skill", "git commit -m 'feat: y'", True, "harness:git-commit"),
-    shell_gate("a commit with its skill passes", "git commit -m 'feat: y'", False, main=("harness:git-commit",)),
-    shell_gate("a commit deep in a chain needs its skill", "git add a && git -C x commit -m y", True, "harness:git-commit"),
-    shell_gate("a pull request needs the skill", "gh pr create --title t", True, "harness:git-commit"),
+    shell_gate("a commit needs its skill", "git commit -m 'feat: y'", True, "harness:git"),
+    shell_gate("a commit with its skill passes", "git commit -m 'feat: y'", False, main=("harness:git",)),
+    shell_gate("a commit deep in a chain needs its skill", "git add a && git -C x commit -m y", True, "harness:git"),
+    shell_gate("a pull request needs the skill", "gh pr create --title t", True, "harness:git"),
     shell_gate("git status needs no skill", "git status", False),
     skill_gate("skill gate: a Read of code needs nothing", "app.py", False, event={"tool_name": "Read"}),
     skill_gate("skill gate: an absolute path inside the project is judged", "@ROOT@/project/app.py", True, "editing app.py"),
