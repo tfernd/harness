@@ -149,7 +149,7 @@ export const RULE_KEY = 'rule'
 
 export const groupLabelColumnOf = (input: SvgInput): number => groupLabelWidthOf(timelineInputOf(input))
 
-const timelineInputOf = (input: SvgInput): TimelineInput => {
+export const timelineInputOf = (input: SvgInput): TimelineInput => {
   const width = Math.max(MIN_TIMELINE_WIDTH, input.width - BORDER_PX)
 
   return {

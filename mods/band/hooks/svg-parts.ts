@@ -15,7 +15,6 @@ const CHAR_WIDTH_EM = 0.56
 const SHIMMER_WIDTH = 40
 const MIN_SEGMENT_WIDTH = 2
 const END_CAP_WIDTH = 4
-const RUN_GAP = 2
 const PILL_FONT_BASELINE = 3.2
 
 export const escapeText = (text: string): string =>
@@ -118,7 +117,7 @@ const motionOverlay = (ctx: Ctx, run: Run, shape: LaneShape): string => {
 }
 
 const runMarkup = (ctx: Ctx, run: Run, shape: LaneShape): string => {
-  const base = rect({ x: run.left, y: shape.y, width: run.right - run.left, height: shape.height, radius: shape.radius }, `sg-${run.state}`)
+  const base = rect({ x: run.left, y: shape.y, width: run.right - run.left, height: shape.height }, `sg-${run.state}`)
   const body = base + (run.isOpen ? motionOverlay(ctx, run, shape) : '')
 
   return run.isOpen && run.state === 'thinking' ? `<g class="blink">${body}</g>` : body
@@ -140,12 +139,12 @@ const mergeRuns = (runs: readonly Run[]): Run[] => {
   return merged
 }
 
-const separate = (runs: readonly Run[]): Run[] =>
-  runs.map((run, index) => ({
-    ...run,
-    left: index > 0 ? run.left + RUN_GAP / 2 : run.left,
-    right: index < runs.length - 1 ? Math.max(run.left + MIN_SEGMENT_WIDTH, run.right - RUN_GAP / 2) : run.right,
-  }))
+const abut = (runs: readonly Run[]): Run[] =>
+  runs.map((run, index) => {
+    const next = runs[index + 1]
+
+    return next === undefined ? run : { ...run, right: Math.max(run.left + MIN_SEGMENT_WIDTH, next.left) }
+  })
 
 export const driftOffset = (track: Track): number => (track.width * DRIFT_MS) / Math.max(1, track.window.end - track.window.start)
 
@@ -174,9 +173,17 @@ export const laneMarkup = (ctx: Ctx, agent: AgentRow | undefined, track: Track, 
     runs.push({ state: segment.state, left: track.x + left, right: track.x + left + Math.max(minimum, right - left), isOpen })
   }
 
-  return separate(mergeRuns(runs))
-    .map(run => runMarkup(ctx, run, shape))
-    .join('')
+  const joined = abut(mergeRuns(runs))
+  const first = joined[0]
+  const last = joined.at(-1)
+
+  if (first === undefined || last === undefined) {
+    return ''
+  }
+
+  const id = clipRect(ctx, { x: first.left, y: shape.y, width: last.right - first.left, height: shape.height, radius: shape.radius })
+
+  return `<g clip-path="url(#${id})">${joined.map(run => runMarkup(ctx, run, shape)).join('')}</g>`
 }
 
 export const driftGroup = (ctx: Ctx, box: { x: number; y: number; width: number; height: number }, track: Track, content: string): string => {

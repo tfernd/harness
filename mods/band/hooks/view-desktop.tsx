@@ -3,11 +3,11 @@ import type { Elements, RenderElement } from 'claude-code'
 import type { AgentState } from '../types'
 
 import { RANGES, countAgents, formatClock, formatShort, tracedRows } from './model'
-import { COUNTS_KEY, HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupLabelColumnOf, groupRowsKey, groupCountsKey, listedGroupsOf } from './svg-band'
+import { COUNTS_KEY, HIDDEN_KEY, RULE_KEY, TIMELINE_KEY, densityKey, groupLabelColumnOf, groupRowsKey, groupCountsKey, listedGroupsOf, timelineInputOf } from './svg-band'
 import type { BandSvg, SvgInput } from './svg-band'
 import { type GaugeSpec, gaugeSpecs, stripDetailOf } from './svg-strip'
 import { bandColorsOf } from './svg-theme'
-import { type GroupPlan, groupCountsText, groupTitleOf, liveStateCounts } from './svg-timeline'
+import { type GroupPlan, groupCountsText, groupCountsWidthOf, groupTitleOf, liveStateCounts } from './svg-timeline'
 import type { Actions } from './view'
 
 export type SvgTable = Elements['desktop'] | Elements['vscode'] | Elements['mobile']
@@ -75,6 +75,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const fill = (color: string | undefined) => (color === undefined ? {} : { backgroundColor: color })
   const tinted = fill(colors.tint)
   const labelColumns = Math.round(groupLabelColumnOf(input) / PX_PER_COLUMN)
+  const stateColumns = Math.round(groupCountsWidthOf(timelineInputOf(input)) / PX_PER_COLUMN)
 
   const svgOf = (key: string, alt: string) => {
     const svg = view.svgs.get(key)
@@ -141,7 +142,14 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
       return (
         <Box key={key} flexDirection="row" alignItems="center" {...tinted}>
           {toggle}
-          <Box flexGrow={1} flexShrink={1} justifyContent="flex-end" paddingRight={HEADER_PAD_COLUMNS}>
+          <Box flexGrow={1} flexShrink={1} />
+          <Box
+            key={`group-counts-${group.id}`}
+            width={stateColumns === 0 ? undefined : stateColumns}
+            flexShrink={0}
+            paddingLeft={stateColumns === 0 ? 0 : HEADER_PAD_COLUMNS}
+            paddingRight={stateColumns === 0 ? HEADER_PAD_COLUMNS : 0}
+          >
             <Text dimColor wrap="truncate-end">{`${group.counts.live} live · ${ended} ended`}</Text>
           </Box>
         </Box>

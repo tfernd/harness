@@ -260,7 +260,7 @@ export const moveAgent = (
   return { ...store, rows: store.rows.map(agent => (agent.id === change.id ? moved : agent)) }
 }
 
-export type MainActivity = { state: 'thinking' | 'tool'; command: string | null } | null
+export type MainActivity = { state: 'thinking' | 'tool' | 'waiting'; command: string | null } | null
 
 export const MAIN_STATE_WORD: Record<AgentState, string> = {
   launched: 'IDLE',
@@ -354,10 +354,7 @@ export const moveMain = (
     segments: [],
   }
   const closed = base.segments.map(segment => (segment.to === null ? { ...segment, to: now } : segment))
-  const segments =
-    base.state === state && activity !== null
-      ? base.segments
-      : compactSegments(activity === null ? closed : [...closed, { state, from: now, to: null }])
+  const segments = base.state === state ? base.segments : compactSegments([...closed, { state, from: now, to: null }])
 
   return { ...store, main: { ...base, state, command, segments } }
 }

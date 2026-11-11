@@ -81,7 +81,7 @@ test('the clock raster holds the longest turn text whole', () => {
   expect(textOf([{ text: longest, color: null }], CLOCK_COLUMNS).trimEnd()).toBe(longest)
 })
 
-test('the main row keeps a thinking span, a tool span with its command, no span while idle, and stays bounded', () => {
+test('the main row keeps a thinking span, a tool span with its command, an open idle span while idle, and stays bounded', () => {
   let store: AgentStore = moveMain(EMPTY_STORE, { activity: { state: 'thinking', command: null }, now: 10 })
   store = moveMain(store, { activity: { state: 'tool', command: 'make check' }, now: 20 })
   const inTool = store.main
@@ -93,6 +93,7 @@ test('the main row keeps a thinking span, a tool span with its command, no span 
     { state: 'thinking', from: 10, to: 20 },
     { state: 'tool', from: 20, to: 30 },
     { state: 'thinking', from: 30, to: 40 },
+    { state: 'launched', from: 40, to: null },
   ])
   expect(store.main?.state).toBe('launched')
   expect(moveMain(store, { activity: null, now: 50 })).toBe(store)
