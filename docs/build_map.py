@@ -268,7 +268,6 @@ RULES = (
     Rule("A brief missing a line its role needs gets a note", "reminder", "brief_lint.py"),
     Rule("Wasted reads and hidden failures get a note", "reminder", "nudge.py"),
     Rule("The main session gets a note of what each agent is doing", "reminder", "budget.py"),
-    Rule("A blocking sleep is removed or moved to the background", "reminder", "guard.py"),
     Rule("A shell write outside the scratch folder gets a note", "reminder", "guard.py"),
     Rule("The main session editing files itself gets a note", "reminder", "delegate.py"),
     Rule("The tool habits go in front of every session and agent", "advice", "context.py"),
