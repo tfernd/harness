@@ -28,6 +28,9 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = Path("docs") / "map.html.in"
 PAGE = Path("docs") / "index.html"
+BAND_TEMPLATE = Path("docs") / "band.html.in"
+BAND_PAGE = Path("docs") / "band.html"
+PAGES = ((TEMPLATE, PAGE), (BAND_TEMPLATE, BAND_PAGE))
 ASSETS = (Path("docs") / "style.css", Path("docs") / "script.js")
 FINGERPRINT_LENGTH = 10
 HOOK_COMMAND = re.compile(r"uv run --script \"[^\"]*hooks/([\w-]+\.py)\"(?:\s+(\S+))?")
@@ -63,13 +66,15 @@ TARGETS = ("cortex", "kiro")
 STATE_RANK = {"runs": 0, "partial": 1, "advisory": 2, "off": 3}
 PORT_DEST = Path("port-dest")
 INSTALL_COMMANDS = {
-    "claude": "claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness && claude plugin install harness@harness --scope user && claude plugin update harness@harness",
+    "claude": "claude plugin marketplace add tfernd/harness; claude plugin marketplace update harness && claude plugin install harness@harness --scope user && claude plugin update harness@harness",
     "cortex": "cortex plugin update harness || cortex plugin install tfernd/harness",
     "kiro": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro",
+    "band": "claude plugin marketplace add tfernd/harness; claude plugin marketplace update harness && claude plugin install harness-band@harness --scope user && claude plugin update harness-band@harness",
 }
 UNINSTALL_COMMANDS = {
     "claude-off": "claude plugin uninstall harness@harness && claude plugin marketplace remove harness",
     "cortex-off": "cortex plugin uninstall harness; curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- cortex --uninstall",
+    "band-off": "claude plugin uninstall harness-band@harness",
     "kiro-off": "curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall; rm -rf ~/.local/share/harness",
 }
 SHELL_TOKEN = re.compile(r"""(?P<space>\s+)|(?P<comment>#.*)|(?P<string>'[^']*'|"(?:\\.|[^"\\])*")|(?P<operator>&&|\|\||[|;<>()])|(?P<word>[^\s'"|&;<>()]+|.)""")
@@ -1174,12 +1179,12 @@ def make_pyramid(layout: Layout, /) -> str:
     )
 
 
-def make_slot(slot: Slot, layout: Layout, /) -> str:
+def make_slot(slot: Slot, layout: Layout | None, /) -> str:
 
     match slot.name:
-        case "pyramid":
+        case "pyramid" if layout:
             return make_pyramid(layout)
-        case "panels":
+        case "panels" if layout:
             return make_panels(layout)
         case "install-command" | "install-copy" if slot.arguments and slot.arguments[0] in INSTALL_COMMANDS | UNINSTALL_COMMANDS:
             command = (INSTALL_COMMANDS | UNINSTALL_COMMANDS)[slot.arguments[0]]
@@ -1213,7 +1218,7 @@ def make_page(template: str, facts: Facts, /) -> str:
 
     with_facts = FACT.sub(lambda match: get_fact(facts.values, match.group(1)), template)
     slots = [Slot(match.group(1), tuple(match.group(2).split())) for match in SLOT.finditer(with_facts)]
-    layout = make_layout(slots, facts)
+    layout = make_layout(slots, facts) if any(slot.name in SINGLE_SLOTS for slot in slots) else None
     bare = SLOT.sub("", with_facts)
     for leftover in ("[[@", "{{"):
         if leftover in bare:
@@ -1242,29 +1247,32 @@ def main() -> int:
     arguments = parser.parse_args()
     sys.dont_write_bytecode = True
     root = arguments.root.resolve()
-    target = root / PAGE
 
     try:
         facts = get_facts(root)
         check_port_notes(root)
-        page = make_page((root / TEMPLATE).read_text(encoding="utf-8"), facts)
+        pages = [(page, make_page((root / template).read_text(encoding="utf-8"), facts)) for template, page in PAGES]
     except (ValueError, OSError, SyntaxError, ImportError) as error:
         print(f"build_map: {error}", file=sys.stderr)
         return 1
     if not arguments.check:
-        target.write_text(page, encoding="utf-8", newline="\n")
+        for page, text in pages:
+            (root / page).write_text(text, encoding="utf-8", newline="\n")
         counts = ", ".join(f"{facts.values[key]} {key}" for key in ("agents", "skills", "hooks"))
-        print(f"wrote {PAGE}: {counts}")
+        print(f"wrote {', '.join(str(page) for page, _ in pages)}: {counts}")
         return 0
-    if not target.is_file():
-        print(f"{PAGE} is missing; run make map", file=sys.stderr)
-        return 1
-    committed = target.read_text(encoding="utf-8")
-    if committed != page:
-        print(f"{PAGE} is stale: {get_difference(committed, page)}; run make map", file=sys.stderr)
-        return 1
+    is_fresh = True
+    for page, text in pages:
+        if not (root / page).is_file():
+            print(f"{page} is missing; run make map", file=sys.stderr)
+            is_fresh = False
+            continue
+        committed = (root / page).read_text(encoding="utf-8")
+        if committed != text:
+            print(f"{page} is stale: {get_difference(committed, text)}; run make map", file=sys.stderr)
+            is_fresh = False
 
-    return 0
+    return 0 if is_fresh else 1
 
 
 if __name__ == "__main__":

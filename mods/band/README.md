@@ -7,7 +7,7 @@ and direct); folded it keeps the band row and one thin live trace per agent. Loo
 ## Install it
 
 ```
-claude plugin marketplace add https://github.com/tfernd/harness.git
+claude plugin marketplace add tfernd/harness
 claude plugin install harness-band@harness --scope user
 ```
 

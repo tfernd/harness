@@ -30,17 +30,6 @@
   padding-inline-start: var(--space-4);
 }
 
-.ab-code {
-  margin: var(--space-2) 0 0;
-  padding: var(--space-3);
-  overflow-x: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
 .ab-demo {
   display: grid;
   max-inline-size: 50rem;

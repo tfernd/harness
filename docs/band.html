@@ -31,6 +31,22 @@
         <p class="page-lede">A mod that sits above the Claude Code prompt and shows the session and its agents.</p>
         <p><a href="index.html">&larr; Back to the Harness Map</a></p>
       </div>
+      <div class="card install" data-install>
+        <div class="install-bar">
+          <div class="install-tablist" role="group" aria-label="Install or uninstall">
+            <button type="button" class="install-tab install-mode" data-mode-choice="install" aria-pressed="true">Install</button>
+            <button type="button" class="install-tab install-mode" data-mode-choice="uninstall" aria-pressed="false">Uninstall</button>
+          </div>
+        </div>
+        <div class="install-panel">
+          <code class="install-command" data-mode="install"><span class="tok-command">claude</span> plugin marketplace add tfernd/harness<span class="tok-operator">;</span> <span class="tok-command">claude</span> plugin marketplace update harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin install harness-band@harness <span class="tok-flag">--scope</span> user <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin update harness-band@harness</code>
+          <button type="button" class="install-copy" data-mode="install" data-copy="claude plugin marketplace add tfernd/harness; claude plugin marketplace update harness &amp;&amp; claude plugin install harness-band@harness --scope user &amp;&amp; claude plugin update harness-band@harness">Copy</button>
+          <p class="install-note" data-mode="install">Run it again to update. Then restart Claude Code or run <code>/reload-plugins</code>.</p>
+          <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">claude</span> plugin uninstall harness-band@harness</code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="claude plugin uninstall harness-band@harness">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. The harness plugin is not touched.</p>
+        </div>
+      </div>
     </header>
 
     <main class="ab-page">
@@ -47,9 +63,7 @@
         </section>
         <section aria-labelledby="try-title">
           <h2 class="ab-about-title" id="try-title">Try it</h2>
-          <p>Install it from the harness marketplace, then restart Claude Code or run <code>/reload-plugins</code>:</p>
-          <pre class="ab-code"><code>claude plugin marketplace add https://github.com/tfernd/harness.git
-claude plugin install harness-band@harness --scope user</code></pre>
+          <p>The band is its own plugin, installed apart from the harness and working with or without it. It runs in Claude Code only. For the harness itself, see the <a href="index.html">Harness Map</a>. Install it from the box at the top.</p>
         </section>
       </div>
 

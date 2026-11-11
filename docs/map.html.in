@@ -93,6 +93,7 @@
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy kiro-off]]">Copy</button>
           <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The last part deletes the clone.</p>
         </div>
+        <p class="install-note">The agent band above the prompt is a separate plugin: <a href="band.html">see its page</a>.</p>
       </div>
     </header>
 

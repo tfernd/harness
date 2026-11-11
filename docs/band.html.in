@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The agent band - Harness</title>
+  <meta name="description" content="A live, simulated preview of the agent band: a mod that sits above the Claude Code prompt and shows the session and its agents.">
+  <script>
+    try {
+      const savedTheme = localStorage.getItem("harness-map-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (savedTheme === "dark" || (savedTheme === null && prefersDark)) document.documentElement.dataset.theme = "dark";
+    } catch (error) {
+      console.warn("The saved theme could not be read.", error);
+    }
+  </script>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="band.css">
+</head>
+<body>
+  <div class="page">
+    <header class="page-head">
+      <div class="page-intro">
+        <div class="page-title-row">
+          <h1 class="page-title">The agent band</h1>
+          <button type="button" class="theme-switch" role="switch" aria-checked="false" data-theme-toggle>
+            <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
+            <span class="theme-switch-label">Dark</span>
+          </button>
+        </div>
+        <p class="page-lede">A mod that sits above the Claude Code prompt and shows the session and its agents.</p>
+        <p><a href="index.html">&larr; Back to the Harness Map</a></p>
+      </div>
+      <div class="card install" data-install>
+        <div class="install-bar">
+          <div class="install-tablist" role="group" aria-label="Install or uninstall">
+            <button type="button" class="install-tab install-mode" data-mode-choice="install" aria-pressed="true">Install</button>
+            <button type="button" class="install-tab install-mode" data-mode-choice="uninstall" aria-pressed="false">Uninstall</button>
+          </div>
+        </div>
+        <div class="install-panel">
+          <code class="install-command" data-mode="install">[[@install-command band]]</code>
+          <button type="button" class="install-copy" data-mode="install" data-copy="[[@install-copy band]]">Copy</button>
+          <p class="install-note" data-mode="install">Run it again to update. Then restart Claude Code or run <code>/reload-plugins</code>.</p>
+          <code class="install-command" data-mode="uninstall" hidden>[[@install-command band-off]]</code>
+          <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy band-off]]">Copy</button>
+          <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. The harness plugin is not touched.</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="ab-page">
+      <div class="ab-about">
+        <section aria-labelledby="about-title">
+          <h2 class="ab-about-title" id="about-title">What you see</h2>
+          <ul class="ab-about-list">
+            <li><strong>Status.</strong> Working or idle, and how long the turn has run.</li>
+            <li><strong>Rings.</strong> How full the context window is, and the 5 hour and weekly limits.</li>
+            <li><strong>Cache.</strong> How long until the prompt cache goes cold.</li>
+            <li><strong>Counts.</strong> Agents live, done and failed.</li>
+            <li><strong>Timeline.</strong> One row for the main session and one per agent, grouped by workflow. Blue is thinking, green is a tool call.</li>
+          </ul>
+        </section>
+        <section aria-labelledby="try-title">
+          <h2 class="ab-about-title" id="try-title">Try it</h2>
+          <p>The band is its own plugin, installed apart from the harness and working with or without it. It runs in Claude Code only. For the harness itself, see the <a href="index.html">Harness Map</a>. Install it from the box at the top.</p>
+        </section>
+      </div>
+
+      <section class="ab-demo" aria-labelledby="demo-title">
+        <div class="ab-demo-head">
+          <h2 class="ab-demo-title" id="demo-title">Live preview</h2>
+          <button type="button" class="ab-pause" data-pause>Pause</button>
+        </div>
+        <p class="ab-demo-note">Simulated data, running 4 times faster than real time. Nothing here talks to a real session.</p>
+        <div class="ab-scroll" tabindex="0" role="region" aria-label="The agent band, simulated">
+          <div class="ab" data-band>
+            <div class="ab-controls">
+              <button type="button" class="ab-fold" aria-expanded="true" data-fold>
+                <span class="ab-chevron" aria-hidden="true"></span>
+                <span data-fold-label>fold</span>
+              </button>
+              <div class="ab-range" data-range-group>
+                <span class="ab-range-label" id="range-label">range</span>
+                <div class="ab-range-buttons" role="group" aria-labelledby="range-label">
+                  <button type="button" class="ab-range-button" aria-pressed="false" data-range="60000">1m</button>
+                  <button type="button" class="ab-range-button" aria-pressed="true" data-range="300000">5m</button>
+                  <button type="button" class="ab-range-button" aria-pressed="false" data-range="900000">15m</button>
+                  <button type="button" class="ab-range-button" aria-pressed="false" data-range="3600000">1h</button>
+                  <button type="button" class="ab-range-button" aria-pressed="false" data-range="0">session</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="ab-gauges">
+              <div class="ab-status">
+                <strong class="ab-status-word" data-status>WORKING</strong>
+                <span class="ab-muted" data-turn>turn 0:00</span>
+              </div>
+              <div class="ab-gauge" data-gauge="ctx">
+                <svg class="ab-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="ab-ring-track" cx="24" cy="24" r="19"/><circle class="ab-ring-arc" cx="24" cy="24" r="19" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 24 24)" data-arc/><text class="ab-ring-num" x="24" y="28" text-anchor="middle" data-pct>0%</text></svg>
+                <div class="ab-gauge-text"><strong>ctx</strong><span class="ab-muted" data-detail></span></div>
+              </div>
+              <div class="ab-gauge" data-gauge="five">
+                <svg class="ab-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="ab-ring-track" cx="24" cy="24" r="19"/><circle class="ab-ring-arc" cx="24" cy="24" r="19" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 24 24)" data-arc/><text class="ab-ring-num" x="24" y="28" text-anchor="middle" data-pct>0%</text></svg>
+                <div class="ab-gauge-text"><strong>5h</strong><span class="ab-muted" data-detail></span></div>
+              </div>
+              <div class="ab-gauge" data-gauge="week">
+                <svg class="ab-ring" viewBox="0 0 48 48" aria-hidden="true"><circle class="ab-ring-track" cx="24" cy="24" r="19"/><circle class="ab-ring-arc" cx="24" cy="24" r="19" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 24 24)" data-arc/><text class="ab-ring-num" x="24" y="28" text-anchor="middle" data-pct>0%</text></svg>
+                <div class="ab-gauge-text"><strong>week</strong><span class="ab-muted" data-detail></span></div>
+              </div>
+              <div class="ab-gauge-text">
+                <strong>cache</strong>
+                <span class="ab-muted" data-cache>cold in ~60m</span>
+              </div>
+              <ul class="ab-counts">
+                <li><span class="ab-dot" aria-hidden="true"></span><strong data-live>0 live</strong></li>
+                <li><span class="ab-mark" aria-hidden="true">&check;</span><span class="ab-muted" data-done>0 done</span></li>
+                <li><span class="ab-mark is-failed" aria-hidden="true">&times;</span><span class="ab-failed" data-fail>0 fail</span></li>
+              </ul>
+            </div>
+
+            <div class="ab-timeline" data-timeline>
+              <div class="ab-row ab-head">
+                <span>AGENT</span>
+                <span class="ab-axis"><span data-axis-start>-5m</span><span data-axis-middle>-2m</span><strong>now</strong></span>
+                <span>STATE</span>
+              </div>
+              <div class="ab-body" data-rows></div>
+              <p class="ab-earlier" data-earlier></p>
+              <span class="ab-now" aria-hidden="true"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script defer src="band.js"></script>
+</body>
+</html>
