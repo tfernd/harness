@@ -28,10 +28,14 @@ SUBJECT = re.compile(r"(feat|fix|perf|refactor|test|docs|style|build|ci|chore|re
 GIT_SUBJECT = re.compile(r"(fixup!|squash!|amend!|Merge |Revert \")")
 BULLETS = ("* ", "- ")
 FOOTER = re.compile(r"(BREAKING CHANGE|[A-Z][A-Za-z-]+): \S")
-AI_NAME = r"(claude|anthropic|copilot|chatgpt|\bgpt|openai|gemini|cursor|codex|\bAI\b|\bopus\b|\bsonnet\b|\bhaiku\b|\bfable\b|\bllms?\b)"
+NAME_START = r"(?<![\w-])"
+AI_WORDS = r"(?:claude|anthropic|copilot|chatgpt|gpt|openai|gemini|codex|opus|sonnet|haiku|fable|llms?)(?![a-z])"
+AI_UPPERCASE = r"(?-i:\bAI\b)"
+AI_NAME = rf"(?:{NAME_START}(?:{AI_WORDS}|cursor(?![a-z]))|{AI_UPPERCASE})"
+AI_TOOL_NAME = rf"(?:{NAME_START}(?:{AI_WORDS}|cursor(?:[ \t]+(?:ai|ide|editor|agent)(?![a-z])|(?![a-z])(?![ \t]*\w)))|{AI_UPPERCASE})"
 AI_ATTRIBUTION = re.compile(
-    rf"\b(co-authored-by|assisted-by|generated-by|signed-off-by)[ \t]*:\s*[^\n]*{AI_NAME}"
-    rf"|^[^\w\n]*(generated[ \t]+(with|by)|made[ \t]+with)[ \t]*[\[(*_\"'`]*{AI_NAME}"
+    rf"\b(co-authored-by|assisted-by|generated-by|signed-off-by)[ \t]*:[ \t]*[^\n]*{AI_NAME}"
+    rf"|^[^\w\n]*(generated[ \t]+(with|by)|made[ \t]+with)[ \t]*[\[(*_\"'`]*{AI_TOOL_NAME}"
     r"|\U0001f916",
     re.I | re.M,
 )
