@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 uv.lock
+docs/index.html
+docs/band.html
 .venv/
 .ruff_cache/

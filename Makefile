@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks skills map band check check-all replay clean
+.PHONY: help setup init validate test leaks skills map band check check-all replay
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -27,7 +27,7 @@ leaks: ## Fail when a file names a person, machine, home path or private word
 skills: ## Fail when a skill or agent leaves the form AGENTS.md demands
 	uv run python tests/check_skills.py
 
-map: ## Rebuild the Harness Map page (docs/index.html) from the agents, skills, hooks and tests
+map: ## Build the Harness Map page (docs/index.html, git-ignored) from the agents, skills, hooks and tests
 	uv run python docs/build_map.py
 
 TSC ?= tsc
@@ -38,15 +38,13 @@ band: ## Test and type-check the band mod (mods/band)
 
 CHANGED = $(shell { git diff --name-only @{u}...HEAD 2>/dev/null; git diff --name-only HEAD; } | sort -u)
 
-check: ## What the pre-push hook runs: map, skill form, leaks; cases only when hooks changed, band only when mods/band changed
-	uv run python docs/build_map.py --check
+check: ## What the pre-push hook runs: skill form, leaks; cases only when hooks changed, band only when mods/band changed
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	@if printf '%s\n' $(CHANGED) | grep -qE '^(hooks/|tests/run_cases)'; then uv run python tests/run_cases.py; else echo "cases skipped: no hook changed"; fi
 	@if printf '%s\n' $(CHANGED) | grep -q '^mods/band/'; then $(MAKE) band; else echo "band skipped: mods/band unchanged"; fi
 
 check-all: ## Every check, whatever changed
-	uv run python docs/build_map.py --check
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	uv run python tests/run_cases.py
@@ -54,8 +52,3 @@ check-all: ## Every check, whatever changed
 
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py
-
-clean: ## Empty __scratch__/ and remove caches (never touches tracked files or .venv)
-	find __scratch__ -mindepth 1 -not -path __scratch__/.gitignore -delete 2>/dev/null || true
-	find . -path ./.git -prune -o -path ./.venv -prune -o -name __pycache__ -type d -prune -exec rm -rf {} +
-	rm -rf .pytest_cache .ruff_cache .mypy_cache

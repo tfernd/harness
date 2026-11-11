@@ -15,16 +15,14 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 - Checks, cited by name: the check gate `<command>` (run once; a third failing run stops you); the full gate
   `<command>`.
 - A bug fix starts with a test that fails for the reported cause (`harness:workflows`).
-- A failure in a file outside your write set is another agent's unfinished work: report it, never fix it.
-- Budget every run: smallest case first; a long run writes one row per case as it finishes; a killed call is
-  split, never retried unchanged.
+- A failure in a file outside the files the brief names is another agent's unfinished work: report it, never fix it.
 
 ## 4. Tests: the judges
 Judges and the control rule: `harness:testing`. A new judge is shown to fail once under a deliberate bug.
 
 ## 5. Commands, files, git
 - Never resolve, install or remove packages unless the owner says so.
-- You change only your write set; anything else goes under Open in your report. Throwaway work goes in
+- You change only the files the brief names; anything else goes under Open in your report. Throwaway work goes in
   `/tmp/harness/<project>/TOPIC/`. `/tmp` clears itself and agents never clean it: a fresh run takes a new folder name. Agents delete nothing (the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `find -delete` and `git clean`): if a file must go, the main session gives the owner the command in the chat, with why, and the owner runs it; a sub-agent leaves it. A tracked file goes with `git rm -q`.
 - The main session commits and pushes when the owner asks. A sub-agent never runs a git or gh command that writes.
 

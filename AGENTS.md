@@ -3,9 +3,9 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## What it is
 - Skills, agents, hooks and templates for spec-driven multi-agent work. `README.md` says what ships and what it blocks; install and project setup are below.
-- Every push reaches every project that has it installed, so run `uv run python tests/run_cases.py` and `uv run python tests/check_leaks.py` before pushing.
+- Every push reaches every project that has it installed, so run `make check` before pushing (it runs the cases only when hooks changed).
 - Once per clone: `make setup` (it runs `git config core.hooksPath .githooks`, the pre-push check). `make help` lists the
-  targets; `make check` is what the push runs. `make clean` empties `__scratch__/`, an old folder of this repo, so run it only when you own it.
+  targets; `make check` is what the push runs.
 - This repo runs under its own plugin, with the defaults. A hook or skill that gets in the way here
   gets in the way everywhere, so fix it in the plugin.
 - `mods/band` is `harness-band`, a TypeScript Claude Code UI mod (a band above the prompt showing agent state); `make band` is its check (`claude plugin test` and `tsc --noEmit`), run by `make check` only when it changed.
@@ -23,7 +23,6 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Uninstall: `claude plugin uninstall harness@harness`. Develop without touching the installed copy: `claude --plugin-dir .`.
 - Hooks do nothing: `uv` is missing. Every rule runs by default; the owner file only overrides. A "harness guard
   blocked" message names the rule and the change to make.
-- `bin/harness-import` imports past report cards from transcripts into the ledger (`--dry-run` writes nothing).
 
 ## Skills
 - Writing a skill: `harness:authoring` (`references/skill.md`: form, limits, one home per fact, no project domain). `tests/check_skills.py` enforces the limits and the pointers.
@@ -34,7 +33,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 ## Agents
 - Writing an agent: `harness:authoring` (`references/agent.md`).
 - A new role is added in the same change to: the roles table and the models table in
-  `skills/orchestrator/SKILL.md`, `DEFAULT_BUDGET` in `hooks/budget.py`, and the page (`docs/build_map.py`, `docs/map.html.in`, then rebuild `docs/index.html`).
+  `skills/orchestrator/SKILL.md`, and the page (`docs/build_map.py`, `docs/map.html.in`).
 
 ## Hooks
 - Writing a hook: `harness:authoring` (`references/hook.md`: events, fail open, the time budget, soft against hard, what counts as built). Hooks here are stdlib Python 3.12.
@@ -49,11 +48,11 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - A change to a skill, agent or hook touches no port file; edit `port/` only to change the conversion itself. `README.md` ("Other tools") lists what each port loses; `docs/build_map.py` fails when one of its port-note phrases is missing from `README.md` or on more than one line.
 
 ## Build and release
-- Release order: `make check` (map freshness, hook cases, skill form, leaks), then commit, then push, then update. `.githooks/pre-push` runs `make check` on every push; `make help` lists the targets.
-- `docs/index.html` embeds the source of every hook and the text of every agent and skill: a change to any of them makes it stale (the pre-push check then fails). It also needs the port-loss phrases in `README.md`. Run `make map` (`docs/build_map.py`) and commit the page with the change.
+- Release order: `make check` (skill form, leaks, hook cases when hooks changed), then commit, then push, then update. `.githooks/pre-push` runs `make check` on every push; `make help` lists the targets.
+- `docs/index.html` and `docs/band.html` are generated and git-ignored: GitHub builds and publishes them on push (`.github/workflows/pages.yml`), and `make map` builds them locally for viewing. The builder needs the port-loss phrases in `README.md`.
 - Commit from the main session only (`harness:git`); a sub-agent never writes to git.
 - Update the installed copy with `claude plugin marketplace update harness && claude plugin update harness@harness`, then restart Claude Code or run `/reload-plugins`: a running session keeps the hooks it loaded at start. Cortex Code and Kiro update with the lines under Install.
-- `.github/workflows/check.yml` is the only workflow: on a push or pull request to `main` it runs the checks above. GitHub Pages serves `docs/` from `main` (a repo setting, not a workflow), so a push publishes the page.
+- `.github/workflows/check.yml` runs the checks above on a push or pull request to `main`, and builds the page so a broken builder fails; `pages.yml` publishes `docs/` on a push to `main` (the repo's Pages source is "GitHub Actions").
 
 ## Working efficiently
 - Tool turns and call habits: `skills/tool-habits/SKILL.md` is their one home; `hooks/context.py` puts its body in every session and sub-agent at start.
