@@ -4,7 +4,7 @@ A restart or a compaction drops what the session knew. A medium or large job (ti
 
 ## Where
 
-One file in `/tmp/harness/<project>/` (cleaned at the end of the job; use the project's plan file when the file must outlive it), or the project's plan file when it has one. Never two copies. A hillclimb's decision log
+One file in the state folder `~/.local/state/harness/<project>/`, or the project's plan file when it has one. Never two copies. A hillclimb's decision log
 (`harness:workflows`) stays its own file and the resume file points to it.
 
 ## What it holds
@@ -13,7 +13,7 @@ One file in `/tmp/harness/<project>/` (cleaned at the end of the job; use the pr
 - done steps, each with its commit or the evidence that it passed;
 - the next step, exact enough to start without asking;
 - open questions for the owner;
-- running agents: name, brief, write set, and where its output will land.
+- running agents: name, brief, and where its output will land.
 
 ## When it is written
 
@@ -23,4 +23,4 @@ After each accepted unit, and before any checkpoint. It always names the next st
 
 The first act of a resumed session is to read this file, then check the tree against it (`git status`, the last commit,
 the judges). Where file and tree disagree, trust the tree and fix the file. A listed agent may have ended: look at its
-write set before launching it again.
+output before launching it again.

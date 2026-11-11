@@ -20,11 +20,11 @@ from shell import Segment, Word, get_segments
 
 USER_CONFIG_VARIABLE = "HARNESS_CONFIG"
 DEFAULTS: dict = {
-    "guard": {"scratch": "__scratch__", "ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
+    "guard": {"ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
     "brief": {},
     "progress": {"every": 10},
     "tests_kept": {"enabled": True},
-    "main_edits": {"max": 3, "allow": ["__harness__/*", "__scratch__/*"]},
+    "main_edits": {"max": 3, "allow": []},
     "skill_gate": {
         "*.py": ["harness:code-python"],
         "*.js": ["harness:code-js"],
@@ -52,24 +52,20 @@ DEFAULTS: dict = {
         "*.bash": ["harness:code-shell"],
         "tests/*.py": ["harness:testing", "harness:code-python"],
     },
-    "stop": {"rule_paths": ["AGENTS.md", "CLAUDE.md", "skills", "agents", "hooks", "templates", ".claude"]},
 }
 PLUGIN_PREFIX = "harness:"
 HANDBACK_TOOL = "SubagentHandback"
 EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
 EDITS_KIND = "edits"
 HARNESS_FOLDER = "__harness__"
-SCRATCH_FOLDER = "__scratch__"
 SCRATCH_ROOT = Path("/tmp/harness")
 STATE_FOLDER_NAME = "harness"
 STATE_FOLDER_DISPLAY = "~/.local/state/harness"
-IGNORE_FILE = ".gitignore"
-IGNORE_TEXT = "*\n"
 HARNESS_README = """# harness state
 
 State of the harness plugin for this project, kept outside the project so git never sees it. Read these files by path.
 
-Per-machine data (the ledger of reports, turn counters, send-backs, progress) lives in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`,
+Per-machine data (turn counters, send-backs, progress) lives in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`,
 else `~/.cache/harness`), not here.
 """
 
@@ -141,20 +137,6 @@ def is_project_root(root: Path, /) -> bool:
     home = Path.home().resolve()
 
     return root != home and root not in home.parents
-
-
-def ensure_ignored_folder(folder: Path, readme: str = "", /) -> None:
-
-    try:
-        folder.mkdir(parents=True, exist_ok=True)
-        ignore = folder / IGNORE_FILE
-        if not ignore.exists():
-            ignore.write_text(IGNORE_TEXT)
-        readme_path = folder / "README.md"
-        if readme and not readme_path.exists():
-            readme_path.write_text(readme)
-    except OSError:
-        pass
 
 
 def get_scratch_folder(root: Path, /) -> Path:
@@ -241,49 +223,6 @@ def get_unfenced_lines(text: str, /) -> list[str]:
     fenced = get_fenced_indices(lines)
 
     return [line for index, line in enumerate(lines) if index not in fenced]
-
-
-WRITE_SET_LINE = re.compile(r"^[\s\-*#]*write set\b\**\s*:\**\s*(.*)$", re.I)
-WRITE_SET_END = re.compile(r"[;:]|\.(?:\s|$)")
-WRITE_SET_SPLIT = re.compile(r"[,\s]+")
-WRITE_SET_FILLER = frozenset({"every", "file", "files", "under", "all", "the", "and", "or", "of", "in", "its", "only", "any", "a"})
-WRITE_SET_EDGES = "`'\"()[]<>*"
-WRITE_SET_NONE = "none"
-STATE_FOLDERS = (HARNESS_FOLDER, SCRATCH_FOLDER)
-
-
-def get_write_set(brief: str, /) -> list[str] | None:
-
-    for line in get_unfenced_lines(brief):
-        match = WRITE_SET_LINE.match(line)
-        if not match:
-            continue
-        listed = WRITE_SET_END.split(match.group(1), 1)[0]
-        stripped = [word.strip(WRITE_SET_EDGES).rstrip(".").removeprefix("./") for word in WRITE_SET_SPLIT.split(listed)]
-        words = [word for word in stripped if word and word.lower() not in WRITE_SET_FILLER]
-        if words[:1] and words[0].lower() == WRITE_SET_NONE:
-            return []
-
-        return words or None
-
-    return None
-
-
-def is_state_folder(relative: str, /) -> bool:
-
-    return relative.split("/", 1)[0] in STATE_FOLDERS
-
-
-def is_in_write_set(relative: str, patterns: list[str], /) -> bool:
-
-    if is_state_folder(relative):
-        return True
-    for pattern in patterns:
-        folder = pattern.rstrip("/")
-        if fnmatch.fnmatchcase(relative, pattern) or relative == folder or relative.startswith(folder + "/"):
-            return True
-
-    return False
 
 
 def read_events(path: Path, /) -> list[dict]:

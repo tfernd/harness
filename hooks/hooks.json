@@ -54,12 +54,7 @@
             "type": "command",
             "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/delegate.py\"",
             "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Edit|Write|NotebookEdit",
-        "hooks": [
+          },
           {
             "type": "command",
             "command": "[ -f \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\" ] || exit 0; uv run --script \"${CLAUDE_PLUGIN_ROOT}/hooks/skill_gate.py\"",

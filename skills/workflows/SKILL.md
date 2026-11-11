@@ -7,7 +7,7 @@ description: Load when framing a job. Picks the job shape (scout fan-out, bug fi
 
 Pick the shape, then the tier. The main session follows `harness:orchestrator`: it plans, briefs, checks and commits;
 every change is a worker's, reading wide is a scout's.
-A **unit** is one change that one worker can finish inside one write set.
+A **unit** is one change that one worker can finish in a few named files.
 
 ## Size tiers
 
@@ -19,7 +19,7 @@ A **unit** is one change that one worker can finish inside one write set.
 
 Large steps, each with its owner:
 
-1. Read-back and a budget for the round (main session).
+1. Read-back for the round (main session).
 2. Spec (main session), then a cold read of it by two scouts (`harness:spec`).
 3. A script for everything mechanical (a worker).
 4. The plumbing and every serial step (one worker each); parallel workers for units that are independent and large.
@@ -60,7 +60,7 @@ A sweep of a repo's rules, docs and checks against each other is in `harness:rev
 
 ## Spec-first feature
 
-1. Write the spec (`harness:spec`): goal, non-goals, decisions, write sets, judges.
+1. Write the spec (`harness:spec`): goal, non-goals, decisions, files, judges.
 2. Cold read of the spec as a brief (`harness:spec`); settle the differences.
 3. Build against the judges, with workers (in parallel where units are independent). Run the product, then one reviewer reads against
    the spec (`harness:review`).
@@ -85,9 +85,9 @@ Use when the way is unknown.
 
 Use when units are independent.
 
-1. Contract: one file naming each unit, its write set, names shared between units, the judges.
+1. Contract: one file naming each unit, its files, names shared between units, the judges.
 2. Cold read of the contract (`harness:spec`).
-3. Disjoint write sets: no path appears in two. A change needed outside a write set is reported, not made.
+3. Disjoint files: no path appears in two units. A change needed in another unit's file is reported, not made.
 4. Workers run in one message, in the background.
 5. Check each unit's judges.
 6. Integrate: one worker wires the units together and owns the shared files.
@@ -107,11 +107,10 @@ Steps and the log: `references/hillclimb.md`.
 
 ## Parallel without waste
 
-- Split by work, not by topic: a unit that will not fit its turn budget is split before it goes out. Many fixes in one file, a rewrite and a measurement are three units.
-- Every brief states a budget in model turns, and asks for a partial report when it runs out: done, not done, what is on disk. A stopped agent with no report leaves the main session guessing.
-- At the budget, check the tree (run the judges) instead of waiting; work on disk counts.
+- Split by work, not by topic: a unit too big for one agent is split before it goes out. Many fixes in one file, a rewrite and a measurement are three units.
+- A brief asks for a partial report when the agent cannot finish: done, not done, what is on disk. A stopped agent with no report leaves the main session guessing.
 - Never hold fast units for a slow one. Start each stage's units as soon as what they need exists; review finished units while others still build.
-- Give the slowest unit its own write set and start it first, so it does not gate the rest.
+- Give the slowest unit its own files and start it first, so it does not gate the rest.
 - A stronger model buys judgment, not speed: step up for a hard decision, not for a large job (`harness:orchestrator`, Models).
 - Tell the owner the expected turns and tokens at launch, and say so as soon as a unit runs over.
 

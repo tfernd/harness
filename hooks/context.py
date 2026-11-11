@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 from common import (
+    PLUGIN_PREFIX,
     ensure_scratch_folder,
     ensure_state_folder,
     find_project,
@@ -23,6 +25,9 @@ from common import (
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
+READ_ONLY_ROLES = frozenset({"scout", "planner", "researcher", "reviewer"})
+WRITER_SECTIONS = frozenset({"Edit and check in one call", "Clean", "Git"})
+SECTION_START = re.compile(r"^(?=## )", re.M)
 HABITS_FALLBACK = "Use few tool turns; each one costs the owner time. Load the `harness:tool-habits` skill before shell work."
 OWNERSHIP_TEXT = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."
 TOOLS_TEXT = "If Grep or Glob is not among your tools, use `rg` and `find` through Bash."
@@ -51,7 +56,15 @@ def prepare_folders(root: Path, /) -> None:
         ensure_scratch_folder(root)
 
 
-def get_habits_text() -> str:
+def drop_writer_sections(body: str, /) -> str:
+
+    parts = SECTION_START.split(body)
+    kept = [part for part in parts if part.split("\n", 1)[0].removeprefix("## ").strip() not in WRITER_SECTIONS]
+
+    return "".join(kept).strip()
+
+
+def get_habits_text(agent_type: str, /) -> str:
 
     plugin = Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
     try:
@@ -59,6 +72,8 @@ def get_habits_text() -> str:
     except OSError:
         return HABITS_FALLBACK
     body = text.split("---", 2)[-1].strip()
+    if agent_type.startswith(PLUGIN_PREFIX) and agent_type.removeprefix(PLUGIN_PREFIX) in READ_ONLY_ROLES:
+        body = drop_writer_sections(body)
 
     return body or HABITS_FALLBACK
 
@@ -68,7 +83,7 @@ def main() -> int:
     root, _ = find_project(event.get("cwd") or os.getcwd())
     name = event.get("hook_event_name")
     text = ""
-    habits = get_habits_text()
+    habits = get_habits_text(str(event.get("agent_type") or ""))
     if name == "SessionStart":
         prepare_folders(root)
         is_main = not event.get("agent_id")

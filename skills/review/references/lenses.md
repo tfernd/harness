@@ -15,7 +15,6 @@ Quote:     both sides verbatim with path:line; the line's text, not a paraphrase
 Clean:     NOT FOUND for a lens with nothing; never a guess
 Coverage:  files read, then files in scope not read
 Output:    the finding table below
-Budget:    20 turns
 Report:    harness:report, headings in order
 ```
 

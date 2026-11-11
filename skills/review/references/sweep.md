@@ -13,15 +13,15 @@ Before a release, after a batch of rule changes, or on the owner's ask.
 About six cheap scouts (one per lens), one adversary, one verifier, then the fix workers. Tell the owner at launch.
 A large repo gets one scout per lens per scope of about 40 files or one top folder; the coverage lists decide the second wave.
 
-## Roles, models and budgets
+## Roles and models
 
-| Step | Role | Model | Turns |
-|---|---|---|---|
-| 1 Map, 2 Lenses | `scout`, read-only, parallel | its default (Haiku) | 20 |
-| 3 Adversarial pass | `reviewer`, lens Adversarial | its default (Sonnet) | 30 |
-| 4 Verify | `reviewer`, cold, given only the finding | its default | 20 |
-| 5 Rank | main session | | |
-| 6 Fix, 7 Prevent | `worker`, one per disjoint write set | its default | by its brief |
+| Step | Role | Model |
+|---|---|---|
+| 1 Map, 2 Lenses | `scout`, read-only, parallel | its default (Haiku) |
+| 3 Adversarial pass | `reviewer`, lens Adversarial | its default (Sonnet) |
+| 4 Verify | `reviewer`, cold, given only the finding | its default |
+| 5 Rank | main session | |
+| 6 Fix, 7 Prevent | `worker`, one per disjoint set of files | its default |
 
 Briefs use the template of `harness:orchestrator`; the lens brief's fields are in `lenses.md`.
 
@@ -51,7 +51,7 @@ Briefs use the template of `harness:orchestrator`; the lens brief's fields are i
    REJECTED findings stay in it with the verifier's reason, so a later sweep does not raise them again; they are not
    fixed. Decisions only the owner can make are listed apart, each as one question with the main session's pick first;
    they are asked, never assumed.
-6. **Fix.** Workers by disjoint write sets. Text fixes go in one pass, with checks run once at the end; C findings are
+6. **Fix.** Workers on disjoint sets of files. Text fixes go in one pass, with checks run once at the end; C findings are
    fixed in that pass when cheap, else listed. An enforcement fix gets its test case and a deliberate-bug control
    (`harness:testing`).
 7. **Prevent.** A drift that can come back is fixed by a check, or by generating the text from its source, not only by

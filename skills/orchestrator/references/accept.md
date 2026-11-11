@@ -2,8 +2,8 @@
 
 ## Accepting a unit
 
-1. Read the diff of the write set, new files included, and the report's Not proven and Problems. A change outside
-   the write set is sent back, not kept.
+1. Read the diff of the files the brief names, new files included, and the report's Not proven and Problems. A change
+   in any other file is sent back, not kept.
 2. Future-reader test: would a fresh agent reading this cold find it easier or harder? Names say what a thing is, docs
    are true of the code under them. If harder, the unit goes back to its writer.
 3. Gates follow the unit's tier in `harness:workflows`. Small: the project's own checks alone. Medium and large: the

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from budget import get_agent_path
-from common import EDIT_TOOLS, PLUGIN_PREFIX, find_project, get_scratch, is_state_folder, make_note_output, read_tail, resolve
+from common import EDIT_TOOLS, PLUGIN_PREFIX, find_project, get_scratch, get_scratch_folder, get_state_folder, make_note_output, read_tail, resolve
 from guard import Policy, get_git_subcommand, get_written_words, resolve_path
 from shell import get_segments
 
@@ -92,12 +92,31 @@ def get_transcript(event: dict, /) -> Path | None:
     return Path(session) if os.path.isfile(session) else None
 
 
-def get_script_files(command: str, /) -> list[str]:
+def is_project_file(name: str, root: Path, cwd: str, /) -> bool:
+
+    absolute = resolve_path(name, cwd)
+
+    return absolute.startswith(str(root) + os.sep) and os.path.isfile(absolute)
+
+
+def writes_into_project(script: str, root: Path, /) -> bool:
+
+    throwaway = (str(get_scratch_folder(root)), str(get_state_folder(root)))
+
+    return bool(SCRIPT_WRITE.search(script)) and not any(folder in script for folder in throwaway)
+
+
+def get_script_files(command: str, cwd: str, root: Path | None, /) -> list[str]:
 
     names: list[str] = []
     for match in HEREDOC.finditer(command):
-        if "python" in match.group(1) and SCRIPT_WRITE.search(match.group(3)):
-            names += QUOTED_FILE.findall(match.group(3))
+        script = match.group(3)
+        if "python" not in match.group(1) or not SCRIPT_WRITE.search(script):
+            continue
+        if root is None:
+            names += QUOTED_FILE.findall(script)
+        elif writes_into_project(script, root):
+            names += [name for name in QUOTED_FILE.findall(script) if is_project_file(name, root, cwd)]
 
     return names
 
@@ -108,9 +127,9 @@ class BashNeeds(NamedTuple):
     is_commit: bool
 
 
-def get_bash_needs(command: str, cwd: str, /, *, includes_scripts: bool = True) -> BashNeeds:
+def get_bash_needs(command: str, cwd: str, /, *, includes_scripts: bool = True, root: Path | None = None) -> BashNeeds:
 
-    files = get_script_files(command) if includes_scripts else []
+    files = get_script_files(command, cwd, root) if includes_scripts else []
     is_commit = False
     for segment in get_segments(command):
         call = resolve(segment, Policy())
@@ -138,7 +157,7 @@ def get_written_project_files(command: str, root: Path, cwd: str, /) -> list[str
     relatives: list[str] = []
     for name in get_bash_needs(command, cwd, includes_scripts=False).files:
         relative = get_project_relative(name, root, cwd)
-        if relative is not None and not is_state_folder(relative) and relative not in relatives:
+        if relative is not None and relative not in relatives:
             relatives.append(relative)
 
     return relatives
@@ -165,7 +184,7 @@ def get_needs(event: dict, patterns: dict, root: Path, scratch: str, cwd: str, /
 
     needs: dict[str, str] = {}
     if event.get("tool_name") == "Bash":
-        files, is_commit = get_bash_needs((event.get("tool_input") or {}).get("command") or "", cwd)
+        files, is_commit = get_bash_needs((event.get("tool_input") or {}).get("command") or "", cwd, root=root)
         if is_commit:
             needs[COMMIT_SKILL] = "committing"
     elif event.get("tool_name") in EDIT_TOOLS:

@@ -26,7 +26,7 @@ A skill is read by an agent in the middle of a job. It must be short, general an
 ## Keeping it true
 
 - **A rule that keeps failing becomes a hook.** If agents break the same rule twice with the skill loaded, text is the
-  wrong tool: find the pattern in the ledger and propose a check (`hook.md`).
+  wrong tool: propose a check (`hook.md`).
   Then shorten the skill to the line the hook cannot enforce.
 - **Test a skill cold:** give a fresh agent only the skill and a task, and list what it had to guess. Each guess is a missing line.
 - When a skill grows past the limit, move detail to `references/` before cutting rules.

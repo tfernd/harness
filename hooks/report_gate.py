@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -18,9 +17,8 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
+from budget import get_agent_path, get_brief
 from common import EDIT_TOOLS, HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_fenced_indices, get_scratch, get_unfenced_lines, read_events, write_atomic
-from nudge import get_turn_stats
 from skill_gate import get_bash_needs
 from turn import FINISHED_STATUSES, NOTIFICATION, get_notice_text
 
@@ -583,64 +581,6 @@ def get_tics_note(report: str, /) -> str:
     return f"Writing tics in the report (a note, nothing is held): {'; '.join(found)}. The full list and the plain rewrite are in {TICS_FILE}."
 
 
-def get_task_title(report: str, /) -> str:
-
-    match = REPORT_TITLE.search(report)
-
-    return match.group(1) if match else ""
-
-
-def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:
-
-    path = get_agent_path(event)
-    turns = None
-    if path is not None:
-        try:
-            with open(path, errors="replace") as file:
-                turns = get_turn_limit(get_brief(json.loads(file.readline())))
-        except (OSError, ValueError, AttributeError):
-            pass
-
-    return turns if turns is not None else get_default(config, role)
-
-
-def write_ledger(
-    event: dict, root: str, role: str, report: str, send_backs: int, problems: list[str], extra: dict, /
-) -> None:
-
-    sections = dict(reversed(read_sections(report)))
-    verdict = VERDICT.match(" ".join(sections.get("Verdict", [])))
-    causes = re.findall(rf"cause:\s*({'|'.join(CAUSES)}|[^;)|]+)", "\n".join(sections.get("Problems", [])), re.I)
-    try:
-        path = get_agent_path(event)
-        duration = get_duration(path)
-        tool_turns = get_turn_stats(read_events(path)) if path else None
-    except (OSError, ValueError, AttributeError):
-        duration = tool_turns = None
-    row = {
-        "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "project": root,
-        "session": event.get("session_id"),
-        "agent_id": event.get("agent_id"),
-        "role": role,
-        "accepted": not problems,
-        "send_backs": send_backs,
-        "duration_s": duration,
-        "open_problems": problems,
-        "verdict": verdict.group(1).lower() if verdict else None,
-        "causes": [cause.strip().lower() for cause in causes],
-        "model": event.get("model") or extra.get("model"),
-        "budget_turns": extra.get("budget_turns"),
-        "files_changed": extra.get("files_changed", []),
-        "claim_marks": {mark: len(re.findall(rf"\b{mark}\b", report)) for mark in ("READ", "DERIVED", "PROBED")},
-        "brief_hash": hashlib.sha1(get_task_title(report).encode()).hexdigest()[:8] if get_task_title(report) else None,
-        "tool_turns": tool_turns,
-        "report": report,
-    }
-    with open(data_folder() / "ledger.jsonl", "a") as file:
-        file.write(json.dumps(row) + "\n")
-
-
 def get_send_backs_path(event: dict, /) -> Path:
 
     folder = data_folder() / "send-backs"
@@ -711,23 +651,11 @@ def make_send_back(problems: list[Problem], /, *, is_handback: bool = False) -> 
     return ("Your report breaks the report skill's form in these sections only:\n" + "\n".join(lines) + "\n" + ask + advice).strip()
 
 
-def get_extra(event: dict, blocks: list[dict], failed: dict[str, str], model: str | None, config: dict, role: str, root: str, /) -> dict:
+def finish(event: dict, /) -> None:
 
-    cwd = event.get("cwd") or root
-    changes = get_file_changes(blocks, failed, cwd)
-    files = [{"path": os.path.relpath(path, root) if path.startswith(root + os.sep) else path, "lines_added": added} for path, added in changes.items()]
-
-    return {"model": model, "budget_turns": get_budget_turns(event, config, role), "files_changed": files}
-
-
-def finish(event: dict, root: str, role: str, report: str, problems: list[str], extra: dict, /) -> None:
-
-    path = get_send_backs_path(event)
-    send_backs = get_send_backs(event)
-    for stale in (path, get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):
+    for stale in (get_send_backs_path(event), get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):
         if stale.exists():
             stale.unlink()
-    write_ledger(event, root, role, report, send_backs, problems, extra)
 
 
 def is_awaited(report: str, kept: Kept | None, /) -> bool:
@@ -863,10 +791,9 @@ def main() -> int:
     problems = get_problems(report, event, root, config, found)
     cannot = get_cannot_problems(report, event, found) if tries < MAX_SEND_BACKS else []
     problems += cannot
-    extra = get_extra(event, found.blocks, found.failed, found.model, config, name, str(root))
     texts = [problem.text for problem in problems]
     if not problems:
-        finish(event, str(root), name, report, [], extra)
+        finish(event)
         note = get_pass_note(report, event, config)
         if note:
             print(json.dumps({"systemMessage": note}))
@@ -874,7 +801,7 @@ def main() -> int:
     listed = "; ".join(texts)
     has_ended = bool(found.blocks) and found.blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
     if has_ended or tries >= MAX_SEND_BACKS:
-        finish(event, str(root), name, report, texts, extra)
+        finish(event)
         cause = "and it has already ended" if has_ended else f"after {tries} send-backs"
         warning = f"Sub-agent {name} stopped with a bad report {cause}: {listed}"
         print(json.dumps({"systemMessage": warning}))

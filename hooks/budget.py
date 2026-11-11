@@ -17,15 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_turns, get_unfenced_lines, make_note_output, read_tail, write_atomic
+from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_turns, make_note_output, read_tail, write_atomic
 
-MIN_TURNS_LEFT = 3
-DEFAULT_BUDGET = {"scout": 35, "reviewer": 35, "worker": 70, "designer": 70, "planner": 30, "researcher": 30, "*": 40}
 STOP_TOOLS = ("TaskStop", "KillShell")
-BUDGET_LABEL = re.compile(r"(?:^|[.;]\s+)[\s\-*#]*budget\b", re.I)
-LABELLED_BUDGET = re.compile(BUDGET_LABEL.pattern + r"\**\s*:", re.I)
-BUDGET_LINE = re.compile(BUDGET_LABEL.pattern + r"[:*\s~]*([0-9]+)\s*(?:turns?\b|(?=\W*$))", re.I)
-QUOTED = re.compile(r"`[^`]*`")
 TAIL_BYTES = 262144
 DEFAULT_PROGRESS_EVERY = 10
 SUMMARY_CHARS = 80
@@ -51,17 +45,6 @@ def get_agent_path(event: dict, /) -> Path | None:
     return path if path.is_file() else None
 
 
-def parse_time(text: object, /) -> float | None:
-
-    clean = re.sub(r"\.([0-9]+)", lambda match: "." + match.group(1)[:6].ljust(6, "0"), str(text).replace("Z", "+00:00"))
-    try:
-        moment = datetime.fromisoformat(clean)
-    except ValueError:
-        return None
-
-    return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).timestamp()
-
-
 def get_brief(entry: dict, /) -> str:
 
     content = (entry.get("message") or {}).get("content")
@@ -69,45 +52,6 @@ def get_brief(entry: dict, /) -> str:
         return "\n".join(block.get("text") or "" for block in content if isinstance(block, dict))
 
     return content if isinstance(content, str) else ""
-
-
-def read_brief(path: Path, /) -> str:
-
-    with open(path, errors="replace") as file:
-        line = file.readline()
-    try:
-        first = json.loads(line)
-    except ValueError:
-        first = {}
-
-    return get_brief(first) if isinstance(first, dict) else ""
-
-
-def get_turn_limit(brief: str, /) -> int | None:
-
-    for line in get_unfenced_lines(brief):
-        match = BUDGET_LINE.search(QUOTED.sub("", line))
-        if match:
-            return int(match.group(1))
-
-    return None
-
-
-def get_default(config: dict, role: str, /) -> int | None:
-
-    table = config.get("budget", DEFAULT_BUDGET)
-    turns = table.get(role, table.get("*"))
-
-    return int(turns) if isinstance(turns, (int, float)) and not isinstance(turns, bool) else None
-
-
-def get_warning_text(num_turns: int, limit: int, /) -> str:
-
-    left = max(MIN_TURNS_LEFT, limit // 5)
-    if num_turns != limit - left:
-        return ""
-
-    return f"Harness note, not a refusal: {left} of your {limit} turns are left. Plan your report now; waiting for a background check costs no turn."
 
 
 def get_progress_every(config: dict, /) -> int:
@@ -151,7 +95,7 @@ def prune_progress(folder: Path, /) -> None:
         pass
 
 
-def write_progress(event: dict, num_turns: int, limit: int | None, /) -> None:
+def write_progress(event: dict, num_turns: int, /) -> None:
 
     paths = get_progress_paths(event)
     if paths is None:
@@ -161,7 +105,6 @@ def write_progress(event: dict, num_turns: int, limit: int | None, /) -> None:
         "agent_id": event.get("agent_id"),
         "agent_type": event.get("agent_type") or "",
         "calls": num_turns,
-        "budget": limit,
         "tool": event.get("tool_name") or "",
         "summary": get_input_summary(event.get("tool_input")),
     }
@@ -207,9 +150,7 @@ def get_progress_text(lines: list[dict], /) -> str:
     parts = []
     for agent_id, line in list(latest.items())[-PROGRESS_SHOWN:]:
         role = str(line.get("agent_type") or "agent").removeprefix(PLUGIN_PREFIX)
-        budget = line.get("budget")
-        position = f"{line.get('calls')} of {budget} turns" if budget else f"{line.get('calls')} turns"
-        parts.append(f"{role} {agent_id[:SHORT_ID_CHARS]} at {position}, last: {line.get('tool')} {line.get('summary')}".rstrip())
+        parts.append(f"{role} {agent_id[:SHORT_ID_CHARS]} at {line.get('calls')} turns, last: {line.get('tool')} {line.get('summary')}".rstrip())
 
     return f"Agent progress: {'; '.join(parts)}" if parts else ""
 
@@ -280,26 +221,6 @@ def count_turns(path: Path, agent_id: str, /) -> TurnCount:
     return TurnCount(count, latest[-1] if latest else [])
 
 
-def get_duration(path: Path | None, /) -> float | None:
-
-    if path is None:
-        return None
-    with open(path, "rb") as file:
-        first = parse_time(json.loads(file.readline()).get("timestamp"))
-        file.seek(0, os.SEEK_END)
-        file.seek(max(0, file.tell() - TAIL_BYTES))
-        lines = file.read().decode(errors="replace").splitlines()
-    for line in reversed(lines):
-        try:
-            last = parse_time(json.loads(line).get("timestamp"))
-        except (ValueError, AttributeError):
-            continue
-        if last is not None:
-            return None if first is None else round(last - first, 1)
-
-    return None
-
-
 def main() -> int:
     event = json.load(sys.stdin)
     if not event.get("agent_id"):
@@ -309,44 +230,25 @@ def main() -> int:
         return 0
     if event.get("tool_name") in (HANDBACK_TOOL, *STOP_TOOLS):
         return 0
-    root, config = find_project(event.get("cwd") or os.getcwd())
-    path = get_agent_path(event)
-    if path is None:
-        return 0
-    agent_type = event.get("agent_type") or ""
-    limit = get_turn_limit(read_brief(path))
-    if limit is None:
-        limit = get_default(config, agent_type.removeprefix(PLUGIN_PREFIX))
+    _, config = find_project(event.get("cwd") or os.getcwd())
     every = get_progress_every(config)
-    if limit is None and not every:
+    path = get_agent_path(event)
+    if path is None or not every:
         return 0
     turns = count_turns(path, str(event.get("agent_id")))
     call_id = event.get("tool_use_id")
     is_written = not call_id or any(call.get("id") == call_id for call in turns.last)
     num_turns = turns.count + (not is_written)
     is_first = not call_id or not is_written or turns.last[0].get("id") == call_id
-    if every and num_turns % every == 0 and is_first:
-        write_progress(event, num_turns, limit)
-    if limit is None:
-        return 0
-    if num_turns <= limit:
-        warning = get_warning_text(num_turns, limit)
-        if warning:
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": warning}}))
-        return 0
-    print(
-        f"Blocked by the harness budget rule: your budget of {limit} turns is spent ({num_turns} turns so far). "
-        "Stop now. First stop every background command you started (TaskStop, or KillShell if that is the name in your tool list); a job left running keeps going after you report. Send your report now as a partial report: done, not done, what is on disk. It is still judged by the report form. A handback and a final message both pass. "
-        f"Call {HANDBACK_TOOL} now with your partial report.",
-        file=sys.stderr,
-    )
+    if num_turns % every == 0 and is_first:
+        write_progress(event, num_turns)
 
-    return 2
+    return 0
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as error:
-        print(f"the harness budget rule failed and let the call run: {error!r}", file=sys.stderr)
+        print(f"the harness progress note failed and let the call run: {error!r}", file=sys.stderr)
         sys.exit(1)

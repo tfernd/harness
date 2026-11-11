@@ -122,7 +122,6 @@ class Facts(NamedTuple):
     agents: tuple[Agent, ...]
     skills: dict[str, Skill]
     hooks: tuple[Hook, ...]
-    budgets: dict[str, int]
     ports: dict[str, dict[str, str]]
     reach: dict[str, dict[str, Reach]]
     values: dict[str, str]
@@ -188,7 +187,7 @@ class PortNote(NamedTuple):
 AGENT_KINDS = (
     Kind("Thinkers", "Work out what to do; write no files.", ("planner",)),
     Kind("Finders", "Look things up and answer with sources.", ("scout", "researcher")),
-    Kind("Doers", "Change files inside their write set.", ("worker", "designer")),
+    Kind("Doers", "Change the files their brief names.", ("worker", "designer")),
     Kind("Checkers", "Test someone else's work.", ("reviewer",)),
 )
 SKILL_KINDS = (
@@ -205,16 +204,16 @@ SKILL_KINDS = (
     Kind("Habits", "Cheap tool calls, every session.", ("tool-habits",)),
 )
 HOOK_KINDS = (
-    Kind("Guards", "Refuse a risky call before it runs.", ("guard.py", "commit_gate.py", "delegate.py", "budget.py")),
+    Kind("Guards", "Refuse a risky call before it runs.", ("guard.py", "commit_gate.py", "delegate.py")),
     Kind("Gates", "Check what crosses a hand-off.", ("brief_lint.py", "report_gate.py")),
-    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "nudge.py")),
+    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "nudge.py", "budget.py")),
     Kind("Closers", "Hold the turn until it is recorded.", ("turn.py",)),
 )
 HOOK_JOBS = {
     "guard.py": "Refuses deletes, history rewrites and wildcards the shell would get wrong; asks you before a package is added or removed.",
     "commit_gate.py": "Refuses a commit message out of form or crediting an AI, and a commit that drops tests without saying why.",
     "delegate.py": "Caps the main session's own edits in one turn, so a bigger change goes to a worker.",
-    "budget.py": "Lets an agent past its turn budget do nothing but hand back its report, and tells the main session what each agent is doing.",
+    "budget.py": "Tells the main session what each agent is doing.",
     "brief_lint.py": "Refuses an agent with no harness role, and adds a note when a brief lacks a line its role needs.",
     "report_gate.py": "Sends a report back when its form breaks or a claim is not backed by the agent's own calls.",
     "context.py": "Starts every session and agent with the tool habits and what it owes.",
@@ -252,7 +251,6 @@ RULES = (
     Rule("Rewriting shared history is refused", "stopped", "guard.py"),
     Rule("A wildcard the shell would get wrong is refused", "stopped", "guard.py"),
     Rule("An agent without a harness role is refused", "stopped", "brief_lint.py"),
-    Rule("An agent past its turn budget can only hand back its report", "stopped", "budget.py"),
     Rule("A commit message out of form, or crediting an AI, is refused", "stopped", "commit_gate.py"),
     Rule("A commit that leaves fewer tests without saying why is refused", "stopped", "commit_gate.py"),
     Rule("The main session's edits past a few in one turn go to a worker", "stopped", "delegate.py"),
@@ -493,11 +491,9 @@ def get_facts(root: Path, /) -> Facts:
     skills = get_skills(root)
     hooks = get_hooks(root)
     scripts = list(dict.fromkeys(hook.script for hook in hooks))
-    budgets = get_constant(hooks_folder / "budget.py", "DEFAULT_BUDGET", dict)
     required = get_constant(hooks_folder / "brief_lint.py", "DEFAULT_REQUIRED", dict)
     port = import_path(root / "port" / "harness_port.py")
     reach = get_reach(port, root, agents, skills, scripts)
-    budget_values = {f"budget_{'default' if role == '*' else role.replace('-', '_')}": turns for role, turns in budgets.items()}
 
     values = {
         "agents": len(agents),
@@ -509,7 +505,6 @@ def get_facts(root: Path, /) -> Facts:
         "min_calls": get_constant(turn, "MIN_CALLS", int),
         "headings": ", ".join(get_constant(turn, "HEADINGS", tuple)),
         "brief_worker": ", ".join(required.get("worker", required.get("*", []))),
-        **budget_values,
         "style_hash": get_fingerprint(root / ASSETS[0]),
         "script_hash": get_fingerprint(root / ASSETS[1]),
     }
@@ -518,7 +513,6 @@ def get_facts(root: Path, /) -> Facts:
         agents,
         skills,
         hooks,
-        budgets,
         {script: {"claude": "runs", **{target: reach[f"hook:{script}"][target].state for target in TARGETS}} for script in scripts},
         reach,
         {key: str(value) for key, value in values.items()},
@@ -1007,10 +1001,9 @@ def make_chip(panel: str, name: str, job: str, rows: Iterable[str], full: str, r
 
 def make_agent_chip(agent: Agent, facts: Facts, /) -> str:
 
-    turns = facts.budgets.get(agent.name, facts.budgets.get("*"))
     rows = (
         make_row("model", "Model", agent.model),
-        make_row("tools", "Tools", f"{get_access(agent.tools)}, {f'{turns} turns' if turns else 'no budget'}"),
+        make_row("tools", "Tools", get_access(agent.tools)),
         make_row("load", "Preloads", ", ".join(agent.skills)),
         make_row("when", "Use", agent.use),
     )

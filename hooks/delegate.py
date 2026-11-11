@@ -15,10 +15,9 @@ import os
 import sys
 from pathlib import Path
 
-from budget import get_agent_path, read_brief
-from common import EDIT_TOOLS, EDITS_KIND, HARNESS_FOLDER, SCRATCH_FOLDER, STATE_FOLDER_DISPLAY, data_folder, find_git_root, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, is_throwaway_path, make_note_output
+from common import EDIT_TOOLS, EDITS_KIND, data_folder, find_project, is_project_root, is_throwaway_path, make_note_output
 from shell import Segment, get_segments
-from skill_gate import get_edit_path, get_project_relative, get_written_project_files
+from skill_gate import get_edit_path, get_written_project_files
 
 DEFAULT_BASH_ALLOW = (
     "git status",
@@ -35,7 +34,7 @@ DEFAULT_BASH_ALLOW = (
 )
 NULL_DEVICE = "/dev/null"
 DEFAULT_MAX_EDITS = 3
-DEFAULT_EDIT_ALLOW = (f"{HARNESS_FOLDER}/*", f"{SCRATCH_FOLDER}/*")
+DEFAULT_EDIT_ALLOW: tuple[str, ...] = ()
 ADVICE = "the main session delegates edits and runs in this project (`harness:orchestrator`): give the next one to an agent."
 
 
@@ -159,51 +158,11 @@ def check_delegate(event: dict, root: Path, config: dict, cwd: str, /) -> str:
     return f"The harness delegate rule let this call run, but {message}; {ADVICE}"
 
 
-def get_outside_write_set(event: dict, root: Path, cwd: str, /) -> tuple[list[str], list[str]]:
-
-    if event.get("tool_name") == "Bash":
-        command = (event.get("tool_input") or {}).get("command")
-        written = get_written_project_files(command, root, cwd) if isinstance(command, str) else []
-    elif event.get("tool_name") in EDIT_TOOLS:
-        relative = get_project_relative(get_edit_path(event), root, cwd)
-        written = [] if relative is None or is_state_folder(relative) else [relative]
-    else:
-        written = []
-    if not written:
-        return [], []
-    transcript = get_agent_path(event)
-    write_set = get_write_set(read_brief(transcript)) if transcript is not None else None
-    if write_set is None:
-        return [], []
-    patterns = [pattern.removeprefix(f"{root}/") for pattern in write_set]
-
-    return [path for path in written if not is_in_write_set(path, patterns)], write_set
-
-
-def check_write_set(event: dict, root: Path, cwd: str, /) -> str:
-
-    outside, write_set = get_outside_write_set(event, root, cwd)
-    if not outside:
-        return ""
-    listed = ", ".join(write_set) or "none"
-
-    return (
-        f"Blocked by the harness write_set rule: {', '.join(outside)} is outside this brief's `Write set:` ({listed}). "
-        f"Do not write it. Leave the file as it is, report the change it needs under Feedback or Open in your report, and carry on within the set. "
-        f"`/tmp/harness/{root.name}/`, `{STATE_FOLDER_DISPLAY}/{root.name}/`, `{SCRATCH_FOLDER}/` and `{HARNESS_FOLDER}/` are always allowed."
-    )
-
-
 def main() -> int:
     event = json.load(sys.stdin)
     cwd = event.get("cwd") or os.getcwd()
     root, config = find_project(cwd)
     if event.get("agent_id"):
-        worktree_root = find_git_root(Path(cwd).resolve()) or root
-        refusal = check_write_set(event, worktree_root, cwd)
-        if refusal:
-            print(refusal, file=sys.stderr)
-            return 2
         return 0
     refusal, edit_note = check_main_edits(event, root, config, cwd)
     if refusal:

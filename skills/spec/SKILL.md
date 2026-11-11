@@ -1,11 +1,11 @@
 ---
 name: spec
-description: How a spec is written for a large or public-contract job - a file with goal, non-goals, decisions with every "or" settled, write sets and judges. Load before writing a spec, or before reviewing one or briefing workers from one.
+description: How a spec is written for a large or public-contract job - a file with goal, non-goals, decisions with every "or" settled, files and judges. Load before writing a spec, or before reviewing one or briefing workers from one.
 ---
 
 # A spec
 
-A spec is a file in the repo (`/tmp/harness/<project>/<topic>/SPEC.md` (cleaned at the end of the job; use the project's plan file when the file must outlive it) unless the project names a place), written before any
+A spec is a file in the repo (`~/.local/state/harness/<project>/<topic>/SPEC.md` unless the project names a place), written before any
 worker starts. Workers and readers get its path in the brief. A spec that lives only in chat is not a spec.
 The orchestrator decides what goes in and briefs a worker to write the file. Sizes that need one: `harness:workflows`.
 
@@ -15,7 +15,7 @@ The orchestrator decides what goes in and briefs a worker to write the file. Siz
 2. **Non-goals:** what a reasonable worker might add and must not. Each is a thing someone could be tempted to do.
 3. **Decisions:** one line per choice, already made: names, signatures, formats, file locations, defaults, error
    behaviour. Every "or", "maybe", "TBD", "probably" and "should" is settled here or moved to Open questions.
-4. **Write sets:** one per unit: the files it may create or change, as paths or globs. Sets are disjoint. A file two
+4. **Files:** one list per unit: the files it may create or change, as paths or globs. Lists are disjoint. A file two
    units need is assigned to one of them, and the other gets the change under Open.
 5. **Judges:** per unit, the commands that decide done, with the expected result; for an "unchanged" result, the value measured before the change.
    Every decision that can break has a judge (`harness:testing`).
@@ -39,7 +39,7 @@ The orchestrator decides what goes in and briefs a worker to write the file. Siz
 ## Checking a spec
 
 A spec is accepted only after a cold read and a review
-(`harness:review`, Interface lens). The reviewer checks that the write sets are disjoint, that every unit has a judge, and
+(`harness:review`, Interface lens). The reviewer checks that the file lists are disjoint, that every unit has a judge, and
 that no decision contradicts another.
 
 ## The cold read

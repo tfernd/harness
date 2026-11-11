@@ -35,7 +35,6 @@ One role appears in several lists. Add it to each, in the same change, or a gate
 
 - the models table (`harness:orchestrator`, Models),
 - the orchestrator's roles table (`harness:orchestrator`),
-- the hook budget table (the default turns per role),
 - the project's page or docs that list agents.
 
 The exact files for this repo are in its `AGENTS.md`.

@@ -41,7 +41,7 @@ a failing command quoted with its exit code>
 | Not proven | Always | Never bare: "nothing" needs its reason |
 | Problems | If any | One cause from the list per item |
 | Next time | If different | Left out when you would do the same |
-| Open | If any | Includes a change needed outside your write set, with its file |
+| Open | If any | Includes a change needed in a file your brief does not name, with its file |
 | Feedback | If any | Each item names a file to change; the main session reads it in the same turn and acts |
 | Verdict | Always | Last. `done`, `partial` or `blocked`, then one sentence |
 

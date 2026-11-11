@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from budget import get_agent_path
-from common import EDIT_TOOLS, find_project, get_turns, read_events
+from common import EDIT_TOOLS, get_turns, read_events
 
 READ_TOOLS = frozenset({"Read", "Grep", "Glob"})
 SMALL_COMMANDS = frozenset({"cat", "bat", "sed", "head", "tail", "grep", "rg", "ls", "wc", "find"})

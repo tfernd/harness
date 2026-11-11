@@ -14,18 +14,17 @@ import re
 import sys
 from pathlib import Path
 
-from budget import LABELLED_BUDGET, QUOTED, get_turn_limit
-from common import PLUGIN_PREFIX, WRITE_SET_LINE, find_project, get_unfenced_lines, get_write_set, make_note_output
+from common import PLUGIN_PREFIX, find_project, make_note_output
 
 DEFAULT_REQUIRED = {
-    "worker": ["Goal:", "Write set:", "Judge:"],
+    "worker": ["Goal:", "Judge:"],
     "reviewer": ["Goal:", "Input:", "Tree:"],
-    "designer": ["Goal:", "Write set:"],
+    "designer": ["Goal:"],
     "*": ["Goal:"],
 }
 GENERIC_AGENTS = frozenset({"", "general-purpose", "explore", "plan", "claude"})
 GENERIC_REFUSAL = (
-    "Blocked by the harness brief rule: {name} has no harness role, so it gets no role skills, no report form and no turn budget. "
+    "Blocked by the harness brief rule: {name} has no harness role, so it gets no role skills and no report form. "
     "Send the same brief to a role: harness:scout finds a fact, harness:worker makes a change, "
     "harness:reviewer reviews, harness:planner plans, harness:researcher reads outside sources, harness:designer designs."
 )
@@ -41,20 +40,6 @@ def get_missing(prompt: str, labels: list[str], /) -> list[str]:
     lines = [line.lstrip(LINE_MARKS) for line in prompt.splitlines()]
 
     return [label for label in labels if not any(line.startswith(label) for line in lines)]
-
-
-def has_unreadable_budget(prompt: str, /) -> bool:
-
-    lines = [QUOTED.sub("", line) for line in get_unfenced_lines(prompt)]
-
-    return any(LABELLED_BUDGET.search(line) and get_turn_limit(line) is None for line in lines)
-
-
-def has_unreadable_write_set(prompt: str, /) -> bool:
-
-    has_label = any(WRITE_SET_LINE.match(line) for line in get_unfenced_lines(prompt))
-
-    return has_label and get_write_set(prompt) is None
 
 
 def get_roles() -> list[str]:
@@ -85,10 +70,6 @@ def main() -> int:
     required = (config["brief"] or {}).get("required", DEFAULT_REQUIRED)
     missing = get_missing(tool_input.get("prompt") or "", required.get(role, required.get("*", [])))
     notes = []
-    if has_unreadable_budget(tool_input.get("prompt") or ""):
-        notes.append("a budget counts model turns, and this brief's budget line names none, so the agent gets the default. Next time write `Budget: 30 turns`, or reword the line if it means something else.")
-    if has_unreadable_write_set(tool_input.get("prompt") or ""):
-        notes.append("the `Write set:` line names no path and not `none`, so the write-set rule cannot hold this agent to it. Next time list paths or globs relative to the project root, or `none`.")
     if missing:
         notes.append(f"a brief for {role} needs the lines {', '.join(missing)}, and this one lacks them.")
     if notes:

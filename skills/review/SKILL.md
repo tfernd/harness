@@ -18,8 +18,8 @@ issues. Detail: `references/rules.md`.
 
 ## Order
 
-1. **Spec:** each decision and non-goal of the spec or brief, found in the code or found missing. A change outside the
-   write set is a finding.
+1. **Spec:** each decision and non-goal of the spec or brief, found in the code or found missing. A change in a file the brief
+   does not name is a finding.
 2. **Correctness:** a wrong result or crash for an input inside the contract. Work two or three tiny inputs by hand: the
    empty one, one element, the largest allowed, one of each sign or kind. Resource use far past what the data needs.
    After a layout change, every old guard re-derived.
@@ -93,7 +93,7 @@ For the worker or author fixing its own failing test or gate; a reviewer only re
 2. **Read the failure** (summary and last frames; one error at one line is one cause) and **find the cause** (the line
    and the input; probe if reading cannot settle it) before changing code.
 3. **Fix it in the unit that made it,** not where it shows. Never loosen a test, bound or tolerance, never guard
-   downstream of the bug. A failure outside your write set is reported, not fixed.
+   downstream of the bug. A failure in a file your brief does not name is reported, not fixed.
 4. **Grep the callers,** verify again once. A failed call is split, never retried unchanged.
 
 A third failing run of the judge stops the worker: it reports what fails, the cause and what it tried. Two failed fixes
