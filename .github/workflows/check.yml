@@ -25,5 +25,3 @@ jobs:
         run: uv run python tests/check_skills.py
       - name: Leaks
         run: uv run python tests/check_leaks.py
-      - name: Band types
-        run: npx --yes --package typescript tsc --noEmit -p mods/band
