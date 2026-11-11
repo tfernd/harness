@@ -1,10 +1,14 @@
 # Ledger queries
 
-Run with `uv run python`. Set `LEDGER` to the ledger path first.
+Run with `uv run python`. Set `LEDGER` to the ledger path first. A report sent back is written again, so the ledger holds more rows than agents: every query keeps the last row per `agent_id` (the block below does it).
 
 ```python
 import json, os, re, collections
-rows = [json.loads(line) for line in open(os.environ["LEDGER"])]
+latest = {}
+for line in open(os.environ["LEDGER"]):
+    row = json.loads(line)
+    latest[row.get("agent_id") or id(row)] = row
+rows = list(latest.values())
 live = [r for r in rows if not r.get("imported")]
 
 by = collections.defaultdict(collections.Counter)

@@ -33,7 +33,7 @@ from common import (
     get_feedback_root,
     is_project_root,
 )
-from turn import HANDLED as HANDLED_LINE, get_items, get_seen, is_retro_due
+from turn import get_handled, get_items, get_seen, is_retro_due
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
@@ -162,13 +162,12 @@ def get_retro_due_line(root: Path, /) -> str:
     feedback = get_feedback_root(root)
     try:
         items = get_items((feedback / INBOX).read_text(errors="replace"))
-        handled_text = (feedback / HANDLED).read_text(errors="replace") if (feedback / HANDLED).exists() else ""
+        handled = get_handled(feedback, None, {}).handled
         seen = get_seen(feedback, len(items))
     except (OSError, ValueError):
         return ""
-    handled = {match.group(1) for match in HANDLED_LINE.finditer(handled_text)}
 
-    return RETRO_DUE_TEXT if is_retro_due(items, seen, handled, time.time(), 0) else ""
+    return RETRO_DUE_TEXT if is_retro_due(items, seen, handled, time.time()) else ""
 
 
 def get_retro_line(root: Path, /) -> str:

@@ -70,7 +70,7 @@ State of the harness plugin in this project. Git ignores this whole folder (its 
 ignored folders too, so read these files by path.
 
 - `feedback/inbox.md`: one line per Feedback item of an agent's report. The report gate appends; a retro reads.
-- `feedback/handled.md`: one line per item a retro closed, `<id>: rule written in <file>`. The main session writes; the Stop hook and the
+- `feedback/handled.md`: one line per item a retro closed: `<id>: rule written in|fixed in|covered by <file>` or `<id>: rejected: <reason>`. The main session writes; the Stop hook and the
   start-of-agent lessons read.
 - `feedback/open.md`: problems a retro kept that no rule fixes yet, `- <role or all>: <problem>`. The main session writes; agents read at start.
 - `feedback/retro-mark`: how many inbox items the last retro covered. The Stop hook keeps it.
@@ -83,6 +83,13 @@ HANDLED = f"{FEEDBACK_FOLDER}/handled.md"
 RETRO_MARK = f"{FEEDBACK_FOLDER}/retro-mark"
 OPEN_PROBLEMS = f"{FEEDBACK_FOLDER}/open.md"
 FILE_EDGES = "`'\".,;:()"
+
+
+def get_plugin_root() -> Path:
+
+    return Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
+
+
 def read_sections(path: Path, /) -> dict:
 
     if not path.is_file():

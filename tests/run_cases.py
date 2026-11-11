@@ -1769,6 +1769,11 @@ def distinct_reasons(count: int, /) -> str:
     return "".join(f"{index:08x}: rejected: reason number {index} stands\n" for index in range(count))
 
 
+def rule_lines(count: int, /) -> str:
+
+    return "".join(f"{index:08x}: rule written in AGENTS.md\n" for index in range(count))
+
+
 def agent_calls(count: int, /) -> tuple[dict, ...]:
 
     return tuple(launch(f"a{index}", is_background=False)[0] for index in range(count))
@@ -1782,14 +1787,14 @@ BULLET_ID = hashlib.sha1(b"check the unit twice").hexdigest()[:8]
 REFUSED = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "PreToolUse:Bash hook error: [guard.py]: Blocked by the harness guard: no"}]}}
 QUOTED_REFUSAL = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "FAIL expected Blocked by the harness guard"}]}}
 OWNER_PROMPT = {"type": "user", "message": {"content": "the next job"}}
-HANDLED_RULE = (HANDLED_NAME, "retro-20: rule written in AGENTS.md\n")
+HANDLED_RULE = (HANDLED_NAME, rule_lines(20))
 BLOCKS_FILE = f"data/turns/{SESSION}.blocks"
 CALLS_FILE = f"data/turns/{SESSION}.calls"
 EDITS_FILE = f"data/turns/{SESSION}.edits"
 RULES_FILE = f"data/turns/{SESSION}.rules"
 DEFERRED_FILE = f"data/turns/{SESSION}.deferred"
 RELEASED_FILE = f"data/turns/{SESSION}.released"
-RELEASED_FILE_ITEM = (RELEASED_FILE, "retro-20")
+RELEASED_FILE_ITEM = (RELEASED_FILE, " ".join(f"{index:08x}" for index in range(20)))
 RULE_FILE_BEFORE = ("AGENTS.md", "a rule\n")
 RULES_KEPT = (RULES_FILE, "{}")
 RULES_OTHER = (RULES_FILE, '{"AGENTS.md": "changed since"}')
@@ -1862,12 +1867,12 @@ TURN_CASES = (
     turn("the Stop hook ignores a heading in a fence", f"```\n{FULL_STATUS}\n```", True, "Verdict", calls=BUSY_CALLS),
     turn("a project's min_calls is read", PROGRESS, False, calls=BUSY_CALLS, config={"stop": {"min_calls": 5}}),
     turn("no project file still asks for the closing status", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None),
-    turn("no project file still holds a retro", PROGRESS, True, "retro-20", calls=BUSY_CALLS, config=None, files=(INBOX,)),
+    turn("no project file still holds a retro", PROGRESS, True, "00000000", calls=BUSY_CALLS, config=None, files=(INBOX,)),
     turn("the home folder holds no retro", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None, cwd="", files=(("../" + INBOX[0], INBOX[1]),), lacks="retro"),
-    turn("a due retro is refused", PROGRESS, True, "retro-20", files=(INBOX,)),
+    turn("a due retro is refused", PROGRESS, True, "00000000", files=(INBOX,)),
     turn("a handled feedback id is allowed", PROGRESS, False, files=(INBOX, HANDLED_RULE)),
-    turn("a rejected feedback id is allowed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n"))),
-    turn("a handled line with no verdict does not count", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, "retro-20: looked\n"))),
+    turn("a rejected feedback id is allowed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20)))),
+    turn("a handled line with no verdict does not count", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "00000000: looked\n"))),
     turn("a missing inbox is no error", PROGRESS, False),
     turn("an empty blocks file counts as zero", PROGRESS, True, "Verdict", calls=BUSY_CALLS, files=((BLOCKS_FILE, ""),), lacks="let the call run", wrote=(BLOCKS_FILE, "1")),
     turn("junk saved rules do not trap the lessons check", LESSONS, False, files=((RULES_FILE, "{junk"),), config=NO_RULE_PATHS, lacks="let the call run"),
@@ -1884,7 +1889,7 @@ TURN_CASES = (
         "the third block is the last",
         PROGRESS,
         True,
-        "retro-20",
+        "00000000",
         files=(INBOX, (BLOCKS_FILE, "2")),
         wrote=(BLOCKS_FILE, "3"),
     ),
@@ -1894,15 +1899,15 @@ TURN_CASES = (
         False,
         "open checks",
         files=(INBOX, (BLOCKS_FILE, "3")),
-        wrote=(RELEASED_FILE, "retro-20"),
+        wrote=(RELEASED_FILE, "00000000 00000001 00000002"),
     ),
     turn("a released id holds no more, with no warning", PROGRESS, False, files=(INBOX, RELEASED_FILE_ITEM), lacks="open checks"),
     turn("nine waiting items hold nothing", PROGRESS, False, files=((INBOX_NAME, waiting(9)),), lacks="open checks"),
-    turn("ten waiting items hold the turn", PROGRESS, True, "retro-10", files=((INBOX_NAME, waiting(10)),)),
-    turn("another session's items hold this one too", PROGRESS, True, "retro-20", files=((INBOX_NAME, waiting(20, "other")),)),
+    turn("ten waiting items hold the turn", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(10)),)),
+    turn("another session's items hold this one too", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(20, "other")),)),
     turn("the hold says to launch the analyst in the background", PROGRESS, True, "Launch `harness:analyst` in the background", files=(INBOX,)),
-    turn("an item three days old holds the turn", PROGRESS, True, "retro-1", files=((INBOX_NAME, stamped(3.1)),)),
-    turn("the oldest of fresh and old items decides", PROGRESS, True, "retro-2", files=((INBOX_NAME, stamped(0.1) + stamped(9)),)),
+    turn("an item three days old holds the turn", PROGRESS, True, "0000aaaa", files=((INBOX_NAME, stamped(3.1)),)),
+    turn("the oldest of fresh and old items decides", PROGRESS, True, "0000aaaa", files=((INBOX_NAME, stamped(0.1) + stamped(9)),)),
     turn("a none bullet files nothing", "## Lessons\n- none\n", False, not_wrote=(INBOX_NAME, "agent=main")),
     turn("an item two days old holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(2.9)),), lacks="open checks"),
     turn("an old item past the mark holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(9) + waiting(2)), (MARK_NAME, "3")), lacks="open checks"),
@@ -1912,14 +1917,13 @@ TURN_CASES = (
     turn("the owner's skip retro silences the hold", PROGRESS, False, files=(INBOX,), transcript=(SKIP_PROMPT,), lacks="open checks"),
     turn("the owner's skip retro is kept for the session", PROGRESS, False, files=(INBOX,), transcript=(SKIP_PROMPT,), wrote=(SKIPPED_FILE, "1")),
     turn("a kept skip silences a later turn", PROGRESS, False, files=(INBOX, (SKIPPED_FILE, "1")), lacks="open checks"),
-    turn("a skip in an earlier prompt does not count", PROGRESS, True, "retro-20", files=(INBOX,), transcript=(SKIP_PROMPT, OWNER_PROMPT)),
-    turn("a skip in another session is not kept", PROGRESS, True, "retro-20", files=(INBOX, ("data/turns/other.skipped", "1"))),
-    turn("a line for one item id closes only that item", PROGRESS, True, "retro-10", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "00000009: rejected: it does not apply\n"))),
-    turn("a partly handled retro still holds", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, distinct_reasons(19)))),
+    turn("a skip in an earlier prompt does not count", PROGRESS, True, "00000000", files=(INBOX,), transcript=(SKIP_PROMPT, OWNER_PROMPT)),
+    turn("a skip in another session is not kept", PROGRESS, True, "00000000", files=(INBOX, ("data/turns/other.skipped", "1"))),
+    turn("a line for one item id closes only that item", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "00000009: rejected: it does not apply\n"))),
+    turn("a partly handled retro still holds", PROGRESS, True, "00000013", files=(INBOX, (HANDLED_NAME, distinct_reasons(19)))),
     turn("a partly handled retro leaves the mark", PROGRESS, True, files=(INBOX, (HANDLED_NAME, distinct_reasons(19))), not_wrote=(MARK_NAME, "20")),
     turn("every item handled by its own id moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=(MARK_NAME, "20"), lacks="open checks"),
-    turn("ten agents in the session hold for a retro when one item waits", PROGRESS, True, "retro-1", files=((INBOX_NAME, waiting(1)),), transcript=agent_calls(10)),
-    turn("nine agents in the session hold nothing for one item", PROGRESS, False, files=((INBOX_NAME, waiting(1)),), transcript=agent_calls(9), lacks="open checks"),
+    turn("ten agents in the session hold nothing for one waiting item", PROGRESS, False, files=((INBOX_NAME, waiting(1)),), transcript=agent_calls(10), lacks="open checks"),
     turn("ten agents hold nothing when no item waits", PROGRESS, False, files=((INBOX_NAME, ""),), transcript=agent_calls(10), lacks="open checks"),
     turn("ten agents hold nothing when every item is handled", PROGRESS, False, files=((INBOX_NAME, waiting(1)), (HANDLED_NAME, distinct_reasons(1))), transcript=agent_calls(10), lacks="open checks"),
     turn("a lesson bullet is filed as from the main session", LESSON_BULLETS, False, files=(), wrote=(INBOX_NAME, f"id={BULLET_ID} session={SESSION} agent=main time=")),
@@ -1930,21 +1934,29 @@ TURN_CASES = (
     turn("a none lesson files nothing", "Lessons: none\n", False, not_wrote=(INBOX_NAME, "agent=main")),
     turn("a bullet outside the Lessons section is not filed", "## Done\n- finished the unit\n", False, not_wrote=(INBOX_NAME, "agent=main")),
     turn("lessons in a home folder file nothing", LESSON_BULLETS, False, cwd="", config=None, not_wrote=("../" + INBOX_NAME, "agent=main")),
-    turn("a closing line moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), wrote=(MARK_NAME, "20")),
-    turn("a moved mark leaves the harness folder ignoring itself", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), wrote=("__harness__/.gitignore", "*")),
+    turn("a closing line moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=(MARK_NAME, "20")),
+    turn("a moved mark leaves the harness folder ignoring itself", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=("__harness__/.gitignore", "*")),
     turn("the mark hides what it covers", PROGRESS, False, files=(INBOX, (MARK_NAME, "15")), lacks="open checks"),
-    turn("twenty past the mark are due", PROGRESS, True, "retro-40", files=((INBOX_NAME, waiting(40)), (MARK_NAME, "20"))),
-    turn("a line for an item id closes no retro", PROGRESS, True, "retro-20", files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply\n"))),
+    turn("twenty past the mark are due", PROGRESS, True, "00000014", files=((INBOX_NAME, waiting(40)), (MARK_NAME, "20"))),
+    turn("a line for an item id closes no retro", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply\n"))),
     turn("a running agent puts the retro off", PROGRESS, False, files=(INBOX,), transcript=(launch("t1")[0],), lacks="a retro is due"),
     turn(
         "one reason cannot close two things",
         PROGRESS,
         True,
         "the same reason already closes 00000001",
-        files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply here\nretro-20: rejected: it does not apply here\n")),
+        files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply here\n00000002: rejected: it does not apply here\n")),
     ),
-    turn("a mark past the inbox is ignored", PROGRESS, True, "retro-20", files=(INBOX, (MARK_NAME, "80"))),
-    turn("a line cannot cover items not yet filed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, "retro-9999: rejected: it does not apply\n")), wrote=(MARK_NAME, "20")),
+    turn("a mark past the inbox is ignored", PROGRESS, True, "00000000", files=(INBOX, (MARK_NAME, "80"))),
+    turn("a retro-N line closes nothing", PROGRESS, True, "`retro-N` line closes nothing: write one line per item id", files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), not_wrote=(MARK_NAME, "20")),
+    turn("the probe retro-12 rejected clears none of 12 waiting items", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(12)), (HANDLED_NAME, "retro-12: rejected: not worth it\n")), not_wrote=(MARK_NAME, "12")),
+    turn("a retro-N rule line closes nothing", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "retro-20: rule written in AGENTS.md\n"))),
+    turn("the hold names a line it ignores and why", PROGRESS, True, "00000001: applied: open.md\\\": after the id write", files=(INBOX, (HANDLED_NAME, "00000001: applied: open.md\n9e4a7424: applied: open.md\n"))),
+    turn("a line for an open id that is ignored is named", PROGRESS, True, "ignores the line \\\"00000001: filed\\\"", files=(INBOX, (HANDLED_NAME, "00000001: filed\n"))),
+    turn("a line with no item id is named", PROGRESS, True, "it starts with no item id", files=(INBOX, (HANDLED_NAME, "done with all of it\n"))),
+    turn("a closed old line that is ignored is not named", PROGRESS, True, lacks="ignores the line \\\"deadbeef", files=(INBOX, (HANDLED_NAME, "deadbeef: applied: open.md\n"))),
+    turn("a filed line closes nothing", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "".join(f"{index:08x}: filed\n" for index in range(20))))),
+    turn("an applied open.md line closes nothing", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "".join(f"{index:08x}: applied: open.md\n" for index in range(20))))),
     turn("a failed command quoting a refusal is no refusal", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(QUOTED_REFUSAL,), lacks="refused this turn"),
     turn("a bare none after a refusal gets a note", "Lessons: none\n", False, "refused this turn", files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,)),
     turn("a none with its reason after a refusal is allowed", "Lessons: none: the guard worked as it should\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,), lacks="refused this turn"),
@@ -1954,8 +1966,8 @@ TURN_CASES = (
     turn("a project's headings replace the status", "## Result\nall of it", False, calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a project's missing heading is named", PROGRESS, True, "Result", calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a stopped agent is finished", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=(*launch("t1"), notify("t1", "stopped"))),
-    turn("an empty block count holds the turn", PROGRESS, True, "retro-20", files=(INBOX, (BLOCKS_FILE, ""))),
-    turn("a retro mark in other digits is ignored", PROGRESS, True, "retro-20", files=(INBOX, (MARK_NAME, "\u00b2"))),
+    turn("an empty block count holds the turn", PROGRESS, True, "00000000", files=(INBOX, (BLOCKS_FILE, ""))),
+    turn("a retro mark in other digits is ignored", PROGRESS, True, "00000000", files=(INBOX, (MARK_NAME, "\u00b2"))),
     turn("a pass resets the blocks", PROGRESS, False, files=((BLOCKS_FILE, "2"),), wrote=(BLOCKS_FILE, "0")),
     turn("a background Agent with no result yet is running", PROGRESS, False, calls=BUSY_CALLS, transcript=(launch("t1")[0],)),
     turn(
@@ -3012,14 +3024,14 @@ COMMIT_CASES = (
 
 
 RESET = (("turn.py", "reset"), {"session_id": SESSION})
-HANDLED_AGENTS = (HANDLED_NAME, "retro-20: rule written in AGENTS.md\n")
+HANDLED_AGENTS = (HANDLED_NAME, "0000aaaa: rule written in AGENTS.md\n")
 
 
-def handled_turn(name: str, handled: str, blocks: bool, text: str = "", /, *, rewrite: str = "", files: tuple[tuple[str, str], ...] = ()) -> Case:
+def handled_turn(name: str, handled: str, blocks: bool, text: str = "", /, *, rewrite: str = "", files: tuple[tuple[str, str], ...] = (), **options: object) -> Case:
 
     before = (RESET, (("rewrite.py",), {"path": "AGENTS.md", "text": rewrite})) if rewrite else (RESET,)
 
-    return turn(name, PROGRESS, blocks, text, files=(INBOX, (HANDLED_NAME, handled), RULE_FILE_BEFORE, *files), before=before)
+    return turn(name, PROGRESS, blocks, text, files=((INBOX_NAME, stamped(3.1)), (HANDLED_NAME, handled), RULE_FILE_BEFORE, *files), before=before, **options)
 
 
 def inbox_line(item_id: str, role: str, text: str, /) -> str:
@@ -3064,14 +3076,25 @@ PROBLEM_FILES = ((OPEN_NAME, "- worker: stale line number in the brief\n- scout:
 LOOP_CASES = (
     handled_turn("loop: a rule line with an unchanged file is refused", HANDLED_AGENTS[1], True, "was not changed"),
     handled_turn("loop: a rule line with a changed file is allowed", HANDLED_AGENTS[1], False, rewrite="a new rule\n"),
-    handled_turn("loop: a rule line with a missing file is refused", "retro-20: rule written in nope.md\n", True, "does not exist"),
-    handled_turn("loop: a rule line naming no file is refused", "retro-20: rule written in\n", True, "names no file"),
-    handled_turn("loop: a file outside the rule paths is refused", "retro-20: rule written in notes.md\n", True, "no rule file", files=(("notes.md", "n\n"),)),
-    handled_turn("loop: a file outside the project needs only to exist", f"retro-20: rule written in {ROOT}/outside.md\n", False, files=(("data/../outside.md", "o\n"),)),
-    handled_turn("loop: a closing period after the file is ignored", "retro-20: rule written in AGENTS.md.\n", False, rewrite="a new rule\n"),
-    handled_turn("loop: a one-word rejection is refused", "retro-20: rejected: no\n", True, "at least 3 words"),
-    handled_turn("loop: an empty rejection is refused", "retro-20: rejected:\n", True, "at least 3 words"),
-    handled_turn("loop: a three-word rejection is allowed", "retro-20: rejected: not a rule\n", False),
+    handled_turn("loop: a rule line with a missing file is refused", "0000aaaa: rule written in nope.md\n", True, "does not exist"),
+    handled_turn("loop: a rule line naming no file is refused", "0000aaaa: rule written in\n", True, "names no file"),
+    handled_turn("loop: a file outside the rule paths is refused", "0000aaaa: rule written in notes.md\n", True, "no rule file", files=(("notes.md", "n\n"),)),
+    handled_turn("loop: a rule file outside the project and the plugin is refused", f"0000aaaa: rule written in {ROOT}/outside.md\n", True, "lies outside the project and the plugin", files=(("../outside.md", "o\n"),)),
+    handled_turn("loop: a rule file at /etc/hostname does not count", "0000aaaa: rule written in /etc/hostname\n", True, "lies outside the project and the plugin"),
+    handled_turn("loop: a covered file at /etc/hostname does not count", "0000aaaa: covered by /etc/hostname\n", True, "lies outside the project and the plugin"),
+    handled_turn("loop: a path climbing out of the project does not count", "0000aaaa: covered by ../outside.md\n", True, "lies outside the project and the plugin", files=(("../outside.md", "o\n"),)),
+    handled_turn("loop: a covered file inside the plugin root counts", f"0000aaaa: covered by {ROOT}/plugin/rules.md\n", False, files=(("../plugin/rules.md", "r\n"),), plugin_root="plugin"),
+    handled_turn("loop: a dot-slash path inside the project counts", "0000aaaa: covered by ./notes.md\n", False, files=(("notes.md", "n\n"),)),
+    handled_turn("loop: a covered file inside the project counts", "0000aaaa: covered by notes.md\n", False, files=(("notes.md", "n\n"),)),
+    handled_turn("loop: a covered file that is missing is refused", "0000aaaa: covered by nope.md\n", True, "does not exist"),
+    handled_turn("loop: a covered line naming no file is refused", "0000aaaa: covered by\n", True, "names no file"),
+    handled_turn("loop: a fixed file inside the project counts without a rule change", "0000aaaa: fixed in notes.md\n", False, files=(("notes.md", "n\n"),)),
+    handled_turn("loop: a fixed file outside the project is refused", "0000aaaa: fixed in /etc/hostname\n", True, "lies outside the project and the plugin"),
+    handled_turn("loop: a fixed file that is missing is refused", "0000aaaa: fixed in nope.md\n", True, "does not exist"),
+    handled_turn("loop: a closing period after the file is ignored", "0000aaaa: rule written in AGENTS.md.\n", False, rewrite="a new rule\n"),
+    handled_turn("loop: a one-word rejection is refused", "0000aaaa: rejected: no\n", True, "at least 3 words"),
+    handled_turn("loop: an empty rejection is refused", "0000aaaa: rejected:\n", True, "at least 3 words"),
+    handled_turn("loop: a three-word rejection is allowed", "0000aaaa: rejected: not a rule\n", False),
     context("loop: a worker is told the role's handled lessons", SUB_WORKER, "- (rule in AGENTS.md) check the unit twice", files=LESSON_FILES),
     context("loop: the lessons carry the already-acted header", SUB_WORKER, "do not redo the request:\\n- (rule in AGENTS.md)", files=LESSON_FILES),
     context("loop: a lesson whose rule file is gone is skipped", SUB_WORKER, lacks="check the unit twice", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rule written in gone.md\n"))),
@@ -3099,7 +3122,9 @@ LOOP_CASES = (
     context("loop: nine waiting items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(9)),)),
     context("loop: an item three days old tells the session", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
     context("loop: an item two days old tells nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, stamped(2.9)),)),
-    context("loop: handled items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "retro-10: rejected: it does not apply\n"))),
+    context("loop: handled items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, distinct_reasons(10)))),
+    context("loop: a retro-N line does not silence the due line", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "retro-10: rejected: it does not apply\n"))),
+    context("loop: a rejection with a short reason does not silence the due line", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "00000000: rejected: no\n"))),
     context("loop: items before the mark tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(12)), (MARK_NAME, "5"))),
     context("loop: a sub-agent start gets no due line", SUB_WORKER, lacks="A retro is due", files=((INBOX_NAME, waiting(10)),)),
     context("loop: a due retro replaces the report-count line", {"hook_event_name": "SessionStart"}, lacks="reports since", files=((INBOX_NAME, waiting(10)), ledger(10, OLD_TIME))),

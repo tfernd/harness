@@ -40,7 +40,7 @@ you ── ask ──> main session (follows the orchestrator skill)
  before each call   guard · delegate · skill_gate · brief_lint · budget
  after a read       nudge
  when an agent ends report_gate: checks the report before its handback, files problems in the inbox and the ledger
- when a turn ends   turn: holds for the status and a due retro; files Lessons bullets; a retro is due at 10 items, 3 days or 10 agents
+ when a turn ends   turn: holds for the status and a due retro; files Lessons bullets; a retro is due at 10 items or 3 days
                  ▼
  inbox ──> analyst ──> a new rule in a hook, skill or brief template, or a line in open.md
 ```
@@ -140,7 +140,7 @@ ledger.
 2. When 20 items wait, the Stop hook holds a session that filed one until a retro is done. Separately, ten new reports
    add a one-line reminder at session start.
 3. One `analyst` groups the items by meaning, checks them against the code and proposes up to three changes.
-4. The main session applies or rejects each one and names the result in `__harness__/feedback/handled.md`.
+4. The main session applies or rejects each one and names the result in `__harness__/feedback/handled.md`, one line per item id; the hold names any line it ignores.
 5. Problems no rule fixes yet go in `__harness__/feedback/open.md`, and each agent of that role is told at its start.
 
 ## Other tools

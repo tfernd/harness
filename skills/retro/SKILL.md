@@ -11,16 +11,19 @@ stays a sentence is not a result.
 ## The checkpoint
 
 A retro is due when 10 or more items wait in `__harness__/feedback/inbox.md` past the count in `__harness__/feedback/retro-mark`,
-or the oldest waiting item is 3 or more days old, or a session ran 10 or more agents and any item waits. The Stop hook files
+or the oldest waiting item is 3 or more days old. The number of agents a session ran triggers nothing. The Stop hook files
 each bullet under the main session's closing `Lessons` heading into the inbox (`agent=main`), once per bullet. SessionStart
 and the Stop hold tell the main session to launch `harness:analyst` in the background; the hold fires for any session, once
 per turn, at the end of a turn with no agent running, never in a sub-agent. The owner saying "skip retro" silences it for
 that session. Apply or reject each proposal; keep its open problems in
 `__harness__/feedback/open.md`, one `- <role or all>: <problem>` per line, and delete a line once a rule fixes it. Then add the
-line the hook names to `__harness__/feedback/handled.md`: `retro-<N>: rule written in FILE`, where FILE is a rule file changed
-this turn, or `retro-<N>: rejected: REASON` of 3 or more words that no other line uses; an item id works as well as
-`retro-<N>`. The hold clears when every waiting item has a line. The hook moves the mark only then; with no
-mark yet, the window is every inbox item `handled.md` does not name. Write these files with Write or Edit, not the shell. The folder is ignored by git, so `rg` and Glob skip it: read the files by path.
+line per waiting item id to `__harness__/feedback/handled.md`, the ids the hold lists: `<id>: rule written in FILE` (FILE is a rule
+file changed this turn), `<id>: fixed in FILE` or `<id>: covered by FILE` (FILE exists inside the project or the plugin; a path
+that resolves elsewhere, `..` or `/etc/hostname` included, fails), or `<id>: rejected: REASON` of 3 or more words that no other line uses.
+A `retro-<N>:` line closes nothing, and neither does `filed` or `applied: open.md`: open.md keeps a problem in front of agents, it
+does not settle the item, so an item whose problem no rule fixes yet is rejected with the reason and the problem goes to open.md. The hold names each line it ignores,
+with the reason. The hold clears when every waiting item has its own line. The hook moves the mark only then; with no
+mark yet, the window is every inbox item `handled.md` does not close. Write these files with Write or Edit, not the shell. The folder is ignored by git, so `rg` and Glob skip it: read the files by path.
 `retro-mark` (in the project's `__harness__/feedback/`) and `retro-marker` (in the plugin data folder, touched in the last
 step) are different files.
 
@@ -36,7 +39,7 @@ Fields: `time`, `project`, `session`, `agent_id`, `role`, `accepted`, `send_back
 
 ## Steps
 
-1. **Scope.** Pick a project and a window (a session, or the rows since the last retro). Say the row count. Drop rows
+1. **Scope.** Pick a project and a window (a session, or the rows since the last retro). Keep the last row per `agent_id` (a sent-back report is written again). Say the row count. Drop rows
    with `imported` unless the question is about past reports; keep them apart from live rows.
 2. **Group by cause.** Count `causes` per cause, then per role, then per brief (the brief is the task named in the
    report's first line, `# Report: <role>, <task>`). A cause named once is a note; twice is a pattern.
