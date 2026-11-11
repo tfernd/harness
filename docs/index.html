@@ -67,8 +67,8 @@
           </div>
         </div>
         <div class="install-panel" role="tabpanel" id="install-panel-claude" aria-labelledby="install-tab-claude">
-          <code class="install-command" data-mode="install"><span class="tok-command">claude</span> plugin marketplace add https://github.com/tfernd/harness.git<span class="tok-operator">;</span> <span class="tok-command">claude</span> plugin marketplace update harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin install harness@harness <span class="tok-flag">--scope</span> user <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin update harness@harness</code>
-          <button type="button" class="install-copy" data-mode="install" data-copy="claude plugin marketplace add https://github.com/tfernd/harness.git; claude plugin marketplace update harness &amp;&amp; claude plugin install harness@harness --scope user &amp;&amp; claude plugin update harness@harness">Copy</button>
+          <code class="install-command" data-mode="install"><span class="tok-command">claude</span> plugin marketplace add tfernd/harness<span class="tok-operator">;</span> <span class="tok-command">claude</span> plugin marketplace update harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin install harness@harness <span class="tok-flag">--scope</span> user <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin update harness@harness</code>
+          <button type="button" class="install-copy" data-mode="install" data-copy="claude plugin marketplace add tfernd/harness; claude plugin marketplace update harness &amp;&amp; claude plugin install harness@harness --scope user &amp;&amp; claude plugin update harness@harness">Copy</button>
           <p class="install-note" data-mode="install">Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project.</p>
           <code class="install-command" data-mode="uninstall" hidden><span class="tok-command">claude</span> plugin uninstall harness@harness <span class="tok-operator">&amp;&amp;</span> <span class="tok-command">claude</span> plugin marketplace remove harness</code>
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="claude plugin uninstall harness@harness &amp;&amp; claude plugin marketplace remove harness">Copy</button>
@@ -93,6 +93,7 @@
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="curl -fsSL https://raw.githubusercontent.com/tfernd/harness/main/install.sh | sh -s -- kiro --uninstall; rm -rf ~/.local/share/harness">Copy</button>
           <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The last part deletes the clone.</p>
         </div>
+        <p class="install-note">The agent band above the prompt is a separate plugin: <a href="band.html">see its page</a>.</p>
       </div>
     </header>
 
@@ -311,7 +312,7 @@ EOF
 <span class="tok-command">ruff</span> check src/app.py tests/test_app.py <span class="tok-operator">&amp;&amp;</span>
 <span class="tok-command">python3</span> <span class="tok-flag">-m</span> py_compile src/app.py <span class="tok-operator">&amp;&amp;</span>
 <span class="tok-command">uv</span> run pytest <span class="tok-flag">-q</span> tests/test_app.py 2<span class="tok-operator">&gt;</span>&amp;1 <span class="tok-operator">|</span> <span class="tok-command">tail</span> <span class="tok-flag">-15</span> <span class="tok-operator">&amp;&amp;</span>
-<span class="tok-command">git</span> diff <span class="tok-flag">--stat</span></code></pre><ul><li>The order is the edit, the formatter, the linter, a compile or type check, the tests, then the diff. Use the project&#x27;s own commands (<code>AGENTS.md</code> names them); these are examples.</li><li>Other languages, same order: <code>tsc --noEmit</code> or <code>node --check</code>, the linter, the tests; <code>terraform fmt</code> and <code>terraform validate</code>; a build target. A check that cannot run for want of a tool is not skipped in silence: say so.</li><li>Run the chain once, when the unit is written, not after each edit. After a fix, run the whole chain again.</li><li>Edit, check, edit, check on one file is a ping-pong that costs a turn per step: batch the remaining edits, then run the chain once, or put the edit and the check in one script.</li><li>Read the output before saying &quot;done&quot;. Without <code>pipefail</code>, a pipe into <code>tail</code> hides a test&#x27;s exit code. Do not end a check in <code>|| true</code> or <code>|| echo</code>, and do not print <code>echo ----</code> separators.</li><li>Say what ran with its exit code, and what did not run and why; &quot;done&quot; with no gate named is a claim.</li><li>One-call recipes for discovery, independent gates, an asserted edit, web calls and an ML probe: <code>references/recipes.md</code>.</li></ul><h4>Clean</h4><ul><li><code>__scratch__/</code> is the temp folder for probes and one-off output (a hook makes it and its <code>.gitignore</code>) and is never cleaned: make a subfolder per run (<code>mktemp -d __scratch__/name.XXXX</code>) instead of deleting and recreating, and do not tidy it afterwards.</li><li>Elsewhere in the project the guard moves what <code>rm</code> or <code>rmdir</code> names into <code>__harness__/trash/&lt;call id&gt;/</code>, which the owner empties. It refuses a delete it cannot move: a glob or an unknown variable, the project root, a path outside the project or under <code>node_modules</code>, <code>dist</code>, <code>.venv</code> or <code>.git</code>, and <code>git clean</code>, <code>find -delete</code> or <code>shred</code>. A tracked file that must go uses <code>git rm</code>.</li><li>Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.</li></ul><h4>Shell</h4><ul><li>Use absolute paths; a <code>cd</code> may not carry to the next call. Write paths out, not in a variable: a variable, <code>$(...)</code> or a <code>;</code> chain makes the owner approve the call by hand.</li><li>A list of files goes in an array (<code>files=(a.py b.py)</code>, then <code>&quot;${files[@]}&quot;</code>) or a Python script: zsh does not split <code>$files</code> into words, so the command gets one name with spaces in it.</li><li>Quote every glob: zsh refuses one that matches nothing. Read exit codes from <code>$pipestatus</code> in zsh.</li></ul><h4>Waiting</h4><p>Never <code>sleep N</code> to wait and never poll in a foreground loop; a run that takes long goes with <code>run_in_background: true</code>, and its exit wakes you. The guard does not run a foreground <code>sleep</code>: it removes a direct one and the rest of the command runs at once, so the result may be early; it moves any other (a polling loop, a wrapper) to the background, where its exit wakes you. Nothing needs it:</p><ul><li>Your own long job: run it with <code>run_in_background: true</code>, then do other work or end the turn. Its exit wakes you; read the output then, not before.</li><li>A condition on this machine (a file, a log line): the wait itself runs in the background, with a bound: <code>timeout 600 sh -c &#x27;until [ -f done ]; do sleep 5; done&#x27;</code>. Or Monitor, if you have it.</li><li>A service coming up: <code>curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL</code>.</li><li>A process you stopped: <code>timeout 5 tail --pid=PID -f /dev/null</code>, then the next step.</li><li>A wait names its job by PID (<code>cmd &amp; pid=$!</code>, then <code>timeout N tail --pid=&quot;$pid&quot; -f /dev/null</code>) or by a done file the job writes. Never <code>pgrep -f</code> with a pattern that also occurs in the waiter&#x27;s own command line: it matches itself and never ends.</li><li>Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.</li><li>A background command you no longer need is stopped (TaskStop) before you report; never search the whole filesystem (<code>find /</code>, <code>find ~</code>): <code>command -v &lt;tool&gt;</code>, <code>ls node_modules/.bin</code> or <code>rg --files -g &#x27;&lt;name&gt;&#x27;</code> in the project answer it.</li></ul><h4>Git</h4><ul><li>Before any commit, load <code>harness:git-commit</code>; it holds the AI-attribution ban.</li></ul><h4>When a call is refused</h4><ul><li>Read the reason and change what the command does, or use the tool it names. A command with the same effect in other words is refused again and costs a turn.</li><li>A call the owner denied or cancelled is not sent again unchanged: ask what to change.</li><li>A glob that matches nothing is refused with the folder it was matched from: <code>cd</code> to the right one, or list files with <code>rg --files -g &#x27;&lt;pattern&gt;&#x27;</code> or <code>git ls-files</code>.</li><li>A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position (<code>--include</code>, <code>-name</code>, <code>-g</code>), moves a delete to the trash (Clean), drops a foreground <code>sleep</code> (Waiting) and adds <code>set -o pipefail</code> to a test, check or build piped into <code>tail</code>, <code>head</code> or <code>grep</code>. Write the call that way next time.</li></ul></template></li>
+<span class="tok-command">git</span> diff <span class="tok-flag">--stat</span></code></pre><ul><li>The order is the edit, the formatter, the linter, a compile or type check, the tests, then the diff. Use the project&#x27;s own commands (<code>AGENTS.md</code> names them); these are examples.</li><li>Other languages, same order: <code>tsc --noEmit</code> or <code>node --check</code>, the linter, the tests; <code>terraform fmt</code> and <code>terraform validate</code>; a build target. A check that cannot run for want of a tool is not skipped in silence: say so.</li><li>Run the chain once, when the unit is written, not after each edit. After a fix, run the whole chain again.</li><li>Edit, check, edit, check on one file is a ping-pong that costs a turn per step: batch the remaining edits, then run the chain once, or put the edit and the check in one script.</li><li>Read the output before saying &quot;done&quot;. Without <code>pipefail</code>, a pipe into <code>tail</code> hides a test&#x27;s exit code. Do not end a check in <code>|| true</code> or <code>|| echo</code>, and do not print <code>echo ----</code> separators.</li><li>Say what ran with its exit code, and what did not run and why; &quot;done&quot; with no gate named is a claim.</li><li>One-call recipes for discovery, independent gates, an asserted edit, web calls and an ML probe: <code>references/recipes.md</code>.</li></ul><h4>Clean</h4><ul><li><code>__scratch__/</code> is the temp folder for probes and one-off output (a hook makes it and its <code>.gitignore</code>) and is never cleaned: make a subfolder per run (<code>mktemp -d __scratch__/name.XXXX</code>) instead of deleting and recreating, and do not tidy it afterwards.</li><li>Agents delete nothing: the guard refuses <code>rm</code>, <code>rmdir</code>, <code>unlink</code>, <code>shred</code>, <code>find -delete</code> and <code>git clean</code>, everywhere. The main session whose file must go gives the owner the exact command in the chat, with why it is needed, and the owner runs it. A sub-agent leaves the file and never asks.</li><li>Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.</li></ul><h4>Shell</h4><ul><li>Use absolute paths; a <code>cd</code> may not carry to the next call. Write paths out, not in a variable: a variable, <code>$(...)</code> or a <code>;</code> chain makes the owner approve the call by hand.</li><li>A list of files goes in an array (<code>files=(a.py b.py)</code>, then <code>&quot;${files[@]}&quot;</code>) or a Python script: zsh does not split <code>$files</code> into words, so the command gets one name with spaces in it.</li><li>Quote every glob: zsh refuses one that matches nothing. Read exit codes from <code>$pipestatus</code> in zsh.</li></ul><h4>Waiting</h4><p>Never <code>sleep N</code> to wait and never poll in a foreground loop; a run that takes long goes with <code>run_in_background: true</code>, and its exit wakes you. The guard does not run a foreground <code>sleep</code>: it removes a direct one and the rest of the command runs at once, so the result may be early; it moves any other (a polling loop, a wrapper) to the background, where its exit wakes you. Nothing needs it:</p><ul><li>Your own long job: run it with <code>run_in_background: true</code>, then do other work or end the turn. Its exit wakes you; read the output then, not before.</li><li>A condition on this machine (a file, a log line): the wait itself runs in the background, with a bound: <code>timeout 600 sh -c &#x27;until [ -f done ]; do sleep 5; done&#x27;</code>. Or Monitor, if you have it.</li><li>A service coming up: <code>curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL</code>.</li><li>A process you stopped: <code>timeout 5 tail --pid=PID -f /dev/null</code>, then the next step.</li><li>A wait names its job by PID (<code>cmd &amp; pid=$!</code>, then <code>timeout N tail --pid=&quot;$pid&quot; -f /dev/null</code>) or by a done file the job writes. Never <code>pgrep -f</code> with a pattern that also occurs in the waiter&#x27;s own command line: it matches itself and never ends.</li><li>Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.</li><li>A background command you no longer need is stopped (TaskStop) before you report; never search the whole filesystem (<code>find /</code>, <code>find ~</code>): <code>command -v &lt;tool&gt;</code>, <code>ls node_modules/.bin</code> or <code>rg --files -g &#x27;&lt;name&gt;&#x27;</code> in the project answer it.</li></ul><h4>Git</h4><ul><li>Before any commit, load <code>harness:git-commit</code>; it holds the AI-attribution ban.</li></ul><h4>When a call is refused</h4><ul><li>Read the reason and change what the command does, or use the tool it names. A command with the same effect in other words is refused again and costs a turn.</li><li>A call the owner denied or cancelled is not sent again unchanged: ask what to change.</li><li>A glob that matches nothing is refused with the folder it was matched from: <code>cd</code> to the right one, or list files with <code>rg --files -g &#x27;&lt;pattern&gt;&#x27;</code> or <code>git ls-files</code>.</li><li>A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position (<code>--include</code>, <code>-name</code>, <code>-g</code>), drops a foreground <code>sleep</code> (Waiting) and adds <code>set -o pipefail</code> to a test, check or build piped into <code>tail</code> or <code>grep</code> (not <code>grep -q</code>, <code>-m</code>, <code>-l</code> or <code>-L</code>). Write the call that way next time.</li></ul></template></li>
 </ul></div>
 </div>
 </section>
@@ -331,7 +332,6 @@ EOF
 <span class="tok-keyword">from</span> __future__ <span class="tok-keyword">import</span> annotations
 
 <span class="tok-keyword">import</span> glob
-<span class="tok-keyword">import</span> itertools
 <span class="tok-keyword">import</span> json
 <span class="tok-keyword">import</span> os
 <span class="tok-keyword">import</span> re
@@ -339,7 +339,6 @@ EOF
 <span class="tok-keyword">import</span> sys
 <span class="tok-keyword">from</span> collections.abc <span class="tok-keyword">import</span> Callable, Mapping, Set
 <span class="tok-keyword">from</span> datetime <span class="tok-keyword">import</span> UTC, datetime, timedelta
-<span class="tok-keyword">from</span> pathlib <span class="tok-keyword">import</span> Path
 <span class="tok-keyword">from</span> typing <span class="tok-keyword">import</span> NamedTuple
 
 <span class="tok-keyword">from</span> common <span class="tok-keyword">import</span> (
@@ -348,9 +347,7 @@ EOF
     REMOTE_RUNNERS,
     SHELL_VALUE_OPTIONS,
     SHELLS,
-    TRASH_FOLDER,
     Command,
-    ensure_harness_folder,
     find_project,
     get_git_index,
     get_git_subcommand,
@@ -358,14 +355,12 @@ EOF
     get_scratch,
     get_shell_string,
     is_cluster,
-    is_project_root,
     resolve,
     skip_options,
 )
 <span class="tok-keyword">from</span> shell <span class="tok-keyword">import</span> GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 
 DELETERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"rm"</span>, <span class="tok-string">"rmdir"</span>, <span class="tok-string">"unlink"</span>, <span class="tok-string">"shred"</span>})
-SCRATCH_DELETERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"rm"</span>, <span class="tok-string">"rmdir"</span>})
 READ_ONLY_COMMANDS = <span class="tok-builtin">frozenset</span>(<span class="tok-string">"cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [["</span>.split())
 UV_VALUE_OPTIONS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"--with"</span>, <span class="tok-string">"--with-requirements"</span>, <span class="tok-string">"--with-editable"</span>, <span class="tok-string">"--project"</span>, <span class="tok-string">"--directory"</span>, <span class="tok-string">"--exclude-newer"</span>, <span class="tok-string">"--python"</span>, <span class="tok-string">"-p"</span>, <span class="tok-string">"--group"</span>, <span class="tok-string">"--extra"</span>, <span class="tok-string">"--env-file"</span>})
 UV_DENIED = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"add"</span>, <span class="tok-string">"remove"</span>, <span class="tok-string">"lock"</span>, <span class="tok-string">"sync"</span>, <span class="tok-string">"pip"</span>, <span class="tok-string">"tool"</span>})
@@ -388,21 +383,7 @@ UNEXPANDED = <span class="tok-string">"$`{"</span>
 DECLARERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"export"</span>, <span class="tok-string">"readonly"</span>, <span class="tok-string">"declare"</span>, <span class="tok-string">"typeset"</span>, <span class="tok-string">"local"</span>})
 DIRECTORY_CHANGERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"cd"</span>, <span class="tok-string">"pushd"</span>, <span class="tok-string">"popd"</span>})
 IN_SHELL_RUNNERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"eval"</span>, <span class="tok-string">"source"</span>, <span class="tok-string">"."</span>})
-OWNER_FOLDERS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"node_modules"</span>, <span class="tok-string">"dist"</span>, <span class="tok-string">".venv"</span>, <span class="tok-string">".git"</span>})
-TRASH_OPTIONS = {<span class="tok-string">"-f"</span>: <span class="tok-string">"f"</span>, <span class="tok-string">"-r"</span>: <span class="tok-string">"r"</span>, <span class="tok-string">"-R"</span>: <span class="tok-string">"r"</span>, <span class="tok-string">"-v"</span>: <span class="tok-string">""</span>, <span class="tok-string">"--force"</span>: <span class="tok-string">"f"</span>, <span class="tok-string">"--recursive"</span>: <span class="tok-string">"r"</span>, <span class="tok-string">"--verbose"</span>: <span class="tok-string">""</span>}
-USER_ID = os.getuid() <span class="tok-keyword">if</span> <span class="tok-builtin">hasattr</span>(os, <span class="tok-string">"getuid"</span>) <span class="tok-keyword">else</span> -<span class="tok-number">1</span>
-SCRATCHPAD = re.compile(<span class="tok-string">rf"</span>{re.escape(os.path.realpath(TEMPORARY))}<span class="tok-string">/claude-</span>{USER_ID}<span class="tok-string">/(?:[^/]+/)*scratchpad/[^/]</span><span class="tok-string">"</span>)
-VARIABLE = re.compile(<span class="tok-string">r"\$([A-Za-z_][A-Za-z0-9_]*)"</span>)
 BARE_WORD = re.compile(<span class="tok-string">r"[\w./@%+,:=~$-]+"</span>)
-TRASH_HELPER = (
-    <span class="tok-string">'harness_trash() { local name="$1" flags="$2" code=0 why; shift 2; while [ "$#" -ge 2 ]; do why=; '</span>
-    <span class="tok-string">'if [ ! -e "$1" ] &amp;&amp; [ ! -L "$1" ]; then case "$flags" in *f*) why=skip;; *) why="No such file or directory";; esac; '</span>
-    <span class="tok-string">'elif [ -L "$1" ] || [ ! -d "$1" ]; then [ "$name" = rmdir ] &amp;&amp; why="Not a directory"; '</span>
-    <span class="tok-string">'elif [ "$name" = rmdir ]; then [ -z "$(command ls -A -- "$1")" ] || why="Directory not empty"; '</span>
-    <span class="tok-string">'else case "$flags" in *r*) ;; *) why="Is a directory";; esac; fi; '</span>
-    <span class="tok-string">'case "$why" in "") command mkdir -p -- "${2%/*}" &amp;&amp; command mv -- "$1" "$2" || code=1;; skip) ;; '</span>
-    <span class="tok-string">'*) printf "%s: cannot remove \'%s\': %s\\n" "$name" "$1" "$why" &gt;&amp;2; code=1;; esac; shift 2; done; return "$code"; }; '</span>
-)
 
 PIPEFAIL_RULE = <span class="tok-string">"pipefail"</span>
 PIPEFAIL_PREFIX = <span class="tok-string">"set -o pipefail; "</span>
@@ -443,9 +424,11 @@ REMOTE_RULES = <span class="tok-builtin">frozenset</span>({<span class="tok-stri
 DBT_RULE = <span class="tok-string">"dbt"</span>
 SNOW_RULE = <span class="tok-string">"snow"</span>
 AGENT_RULE = <span class="tok-string">"agent"</span>
+AGENT_DELETE_RULE = <span class="tok-string">"agent_delete"</span>
 MESSAGES = {
-    <span class="tok-string">"delete"</span>: <span class="tok-string">"nothing is deleted without the owner's word. Your own throwaway files go in `__scratch__/`, where `rm` works; "</span>
-    <span class="tok-string">"a tracked file that must go uses `git rm`."</span>,
+    <span class="tok-string">"delete"</span>: <span class="tok-string">"Agents delete nothing. If this must go, give the owner the command in the chat and say why it is needed; the owner runs it. "</span>
+    <span class="tok-string">"Throwaway files stay in `__scratch__/`, which is never cleaned: a fresh run takes a new folder."</span>,
+    AGENT_DELETE_RULE: <span class="tok-string">"Sub-agents delete nothing. Leave the file; throwaway files stay in `__scratch__/`, and a fresh run takes a new folder."</span>,
     <span class="tok-string">"denied"</span>: <span class="tok-string">"`{what}` rewrites history or discards uncommitted work, which is the owner's to run: leave it to them and say so "</span>
     <span class="tok-string">"in your report."</span>,
     <span class="tok-string">"hidden"</span>: <span class="tok-string">"`{what}` runs where the guard cannot read the command (a variable as the command, a shell fed from stdin, a "</span>
@@ -476,8 +459,6 @@ MESSAGES = {
     <span class="tok-string">"`rg --files -g '{pattern}'` or `git ls-files`."</span>,
     <span class="tok-string">"pattern"</span>: <span class="tok-string">"an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "</span>
     <span class="tok-string">"expansion."</span>,
-    <span class="tok-string">"trash"</span>: <span class="tok-string">"rm and rmdir here move what they name into `{folder}/`, each under its path from the project root, instead of "</span>
-    <span class="tok-string">"deleting it; the owner empties `__harness__/trash/`. A missing path still fails unless -f."</span>,
     <span class="tok-string">"temporary"</span>: <span class="tok-string">"the guard lets this call pass, but a write under /tmp is not where throwaway files go. Throwaway files belong in the project's `__scratch__/` folder, never under /tmp."</span>,
     <span class="tok-string">"repo"</span>: <span class="tok-string">"the guard lets this call pass, but project files change with the Write tool (new file) or Edit (change); a shell "</span>
     <span class="tok-string">"redirect, tee, sed -i, cp or mv belongs under `__scratch__/`."</span>,
@@ -487,7 +468,7 @@ MESSAGES = {
     <span class="tok-string">"pkill"</span>: <span class="tok-string">"`pkill -f`, `pkill` without `-x` and `killall -r` match a pattern against every process, and a broad pattern kills "</span>
     <span class="tok-string">"unrelated ones (`pkill -f cat` matched \"Applications\" and closed every app). Find the process with `pgrep -x &lt;name&gt;` (or "</span>
     <span class="tok-string">"`pgrep -af &lt;pattern&gt;` to look), then `kill &lt;pid&gt;`. `kill &lt;pid&gt;` and `pkill -x &lt;name&gt;` run."</span>,
-    PIPEFAIL_RULE: <span class="tok-string">"this command pipes a test, check or build into `tail`, `head` or `grep`, where the exit code is the last command's and a "</span>
+    PIPEFAIL_RULE: <span class="tok-string">"this command pipes a test, check or build into `tail` or `grep`, where the exit code is the last command's and a "</span>
     <span class="tok-string">"failed run looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note."</span>,
     <span class="tok-string">"sleep"</span>: <span class="tok-string">"`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "</span>
     <span class="tok-string">"the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "</span>
@@ -505,7 +486,7 @@ FIND_EXPRESSION_STARTS = <span class="tok-builtin">frozenset</span>({<span class
 DEPTH_OPTIONS = {<span class="tok-string">"find"</span>: <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-maxdepth"</span>}), <span class="tok-string">"fd"</span>: <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>}), <span class="tok-string">"rg"</span>: <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>, <span class="tok-string">"--maxdepth"</span>})}
 FD_VALUE_OPTIONS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>, <span class="tok-string">"-e"</span>, <span class="tok-string">"--extension"</span>, <span class="tok-string">"-E"</span>, <span class="tok-string">"--exclude"</span>, <span class="tok-string">"-t"</span>, <span class="tok-string">"--type"</span>, <span class="tok-string">"-c"</span>, <span class="tok-string">"--color"</span>, <span class="tok-string">"-j"</span>, <span class="tok-string">"--threads"</span>, <span class="tok-string">"-S"</span>, <span class="tok-string">"--size"</span>, <span class="tok-string">"--search-path"</span>})
 RG_VALUE_OPTIONS = <span class="tok-builtin">frozenset</span>({<span class="tok-string">"-g"</span>, <span class="tok-string">"--glob"</span>, <span class="tok-string">"--iglob"</span>, <span class="tok-string">"-e"</span>, <span class="tok-string">"--regexp"</span>, <span class="tok-string">"-f"</span>, <span class="tok-string">"--file"</span>, <span class="tok-string">"-t"</span>, <span class="tok-string">"--type"</span>, <span class="tok-string">"-T"</span>, <span class="tok-string">"--type-not"</span>, <span class="tok-string">"-m"</span>, <span class="tok-string">"--max-count"</span>, <span class="tok-string">"-A"</span>, <span class="tok-string">"-B"</span>, <span class="tok-string">"-C"</span>, <span class="tok-string">"-d"</span>, <span class="tok-string">"--max-depth"</span>, <span class="tok-string">"--maxdepth"</span>, <span class="tok-string">"-j"</span>, <span class="tok-string">"--threads"</span>, <span class="tok-string">"-M"</span>, <span class="tok-string">"-r"</span>, <span class="tok-string">"--replace"</span>, <span class="tok-string">"--sort"</span>, <span class="tok-string">"--sortr"</span>})
-SOFT_RULES = (<span class="tok-string">"pattern"</span>, <span class="tok-string">"trash"</span>, <span class="tok-string">"temporary"</span>, <span class="tok-string">"repo"</span>, <span class="tok-string">"sleep"</span>, <span class="tok-string">"delay"</span>, PIPEFAIL_RULE)
+SOFT_RULES = (<span class="tok-string">"pattern"</span>, <span class="tok-string">"temporary"</span>, <span class="tok-string">"repo"</span>, <span class="tok-string">"sleep"</span>, <span class="tok-string">"delay"</span>, PIPEFAIL_RULE)
 NOTED_RULES = (<span class="tok-string">"temporary"</span>, <span class="tok-string">"repo"</span>)
 SLEEP_BACKGROUND_NOTE = (
     <span class="tok-string">"this command waits with `sleep` (a polling loop, a wrapper or a nested string), so it now runs in the background and its exit "</span>
@@ -518,7 +499,6 @@ SLEEP_SHADOW = <span class="tok-string">"sleep() { :; }; "</span>
 
     root: <span class="tok-builtin">str</span> = <span class="tok-string">""</span>
     scratch: <span class="tok-builtin">str</span> = <span class="tok-string">""</span>
-    trash: <span class="tok-builtin">str</span> = <span class="tok-string">""</span>
     no_tmp: <span class="tok-builtin">bool</span> = <span class="tok-keyword">False</span>
     ask_packages: <span class="tok-builtin">bool</span> = <span class="tok-keyword">False</span>
     ask_cloud: <span class="tok-builtin">bool</span> = <span class="tok-keyword">False</span>
@@ -548,7 +528,6 @@ SLEEP_SHADOW = <span class="tok-string">"sleep() { :; }; "</span>
     <span class="tok-keyword">return</span> Policy(
         root=<span class="tok-builtin">str</span>(root),
         scratch=get_scratch(root, config),
-        trash=<span class="tok-builtin">str</span>(root / TRASH_FOLDER) <span class="tok-keyword">if</span> is_project_root(root) <span class="tok-keyword">else</span> <span class="tok-string">""</span>,
         no_tmp=<span class="tok-builtin">bool</span>(guard.get(<span class="tok-string">"no_tmp"</span>)),
         ask_packages=<span class="tok-builtin">bool</span>(guard.get(<span class="tok-string">"ask_packages"</span>) <span class="tok-keyword">or</span> guard.get(<span class="tok-string">"deny_packages"</span>)),
         ask_cloud=<span class="tok-builtin">bool</span>(guard.get(<span class="tok-string">"ask_cloud"</span>)),
@@ -1543,7 +1522,7 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
 
 <span class="tok-keyword">def</span> find_script_command(script: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; <span class="tok-builtin">str</span>:
 
-    findings = Findings([], [], [], [], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [])
     find_breaches(get_segments(script), <span class="tok-keyword">None</span>, <span class="tok-keyword">False</span>, policy, findings, script)
 
     <span class="tok-keyword">return</span> <span class="tok-builtin">next</span>(<span class="tok-builtin">iter</span>(findings.denied + findings.hidden), <span class="tok-string">""</span>) <span class="tok-keyword">or</span> <span class="tok-builtin">next</span>(
@@ -1848,25 +1827,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
 <span class="tok-keyword">class</span> Scope(NamedTuple):
 
     text: <span class="tok-builtin">str</span>
-    values: <span class="tok-builtin">dict</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">str</span>]
-
-
-<span class="tok-keyword">class</span> TrashDelete(NamedTuple):
-
-    words: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
-    name: <span class="tok-builtin">str</span>
-    letters: <span class="tok-builtin">str</span>
-    paths: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
-
-
-<span class="tok-keyword">def</span> expand_variables(text: <span class="tok-builtin">str</span>, values: Mapping[<span class="tok-builtin">str</span>, <span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">str</span>:
-
-    <span class="tok-keyword">return</span> VARIABLE.sub(<span class="tok-keyword">lambda</span> match: values.get(match.group(<span class="tok-number">1</span>), match.group(<span class="tok-number">0</span>)), text)
-
-
-<span class="tok-keyword">def</span> is_literal(word: Word, text: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-builtin">bool</span>:
-
-    <span class="tok-keyword">return</span> <span class="tok-builtin">bool</span>(text) <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> word.is_glob <span class="tok-keyword">and</span> <span class="tok-string">"$"</span> <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> text <span class="tok-keyword">and</span> <span class="tok-string">"`"</span> <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> text
 
 
 <span class="tok-keyword">def</span> get_words_pattern(words: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">str</span>:
@@ -1884,109 +1844,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     <span class="tok-keyword">return</span> <span class="tok-string">r"(?:^|(?&lt;=[\s;&amp;|(){}`]))"</span> + <span class="tok-string">r"[ \t]+"</span>.join(spellings) + <span class="tok-string">r"(?=$|[\s;&amp;|)}&lt;&gt;`])"</span>
 
 
-<span class="tok-keyword">def</span> is_written_once(words: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], text: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-builtin">bool</span>:
-
-    <span class="tok-keyword">return</span> <span class="tok-builtin">len</span>(re.findall(get_words_pattern(words), text)) == <span class="tok-number">1</span>
-
-
-<span class="tok-keyword">def</span> is_throwaway(path: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; <span class="tok-builtin">bool</span>:
-
-    is_scratch = <span class="tok-builtin">bool</span>(policy.scratch) <span class="tok-keyword">and</span> path.startswith(policy.scratch + os.sep)
-
-    <span class="tok-keyword">return</span> is_scratch <span class="tok-keyword">or</span> <span class="tok-builtin">bool</span>(SCRATCHPAD.match(path))
-
-
-<span class="tok-keyword">def</span> is_scratch_delete(segment: Segment, command: Command, directory: <span class="tok-builtin">str</span> | <span class="tok-keyword">None</span>, scope: Scope | <span class="tok-keyword">None</span>, policy: Policy, /) -&gt; <span class="tok-builtin">bool</span>:
-
-    <span class="tok-keyword">if</span> directory <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">or</span> os.path.basename(command.name) <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> SCRATCH_DELETERS:
-        <span class="tok-keyword">return</span> <span class="tok-keyword">False</span>
-    values = scope.values <span class="tok-keyword">if</span> scope <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> {}
-    paths = [word <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> command.arguments <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> word.text.startswith(<span class="tok-string">"-"</span>)]
-    texts = [expand_variables(word.text, values) <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> paths]
-    is_found = texts == [word.text <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> paths] <span class="tok-keyword">or</span> (scope <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">and</span> is_written_once([word.text <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> segment.words], scope.text))
-    inside = [is_literal(word, text) <span class="tok-keyword">and</span> is_throwaway(resolve_path(text, directory), policy) <span class="tok-keyword">for</span> word, text <span class="tok-keyword">in</span> <span class="tok-builtin">zip</span>(paths, texts)]
-
-    <span class="tok-keyword">return</span> <span class="tok-builtin">bool</span>(paths) <span class="tok-keyword">and</span> is_found <span class="tok-keyword">and</span> <span class="tok-builtin">all</span>(inside)
-
-
-<span class="tok-keyword">def</span> learn_values(segment: Segment, scope: Scope, /) -&gt; <span class="tok-keyword">None</span>:
-
-    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> segment.words <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> <span class="tok-builtin">all</span>(ASSIGNMENT.match(word.text) <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> segment.words):
-        <span class="tok-keyword">return</span>
-    <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> segment.words:
-        name, _, value = word.text.partition(<span class="tok-string">"="</span>)
-        bare = name.removesuffix(<span class="tok-string">"+"</span>)
-        uses = re.findall(<span class="tok-string">rf"</span><span class="tok-string">\b</span>{bare}<span class="tok-string">\b</span><span class="tok-string">"</span>, re.sub(<span class="tok-string">rf"</span><span class="tok-string">\$</span>{bare}<span class="tok-string">\b</span><span class="tok-string">"</span>, <span class="tok-string">""</span>, scope.text))
-        <span class="tok-keyword">if</span> bare == name <span class="tok-keyword">and</span> is_literal(word, value) <span class="tok-keyword">and</span> BARE_WORD.fullmatch(value) <span class="tok-keyword">and</span> <span class="tok-builtin">len</span>(uses) == <span class="tok-number">1</span>:
-            scope.values[name] = value
-        <span class="tok-keyword">else</span>:
-            scope.values.pop(bare, <span class="tok-keyword">None</span>)
-
-
-<span class="tok-keyword">def</span> split_delete_arguments(name: <span class="tok-builtin">str</span>, arguments: <span class="tok-builtin">list</span>[Word], /) -&gt; <span class="tok-builtin">tuple</span>[<span class="tok-builtin">str</span>, <span class="tok-builtin">list</span>[Word]] | <span class="tok-keyword">None</span>:
-
-    letters = <span class="tok-string">"-"</span>
-    operands: <span class="tok-builtin">list</span>[Word] = []
-    is_operand = <span class="tok-keyword">False</span>
-    <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> arguments:
-        <span class="tok-keyword">if</span> is_operand <span class="tok-keyword">or</span> word.text == <span class="tok-string">"-"</span> <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> word.text.startswith(<span class="tok-string">"-"</span>):
-            operands.append(word)
-        <span class="tok-keyword">elif</span> word.text == <span class="tok-string">"--"</span>:
-            is_operand = <span class="tok-keyword">True</span>
-        <span class="tok-keyword">elif</span> name == <span class="tok-string">"rm"</span> <span class="tok-keyword">and</span> word.text <span class="tok-keyword">in</span> TRASH_OPTIONS:
-            letters += TRASH_OPTIONS[word.text]
-        <span class="tok-keyword">elif</span> name == <span class="tok-string">"rm"</span> <span class="tok-keyword">and</span> is_cluster(word.text) <span class="tok-keyword">and</span> <span class="tok-builtin">all</span>(<span class="tok-string">f"</span><span class="tok-string">-</span>{letter}<span class="tok-string">"</span> <span class="tok-keyword">in</span> TRASH_OPTIONS <span class="tok-keyword">for</span> letter <span class="tok-keyword">in</span> word.text[<span class="tok-number">1</span>:]):
-            letters += <span class="tok-string">""</span>.join(TRASH_OPTIONS[<span class="tok-string">f"</span><span class="tok-string">-</span>{letter}<span class="tok-string">"</span>] <span class="tok-keyword">for</span> letter <span class="tok-keyword">in</span> word.text[<span class="tok-number">1</span>:])
-        <span class="tok-keyword">else</span>:
-            <span class="tok-keyword">return</span> <span class="tok-keyword">None</span>
-
-    <span class="tok-keyword">return</span> letters, operands
-
-
-<span class="tok-keyword">def</span> get_operand_path(text: <span class="tok-builtin">str</span>, directory: <span class="tok-builtin">str</span>, /) -&gt; <span class="tok-builtin">str</span>:
-
-    path = os.path.join(directory, os.path.expanduser(text))
-    trimmed = path.rstrip(<span class="tok-string">"/"</span>)
-    folder, last = os.path.split(trimmed)
-    <span class="tok-keyword">if</span> last <span class="tok-keyword">in</span> (<span class="tok-string">""</span>, <span class="tok-string">"."</span>, <span class="tok-string">".."</span>) <span class="tok-keyword">or</span> (trimmed != path <span class="tok-keyword">and</span> os.path.islink(trimmed)):
-        <span class="tok-keyword">return</span> <span class="tok-string">""</span>
-
-    <span class="tok-keyword">return</span> os.path.join(os.path.realpath(folder), last)
-
-
-<span class="tok-keyword">def</span> is_trashable(path: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; <span class="tok-builtin">bool</span>:
-
-    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> policy.trash <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> path <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> is_under(path, policy.root):
-        <span class="tok-keyword">return</span> <span class="tok-keyword">False</span>
-    parts = <span class="tok-builtin">set</span>(os.path.relpath(path, policy.root).split(os.sep))
-
-    <span class="tok-keyword">return</span> <span class="tok-keyword">not</span> parts &amp; OWNER_FOLDERS <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> is_under(path, policy.trash) <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> is_under(policy.trash, path)
-
-
-<span class="tok-keyword">def</span> has_overlap(paths: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], /) -&gt; <span class="tok-builtin">bool</span>:
-
-    <span class="tok-keyword">return</span> <span class="tok-builtin">any</span>(is_under(first, second) <span class="tok-keyword">or</span> is_under(second, first) <span class="tok-keyword">for</span> first, second <span class="tok-keyword">in</span> itertools.combinations(paths, <span class="tok-number">2</span>))
-
-
-<span class="tok-keyword">def</span> get_trash_delete(segment: Segment, directory: <span class="tok-builtin">str</span> | <span class="tok-keyword">None</span>, scope: Scope | <span class="tok-keyword">None</span>, policy: Policy, /) -&gt; TrashDelete | <span class="tok-keyword">None</span>:
-
-    words = segment.words
-    start = <span class="tok-builtin">next</span>((index <span class="tok-keyword">for</span> index, word <span class="tok-keyword">in</span> <span class="tok-builtin">enumerate</span>(words) <span class="tok-keyword">if</span> word.text <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> LEADING_WORDS), <span class="tok-builtin">len</span>(words))
-    name = words[start].text <span class="tok-keyword">if</span> start &lt; <span class="tok-builtin">len</span>(words) <span class="tok-keyword">else</span> <span class="tok-string">""</span>
-    split = split_delete_arguments(name, words[start + <span class="tok-number">1</span> :]) <span class="tok-keyword">if</span> name <span class="tok-keyword">in</span> SCRATCH_DELETERS <span class="tok-keyword">else</span> <span class="tok-keyword">None</span>
-    <span class="tok-keyword">if</span> scope <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">or</span> directory <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">or</span> split <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> split[<span class="tok-number">1</span>]:
-        <span class="tok-keyword">return</span> <span class="tok-keyword">None</span>
-    letters, operands = split
-    texts = [expand_variables(word.text, scope.values) <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> operands]
-    paths = [get_operand_path(text, directory) <span class="tok-keyword">if</span> is_literal(word, text) <span class="tok-keyword">else</span> <span class="tok-string">""</span> <span class="tok-keyword">for</span> word, text <span class="tok-keyword">in</span> <span class="tok-builtin">zip</span>(operands, texts)]
-    <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> <span class="tok-builtin">all</span>(is_trashable(path, policy) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> paths):
-        <span class="tok-keyword">return</span> <span class="tok-keyword">None</span>
-
-    <span class="tok-keyword">return</span> TrashDelete([word.text <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> words[start:]], name, letters, paths)
-
-
-
-
 <span class="tok-keyword">class</span> MissingGlob(NamedTuple):
 
     pattern: <span class="tok-builtin">str</span>
@@ -1997,7 +1854,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
 
     missing_globs: <span class="tok-builtin">list</span>[MissingGlob]
     pattern_globs: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
-    trash_deletes: <span class="tok-builtin">list</span>[TrashDelete]
     denied: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
     hidden: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
     cloud: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
@@ -2022,8 +1878,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
         command = resolve(segment)
         globs = (judges_globs, may_have_written)
         breaches.extend(get_command_breaches(segment, command, directory, globs, scope, findings, policy, text))
-        <span class="tok-keyword">if</span> scope <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> segment.in_group:
-            learn_values(segment, scope)
         name = os.path.basename(command.name)
         inner_judges = judges_globs <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> (name <span class="tok-keyword">in</span> SHELLS <span class="tok-keyword">and</span> name != <span class="tok-string">"zsh"</span>) <span class="tok-keyword">and</span> name <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> JOINING_RUNNERS
         is_remote = name <span class="tok-keyword">in</span> REMOTE_RUNNERS
@@ -2038,9 +1892,9 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
 <span class="tok-keyword">def</span> find_command_breaches(command: <span class="tok-builtin">str</span>, cwd: <span class="tok-builtin">str</span> | <span class="tok-keyword">None</span>, policy: Policy, /, *, is_background: <span class="tok-builtin">bool</span>, findings: Findings | <span class="tok-keyword">None</span> = <span class="tok-keyword">None</span>) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
 
     is_zsh = os.path.basename(os.environ.get(<span class="tok-string">"SHELL"</span>) <span class="tok-keyword">or</span> <span class="tok-string">""</span>) == <span class="tok-string">"zsh"</span>
-    collected = findings <span class="tok-keyword">if</span> findings <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> Findings([], [], [], [], [], [], [], [], [], [], [])
+    collected = findings <span class="tok-keyword">if</span> findings <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> Findings([], [], [], [], [], [], [], [], [], [])
 
-    breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command, {}))
+    breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command))
 
     <span class="tok-keyword">return</span> [rule <span class="tok-keyword">for</span> rule <span class="tok-keyword">in</span> breaches <span class="tok-keyword">if</span> rule != <span class="tok-string">"sleep"</span> <span class="tok-keyword">or</span> <span class="tok-keyword">not</span> is_background]
 
@@ -2054,13 +1908,11 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     arguments = [word.text <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> command.arguments]
     moved = get_written_paths(get_moved_sources(os.path.basename(command.name), arguments), directory)
     is_unknown_write = <span class="tok-builtin">bool</span>(policy.scratch) <span class="tok-keyword">and</span> directory <span class="tok-keyword">is</span> <span class="tok-keyword">None</span> <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> <span class="tok-builtin">all</span>(is_absolute(word) <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> words)
-    is_deleting = is_delete(command) <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> is_scratch_delete(segment, command, directory, scope, policy)
-    trash = get_trash_delete(segment, directory, scope, policy) <span class="tok-keyword">if</span> is_deleting <span class="tok-keyword">else</span> <span class="tok-keyword">None</span>
+    is_deleting = is_delete(command)
     missing = get_failing_globs(command, directory, globs[<span class="tok-number">1</span>]) <span class="tok-keyword">if</span> globs[<span class="tok-number">0</span>] <span class="tok-keyword">else</span> []
     patterns = get_pattern_globs(command) <span class="tok-keyword">if</span> globs[<span class="tok-number">0</span>] <span class="tok-keyword">else</span> []
     findings.missing_globs.extend(MissingGlob(text, directory <span class="tok-keyword">or</span> <span class="tok-string">"an unknown folder"</span>) <span class="tok-keyword">for</span> text <span class="tok-keyword">in</span> missing)
     findings.pattern_globs.extend(patterns)
-    findings.trash_deletes.extend([trash] <span class="tok-keyword">if</span> trash <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">else</span> [])
     denied = get_denied(command, directory)
     hidden = get_hidden_command(command, text, policy)
     cloud = get_cloud_label(command) <span class="tok-keyword">if</span> policy.ask_cloud <span class="tok-keyword">else</span> <span class="tok-string">""</span>
@@ -2077,7 +1929,8 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     delay = get_delay_run(segment, command, policy) <span class="tok-keyword">if</span> is_asked <span class="tok-keyword">and</span> policy.tool_delay_days <span class="tok-keyword">else</span> <span class="tok-keyword">None</span>
     findings.delayed.extend([delay] <span class="tok-keyword">if</span> delay <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span> <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> delay.is_flagged <span class="tok-keyword">else</span> [])
     checks = [
-        (<span class="tok-string">"delete"</span>, is_deleting <span class="tok-keyword">and</span> trash <span class="tok-keyword">is</span> <span class="tok-keyword">None</span>),
+        (<span class="tok-string">"delete"</span>, is_deleting <span class="tok-keyword">and</span> <span class="tok-keyword">not</span> policy.is_agent),
+        (AGENT_DELETE_RULE, is_deleting <span class="tok-keyword">and</span> policy.is_agent),
         (<span class="tok-string">"denied"</span>, <span class="tok-builtin">bool</span>(denied)),
         (AGENT_RULE, <span class="tok-builtin">bool</span>(agent)),
         (<span class="tok-string">"hidden"</span>, <span class="tok-builtin">bool</span>(hidden)),
@@ -2088,7 +1941,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
         (SNOW_RULE, <span class="tok-builtin">bool</span>(snow)),
         (<span class="tok-string">"glob"</span>, <span class="tok-builtin">bool</span>(missing)),
         (<span class="tok-string">"pattern"</span>, <span class="tok-builtin">bool</span>(patterns)),
-        (<span class="tok-string">"trash"</span>, trash <span class="tok-keyword">is</span> <span class="tok-keyword">not</span> <span class="tok-keyword">None</span>),
         (<span class="tok-string">"temporary"</span>, <span class="tok-builtin">any</span>(is_temporary(path, policy) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> written)),
         (<span class="tok-string">"repo"</span>, is_unknown_write <span class="tok-keyword">or</span> <span class="tok-builtin">any</span>(is_repo_write(path, policy) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> [*written, *moved])),
         (<span class="tok-string">"search"</span>, is_wide_search(command)),
@@ -2201,20 +2053,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     refused: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]
 
 
-<span class="tok-keyword">def</span> get_trash_folder(call_id: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; <span class="tok-builtin">str</span>:
-
-    name = re.sub(<span class="tok-string">r"[^A-Za-z0-9_-]"</span>, <span class="tok-string">""</span>, call_id)
-
-    <span class="tok-keyword">return</span> os.path.join(policy.trash, name) <span class="tok-keyword">if</span> name <span class="tok-keyword">and</span> policy.trash <span class="tok-keyword">else</span> <span class="tok-string">""</span>
-
-
-<span class="tok-keyword">def</span> get_trash_words(delete: TrashDelete, folder: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]:
-
-    pairs = [(path, os.path.join(folder, os.path.relpath(path, policy.root))) <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> delete.paths]
-
-    <span class="tok-keyword">return</span> [<span class="tok-string">"harness_trash"</span>, delete.name, delete.letters, *itertools.chain.from_iterable(pairs)]
-
-
 <span class="tok-keyword">def</span> is_spliced_alone(command: <span class="tok-builtin">str</span>, spliced: <span class="tok-builtin">str</span>, replacements: Mapping[<span class="tok-builtin">tuple</span>[<span class="tok-builtin">str</span>, ...], <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]], /) -&gt; <span class="tok-builtin">bool</span>:
 
     expected = []
@@ -2226,23 +2064,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     found = [([word.text <span class="tok-keyword">for</span> word <span class="tok-keyword">in</span> segment.words], segment.redirects, segment.in_loop, segment.in_group) <span class="tok-keyword">for</span> segment <span class="tok-keyword">in</span> get_segments(spliced)]
 
     <span class="tok-keyword">return</span> found == expected
-
-
-<span class="tok-keyword">def</span> get_trash_fix(command: <span class="tok-builtin">str</span>, deletes: <span class="tok-builtin">list</span>[TrashDelete], folder: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; <span class="tok-builtin">str</span>:
-
-    <span class="tok-keyword">if</span> has_overlap([path <span class="tok-keyword">for</span> delete <span class="tok-keyword">in</span> deletes <span class="tok-keyword">for</span> path <span class="tok-keyword">in</span> delete.paths]):
-        <span class="tok-keyword">return</span> <span class="tok-string">""</span>
-    spliced = command
-    replacements: <span class="tok-builtin">dict</span>[<span class="tok-builtin">tuple</span>[<span class="tok-builtin">str</span>, ...], <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>]] = {}
-    <span class="tok-keyword">for</span> delete <span class="tok-keyword">in</span> deletes:
-        match = re.search(get_words_pattern(delete.words), spliced)
-        <span class="tok-keyword">if</span> match <span class="tok-keyword">is</span> <span class="tok-keyword">None</span>:
-            <span class="tok-keyword">return</span> <span class="tok-string">""</span>
-        words = get_trash_words(delete, folder, policy)
-        spliced = spliced[: match.start()] + shlex.join(words) + spliced[match.end() :]
-        replacements[<span class="tok-builtin">tuple</span>(delete.words)] = words
-
-    <span class="tok-keyword">return</span> spliced <span class="tok-keyword">if</span> is_spliced_alone(command, spliced, replacements) <span class="tok-keyword">else</span> <span class="tok-string">""</span>
 
 
 <span class="tok-keyword">def</span> get_delay_fix(command: <span class="tok-builtin">str</span>, runs: <span class="tok-builtin">list</span>[DelayRun], /) -&gt; <span class="tok-builtin">str</span>:
@@ -2260,7 +2081,7 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     <span class="tok-keyword">return</span> spliced <span class="tok-keyword">if</span> is_spliced_alone(command, spliced, replacements) <span class="tok-keyword">else</span> <span class="tok-string">""</span>
 
 
-<span class="tok-keyword">def</span> get_rewrite(breaches: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], tool_input: <span class="tok-builtin">dict</span>, findings: Findings, cwd: <span class="tok-builtin">str</span>, call_id: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; Rewrite:
+<span class="tok-keyword">def</span> get_rewrite(breaches: <span class="tok-builtin">list</span>[<span class="tok-builtin">str</span>], tool_input: <span class="tok-builtin">dict</span>, findings: Findings, cwd: <span class="tok-builtin">str</span>, policy: Policy, /) -&gt; Rewrite:
 
     original = tool_input.get(<span class="tok-string">"command"</span>) <span class="tok-keyword">or</span> <span class="tok-string">""</span>
     command = original
@@ -2275,12 +2096,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
         <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> command:
             <span class="tok-keyword">return</span> Rewrite(tool_input, [], [ASK_RULE])
         notes.append(<span class="tok-string">f"</span><span class="tok-string">The harness guard changed this call: </span>{MESSAGES[<span class="tok-string">'delay'</span>].format(days=policy.tool_delay_days)}<span class="tok-string">"</span>)
-    folder = get_trash_folder(call_id, policy) <span class="tok-keyword">if</span> <span class="tok-string">"trash"</span> <span class="tok-keyword">in</span> breaches <span class="tok-keyword">else</span> <span class="tok-string">""</span>
-    <span class="tok-keyword">if</span> <span class="tok-string">"trash"</span> <span class="tok-keyword">in</span> breaches:
-        command = get_trash_fix(command, findings.trash_deletes, folder, policy) <span class="tok-keyword">if</span> folder <span class="tok-keyword">else</span> <span class="tok-string">""</span>
-        <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> command:
-            <span class="tok-keyword">return</span> Rewrite(tool_input, [], [<span class="tok-string">"trash"</span>])
-        notes.append(<span class="tok-string">f"</span><span class="tok-string">The harness guard changed this call: </span>{MESSAGES[<span class="tok-string">'trash'</span>].format(folder=folder)}<span class="tok-string">"</span>)
     changed = {**tool_input, <span class="tok-string">"command"</span>: command} <span class="tok-keyword">if</span> command != original <span class="tok-keyword">else</span> <span class="tok-builtin">dict</span>(tool_input)
     <span class="tok-keyword">if</span> <span class="tok-string">"sleep"</span> <span class="tok-keyword">in</span> breaches:
         changed, note = get_sleep_fix(command, changed, policy)
@@ -2288,9 +2103,6 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     <span class="tok-keyword">if</span> PIPEFAIL_RULE <span class="tok-keyword">in</span> breaches:
         changed = {**changed, <span class="tok-string">"command"</span>: PIPEFAIL_PREFIX + changed[<span class="tok-string">"command"</span>]}
         notes.append(<span class="tok-string">f"</span><span class="tok-string">The harness guard changed this call: </span>{MESSAGES[PIPEFAIL_RULE]}<span class="tok-string">"</span>)
-    <span class="tok-keyword">if</span> folder:
-        ensure_harness_folder(Path(policy.root))
-        changed = {**changed, <span class="tok-string">"command"</span>: TRASH_HELPER + changed[<span class="tok-string">"command"</span>]}
 
     <span class="tok-keyword">return</span> Rewrite(changed, notes, [])
 
@@ -2316,7 +2128,7 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     dbt = MESSAGES[DBT_RULE].format(what=(findings.dbt <span class="tok-keyword">or</span> [<span class="tok-string">"this dbt command"</span>])[<span class="tok-number">0</span>])
     snow = MESSAGES[SNOW_RULE].format(what=(findings.snow <span class="tok-keyword">or</span> [<span class="tok-string">"this snow command"</span>])[<span class="tok-number">0</span>])
     agent = MESSAGES[AGENT_RULE].format(what=(findings.agent <span class="tok-keyword">or</span> [<span class="tok-string">"this command"</span>])[<span class="tok-number">0</span>])
-    texts = {**MESSAGES, <span class="tok-string">"glob"</span>: glob_text, <span class="tok-string">"pattern"</span>: PATTERN_REFUSAL, <span class="tok-string">"trash"</span>: MESSAGES[<span class="tok-string">"delete"</span>], <span class="tok-string">"denied"</span>: denied, <span class="tok-string">"hidden"</span>: hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
+    texts = {**MESSAGES, <span class="tok-string">"glob"</span>: glob_text, <span class="tok-string">"pattern"</span>: PATTERN_REFUSAL, <span class="tok-string">"denied"</span>: denied, <span class="tok-string">"hidden"</span>: hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
     lines = <span class="tok-builtin">list</span>(<span class="tok-builtin">dict</span>.fromkeys(<span class="tok-string">f"</span><span class="tok-string">Blocked by the harness guard: </span>{texts[rule]}<span class="tok-string">"</span> <span class="tok-keyword">for</span> rule <span class="tok-keyword">in</span> rules <span class="tok-keyword">if</span> rule <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> ASK_RULES))
     <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> lines:
         reason = <span class="tok-string">" "</span>.join(<span class="tok-string">f"</span><span class="tok-string">The harness guard: </span>{texts[rule]}<span class="tok-string">"</span> <span class="tok-keyword">for</span> rule <span class="tok-keyword">in</span> ASK_RULES <span class="tok-keyword">if</span> rule <span class="tok-keyword">in</span> rules)
@@ -2333,7 +2145,7 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
     tool_input = event.get(<span class="tok-string">"tool_input"</span>) <span class="tok-keyword">or</span> {}
     cwd = event.get(<span class="tok-string">"cwd"</span>) <span class="tok-keyword">or</span> os.getcwd()
     policy = get_policy(cwd)._replace(is_agent=<span class="tok-builtin">bool</span>(event.get(<span class="tok-string">"agent_id"</span>)))
-    findings = Findings([], [], [], [], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [])
     <span class="tok-keyword">if</span> event.get(<span class="tok-string">"tool_name"</span>) == <span class="tok-string">"Bash"</span>:
         command = tool_input.get(<span class="tok-string">"command"</span>) <span class="tok-keyword">or</span> <span class="tok-string">""</span>
         breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get(<span class="tok-string">"run_in_background"</span>) <span class="tok-keyword">is</span> <span class="tok-keyword">True</span>, findings=findings)
@@ -2342,13 +2154,12 @@ STAND_IN_NAMES = (<span class="tok-string">"git"</span>, <span class="tok-string
         breaches = [<span class="tok-string">"temporary"</span>] <span class="tok-keyword">if</span> is_temporary(resolve_path(path, cwd), policy) <span class="tok-keyword">else</span> []
     hard = [rule <span class="tok-keyword">for</span> rule <span class="tok-keyword">in</span> breaches <span class="tok-keyword">if</span> rule <span class="tok-keyword">not</span> <span class="tok-keyword">in</span> SOFT_RULES]
     <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> hard:
-        rewrite = get_rewrite(breaches, tool_input, findings, cwd, <span class="tok-builtin">str</span>(event.get(<span class="tok-string">"tool_use_id"</span>) <span class="tok-keyword">or</span> <span class="tok-string">""</span>), policy)
+        rewrite = get_rewrite(breaches, tool_input, findings, cwd, policy)
         <span class="tok-keyword">if</span> <span class="tok-keyword">not</span> rewrite.refused:
             <span class="tok-keyword">if</span> breaches:
                 <span class="tok-builtin">print</span>(json.dumps(make_soft_output(rewrite, tool_input)))
             <span class="tok-keyword">return</span> <span class="tok-number">0</span>
         hard = rewrite.refused
-    hard += [rule <span class="tok-keyword">for</span> rule <span class="tok-keyword">in</span> breaches <span class="tok-keyword">if</span> rule == <span class="tok-string">"trash"</span>]
 
     <span class="tok-keyword">return</span> refuse(hard, findings)
 

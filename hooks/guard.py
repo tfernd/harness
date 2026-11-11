@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import glob
-import itertools
 import json
 import os
 import re
@@ -17,7 +16,6 @@ import shlex
 import sys
 from collections.abc import Callable, Mapping, Set
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import NamedTuple
 
 from common import (
@@ -26,9 +24,7 @@ from common import (
     REMOTE_RUNNERS,
     SHELL_VALUE_OPTIONS,
     SHELLS,
-    TRASH_FOLDER,
     Command,
-    ensure_harness_folder,
     find_project,
     get_git_index,
     get_git_subcommand,
@@ -36,14 +32,12 @@ from common import (
     get_scratch,
     get_shell_string,
     is_cluster,
-    is_project_root,
     resolve,
     skip_options,
 )
 from shell import GLOB_CHARACTERS, LEADING_WORDS, Segment, Word, get_segments
 
 DELETERS = frozenset({"rm", "rmdir", "unlink", "shred"})
-SCRATCH_DELETERS = frozenset({"rm", "rmdir"})
 READ_ONLY_COMMANDS = frozenset("cat ls grep rg sed head tail wc echo printf cd pwd awk sort uniq cut tr true false which test stat du file date [ [[".split())
 UV_VALUE_OPTIONS = frozenset({"--with", "--with-requirements", "--with-editable", "--project", "--directory", "--exclude-newer", "--python", "-p", "--group", "--extra", "--env-file"})
 UV_DENIED = frozenset({"add", "remove", "lock", "sync", "pip", "tool"})
@@ -66,21 +60,7 @@ UNEXPANDED = "$`{"
 DECLARERS = frozenset({"export", "readonly", "declare", "typeset", "local"})
 DIRECTORY_CHANGERS = frozenset({"cd", "pushd", "popd"})
 IN_SHELL_RUNNERS = frozenset({"eval", "source", "."})
-OWNER_FOLDERS = frozenset({"node_modules", "dist", ".venv", ".git"})
-TRASH_OPTIONS = {"-f": "f", "-r": "r", "-R": "r", "-v": "", "--force": "f", "--recursive": "r", "--verbose": ""}
-USER_ID = os.getuid() if hasattr(os, "getuid") else -1
-SCRATCHPAD = re.compile(rf"{re.escape(os.path.realpath(TEMPORARY))}/claude-{USER_ID}/(?:[^/]+/)*scratchpad/[^/]")
-VARIABLE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
 BARE_WORD = re.compile(r"[\w./@%+,:=~$-]+")
-TRASH_HELPER = (
-    'harness_trash() { local name="$1" flags="$2" code=0 why; shift 2; while [ "$#" -ge 2 ]; do why=; '
-    'if [ ! -e "$1" ] && [ ! -L "$1" ]; then case "$flags" in *f*) why=skip;; *) why="No such file or directory";; esac; '
-    'elif [ -L "$1" ] || [ ! -d "$1" ]; then [ "$name" = rmdir ] && why="Not a directory"; '
-    'elif [ "$name" = rmdir ]; then [ -z "$(command ls -A -- "$1")" ] || why="Directory not empty"; '
-    'else case "$flags" in *r*) ;; *) why="Is a directory";; esac; fi; '
-    'case "$why" in "") command mkdir -p -- "${2%/*}" && command mv -- "$1" "$2" || code=1;; skip) ;; '
-    '*) printf "%s: cannot remove \'%s\': %s\\n" "$name" "$1" "$why" >&2; code=1;; esac; shift 2; done; return "$code"; }; '
-)
 
 PIPEFAIL_RULE = "pipefail"
 PIPEFAIL_PREFIX = "set -o pipefail; "
@@ -121,9 +101,11 @@ REMOTE_RULES = frozenset({"denied", "hidden", *ASK_RULES})
 DBT_RULE = "dbt"
 SNOW_RULE = "snow"
 AGENT_RULE = "agent"
+AGENT_DELETE_RULE = "agent_delete"
 MESSAGES = {
-    "delete": "nothing is deleted without the owner's word. Your own throwaway files go in `__scratch__/`, where `rm` works; "
-    "a tracked file that must go uses `git rm`.",
+    "delete": "Agents delete nothing. If this must go, give the owner the command in the chat and say why it is needed; the owner runs it. "
+    "Throwaway files stay in `__scratch__/`, which is never cleaned: a fresh run takes a new folder.",
+    AGENT_DELETE_RULE: "Sub-agents delete nothing. Leave the file; throwaway files stay in `__scratch__/`, and a fresh run takes a new folder.",
     "denied": "`{what}` rewrites history or discards uncommitted work, which is the owner's to run: leave it to them and say so "
     "in your report.",
     "hidden": "`{what}` runs where the guard cannot read the command (a variable as the command, a shell fed from stdin, a "
@@ -154,8 +136,6 @@ MESSAGES = {
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
     "expansion.",
-    "trash": "rm and rmdir here move what they name into `{folder}/`, each under its path from the project root, instead of "
-    "deleting it; the owner empties `__harness__/trash/`. A missing path still fails unless -f.",
     "temporary": "the guard lets this call pass, but a write under /tmp is not where throwaway files go. Throwaway files belong in the project's `__scratch__/` folder, never under /tmp.",
     "repo": "the guard lets this call pass, but project files change with the Write tool (new file) or Edit (change); a shell "
     "redirect, tee, sed -i, cp or mv belongs under `__scratch__/`.",
@@ -165,7 +145,7 @@ MESSAGES = {
     "pkill": "`pkill -f`, `pkill` without `-x` and `killall -r` match a pattern against every process, and a broad pattern kills "
     "unrelated ones (`pkill -f cat` matched \"Applications\" and closed every app). Find the process with `pgrep -x <name>` (or "
     "`pgrep -af <pattern>` to look), then `kill <pid>`. `kill <pid>` and `pkill -x <name>` run.",
-    PIPEFAIL_RULE: "this command pipes a test, check or build into `tail`, `head` or `grep`, where the exit code is the last command's and a "
+    PIPEFAIL_RULE: "this command pipes a test, check or build into `tail` or `grep`, where the exit code is the last command's and a "
     "failed run looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note.",
     "sleep": "`sleep` was removed from this command and the rest ran at once, so a result may be early. Waiting on a timer spends "
     "the owner's time and tells you nothing; wait on events (`harness:tool-habits`, Waiting): a job of yours with `run_in_background: true` "
@@ -183,7 +163,7 @@ FIND_EXPRESSION_STARTS = frozenset({"(", "!", ")", ","})
 DEPTH_OPTIONS = {"find": frozenset({"-maxdepth"}), "fd": frozenset({"-d", "--max-depth"}), "rg": frozenset({"-d", "--max-depth", "--maxdepth"})}
 FD_VALUE_OPTIONS = frozenset({"-d", "--max-depth", "-e", "--extension", "-E", "--exclude", "-t", "--type", "-c", "--color", "-j", "--threads", "-S", "--size", "--search-path"})
 RG_VALUE_OPTIONS = frozenset({"-g", "--glob", "--iglob", "-e", "--regexp", "-f", "--file", "-t", "--type", "-T", "--type-not", "-m", "--max-count", "-A", "-B", "-C", "-d", "--max-depth", "--maxdepth", "-j", "--threads", "-M", "-r", "--replace", "--sort", "--sortr"})
-SOFT_RULES = ("pattern", "trash", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)
+SOFT_RULES = ("pattern", "temporary", "repo", "sleep", "delay", PIPEFAIL_RULE)
 NOTED_RULES = ("temporary", "repo")
 SLEEP_BACKGROUND_NOTE = (
     "this command waits with `sleep` (a polling loop, a wrapper or a nested string), so it now runs in the background and its exit "
@@ -196,7 +176,6 @@ class Policy(NamedTuple):
 
     root: str = ""
     scratch: str = ""
-    trash: str = ""
     no_tmp: bool = False
     ask_packages: bool = False
     ask_cloud: bool = False
@@ -226,7 +205,6 @@ def get_policy(cwd: str, /) -> Policy:
     return Policy(
         root=str(root),
         scratch=get_scratch(root, config),
-        trash=str(root / TRASH_FOLDER) if is_project_root(root) else "",
         no_tmp=bool(guard.get("no_tmp")),
         ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),
         ask_cloud=bool(guard.get("ask_cloud")),
@@ -1221,7 +1199,7 @@ def get_hidden_command(command: Command, text: str, policy: Policy, /) -> str:
 
 def find_script_command(script: str, policy: Policy, /) -> str:
 
-    findings = Findings([], [], [], [], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [])
     find_breaches(get_segments(script), None, False, policy, findings, script)
 
     return next(iter(findings.denied + findings.hidden), "") or next(
@@ -1526,25 +1504,6 @@ def get_directory_after(command: Command, is_grouped: bool, directory: str | Non
 class Scope(NamedTuple):
 
     text: str
-    values: dict[str, str]
-
-
-class TrashDelete(NamedTuple):
-
-    words: list[str]
-    name: str
-    letters: str
-    paths: list[str]
-
-
-def expand_variables(text: str, values: Mapping[str, str], /) -> str:
-
-    return VARIABLE.sub(lambda match: values.get(match.group(1), match.group(0)), text)
-
-
-def is_literal(word: Word, text: str, /) -> bool:
-
-    return bool(text) and not word.is_glob and "$" not in text and "`" not in text
 
 
 def get_words_pattern(words: list[str], /) -> str:
@@ -1562,109 +1521,6 @@ def get_words_pattern(words: list[str], /) -> str:
     return r"(?:^|(?<=[\s;&|(){}`]))" + r"[ \t]+".join(spellings) + r"(?=$|[\s;&|)}<>`])"
 
 
-def is_written_once(words: list[str], text: str, /) -> bool:
-
-    return len(re.findall(get_words_pattern(words), text)) == 1
-
-
-def is_throwaway(path: str, policy: Policy, /) -> bool:
-
-    is_scratch = bool(policy.scratch) and path.startswith(policy.scratch + os.sep)
-
-    return is_scratch or bool(SCRATCHPAD.match(path))
-
-
-def is_scratch_delete(segment: Segment, command: Command, directory: str | None, scope: Scope | None, policy: Policy, /) -> bool:
-
-    if directory is None or os.path.basename(command.name) not in SCRATCH_DELETERS:
-        return False
-    values = scope.values if scope is not None else {}
-    paths = [word for word in command.arguments if not word.text.startswith("-")]
-    texts = [expand_variables(word.text, values) for word in paths]
-    is_found = texts == [word.text for word in paths] or (scope is not None and is_written_once([word.text for word in segment.words], scope.text))
-    inside = [is_literal(word, text) and is_throwaway(resolve_path(text, directory), policy) for word, text in zip(paths, texts)]
-
-    return bool(paths) and is_found and all(inside)
-
-
-def learn_values(segment: Segment, scope: Scope, /) -> None:
-
-    if not segment.words or not all(ASSIGNMENT.match(word.text) for word in segment.words):
-        return
-    for word in segment.words:
-        name, _, value = word.text.partition("=")
-        bare = name.removesuffix("+")
-        uses = re.findall(rf"\b{bare}\b", re.sub(rf"\${bare}\b", "", scope.text))
-        if bare == name and is_literal(word, value) and BARE_WORD.fullmatch(value) and len(uses) == 1:
-            scope.values[name] = value
-        else:
-            scope.values.pop(bare, None)
-
-
-def split_delete_arguments(name: str, arguments: list[Word], /) -> tuple[str, list[Word]] | None:
-
-    letters = "-"
-    operands: list[Word] = []
-    is_operand = False
-    for word in arguments:
-        if is_operand or word.text == "-" or not word.text.startswith("-"):
-            operands.append(word)
-        elif word.text == "--":
-            is_operand = True
-        elif name == "rm" and word.text in TRASH_OPTIONS:
-            letters += TRASH_OPTIONS[word.text]
-        elif name == "rm" and is_cluster(word.text) and all(f"-{letter}" in TRASH_OPTIONS for letter in word.text[1:]):
-            letters += "".join(TRASH_OPTIONS[f"-{letter}"] for letter in word.text[1:])
-        else:
-            return None
-
-    return letters, operands
-
-
-def get_operand_path(text: str, directory: str, /) -> str:
-
-    path = os.path.join(directory, os.path.expanduser(text))
-    trimmed = path.rstrip("/")
-    folder, last = os.path.split(trimmed)
-    if last in ("", ".", "..") or (trimmed != path and os.path.islink(trimmed)):
-        return ""
-
-    return os.path.join(os.path.realpath(folder), last)
-
-
-def is_trashable(path: str, policy: Policy, /) -> bool:
-
-    if not policy.trash or not path or not is_under(path, policy.root):
-        return False
-    parts = set(os.path.relpath(path, policy.root).split(os.sep))
-
-    return not parts & OWNER_FOLDERS and not is_under(path, policy.trash) and not is_under(policy.trash, path)
-
-
-def has_overlap(paths: list[str], /) -> bool:
-
-    return any(is_under(first, second) or is_under(second, first) for first, second in itertools.combinations(paths, 2))
-
-
-def get_trash_delete(segment: Segment, directory: str | None, scope: Scope | None, policy: Policy, /) -> TrashDelete | None:
-
-    words = segment.words
-    start = next((index for index, word in enumerate(words) if word.text not in LEADING_WORDS), len(words))
-    name = words[start].text if start < len(words) else ""
-    split = split_delete_arguments(name, words[start + 1 :]) if name in SCRATCH_DELETERS else None
-    if scope is None or directory is None or split is None or not split[1]:
-        return None
-    letters, operands = split
-    texts = [expand_variables(word.text, scope.values) for word in operands]
-    paths = [get_operand_path(text, directory) if is_literal(word, text) else "" for word, text in zip(operands, texts)]
-    if not all(is_trashable(path, policy) for path in paths):
-        return None
-
-    return TrashDelete([word.text for word in words[start:]], name, letters, paths)
-
-
-
-
 class MissingGlob(NamedTuple):
 
     pattern: str
@@ -1675,7 +1531,6 @@ class Findings(NamedTuple):
 
     missing_globs: list[MissingGlob]
     pattern_globs: list[str]
-    trash_deletes: list[TrashDelete]
     denied: list[str]
     hidden: list[str]
     cloud: list[str]
@@ -1700,8 +1555,6 @@ def find_breaches(
         command = resolve(segment)
         globs = (judges_globs, may_have_written)
         breaches.extend(get_command_breaches(segment, command, directory, globs, scope, findings, policy, text))
-        if scope is not None and not segment.in_group:
-            learn_values(segment, scope)
         name = os.path.basename(command.name)
         inner_judges = judges_globs and not (name in SHELLS and name != "zsh") and name not in JOINING_RUNNERS
         is_remote = name in REMOTE_RUNNERS
@@ -1716,9 +1569,9 @@ def find_breaches(
 def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
-    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [], [])
+    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [])
 
-    breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command, {}))
+    breaches = find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command))
 
     return [rule for rule in breaches if rule != "sleep" or not is_background]
 
@@ -1732,13 +1585,11 @@ def get_command_breaches(
     arguments = [word.text for word in command.arguments]
     moved = get_written_paths(get_moved_sources(os.path.basename(command.name), arguments), directory)
     is_unknown_write = bool(policy.scratch) and directory is None and not all(is_absolute(word) for word in words)
-    is_deleting = is_delete(command) and not is_scratch_delete(segment, command, directory, scope, policy)
-    trash = get_trash_delete(segment, directory, scope, policy) if is_deleting else None
+    is_deleting = is_delete(command)
     missing = get_failing_globs(command, directory, globs[1]) if globs[0] else []
     patterns = get_pattern_globs(command) if globs[0] else []
     findings.missing_globs.extend(MissingGlob(text, directory or "an unknown folder") for text in missing)
     findings.pattern_globs.extend(patterns)
-    findings.trash_deletes.extend([trash] if trash is not None else [])
     denied = get_denied(command, directory)
     hidden = get_hidden_command(command, text, policy)
     cloud = get_cloud_label(command) if policy.ask_cloud else ""
@@ -1755,7 +1606,8 @@ def get_command_breaches(
     delay = get_delay_run(segment, command, policy) if is_asked and policy.tool_delay_days else None
     findings.delayed.extend([delay] if delay is not None and not delay.is_flagged else [])
     checks = [
-        ("delete", is_deleting and trash is None),
+        ("delete", is_deleting and not policy.is_agent),
+        (AGENT_DELETE_RULE, is_deleting and policy.is_agent),
         ("denied", bool(denied)),
         (AGENT_RULE, bool(agent)),
         ("hidden", bool(hidden)),
@@ -1766,7 +1618,6 @@ def get_command_breaches(
         (SNOW_RULE, bool(snow)),
         ("glob", bool(missing)),
         ("pattern", bool(patterns)),
-        ("trash", trash is not None),
         ("temporary", any(is_temporary(path, policy) for path in written)),
         ("repo", is_unknown_write or any(is_repo_write(path, policy) for path in [*written, *moved])),
         ("search", is_wide_search(command)),
@@ -1879,20 +1730,6 @@ class Rewrite(NamedTuple):
     refused: list[str]
 
 
-def get_trash_folder(call_id: str, policy: Policy, /) -> str:
-
-    name = re.sub(r"[^A-Za-z0-9_-]", "", call_id)
-
-    return os.path.join(policy.trash, name) if name and policy.trash else ""
-
-
-def get_trash_words(delete: TrashDelete, folder: str, policy: Policy, /) -> list[str]:
-
-    pairs = [(path, os.path.join(folder, os.path.relpath(path, policy.root))) for path in delete.paths]
-
-    return ["harness_trash", delete.name, delete.letters, *itertools.chain.from_iterable(pairs)]
-
-
 def is_spliced_alone(command: str, spliced: str, replacements: Mapping[tuple[str, ...], list[str]], /) -> bool:
 
     expected = []
@@ -1904,23 +1741,6 @@ def is_spliced_alone(command: str, spliced: str, replacements: Mapping[tuple[str
     found = [([word.text for word in segment.words], segment.redirects, segment.in_loop, segment.in_group) for segment in get_segments(spliced)]
 
     return found == expected
-
-
-def get_trash_fix(command: str, deletes: list[TrashDelete], folder: str, policy: Policy, /) -> str:
-
-    if has_overlap([path for delete in deletes for path in delete.paths]):
-        return ""
-    spliced = command
-    replacements: dict[tuple[str, ...], list[str]] = {}
-    for delete in deletes:
-        match = re.search(get_words_pattern(delete.words), spliced)
-        if match is None:
-            return ""
-        words = get_trash_words(delete, folder, policy)
-        spliced = spliced[: match.start()] + shlex.join(words) + spliced[match.end() :]
-        replacements[tuple(delete.words)] = words
-
-    return spliced if is_spliced_alone(command, spliced, replacements) else ""
 
 
 def get_delay_fix(command: str, runs: list[DelayRun], /) -> str:
@@ -1938,7 +1758,7 @@ def get_delay_fix(command: str, runs: list[DelayRun], /) -> str:
     return spliced if is_spliced_alone(command, spliced, replacements) else ""
 
 
-def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: str, call_id: str, policy: Policy, /) -> Rewrite:
+def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: str, policy: Policy, /) -> Rewrite:
 
     original = tool_input.get("command") or ""
     command = original
@@ -1953,12 +1773,6 @@ def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: 
         if not command:
             return Rewrite(tool_input, [], [ASK_RULE])
         notes.append(f"The harness guard changed this call: {MESSAGES['delay'].format(days=policy.tool_delay_days)}")
-    folder = get_trash_folder(call_id, policy) if "trash" in breaches else ""
-    if "trash" in breaches:
-        command = get_trash_fix(command, findings.trash_deletes, folder, policy) if folder else ""
-        if not command:
-            return Rewrite(tool_input, [], ["trash"])
-        notes.append(f"The harness guard changed this call: {MESSAGES['trash'].format(folder=folder)}")
     changed = {**tool_input, "command": command} if command != original else dict(tool_input)
     if "sleep" in breaches:
         changed, note = get_sleep_fix(command, changed, policy)
@@ -1966,9 +1780,6 @@ def get_rewrite(breaches: list[str], tool_input: dict, findings: Findings, cwd: 
     if PIPEFAIL_RULE in breaches:
         changed = {**changed, "command": PIPEFAIL_PREFIX + changed["command"]}
         notes.append(f"The harness guard changed this call: {MESSAGES[PIPEFAIL_RULE]}")
-    if folder:
-        ensure_harness_folder(Path(policy.root))
-        changed = {**changed, "command": TRASH_HELPER + changed["command"]}
 
     return Rewrite(changed, notes, [])
 
@@ -1994,7 +1805,7 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     dbt = MESSAGES[DBT_RULE].format(what=(findings.dbt or ["this dbt command"])[0])
     snow = MESSAGES[SNOW_RULE].format(what=(findings.snow or ["this snow command"])[0])
     agent = MESSAGES[AGENT_RULE].format(what=(findings.agent or ["this command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "trash": MESSAGES["delete"], "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
+    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
     lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
         reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)
@@ -2011,7 +1822,7 @@ def main() -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     policy = get_policy(cwd)._replace(is_agent=bool(event.get("agent_id")))
-    findings = Findings([], [], [], [], [], [], [], [], [], [], [])
+    findings = Findings([], [], [], [], [], [], [], [], [], [])
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, is_background=tool_input.get("run_in_background") is True, findings=findings)
@@ -2020,13 +1831,12 @@ def main() -> int:
         breaches = ["temporary"] if is_temporary(resolve_path(path, cwd), policy) else []
     hard = [rule for rule in breaches if rule not in SOFT_RULES]
     if not hard:
-        rewrite = get_rewrite(breaches, tool_input, findings, cwd, str(event.get("tool_use_id") or ""), policy)
+        rewrite = get_rewrite(breaches, tool_input, findings, cwd, policy)
         if not rewrite.refused:
             if breaches:
                 print(json.dumps(make_soft_output(rewrite, tool_input)))
             return 0
         hard = rewrite.refused
-    hard += [rule for rule in breaches if rule == "trash"]
 
     return refuse(hard, findings)
 

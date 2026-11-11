@@ -94,10 +94,9 @@ git diff --stat
 - `__scratch__/` is the temp folder for probes and one-off output (a hook makes it and its `.gitignore`) and is never
   cleaned: make a subfolder per run (`mktemp -d __scratch__/name.XXXX`) instead of deleting and recreating, and do not
   tidy it afterwards.
-- Elsewhere in the project the guard moves what `rm` or `rmdir` names into `__harness__/trash/<call id>/`, which the owner
-  empties. It refuses a delete it cannot move: a glob or an unknown variable, the project root, a path outside the project or
-  under `node_modules`, `dist`, `.venv` or `.git`, and `git clean`, `find -delete` or `shred`. A tracked file that must go
-  uses `git rm`.
+- Agents delete nothing: the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `find -delete` and `git clean`, everywhere. The
+  main session whose file must go gives the owner the exact command in the chat, with why it is needed, and the owner runs
+  it. A sub-agent leaves the file and never asks.
 - Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.
 
 ## Shell
@@ -138,6 +137,6 @@ Nothing needs it:
 - A glob that matches nothing is refused with the folder it was matched from: `cd` to the right one, or list files with
   `rg --files -g '<pattern>'` or `git ls-files`.
 - A note that the guard changed the call is no refusal: the call ran as changed. It quotes a glob in a pattern position
-  (`--include`, `-name`, `-g`), moves a delete to the trash (Clean), drops a foreground `sleep` (Waiting) and adds
-  `set -o pipefail` to a test, check or build piped into `tail`, `head` or `grep`. Write the
+  (`--include`, `-name`, `-g`), drops a foreground `sleep` (Waiting) and adds
+  `set -o pipefail` to a test, check or build piped into `tail` or `grep` (not `grep -q`, `-m`, `-l` or `-L`). Write the
   call that way next time.

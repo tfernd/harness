@@ -61,7 +61,6 @@ EDITS_KIND = "edits"
 HARNESS_FOLDER = "__harness__"
 SCRATCH_FOLDER = "__scratch__"
 FEEDBACK_FOLDER = f"{HARNESS_FOLDER}/feedback"
-TRASH_FOLDER = f"{HARNESS_FOLDER}/trash"
 OLD_FEEDBACK_FOLDER = "harness-feedback"
 IGNORE_FILE = ".gitignore"
 IGNORE_TEXT = "*\n"
@@ -75,8 +74,6 @@ ignored folders too, so read these files by path.
   start-of-agent lessons read.
 - `feedback/open.md`: problems a retro kept that no rule fixes yet, `- <role or all>: <problem>`. The main session writes; agents read at start.
 - `feedback/retro-mark`: how many inbox items the last retro covered. The Stop hook keeps it.
-- `trash/<call id>/`: what the guard moved here instead of deleting, each path under its place from the project root.
-  Nothing reads it; the owner empties it.
 
 Per-machine data (the ledger of reports, turn counters, send-backs, progress) lives in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`,
 else `~/.cache/harness`), not here.

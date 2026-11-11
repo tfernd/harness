@@ -168,18 +168,7 @@ def pattern(name: str, command: str, fixed: str, /, **options: object) -> Case:
     return Case(name, ("guard.py",), event, False, "pattern position", STRICT, updated={**tool_input, "command": fixed}, **options)
 
 
-CALL_ID = "toolu_case1"
 PROJECT = f"{ROOT}/project"
-TRASH = f"{PROJECT}/__harness__/trash/{CALL_ID}"
-TRASH_HELPER = (
-    'harness_trash() { local name="$1" flags="$2" code=0 why; shift 2; while [ "$#" -ge 2 ]; do why=; '
-    'if [ ! -e "$1" ] && [ ! -L "$1" ]; then case "$flags" in *f*) why=skip;; *) why="No such file or directory";; esac; '
-    'elif [ -L "$1" ] || [ ! -d "$1" ]; then [ "$name" = rmdir ] && why="Not a directory"; '
-    'elif [ "$name" = rmdir ]; then [ -z "$(command ls -A -- "$1")" ] || why="Directory not empty"; '
-    'else case "$flags" in *r*) ;; *) why="Is a directory";; esac; fi; '
-    'case "$why" in "") command mkdir -p -- "${2%/*}" && command mv -- "$1" "$2" || code=1;; skip) ;; '
-    '*) printf "%s: cannot remove \'%s\': %s\\n" "$name" "$1" "$why" >&2; code=1;; esac; shift 2; done; return "$code"; }; '
-)
 SCRATCHPAD = f"/tmp/claude-{os.getuid()}/case-project/case-session/scratchpad"
 
 
@@ -191,20 +180,11 @@ def delay(name: str, command: str, fixed: str, /, *, text: str = "release delay"
     return Case(name, ("guard.py",), event, False, text, config, updated={**tool_input, "command": fixed}, **options)
 
 
-def trash(name: str, command: str, spliced: str | None, /, *, text: str = "", **options: object) -> Case:
-
-    tool_input = {"command": command, "description": "d"}
-    event = {"tool_name": "Bash", "tool_input": tool_input, "tool_use_id": CALL_ID}
-    if spliced is None:
-        return Case(name, ("guard.py",), event, True, text or DELETE, None, **options)
-
-    return Case(name, ("guard.py",), event, False, text or f"into `{TRASH}/`", None, updated={**tool_input, "command": TRASH_HELPER + spliced}, **options)
-
-
 UV_CACHE = os.environ.get("UV_CACHE_DIR") or str(ACCOUNT_HOME / ".cache" / "uv")
 HEREDOC = "python3 - <<'EOF'\nfrom pathlib import Path\n{call}\nEOF"
 COMMIT = "git commit -m \"$(cat <<'EOF'\n{body}\nEOF\n)\""
-DELETE = "nothing is deleted"
+DELETE = "Agents delete nothing."
+AGENT_DELETE = "Sub-agents delete nothing."
 HISTORY = "owner's to run"
 ASK = '"permissionDecision": "ask"'
 CLOUD = "writes to an AWS account"
@@ -229,7 +209,7 @@ GUARD_CASES = (
     bash("the package question runs in the home folder", "pip install x", True, '"permissionDecision": "ask"', config=None, cwd=""),
     bash("a scratch write is noted with no project file", "echo hi > AGENTS.md", False, REPO, config=None, is_unchanged=True),
     bash("the scratch rule is off in the home folder", "echo hi > AGENTS.md", False, config=None, cwd="", lacks=REPO),
-    bash("rm in a root-level scratch folder is refused at the filesystem root", "rm /__scratch__/x.txt", True, "deleted", config=None, cwd="/"),
+    bash("rm in a root-level scratch folder is refused at the filesystem root", "rm /__scratch__/x.txt", True, DELETE, config=None, cwd="/"),
     bash("the scratch rule is off at the filesystem root", "echo hi > /etc/harness-case-x", False, config=None, cwd="/", lacks=REPO),
     bash("an override turns the scratch rule off", "echo hi > AGENTS.md", False, config={"guard": {"scratch": ""}}, lacks=REPO),
     bash("a /tmp write is noted with no project file", "echo hi > /tmp/x", False, "__scratch__", config=None),
@@ -262,8 +242,8 @@ GUARD_CASES = (
     bash("a command after a parameter is still read", "echo ${X}; uv pip install y", True),
     bash("an open parameter does not crash", "echo ${X", False),
     bash("an in-place edit of a missing file is no write", "sed -i s/a/b/ /tmp/nope.txt", False),
-    bash("rm is refused", "rm x", True, "nothing is deleted"),
-    bash("git clean is refused", "git clean -fd", True, "nothing is deleted"),
+    bash("rm is refused", "rm x", True, DELETE),
+    bash("git clean is refused", "git clean -fd", True, DELETE),
     bash("a plain git push is allowed", "git push -u origin topic", False),
     bash("a failing glob is refused in zsh", "ls *.nothing", True, "matches no file"),
     bash("a failing glob passes when the shell is not zsh", "ls *.nothing", False, shell="/bin/bash"),
@@ -319,9 +299,9 @@ GUARD_CASES = (
     bash("unlink is refused", "unlink x", True, DELETE),
     bash("find -delete is refused", "find . -name x -delete", True, DELETE),
     bash("find without -delete passes", "find . -name x", False),
-    bash("rm after a pushd into scratch passes", "pushd __scratch__ && rm x.txt", False, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
-    bash("rm after a pushd into a project folder is refused", "pushd sub && rm -rf x", True, "deleted", config={"guard": {"scratch": "__scratch__"}}, files=(("sub/x", ""),)),
-    bash("rm after a popd is judged from an unknown folder", "pushd __scratch__ && popd && rm x.txt", True, "deleted", config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
+    bash("rm after a pushd into scratch is refused", "pushd __scratch__ && rm x.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
+    bash("rm after a pushd into a project folder is refused", "pushd sub && rm -rf x", True, DELETE, config={"guard": {"scratch": "__scratch__"}}, files=(("sub/x", ""),)),
+    bash("rm after a popd is judged from an unknown folder", "pushd __scratch__ && popd && rm x.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
     bash("a copy into the repo runs with a note", "cp a AGENTS.md", False, is_unchanged=True),
     bash("a plain sed passes", "sed -n 1p AGENTS.md", False),
     bash("a sed -i in the repo runs with a note", "sed -i s/a/b/ AGENTS.md", False, is_unchanged=True),
@@ -340,20 +320,20 @@ GUARD_CASES = (
     pattern("an unquoted glob in an option is quoted", "grep --include=*.py x .", "grep --include='*.py' x ."),
     bash("a git clean dry run is allowed", "git clean -n", False),
     bash("a git clean long dry run is allowed", "git clean --dry-run -d", False),
-    bash("a real git clean is refused", "git clean -fd", True, "deleted"),
+    bash("a real git clean is refused", "git clean -fd", True, DELETE),
     bash("a config that is a list drops no rule", "git push --force origin main", True, "rewrites history", config=[]),
-    bash("rm inside the scratch folder passes", "rm __scratch__/x.txt", False, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
-    bash("rm -rf of a folder inside scratch passes", "rm -rf __scratch__/old", False, config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm after a cd into scratch passes", "cd __scratch__ && rm x.txt", False, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
-    bash("rmdir inside the scratch folder passes", "rmdir __scratch__/old", False, config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm of the scratch folder itself is refused", "rm -rf __scratch__", True, "deleted", config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm out of scratch through dots is refused", "rm __scratch__/../a.txt", True, "deleted", config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm of a project file is refused with a scratch folder", "rm a.txt", True, "deleted", config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm beside a scratch path is refused", "rm __scratch__/x.txt a.txt", True, "deleted", config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm of a glob in scratch is refused", "rm __scratch__/*.txt", True, "deleted", config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
-    bash("rm of a variable in scratch is refused", "rm __scratch__/$x", True, "deleted", config={"guard": {"scratch": "__scratch__"}}),
-    bash("shred in scratch is refused", "shred __scratch__/x.txt", True, "deleted", config={"guard": {"scratch": "__scratch__"}}),
-    bash("rm with the scratch folder turned off is refused", "rm __scratch__/x.txt", True, "deleted", config={"guard": {"scratch": ""}}),
+    bash("rm inside the scratch folder is refused", "rm __scratch__/x.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
+    bash("rm -rf of a folder inside scratch is refused", "rm -rf __scratch__/old", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm after a cd into scratch is refused", "cd __scratch__ && rm x.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
+    bash("rmdir inside the scratch folder is refused", "rmdir __scratch__/old", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm of the scratch folder itself is refused", "rm -rf __scratch__", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm out of scratch through dots is refused", "rm __scratch__/../a.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm of a project file is refused with a scratch folder", "rm a.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm beside a scratch path is refused", "rm __scratch__/x.txt a.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm of a glob in scratch is refused", "rm __scratch__/*.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}, files=(("__scratch__/x.txt", ""),)),
+    bash("rm of an unset variable in scratch is refused", "rm __scratch__/$x", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("shred in scratch is refused", "shred __scratch__/x.txt", True, DELETE, config={"guard": {"scratch": "__scratch__"}}),
+    bash("rm with the scratch folder turned off is refused", "rm __scratch__/x.txt", True, DELETE, config={"guard": {"scratch": ""}}),
     bash("a guard key that is null drops no rule", "git push --force origin main", True, "rewrites history", config={"guard": None}),
     bash("a glob that matches a file is allowed", "wc -l *.py", False, files=(("a.py", ""),)),
     bash("a loop over a glob that matches is allowed", "for name in *.py; do echo $name; done", False, files=(("a.py", ""),)),
@@ -423,7 +403,7 @@ GUARD_CASES = (
     bash("a project write inside bash -c runs with a note", "bash -c 'echo hi > AGENTS.md'", False, REPO, is_unchanged=True),
     write_call("a Write under /tmp runs with a note", "/tmp/x.txt", False, "never under /tmp", is_unchanged=True),
     write_call("a Write of a project file is allowed", "AGENTS.md", False),
-    bash("rm is refused with no project", "rm x", True, "nothing is deleted", config=None),
+    bash("rm is refused with no project", "rm x", True, DELETE, config=None),
     bash("a forced push is refused with no project", "git push -f", True, "owner's to run", config=None),
     bash("a glob is refused with no project", "ls *.py", True, GLOB, config=None),
     soft_sleep("a sleep is removed with no project", "sleep 1", SHADOW + "sleep 1", config=None),
@@ -759,7 +739,7 @@ GUARD_CASES = (
     bash("dbt: a listed target in capitals is matched", "dbt run -t qa", False, config={"guard": {"dbt_dev_targets": ["QA"]}}),
     bash("dbt: a listed target leaves the others refused", "dbt run -t prod", True, DBT_TEXT, config={"guard": {"dbt_dev_targets": ["qa"]}}),
     bash("dbt: turning it off keeps the other questions", "pip install x", True, ASK, config={"guard": {"block_dbt_targets": False}}),
-    bash("dbt: a delete beside a refused dbt call is refused too", "dbt run -t prod; rm a", True, "nothing is deleted", config=None),
+    bash("dbt: a delete beside a refused dbt call is refused too", "dbt run -t prod; rm a", True, DELETE, config=None),
     *(bash(f"snow refuses: {command!r}", command, True, SNOW_TEXT, config=None, files=SNOW_WRITE_FILES) for command in (
         'snow sql -c dev -q "create table t (a int)"', 'snow sql -c dev -q "CREATE OR REPLACE VIEW v AS SELECT 1"', 'snow sql -c dev -q "drop table t"',
         'snow sql -c dev -q "truncate table t"', 'snow sql -c dev -q "delete from t"', 'snow sql -c dev -q "update t set a = 1"',
@@ -807,7 +787,7 @@ GUARD_CASES = (
     bash("snow: an override lets a production read run", 'snow sql -c prod -q "select 1"', False, config={"guard": {"block_snow": False}}),
     bash("snow: the owner's file lets a write run", 'snow sql -c dev -q "drop table t"', False, config=None, files=(("data/user.json", '{"guard": {"block_snow": false}}'),)),
     bash("snow: turning it off keeps the dbt rule", "dbt run -t prod", True, DBT_TEXT, config={"guard": {"block_snow": False}}),
-    bash("snow: a delete beside a refused snow call is refused too", 'snow app deploy -c dev; rm a', True, "nothing is deleted", config=None),
+    bash("snow: a delete beside a refused snow call is refused too", 'snow app deploy -c dev; rm a', True, DELETE, config=None),
     agent_bash("agent: refused git commit -m x", "git commit -m x", True, "git commit"),
     agent_bash("agent: refused git push", "git push", True, "git push"),
     agent_bash("agent: refused git stash", "git stash", True, "git stash"),
@@ -963,21 +943,7 @@ GUARD_CASES = (
     bash("a glob that matches nothing names its folder", "ls *.nothing", True, f"matches no file from {PROJECT}, so zsh fails", lacks="Run instead"),
     bash("the folder named is the one a cd reaches", "cd sub && ls *.py", True, f"from {PROJECT}/sub,", files=(("sub/b.txt", ""),)),
     bash("a glob that matches nothing names its pattern", "ls src/*.nope", True, "`rg --files -g 'src/*.nope'` or `git ls-files`"),
-    trash("rm of a project file is moved to the trash", "rm a.txt", f"harness_trash rm - {PROJECT}/a.txt {TRASH}/a.txt", files=(("a.txt", "x"),), wrote=("__harness__/.gitignore", "*")),
-    trash("a delete after a string that ends in its words is spliced at its place", 'echo "x; rm -f a" && rm -f a', f'echo "x; rm -f a" && harness_trash rm -f {PROJECT}/a {TRASH}/a'),
-    trash("rm -rf keeps its letters", "rm -rf build", f"harness_trash rm -rf {PROJECT}/build {TRASH}/build"),
-    trash("-R and --force keep recursive and force", "rm -R --force sub/x", f"harness_trash rm -rf {PROJECT}/sub/x {TRASH}/sub/x"),
-    trash("a path keeps its place from the root after a cd", "cd sub && rm -f x", f"cd sub && harness_trash rm -f {PROJECT}/sub/x {TRASH}/sub/x", files=(("sub/x", ""),)),
-    trash("rmdir is moved to the trash", "rmdir old", f"harness_trash rmdir - {PROJECT}/old {TRASH}/old"),
-    trash("a delete in a chain is spliced in place", "make && rm -f out.txt && echo done", f"make && harness_trash rm -f {PROJECT}/out.txt {TRASH}/out.txt && echo done"),
-    trash("a delete after then keeps the then", "if true; then rm -f a; fi", f"if true; then harness_trash rm -f {PROJECT}/a {TRASH}/a; fi"),
-    trash("a delete also written in a later string is spliced once", "rm -f a && echo 'rm -f a'", f"harness_trash rm -f {PROJECT}/a {TRASH}/a && echo 'rm -f a'"),
-    trash("a variable set to a literal is spliced as its value", 'd=build && rm -rf "$d"', f"d=build && harness_trash rm -rf {PROJECT}/build {TRASH}/build"),
-    trash("a symlink is moved, not its target", "rm link", f"harness_trash rm - {PROJECT}/link {TRASH}/link", links=(("project/link", "project/sub"),), files=(("sub/x", ""),)),
-    trash("the scratch folder itself goes to the trash", "rm -rf __scratch__", f"harness_trash rm -rf {PROJECT}/__scratch__ {TRASH}/__scratch__"),
-    trash("a delete beside a sleep gets both changes", "sleep 1; rm -f a", SHADOW + f"sleep 1; harness_trash rm -f {PROJECT}/a {TRASH}/a"),
-    trash("a pattern beside a delete gets both changes", "find . -name *.py; rm -f a", f"find . -name '*.py'; harness_trash rm -f {PROJECT}/a {TRASH}/a", text="pattern position"),
-    *(trash(f"refused for the trash: {command!r}", command, None) for command in (
+    *(bash(f"refused delete: {command!r}", command, True, DELETE, config=None) for command in (
         "rm -rf node_modules",
         "rm -rf web/node_modules/x",
         "rm -rf dist",
@@ -1010,19 +976,39 @@ GUARD_CASES = (
         'echo "x; rm -f a; y" && rm -f a',
         "cat <<'EOF'\nrm -f a\nEOF\nrm -f a\"\"",
     )),
-    trash("rm of a glob is refused", "rm *.txt", None, files=(("a.txt", ""),)),
-    trash("rm in the home folder is refused", "rm -f a", None, cwd=""),
-    trash("a delete beside a package change is refused, not asked", "pip install x; rm -f a", None, lacks="permissionDecision"),
-    bash("a delete with no call id is refused", "rm -f a", True, DELETE, config=None),
-    bash("rm of a scratch variable passes", 'd=__scratch__/x && rm -rf "$d"', False, is_unchanged=True),
+    bash("rm of a glob is refused", "rm *.txt", True, DELETE, config=None, files=(("a.txt", ""),)),
+    bash("rm in the home folder is refused", "rm -f a", True, DELETE, config=None, cwd=""),
+    bash("a delete beside a package change is refused, not asked", "pip install x; rm -f a", True, DELETE, config=None, lacks="permissionDecision"),
+    bash("rm of a project file is refused", "rm a.txt", True, DELETE, config=None, files=(("a.txt", "x"),)),
+    bash("rm of a nested project file is refused", "rm src/a.py", True, DELETE, config=None, files=(("src/a.py", "x"),)),
+    bash("rm -rf of a project folder is refused", "rm -rf build", True, DELETE, config=None),
+    bash("rmdir of a project folder is refused", "rmdir old", True, DELETE, config=None),
+    bash("a delete in a chain is refused", "make && rm -f out.txt && echo done", True, DELETE, config=None),
+    bash("a delete with a variable set to a literal is refused", 'd=build && rm -rf "$d"', True, DELETE, config=None),
+    bash("shred is refused", "shred x.txt", True, DELETE, config=None),
+    bash("git clean is refused", "git clean -fd", True, DELETE, config=None),
+    bash("the refusal names no trash folder and no rm in scratch", "rm a.txt", True, "a fresh run takes a new folder", config=None, lacks="__harness__/trash"),
+    bash("rm of a scratch variable is refused", 'd=__scratch__/x && rm -rf "$d"', True, DELETE),
+    bash("the fresh-run form of a scratch reset is refused", 'd=__scratch__/ctl && rm -rf "$d" && mkdir -p "$d"', True, DELETE),
+    bash("rm -rf of a scratch path is refused", "rm -rf __scratch__/x", True, DELETE),
+    bash("rmdir of a scratch folder is refused", "rmdir __scratch__/x", True, DELETE),
+    bash("unlink of a scratch file is refused", "unlink __scratch__/x.txt", True, DELETE),
+    bash("find -delete on scratch is refused", "find __scratch__ -delete", True, DELETE),
+    bash("find -delete past an expression in scratch is refused", "find __scratch__/old -name '*.log' -delete", True, DELETE),
+    bash("find in scratch with no delete passes", "find __scratch__ -name '*.log'", False),
+    agent_bash("a sub-agent is refused an rm in scratch with its own message", "rm -rf __scratch__/x", True, AGENT_DELETE, config=STRICT, lacks="give the owner"),
+    agent_bash("a sub-agent is refused a project rm with its own message", "rm a.txt", True, AGENT_DELETE, config=None, lacks="give the owner"),
+    bash("the main session is told to give the owner the command", "rm a.txt", True, "give the owner the command in the chat", config=None, lacks="Sub-agents"),
+    bash("rm in scratch after a popd is refused from the project root", "pushd sub && popd && rm __scratch__/x.txt", True, DELETE, files=(("sub/y", ""),)),
+    bash("mkdir of a fresh scratch folder passes", "mkdir __scratch__/ctl-2", False),
+    bash("the scratch refusal teaches no rm in scratch", "rm __scratch__/x", True, DELETE, lacks="where `rm` works"),
     bash("rm of a scratch variable in single quotes is refused", "d=__scratch__/x && rm -rf '$d'", True, DELETE),
     bash("rm of a scratch variable a loop rebinds is refused", 'd=__scratch__/x; for d in AGENTS.md; do rm -f "$d"; done', True, DELETE),
     bash("a variable of the outer shell is unknown in bash -c", 'd=__scratch__ && bash -c \' rm -rf "$d/x" \'', True, DELETE),
     bash("python -c code is not read as a shell string", 'python3 -c "rm = 1"', False, is_unchanged=True),
     bash("a scratch variable set in a subshell is unknown", '(d=__scratch__/x); rm -rf "$d"', True, DELETE),
-    bash("rm inside the Claude scratchpad passes", f"rm -rf {SCRATCHPAD}/out", False, is_unchanged=True),
-    bash("rm of the Claude scratchpad itself is refused", f"rm -rf {SCRATCHPAD}", True, DELETE),
-    bash("rm in the scratchpad of another account is refused", f"rm -rf /tmp/claude-{os.getuid() + 1}/p/s/scratchpad/out", True, DELETE),
+    bash("rm inside the Claude scratchpad is refused", f"rm -rf {SCRATCHPAD}/out", True, DELETE),
+        bash("rm in the scratchpad of another account is refused", f"rm -rf /tmp/claude-{os.getuid() + 1}/p/s/scratchpad/out", True, DELETE),
     bash("rm in a scratchpad outside a claude folder is refused", "rm -rf /tmp/p/scratchpad/out", True, DELETE),
     Case("an unexpected error in the guard lets the call run", ("guard.py",), {"tool_name": "Bash", "tool_input": "rm -rf /"}, False, "failed and let the call run", STRICT, is_exit_one=True),
 )
