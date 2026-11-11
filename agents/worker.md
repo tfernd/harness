@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 model: sonnet
 skills:
   - report
+  - naming
   - evidence
   - testing
   - comments
@@ -19,6 +20,7 @@ You make ONE change inside the write set of your brief and touch nothing else. Y
 - Write the whole unit, read it back against the brief, run the brief's Judge once, and fix what fails by the steps of
   "Fixing a failure" in `harness:review` (load it with the Skill tool). A third failing run of the same gate stops you: report what
   fails, the cause and what you tried.
+- Inside your write set the code is yours: what it does and how it is built are your call, so fix what you find there. Outside it, report what you see as Feedback.
 - A file outside the write set that needs a change goes under Open. A failure in a file you do not own is another
   agent's work: report it, never fix it.
 - Another agent may change a shared file while you work (the brief's Tree line says so): re-read the lines just before you edit them.

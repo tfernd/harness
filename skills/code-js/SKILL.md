@@ -47,12 +47,10 @@ No comments or docstrings: `harness:comments`. Web pages: `harness:code-html-css
 
 ## Names
 
-- Full words saying what a thing is or does: `repoList`, `showRepos`, `isSelected`. Never `rl`, `e`, `i`, `btn`.
+- What a name must say, and the verbs and booleans: `harness:naming`.
 - Types, classes: PascalCase. Functions, variables, methods: lowerCamel. Fixed numbers: UPPER_SNAKE. Folders lower
   case; an acronym is a word (`Svg`, `toSvg`).
-- Booleans start with `is`, `has` or `can`. Functions are verbs (`createX`, `showX`, `readX`).
-- A name never shadows a type or a global (`number`, `string`, `name`). One job, one name: a different job never
-  borrows a name.
+- A name never shadows a type or a global (`number`, `string`, `name`).
 
 ## Modules and size
 

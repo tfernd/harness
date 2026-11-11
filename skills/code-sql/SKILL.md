@@ -11,7 +11,7 @@ No comments or docstrings: `harness:comments`. The `snow` CLI: `harness:snowflak
 
 - Uppercase keywords, lowercase snake_case names, one clause per line, one column per line.
 - Explicit column lists: no `SELECT *` in a view, dynamic table or `INSERT`.
-- CTEs over nested subqueries; name each CTE for what it holds.
+- CTEs over nested subqueries; name each CTE by `harness:naming`.
 - Qualified names (`db.schema.object`) in deploy scripts, so a script never depends on the session's current schema.
 - One object per file in a deploy folder, named for the object.
 

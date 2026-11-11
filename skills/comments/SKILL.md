@@ -11,7 +11,7 @@ Language rules: `harness:code-python`, `harness:code-js`, `harness:code-html-css
 ## The rule
 
 - No comments, no docstrings, no doc comments (`/** */`, `///`). Names, types, small functions and tests carry the
-  meaning. Needing a comment means the code should be clearer: rename, split, or type it.
+  meaning. Needing a comment means the code should be clearer: rename (`harness:naming`), split, or type it.
 - Never a comment about a change: no `# removed X`, `# was Y`, `# now uses Z`, `# moved to`, no commented-out code.
   The diff and the commit message say it.
 - A missing branch raises with a message (`NotImplementedError`, `throw new Error`). Missing work goes in the

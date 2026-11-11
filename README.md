@@ -125,7 +125,7 @@ ledger.
 |---|---|---|
 | Run the job | `orchestrator`, `workflows`, `models`, `accept`, `init` | How the main session works, picks a job shape and a model per role, accepts a unit, sets a project up |
 | Think | `evidence`, `debug`, `spec`, `cold-read` | Settling facts, finding a bug's cause, writing a spec, checking a brief |
-| Build | `code-python`, `code-js`, `code-html-css`, `code-shell`, `code-terraform`, `code-sql`, `code-yaml`, `code-make`, `refactor`, `comments`, `git-commit`, `design`, `explore`, `release` | Style rules loaded before touching those files, changing structure safely, comments, commits, visual design, mock-first building of visual work, preparing a release |
+| Build | `code-python`, `code-js`, `code-html-css`, `code-shell`, `code-terraform`, `code-sql`, `code-yaml`, `code-make`, `refactor`, `comments`, `naming`, `git-commit`, `design`, `explore`, `release` | Style rules loaded before touching those files, changing structure safely, comments, names that say what a thing holds or does, commits, visual design, mock-first building of visual work, preparing a release |
 | Tools | `aws-cli`, `snowflake-cli` | Running those command-line tools safely: what reads, what writes, what to ask first |
 | Check | `testing`, `review`, `audit`, `sweep` | Writing tests that can fail, reviewing a unit, auditing a report, sweeping a whole repo against itself |
 | Report and learn | `report`, `retro`, `hook-authoring`, `skill-authoring`, `agent-authoring` | How agents report, turning past problems into rules, and writing a hook, skill or agent |

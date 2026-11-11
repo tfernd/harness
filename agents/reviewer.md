@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, Bash
 model: sonnet
 skills:
   - report
+  - naming
   - review
   - evidence
 ---

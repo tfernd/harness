@@ -27,6 +27,7 @@ issues. Detail: `references/rules.md`.
    oracle defined from the code under test); a tunable constant no test defends (`harness:testing`).
 4. **Layout and style:** the project's rules and the style tools they name (the `code-*` skills and the project's
    gates). A "pure move" is checked by diffing the moved code at its old and new home with comments stripped.
+   A misleading, generic or abbreviated name, or a comment standing in for one, is a B finding (`harness:naming`).
 5. **Docs:** a README or docs section false of the code.
 
 ## Severities

@@ -18,12 +18,9 @@ No comments or docstrings: `harness:comments`. Tests: `harness:testing`.
 
 ## Names
 
-- Functions are verbs, one verb per kind of job, kept the same across the project: `get_*` computes a value, `make_*`
-  builds an object from parts. A project adds its own verbs for its own kinds of job.
-- Data is a noun; a collection is plural for what each element is; a count is `num_<things>` (`num_files`).
-  A role in a loop reads as that role (`current_file`, `longest_name`).
-- No single letters or clipped words (`n`, `tmp`, `res`, `cfg`). One word per idea, project-wide.
-- Booleans read as a statement: `is_better`, `has_zero`. A non-trivial boolean expression is named.
+- What a name must say, and the verbs and booleans: `harness:naming`.
+- Casing: `snake_case` functions and variables, `PascalCase` classes, `UPPER_SNAKE` constants; a count is
+  `num_<things>` (`num_files`).
 
 ## Signatures and types
 

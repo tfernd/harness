@@ -192,7 +192,7 @@ SKILL_KINDS = (
     Kind(
         "Build",
         "Write code, commits and pages.",
-        ("code-python", "code-js", "code-html-css", "code-shell", "code-terraform", "code-sql", "code-yaml", "code-make", "refactor", "comments", "git-commit", "design", "release"),
+        ("code-python", "code-js", "code-html-css", "code-shell", "code-terraform", "code-sql", "code-yaml", "code-make", "refactor", "comments", "naming", "git-commit", "design", "release"),
     ),
     Kind("Tools", "Run a command-line tool without breaking an account.", ("aws-cli", "snowflake-cli")),
     Kind("Check", "Judge work against its spec.", ("testing", "review", "audit", "sweep")),
