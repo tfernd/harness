@@ -24,7 +24,7 @@ a failing command quoted with its exit code>
 ## Not proven
 - <what was not run or shown, and why>
 ## Problems
-- <what happened> (cause: brief | tool | rule | environment | other agent | the agent itself). <what would have helped>
+- <what happened> (cause: brief | tool | rule | environment | other agent | the agent itself)
 ## Next time
 <what you would do differently on the same job>
 ## Open
@@ -39,7 +39,7 @@ a failing command quoted with its exit code>
 |---|---|---|
 | Answer | Always | States what happened, not how good it is; the judgement waits for Verdict |
 | Not proven | Always | Never bare: "nothing" needs its reason |
-| Problems | If any | One cause from the list per item, and the words "would have helped" with what would have |
+| Problems | If any | One cause from the list per item |
 | Next time | If different | Left out when you would do the same |
 | Open | If any | Includes a change needed outside your write set, with its file |
 | Feedback | If any | Each item names a file to change; it goes to `__harness__/feedback/inbox.md` for a retro: the project's (the plugin's data folder when the start folder is `/` or the home folder) |
@@ -49,14 +49,16 @@ A claim that something could not be done needs the quoted error of a real attemp
 `not attempted: <why>`, never "can't". A restriction is a conclusion earned from a real failure. A hook sends back a "can't"
 with no failed call, once.
 
-Write the Verdict after the rest and let it follow from it. If Not proven holds something the job needed, the word is
-`partial`. An owner reads the Verdict first, so it must be true on its own.
+Write the Verdict after the rest and let it follow from it. `done` means every Judge line of the brief is met;
+`partial` means a named Judge line is unmet; `blocked` means the job could not go on. Not proven may list limits (a run
+left to the main session, a path not exercised) without making the verdict `partial`. An owner reads the Verdict first, so it must be true on its own.
 
 ## What the hook checks against your transcript
 
-- Each file you changed through Edit, Write or NotebookEdit is named by its absolute or project-relative path, unless it
-  lies under `__scratch__/`.
-- A claim that tests, lint, a check, a gate or a build passed needs a Bash call of yours.
+- Each file you changed through Edit, Write, NotebookEdit or a Bash command (a redirect, `tee`, `sed -i`, a script that
+  writes) is named by its absolute or project-relative path, unless it lies under `__scratch__/`.
+- A claim that tests, lint, a check, a gate or a build passed needs an earlier Bash call of yours that runs a check: a
+  test runner, linter, type checker, build, `make` with a target, or a script under `tests/`. `ls` or `true` is none.
 - Each `exit <N>` you write is the result of a Bash call: the code a failed call printed (`Exit code N`), 0 for a call
   that did not fail, or a code a call printed itself (`rg exit 1`, make's `Error 2`). Describing a code, write "exits with 2".
 - A mark READ `` `path:line` ``, when you use one, names an existing file with at least that many lines, by its path from

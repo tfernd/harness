@@ -21,6 +21,7 @@ from typing import NamedTuple
 from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
 from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, ensure_harness_folder, PLUGIN_PREFIX, data_folder, find_project, get_feedback_root, get_fenced_indices, get_scratch, get_unfenced_lines, read_events, write_atomic
 from nudge import get_turn_stats
+from skill_gate import get_bash_needs
 from turn import FINISHED_STATUSES, NOTIFICATION, get_notice_text
 
 ORDER = ("Answer", "Not proven", "Problems", "Next time", "Open", "Feedback", "Verdict")
@@ -31,6 +32,11 @@ MIN_NOT_PROVEN_WORDS = 3
 VERDICT = re.compile(r"^\W*(done|partial|blocked)\b\W*(\S.*)", re.I | re.S)
 FILE_NAME = re.compile(r"[\w.-]+/[\w./-]+|\b[\w-]+\.[A-Za-z]\w*\b")
 PASS_CLAIM = re.compile(r"\b(tests?|lint|checks?|gates?|build)\b[^.\n]{0,40}\b(pass(?:es|ed)?|clean|green)\b", re.I)
+CHECK_COMMAND = re.compile(
+    r"\b(?:pytest|unittest|ruff|mypy|pyright|tsc|eslint|biome|jest|vitest|flake8|shellcheck|py_compile|run_cases|mutants"
+    r"|ty\s+check|cargo\s+(?:test|build|check|clippy)|go\s+(?:test|build|vet)|(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:test|build|lint|check)"
+    r"|terraform\s+validate|make\s+(?:-\S+\s+)*[\w.-]+)\b|\btests/[\w./-]+\.(?:py|sh)\b"
+)
 CLOSING_TAGS = re.compile(r"(</[A-Za-z][A-Za-z0-9_-]*>|\s)*$")
 EXIT_CODE = re.compile(r"exit\s+[0-9]+", re.I)
 ANSWER_HEADING = re.compile(r"^## Answer\s*$", re.M)
@@ -183,8 +189,6 @@ def check_problems(lines: list[str], cause_pattern: re.Pattern[str], /) -> list[
     for item in get_items(lines):
         if not cause_pattern.search(item):
             problems.append(f"Problems item names no cause from the skill's list: {item[:70]}")
-        if "helped" not in item.lower():
-            problems.append(f"Problems item does not say what would have helped: {item[:70]}")
 
     return problems
 
@@ -312,9 +316,31 @@ def get_file_changes(blocks: list[dict], failed: dict[str, str], cwd: str, /) ->
     return changes
 
 
-def get_changed_files(blocks: list[dict], failed: dict[str, str], cwd: str, /) -> list[str]:
+def get_bash_written_files(blocks: list[dict], failed: dict[str, str], cwd: str, root: str, /) -> set[str]:
 
-    return sorted(get_file_changes(blocks, failed, cwd))
+    written: set[str] = set()
+    failed_ids = set(failed)
+    for block in blocks:
+        is_bash = block.get("type") == "tool_use" and block.get("name") == "Bash"
+        if is_bash and block.get("id") not in failed_ids:
+            command = (block.get("input") or {}).get("command")
+            for name in get_bash_needs(command, cwd).files if isinstance(command, str) else ():
+                path = os.path.realpath(os.path.join(cwd, name))
+                if os.path.isfile(path) and path.startswith(root + os.sep):
+                    written.add(path)
+
+    return written
+
+
+def get_changed_files(blocks: list[dict], failed: dict[str, str], cwd: str, root: str, /) -> list[str]:
+
+    return sorted(set(get_file_changes(blocks, failed, cwd)) | get_bash_written_files(blocks, failed, cwd, root))
+
+
+def is_check_call(block: dict, /) -> bool:
+    command = (block.get("input") or {}).get("command")
+
+    return block.get("type") == "tool_use" and block.get("name") == "Bash" and isinstance(command, str) and CHECK_COMMAND.search(command) is not None
 
 
 def is_named(path: str, report: str, folders: tuple[str, ...], /) -> bool:
@@ -456,15 +482,16 @@ def check_claims(
         return problems
     cwd = event.get("cwd") or root
     folders = (root, os.path.realpath(cwd))
-    for path in get_changed_files(blocks, failed, cwd):
+    for path in get_changed_files(blocks, failed, cwd, os.path.realpath(root)):
         is_exempt = scratch and (path == scratch or path.startswith(scratch + os.sep))
         if not is_exempt and not is_named(path, report, folders):
             problems.append(Problem("Answer", f"the report does not name a file the agent changed: {path}"))
     has_bash = any(block.get("type") == "tool_use" and block.get("name") == "Bash" for block in blocks)
+    has_check = any(is_check_call(block) for block in blocks)
     pass_claim = PASS_CLAIM.search(report)
     exit_claim = EXIT_CODE.search(report)
-    if pass_claim and not has_bash:
-        problems.append(Problem(get_section_at(report, pass_claim.start()), "the report says a check passed, and the transcript holds no Bash call"))
+    if pass_claim and not has_check:
+        problems.append(Problem(get_section_at(report, pass_claim.start()), "the report says a check passed, and the transcript holds no Bash call that runs a check (a test runner, linter, type checker, build, make target or script under tests/)"))
     if exit_claim and not has_bash:
         problems.append(Problem(get_section_at(report, exit_claim.start()), "the report claims an exit code, and the transcript holds no Bash call"))
     elif has_bash:
@@ -644,8 +671,8 @@ def get_kept(event: dict, tries: int, /) -> Kept | None:
 def make_send_back(problems: list[Problem], /, *, is_handback: bool = False) -> str:
 
     hints = {
-        "Problems": f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>" and what would have helped, for example: '
-        '"- The first test run failed on a missing fixture (cause: brief). A Runs: line naming the fixture would have helped."',
+        "Problems": f'Each Problems item says "cause: <one of {", ".join(CAUSES)}>", for example: '
+        '"- The first test run failed on a missing fixture (cause: brief)."',
         "Feedback": "Each Feedback item names a file to change.",
         "Verdict": "Verdict is last and opens with done, partial or blocked, then one sentence.",
     }
