@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness connections</title>
+<style>
+:root{--bg:#faf9f5;--fg:#2c2c2a;--muted:#5f5e5a;--line:#d3d1c7;
+--hook-f:#e1f5ee;--hook-s:#0f6e56;--hook-t:#085041;
+--agent-f:#eeedfe;--agent-s:#534ab7;--agent-t:#3c3489;
+--main-f:#faece7;--main-s:#993c1d;--main-t:#712b13;
+--skill-f:#f1efe8;--skill-s:#888780;--skill-t:#444441}
+@media (prefers-color-scheme:dark){:root{--bg:#1f1e1d;--fg:#f1efe8;--muted:#b4b2a9;--line:#444441;
+--hook-f:#085041;--hook-s:#5dcaa5;--hook-t:#e1f5ee;
+--agent-f:#3c3489;--agent-s:#afa9ec;--agent-t:#eeedfe;
+--main-f:#712b13;--main-s:#f0997b;--main-t:#faece7;
+--skill-f:#444441;--skill-s:#b4b2a9;--skill-t:#f1efe8}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;font-weight:500;margin:0 0 4px}
+p{color:var(--muted);margin:0 0 12px}
+#legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin-bottom:12px}
+#legend span{display:inline-flex;align-items:center;gap:6px}
+.chip{width:12px;height:12px;border-radius:3px;border:1px solid}
+svg{width:100%;height:auto;display:block}
+.node{cursor:pointer}
+.node:hover rect{stroke-width:1.6}
+.name{font:500 13px system-ui,sans-serif}
+.sub{font:11.5px system-ui,sans-serif;opacity:.8}
+.colhead{font:500 13px system-ui,sans-serif;fill:var(--muted)}
+#info{min-height:1.6em;font-size:14px;margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>How the harness is wired</h1>
+<p>Hooks on the left act on the main session and the agents; agents preload skills; skills point to each other. Click a box to show only its links; click it again to show all.</p>
+<div id="legend"></div>
+<svg id="graph" viewBox="0 0 1000 760" role="img" aria-labelledby="t d"><title id="t">Harness connections</title><desc id="d">Seven hooks, the main session and six agents, and twenty-three skills, joined by typed arrows.</desc>
+<defs id="defs"></defs><g id="edges"></g><g id="nodes"></g></svg>
+<div id="info"></div>
+</main>
+<script>
+const KIND = {
+  spawn: {c:"#7F77DD", w:2.2, d:"", label:"main session spawns an agent"},
+  preload: {c:"#888780", w:1.3, d:"", label:"agent preloads a skill"},
+  inject: {c:"#1D9E75", w:1.5, d:"7 4", label:"hook injects text"},
+  check: {c:"#D85A30", w:1.5, d:"2 4", label:"hook checks or blocks"},
+  point: {c:"#B4B2A9", w:1, d:"1 4", label:"skill points to a skill"}
+};
+const hooks = [["context.py","start text for all"],["skill_gate.py","language rules on edit"],["guard.py","refuses risky calls"],["commit_gate.py","commit message form"],["report_gate.py","report sections"],["budget.py","agent progress note"],["turn.py","closing status"]];
+const actors = [["main","the orchestrator session"],["planner","sonnet, read-only"],["scout","haiku, read-only"],["researcher","sonnet, read-only"],["worker","sonnet, edits"],["designer","sonnet, edits"],["reviewer","sonnet, read-only"]];
+const skills = ["orchestrator","workflows","spec","report","evidence","review","testing","code","git","design","tool-habits","authoring","init","code-python","code-js","code-html-css","code-shell","code-make","code-yaml","code-terraform","code-sql","snowflake-cli","aws-cli"];
+const preloads = {designer:["report","code","design","evidence"],planner:["report","spec","evidence"],researcher:["report","evidence"],reviewer:["report","code","review","evidence"],scout:["report","evidence"],worker:["report","code","evidence","testing"]};
+const pointers = {authoring:["code-python","orchestrator","report","testing"],"aws-cli":["code","code-shell","code-terraform"],"code-html-css":["code","code-js","design"],"code-js":["code","code-html-css"],"code-make":["code","code-shell"],"code-python":["code","testing"],"code-shell":["code","tool-habits"],"code-sql":["code","snowflake-cli"],"code-terraform":["code"],"code-yaml":["code","code-shell"],code:["code-html-css","code-js","code-make","code-python","code-shell","code-sql","code-terraform","code-yaml","evidence","review","testing","workflows"],design:["code-html-css","workflows"],evidence:["report","workflows"],git:["code-yaml","orchestrator","review"],orchestrator:["design","evidence","git","report","review","testing","workflows"],report:["evidence"],review:["code","evidence","git","orchestrator","report","testing","workflows"],"snowflake-cli":["code","code-sql"],spec:["evidence","orchestrator","review","testing","workflows"],testing:["review","spec"],"tool-habits":["git"],workflows:["design","evidence","git","orchestrator","review","spec","testing"]};
+const agents = ["planner","scout","researcher","worker","designer","reviewer"];
+const edges = [];
+agents.forEach(a => edges.push(["a:main","a:"+a,"spawn"]));
+Object.entries(preloads).forEach(([a,list]) => list.forEach(s => edges.push(["a:"+a,"s:"+s,"preload"])));
+["main",...agents].forEach(a => edges.push(["h:context.py","a:"+a,"inject"]));
+["tool-habits","orchestrator","report"].forEach(s => edges.push(["h:context.py","s:"+s,"inject"]));
+["code-python","code-js","code-html-css","code-shell","code-make","code-yaml","code-terraform","code-sql","git"].forEach(s => edges.push(["h:skill_gate.py","s:"+s,"inject"]));
+["main",...agents].forEach(a => edges.push(["h:guard.py","a:"+a,"check"]));
+edges.push(["h:commit_gate.py","a:main","check"],["h:commit_gate.py","s:git","check"]);
+agents.forEach(a => edges.push(["h:report_gate.py","a:"+a,"check"]));
+edges.push(["h:report_gate.py","s:report","check"],["h:budget.py","a:main","inject"],["h:turn.py","a:main","check"]);
+Object.entries(pointers).forEach(([s,list]) => list.forEach(t => { if (skills.includes(t)) edges.push(["s:"+s,"s:"+t,"point"]); }));
+const NS = "http://www.w3.org/2000/svg";
+const make = (tag, attrs) => { const element = document.createElementNS(NS, tag); for (const key in attrs) element.setAttribute(key, attrs[key]); return element; };
+const defs = document.getElementById("defs");
+Object.entries(KIND).forEach(([key,kind]) => { const marker = make("marker",{id:"arrow-"+key,viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"}); marker.appendChild(make("path",{d:"M1 1L9 5L1 9",fill:"none",stroke:kind.c,"stroke-width":1.6,"stroke-linecap":"round","stroke-linejoin":"round"})); defs.appendChild(marker); });
+const columns = {h:{x:30,w:190,title:"Hooks"}, a:{x:400,w:200,title:"Main session and agents"}, s:{x:800,w:170,title:"Skills"}};
+const top = 50, span = 690, place = {};
+function layout(list, column, height) { const step = span / list.length; list.forEach((item, index) => { const name = Array.isArray(item) ? item[0] : item; place[column+":"+name] = {x:columns[column].x, y:top+index*step+(step-height)/2, w:columns[column].w, h:height, name:name, sub:Array.isArray(item)?item[1]:"", column:column}; }); }
+layout(hooks,"h",54); layout(actors,"a",54); layout(skills,"s",24);
+const edgeLayer = document.getElementById("edges"), nodeLayer = document.getElementById("nodes");
+Object.values(columns).forEach(c => { const text = make("text",{class:"colhead",x:c.x+c.w/2,y:28,"text-anchor":"middle"}); text.textContent = c.title; nodeLayer.appendChild(text); });
+const drawn = [];
+edges.forEach(([from,to,key]) => {
+  const a = place[from], b = place[to]; if (!a || !b) return;
+  const kind = KIND[key]; let d;
+  if (a.column === b.column) { const x = a.x + a.w, y1 = a.y + a.h/2, y2 = b.y + b.h/2, bow = Math.min(150, 26 + Math.abs(y2-y1)*0.3); d = `M${x} ${y1} C${x+bow} ${y1},${x+bow} ${y2},${x+3} ${y2}`; }
+  else { const x1 = a.x + a.w, y1 = a.y + a.h/2, x2 = b.x - 3, y2 = b.y + b.h/2, mid = (x1+x2)/2; d = `M${x1} ${y1} C${mid} ${y1},${mid} ${y2},${x2} ${y2}`; }
+  const path = make("path",{d:d,fill:"none",stroke:kind.c,"stroke-width":kind.w,"stroke-dasharray":kind.d,"marker-end":`url(#arrow-${key})`,opacity:key==="point"?0.35:0.6});
+  edgeLayer.appendChild(path); drawn.push({path,from,to,key});
+});
+const palette = {h:"hook", a:"agent", s:"skill"};
+let selected = null;
+const info = document.getElementById("info");
+Object.entries(place).forEach(([id,node]) => {
+  const tone = id === "a:main" ? "main" : palette[node.column];
+  const group = make("g",{class:"node",tabindex:0,role:"button","aria-label":node.name});
+  group.appendChild(make("rect",{x:node.x,y:node.y,width:node.w,height:node.h,rx:7,fill:`var(--${tone}-f)`,stroke:`var(--${tone}-s)`,"stroke-width":0.8}));
+  if (node.sub) {
+    const name = make("text",{class:"name",x:node.x+node.w/2,y:node.y+20,"text-anchor":"middle",fill:`var(--${tone}-t)`}); name.textContent = node.name; group.appendChild(name);
+    const sub = make("text",{class:"sub",x:node.x+node.w/2,y:node.y+39,"text-anchor":"middle",fill:`var(--${tone}-t)`}); sub.textContent = node.sub; group.appendChild(sub);
+  } else {
+    const name = make("text",{class:"sub",x:node.x+node.w/2,y:node.y+node.h/2+4,"text-anchor":"middle",fill:`var(--${tone}-t)`}); name.textContent = node.name; group.appendChild(name);
+  }
+  const choose = () => {
+    selected = selected === id ? null : id;
+    let count = 0;
+    drawn.forEach(edge => { const on = !selected || edge.from === selected || edge.to === selected; if (selected && on) count++; edge.path.setAttribute("opacity", !selected ? (edge.key==="point"?0.35:0.6) : (on ? 1 : 0.04)); edge.path.setAttribute("stroke-width", selected && on ? KIND[edge.key].w + 1 : KIND[edge.key].w); });
+    info.textContent = selected ? `${node.name}: ${count} links` : "";
+  };
+  group.addEventListener("click", choose);
+  group.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); } });
+  nodeLayer.appendChild(group);
+});
+const legend = document.getElementById("legend");
+Object.values(KIND).forEach(kind => { const item = document.createElement("span"); item.innerHTML = `<svg width="38" height="10"><line x1="1" y1="5" x2="37" y2="5" stroke="${kind.c}" stroke-width="${kind.w+0.8}" stroke-dasharray="${kind.d}"/></svg>${kind.label}`; legend.appendChild(item); });
+[["hook","hook"],["main","main session"],["agent","agent"],["skill","skill"]].forEach(([tone,label]) => { const item = document.createElement("span"); item.innerHTML = `<span class="chip" style="background:var(--${tone}-f);border-color:var(--${tone}-s)"></span>${label}`; legend.appendChild(item); });
+</script>
+</body>
+</html>
