@@ -21,8 +21,8 @@ what order. Each step lands as its own commits, with `make check` green, before 
   - kept only where a machine reads it: a shebang, an encoding line, a PEP 723 block, a license header the project
     requires, a directive a tool needs to run.
   - `harness:code-python`, `harness:testing` and the other skills drop their docstring rules to match.
-  - This repo: replace the six `__doc__` reads used for argparse (`port/harness_port.py`, `docs/build_map.py`,
-    `hooks/replay.py`, `tests/mutants.py`, `tests/check_skills.py`, `tests/run_cases.py`), run `make strip`, make
+  - This repo: replace the `__doc__` reads used for argparse (`port/harness_port.py`, `docs/build_map.py`,
+    `hooks/replay.py`, `tests/check_skills.py`, `tests/run_cases.py`), run `make strip`, make
     `.githooks/pre-commit` executable. The page's hook summaries come from `HOOK_JOBS` in `docs/build_map.py`, not from
     the hooks' docstrings, so the strip does not touch them.
 - **Why:** comments were written for human readers; an agent reads the code itself. A comment goes stale, costs
@@ -68,15 +68,11 @@ Each skill comes with a `skill_gate` kind in `hooks/common.py`, so it arrives be
   wildcards, public buckets and missing timeouts.
 - **Frontmatter for the page:** a `kind:` field in skill and agent frontmatter instead of the lists in
   `docs/build_map.py` (check live that Claude Code ignores the key).
-- **Thin the tests:** remove near-duplicate cases and planted bugs; never a rule's only case; 0 survivors kept.
-- **Retro:** over 100 reports wait; run `harness:retro`.
+- **Thin the tests:** remove near-duplicate cases; never a rule's only case.
 - **Small fixes:** scoped tools (`npx @scope/tool`) always ask; `is_skipped` in the commit gate misses class-level
   skips and `pytest.skip()`; a worktree's own `__scratch__/` counts as outside scratch; worktree agents start from
-  the last pushed commit, so push first; the mutant runner should warn when the tree changes under it;
-  `port/harness_port.py` drops Kiro tools outside `KIRO_TAGS` without a not_ported note, so the page cannot mark
+  the last pushed commit, so push first; `port/harness_port.py` drops Kiro tools outside `KIRO_TAGS` without a not_ported note, so the page cannot mark
   those agents; decide whether a dropped matcher name makes a hook "partly ported" on the page or only a lost event;
-  mutants `skill-name-with-a-path-read` and `skill-unprefixed-name-read` survive: add a case with a real SKILL.md under
-  a path-like name, or drop them; `mutants.py --only` should print how many mutants it matched;
   the installer rule reads a pipeline from grouped segments, so it can cross a `;` (`curl x | jq .; echo y | python3`
   asks): give `Segment` in `hooks/shell.py` a pipe flag; `python -W ignore -` is not seen as reading stdin;
   `tests/check_skills.py` should refuse an unquoted ` #` in a frontmatter value (YAML reads it as a comment and cut

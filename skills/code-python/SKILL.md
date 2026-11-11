@@ -86,7 +86,7 @@ rule set and the complexity limit.
 
 Verbs and nouns, one word per idea, one job per function and module, phases and blank lines, `Literal` vs `int`,
 no-`dict` results, a module of one topic, import layering. The reviewer reads for these; a rule that keeps failing gets a
-project gate (`harness:retro`).
+project gate.
 
 Ruff and the type checker also let these through unless the project adds a check of its own:
 

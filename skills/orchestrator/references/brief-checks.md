@@ -32,8 +32,8 @@ The lists the main session uses before a brief goes out, and when it accepts. Ea
 ### Briefs
 
 - A write set naming a scratch subfolder: create it before the agent starts, since a shell `cd` into a missing folder trips the guard.
-- A brief that runs a substring filter (`mutants.py --only`) names the exact texts and how many items they match: a
-  common word (`dropped`) matches every hook and turns a narrow run into a full audit.
+- A brief that runs a substring filter (`run_cases.py --only`) names the exact texts and how many items they match: a
+  common word matches every hook and turns a narrow run into the full suite.
 - A judge that runs tests also checks how many ran: a zero-test run exits 0 and passes for the wrong reason.
 - A brief fits its turn budget: more steps than the budget can hold ends as a partial result, so split it before sending.
 - An audit brief carries the author's report, so the grade can be compared with its Verdict.

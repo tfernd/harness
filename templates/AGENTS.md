@@ -36,7 +36,7 @@ Every sub-agent ends with the `harness:report` report, claims marked READ, DERIV
 - An exit code after a pipe is the last command's: read `${PIPESTATUS[@]}` (bash) or `$pipestatus` (zsh).
 
 ## 8. Rule enforcers
-Every rule above has an enforcer; a rule with none is the first to be broken again (`harness:retro`).
+Every rule above has an enforcer; a rule with none is the first to be broken again.
 
 | Rule | Enforced by (hook, test, lint, review, none) |
 |---|---|

@@ -24,7 +24,7 @@ The main session asks (step 2) and does the writing; the owner approves the resu
 
 ## What the plugin keeps in the project
 
-- `__harness__/` holds the harness's state (feedback inbox, handled lines, open problems, the retro mark) and a `README.md` that maps it.
+- `__harness__/` holds the harness's state and a `README.md` that maps it.
 - `__scratch__/` holds throwaway files.
 - Each folder carries its own `.gitignore` holding `*`, written by a hook when the folder is made, so git sees neither and nothing needs committing or ignoring by hand. `rg` and Glob skip ignored folders, so read their files by path.
 

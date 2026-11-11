@@ -101,13 +101,13 @@ def check_preloads(dest: Path, target: str) -> None:
 
 
 def check_kiro_resources(dest: Path) -> None:
-    config = json.loads((dest / "agents" / "harness-analyst.json").read_text())
+    config = json.loads((dest / "agents" / "harness-planner.json").read_text())
     resources = config["resources"]
-    preloaded = get_preloads(ROOT / "agents" / "analyst.md")
+    preloaded = get_preloads(ROOT / "agents" / "planner.md")
     others = [path.name for path in sorted((ROOT / "skills").iterdir()) if path.name not in preloaded]
     check("file://AGENTS.md" in resources, f"kiro: resources lack AGENTS.md: {resources}")
     check("file://.kiro/steering/**/*.md" in resources, "kiro: resources lack the steering glob")
-    check(bool(preloaded) and bool(others), "kiro: analyst has no preload or no other skill")
+    check(bool(preloaded) and bool(others), "kiro: planner has no preload or no other skill")
     for skill in others:
         skill_file = dest / "skills" / f"harness-{skill}" / "SKILL.md"
         check(f"skill://{skill_file}" in resources, f"kiro: resources lack skill://{skill}")
@@ -133,11 +133,11 @@ def check_texts(dest: Path, target: str) -> None:
                 f"{target}: CLAUDE_PLUGIN_ROOT left in {path.name}",
             )
 
-    analyst = dest / "agents" / "harness-analyst"
+    planner = dest / "agents" / "harness-planner"
     if target == "kiro":
-        config = json.loads(analyst.with_suffix(".json").read_text())
-        check(config["name"] == "harness-analyst", "kiro agent name")
-        prompt_file = dest / "harness-prompts" / "harness-analyst.md"
+        config = json.loads(planner.with_suffix(".json").read_text())
+        check(config["name"] == "harness-planner", "kiro agent name")
+        prompt_file = dest / "harness-prompts" / "harness-planner.md"
         check(config["prompt"] == f"file://{prompt_file}", f"kiro agent prompt path {config['prompt']}")
         check(not list((dest / "agents").glob("*.md")), "kiro agents folder holds a .md file")
         check(config["tools"] == ["read", "shell"], f"kiro agent tags {config['tools']}")
@@ -147,7 +147,7 @@ def check_texts(dest: Path, target: str) -> None:
         check_kiro_resources(dest)
         return
 
-    text = analyst.with_suffix(".md").read_text()
+    text = planner.with_suffix(".md").read_text()
     check(get_cortex_tools(text) == ["read", "grep", "glob", "bash"], "cortex agent tools are not a YAML list")
     check("model:" not in text, "cortex agent has a model")
     check_preloads(dest, target)
@@ -170,7 +170,7 @@ def check_kiro_old_layout(base: Path) -> None:
     dest = base / "kiro-old"
     agents = dest / "agents"
     agents.mkdir(parents=True)
-    old = ["agents/harness-analyst.md", "agents/harness-scout.md"]
+    old = ["agents/harness-planner.md", "agents/harness-scout.md"]
     for name in old:
         (dest / name).write_text("old prompt\n")
     (agents / "mine.md").write_text("foreign\n")

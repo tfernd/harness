@@ -60,8 +60,6 @@ EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
 EDITS_KIND = "edits"
 HARNESS_FOLDER = "__harness__"
 SCRATCH_FOLDER = "__scratch__"
-FEEDBACK_FOLDER = f"{HARNESS_FOLDER}/feedback"
-OLD_FEEDBACK_FOLDER = "harness-feedback"
 IGNORE_FILE = ".gitignore"
 IGNORE_TEXT = "*\n"
 HARNESS_README = """# __harness__
@@ -69,25 +67,9 @@ HARNESS_README = """# __harness__
 State of the harness plugin in this project. Git ignores this whole folder (its `.gitignore` holds `*`), and `rg` and Glob skip
 ignored folders too, so read these files by path.
 
-- `feedback/inbox.md`: one line per Feedback item of an agent's report. The report gate appends; a retro reads.
-- `feedback/handled.md`: one line per item a retro closed: `<id>: rule written in|fixed in|covered by <file>` or `<id>: rejected: <reason>`. The main session writes; the Stop hook and the
-  start-of-agent lessons read.
-- `feedback/open.md`: problems a retro kept that no rule fixes yet, `- <role or all>: <problem>`. The main session writes; agents read at start.
-- `feedback/retro-mark`: how many inbox items the last retro covered. The Stop hook keeps it.
-
 Per-machine data (the ledger of reports, turn counters, send-backs, progress) lives in the plugin's data folder (`$CLAUDE_PLUGIN_DATA`,
 else `~/.cache/harness`), not here.
 """
-INBOX = f"{FEEDBACK_FOLDER}/inbox.md"
-HANDLED = f"{FEEDBACK_FOLDER}/handled.md"
-RETRO_MARK = f"{FEEDBACK_FOLDER}/retro-mark"
-OPEN_PROBLEMS = f"{FEEDBACK_FOLDER}/open.md"
-FILE_EDGES = "`'\".,;:()"
-
-
-def get_plugin_root() -> Path:
-
-    return Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent)
 
 
 def read_sections(path: Path, /) -> dict:
@@ -179,14 +161,6 @@ def ensure_harness_folder(base: Path, /) -> Path:
     ensure_ignored_folder(folder, HARNESS_README)
 
     return folder
-
-
-def get_feedback_root(root: Path, /) -> Path:
-
-    if is_project_root(root):
-        return root
-
-    return data_folder() / "projects" / (re.sub(r"[^A-Za-z0-9]+", "-", str(root)).strip("-") or "root")
 
 
 def get_scratch(root: Path, config: dict, /) -> str:

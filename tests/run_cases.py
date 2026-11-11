@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import pwd
@@ -1016,9 +1015,6 @@ def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: obj
     return Case(name, ("report_gate.py",), event, blocks, text, **options)
 
 
-INBOX_NAME = "__harness__/feedback/inbox.md"
-MARK_NAME = "__harness__/feedback/retro-mark"
-OPEN_NAME = "__harness__/feedback/open.md"
 NUMBERED = "\n".join(f"line {word}" for word in ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"))
 
 
@@ -1035,7 +1031,6 @@ def bash_failed(tool_id: str, code: int, /) -> dict:
     block = {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": f"Exit code {code}\noutput"}
 
     return {"type": "user", "message": {"content": [block]}}
-HANDLED_NAME = "__harness__/feedback/handled.md"
 CLEAN_REPORT = answer_report("Nothing changed.")
 def bash_output(tool_id: str, text: str, /) -> dict:
 
@@ -1072,8 +1067,6 @@ def handback(name: str, report: str, blocks: bool, text: str = "", /, *, lines: 
 SEND_BACK_COUNT = "data/send-backs/a1.count"
 EXIT_REPORT = exit_report(0)
 FEEDBACK_ITEM = "skills/report/SKILL.md: add a rule to the report skill"
-FEEDBACK_ID = hashlib.sha1(FEEDBACK_ITEM.encode()).hexdigest()[:8]
-FEEDBACK_REPORT = make_report(replace=("Feedback", f"- {FEEDBACK_ITEM}"))
 BAD_REPORT = make_report(skip="Not proven", replace=("Feedback", f"- {FEEDBACK_ITEM}"))
 GATE_CASES = (
     gate("a Read is no Bash call for an exit code", transcript_event(EXIT_REPORT), True, "holds no Bash call", transcript=(assistant({"type": "tool_use", "id": "r", "name": "Read", "input": {}}),)),
@@ -1115,76 +1108,9 @@ GATE_CASES = (
         stop_event(make_report(replace=("Answer", "- output:\n```\nunterminated"))),
         False,
     ),
-    *(
-        gate(
-            f"feedback of {text!r} files nothing",
-            stop_event(make_report(replace=("Feedback", text))),
-            False,
-            not_wrote=(INBOX_NAME, "id="),
-        )
-        for text in ("none", "N/A", "No feedback.", "None needed.")
-    ),
     gate("no project file still gates a harness role", stop_event("no headings"), True, "missing: Answer", config=None),
     gate("no project file leaves a repo's own agent alone", stop_event("no headings", agent_type="builder"), False, config=None),
     gate("a project file leaves a repo's own agent alone", stop_event("no headings", agent_type="builder"), False),
-    gate(
-        "no project file still files feedback in the repo",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        config=None,
-        wrote=(INBOX_NAME, FEEDBACK_ITEM),
-    ),
-    gate("the first inbox write makes the harness folder ignore itself", stop_event(FEEDBACK_REPORT), False, wrote=("__harness__/.gitignore", "*")),
-    gate("the first inbox write leaves a map of the folder", stop_event(FEEDBACK_REPORT), False, wrote=("__harness__/README.md", "feedback/inbox.md")),
-    gate(
-        "feedback from the home folder stays out of it",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        config=None,
-        cwd="",
-        not_wrote=(f"../{INBOX_NAME}", FEEDBACK_ITEM),
-    ),
-    gate(
-        "a feedback item reaches the inbox",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        wrote=(INBOX_NAME, FEEDBACK_ITEM),
-    ),
-    gate(
-        "a feedback item in the inbox carries its time",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        wrote=(INBOX_NAME, f"session={SESSION} agent=worker time=20"),
-    ),
-    gate(
-        "a known feedback item is not filed twice",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        files=((INBOX_NAME, f"- id={FEEDBACK_ID} session={SESSION} agent=worker {FEEDBACK_ITEM}\n"),),
-        not_wrote=(INBOX_NAME, "skill\n- id="),
-    ),
-    gate(
-        "another session's item is filed for this one",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        files=((INBOX_NAME, f"- id={FEEDBACK_ID} session=other agent=worker {FEEDBACK_ITEM}\n"),),
-        wrote=(INBOX_NAME, f"id={FEEDBACK_ID} session={SESSION} "),
-    ),
-    gate(
-        "the feedback goes to the project a cd left",
-        stop_event(FEEDBACK_REPORT),
-        False,
-        cwd="project/.claude/worktrees/w1",
-        project_dir="project",
-        wrote=(INBOX_NAME, "add a rule to the report skill"),
-    ),
-    gate(
-        "a feedback item of a report sent back stays out of the inbox",
-        stop_event(BAD_REPORT),
-        True,
-        "missing: Not proven",
-        not_wrote=(INBOX_NAME, "add a rule"),
-    ),
     gate(
         "an accepted report reaches the ledger",
         stop_event(make_report(replace=("Problems", f"- it broke (cause: brief). {HELPED}"))),
@@ -1520,15 +1446,9 @@ GATE_CASES = (
     gate("the form's cause list copied whole goes back", stop_event(make_report(replace=("Problems", f"- it broke (cause: brief | tool). {HELPED}"))), True, "names no cause"),
     gate("a project's extra cause is accepted", stop_event(make_report(replace=("Problems", f"- it broke (cause: GPU). {HELPED}"))), False, config={"report": {"causes": ["GPU"]}}),
     gate("every Problems item is judged", stop_event(make_report(replace=("Problems", "- one (cause: tool).\n- two broke."))), True, "names no cause from the skill's list: - two broke"),
-    gate("a Feedback item with no file goes back", stop_event(make_report(replace=("Feedback", "- add a rule"))), True, "names no file to change", not_wrote=(INBOX_NAME, "id=")),
-    gate("a Feedback item names its file on a continuation line", stop_event(make_report(replace=("Feedback", "change the rule\n  in report.md"))), False, wrote=(INBOX_NAME, "change the rule in report.md")),
-    gate("an unindented line is its own Feedback item", stop_event(make_report(replace=("Feedback", "first item in a.md\nsecond item in b.md"))), False, wrote=(INBOX_NAME, "second item in b.md")),
-    gate(
-        "only Feedback reaches the inbox",
-        stop_event(make_report(fill={"Open": "- pick a or b: a, cheap; b, slow", "Problems": f"- the brief was stale (cause: brief). {HELPED}", "Next time": "ask first"})),
-        False,
-        not_wrote=(INBOX_NAME, "id="),
-    ),
+    gate("a Feedback item with no file goes back", stop_event(make_report(replace=("Feedback", "- add a rule"))), True, "names no file to change"),
+    gate("a Feedback item names its file on a continuation line", stop_event(make_report(replace=("Feedback", "change the rule\n  in report.md"))), False),
+    gate("an unindented line is its own Feedback item", stop_event(make_report(replace=("Feedback", "first item in a.md\nsecond item in b.md"))), False),
     *(
         gate(
             f"{claim!r} with no Bash call goes back",
@@ -1580,7 +1500,6 @@ GATE_CASES = (
 STRAY = "\n## Note\nstray"
 LEDGER_NAME = "data/ledger.jsonl"
 BARE_REPORT = make_report(replace=("Answer", "FIRSTANSWER changed one file."), fill={"Not proven": "BARETOKEN"})
-FEEDBACK_BARE = make_report(fill={"Not proven": "BARETOKEN", "Feedback": f"- {FEEDBACK_ITEM}"})
 FIX_NOT_PROVEN = "## Not proven\n- the live run was not made, the owner can run it"
 VERDICT_ONLY = "## Verdict\ndone: the unit is complete"
 
@@ -1606,7 +1525,6 @@ RESEND_CASES = (
     resend("a resent section replaces the old one", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "the live run was not made"), not_wrote=(LEDGER_NAME, "BARETOKEN")),
     resend("a merged report keeps its Verdict", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, "done: the unit is complete")),
     resend("a merged report counts the send-back", BARE_REPORT, FIX_NOT_PROVEN, False, wrote=(LEDGER_NAME, '"send_backs": 1')),
-    resend("a merged report files the feedback of the first", FEEDBACK_BARE, FIX_NOT_PROVEN, False, wrote=(INBOX_NAME, FEEDBACK_ITEM)),
     resend("a whole new report still works", BARE_REPORT, make_report(), False, wrote=(LEDGER_NAME, '"accepted": true'), not_wrote=(LEDGER_NAME, "FIRSTANSWER")),
     resend("a still wrong resend goes back again", BARE_REPORT, "## Not proven\nstill", True, "- Not proven: Not proven is bare", lacks="- Answer"),
     resend("a resend of one section does not name the others", BARE_REPORT, "## Not proven\nstill", True, lacks="Verdict"),
@@ -1752,49 +1670,14 @@ def turn(
     return Case(name, ("turn.py", "stop"), event, blocks, text, files=(counted, *files), transcript=transcript, **options)
 
 
-def waiting(count: int, session: str = SESSION, /) -> str:
-
-    return "".join(f"- id={index:08x} session={session} agent=worker item {index}\n" for index in range(count))
-
-
-def stamped(days: float, /) -> str:
-
-    moment = datetime.now().astimezone() - timedelta(days=days)
-
-    return f"- id=0000aaaa session=other agent=worker time={moment.strftime('%Y-%m-%dT%H:%M:%S%z')} an old item\n"
-
-
-def distinct_reasons(count: int, /) -> str:
-
-    return "".join(f"{index:08x}: rejected: reason number {index} stands\n" for index in range(count))
-
-
-def rule_lines(count: int, /) -> str:
-
-    return "".join(f"{index:08x}: rule written in AGENTS.md\n" for index in range(count))
-
-
-def agent_calls(count: int, /) -> tuple[dict, ...]:
-
-    return tuple(launch(f"a{index}", is_background=False)[0] for index in range(count))
-
-
-INBOX = (INBOX_NAME, waiting(20))
-SKIPPED_FILE = f"data/turns/{SESSION}.skipped"
-SKIP_PROMPT = {"type": "user", "message": {"content": "skip retro, please"}}
-LESSON_BULLETS = "## Lessons\n- check the unit twice\n- name the file in the brief\n"
-BULLET_ID = hashlib.sha1(b"check the unit twice").hexdigest()[:8]
 REFUSED = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "PreToolUse:Bash hook error: [guard.py]: Blocked by the harness guard: no"}]}}
 QUOTED_REFUSAL = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "FAIL expected Blocked by the harness guard"}]}}
 OWNER_PROMPT = {"type": "user", "message": {"content": "the next job"}}
-HANDLED_RULE = (HANDLED_NAME, rule_lines(20))
 BLOCKS_FILE = f"data/turns/{SESSION}.blocks"
 CALLS_FILE = f"data/turns/{SESSION}.calls"
 EDITS_FILE = f"data/turns/{SESSION}.edits"
 RULES_FILE = f"data/turns/{SESSION}.rules"
 DEFERRED_FILE = f"data/turns/{SESSION}.deferred"
-RELEASED_FILE = f"data/turns/{SESSION}.released"
-RELEASED_FILE_ITEM = (RELEASED_FILE, " ".join(f"{index:08x}" for index in range(20)))
 RULE_FILE_BEFORE = ("AGENTS.md", "a rule\n")
 RULES_KEPT = (RULES_FILE, "{}")
 RULES_OTHER = (RULES_FILE, '{"AGENTS.md": "changed since"}')
@@ -1867,18 +1750,9 @@ TURN_CASES = (
     turn("the Stop hook ignores a heading in a fence", f"```\n{FULL_STATUS}\n```", True, "Verdict", calls=BUSY_CALLS),
     turn("a project's min_calls is read", PROGRESS, False, calls=BUSY_CALLS, config={"stop": {"min_calls": 5}}),
     turn("no project file still asks for the closing status", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None),
-    turn("no project file still holds a retro", PROGRESS, True, "00000000", calls=BUSY_CALLS, config=None, files=(INBOX,)),
-    turn("the home folder holds no retro", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None, cwd="", files=(("../" + INBOX[0], INBOX[1]),), lacks="retro"),
-    turn("a due retro is refused", PROGRESS, True, "00000000", files=(INBOX,)),
-    turn("a handled feedback id is allowed", PROGRESS, False, files=(INBOX, HANDLED_RULE)),
-    turn("a rejected feedback id is allowed", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20)))),
-    turn("a handled line with no verdict does not count", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "00000000: looked\n"))),
-    turn("a missing inbox is no error", PROGRESS, False),
     turn("an empty blocks file counts as zero", PROGRESS, True, "Verdict", calls=BUSY_CALLS, files=((BLOCKS_FILE, ""),), lacks="let the call run", wrote=(BLOCKS_FILE, "1")),
     turn("junk saved rules do not trap the lessons check", LESSONS, False, files=((RULES_FILE, "{junk"),), config=NO_RULE_PATHS, lacks="let the call run"),
     turn("an empty saved rules file does not trap the lessons check", LESSONS, False, files=((RULES_FILE, ""),), config=NO_RULE_PATHS, lacks="let the call run"),
-    turn("junk saved rules do not trap a handled line", PROGRESS, False, files=(INBOX, HANDLED_RULE, (RULES_FILE, "[1")), lacks="let the call run"),
-    turn("saved rules that are not an object do not trap a handled line", PROGRESS, False, files=(INBOX, HANDLED_RULE, (RULES_FILE, "[]")), lacks="let the call run"),
     turn("lessons with no rule change get a note", LESSONS, False, "no change to show", files=(RULES_KEPT,), config=NO_RULE_PATHS),
     turn("lessons that defer get a note", "**Lessons:** will add a rule next turn.\n", False, "defers", files=(RULES_KEPT,), config=NO_RULE_PATHS),
     turn("lessons with a rule change are allowed", LESSONS, False, files=(RULES_OTHER,), config=NO_RULE_PATHS),
@@ -1889,8 +1763,9 @@ TURN_CASES = (
         "the third block is the last",
         PROGRESS,
         True,
-        "00000000",
-        files=(INBOX, (BLOCKS_FILE, "2")),
+        "Verdict",
+        calls=BUSY_CALLS,
+        files=((BLOCKS_FILE, "2"),),
         wrote=(BLOCKS_FILE, "3"),
     ),
     turn(
@@ -1898,76 +1773,16 @@ TURN_CASES = (
         PROGRESS,
         False,
         "open checks",
-        files=(INBOX, (BLOCKS_FILE, "3")),
-        wrote=(RELEASED_FILE, "00000000 00000001 00000002"),
+        calls=BUSY_CALLS,
+        files=((BLOCKS_FILE, "3"),),
     ),
-    turn("a released id holds no more, with no warning", PROGRESS, False, files=(INBOX, RELEASED_FILE_ITEM), lacks="open checks"),
-    turn("nine waiting items hold nothing", PROGRESS, False, files=((INBOX_NAME, waiting(9)),), lacks="open checks"),
-    turn("ten waiting items hold the turn", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(10)),)),
-    turn("another session's items hold this one too", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(20, "other")),)),
-    turn("the hold says to launch the analyst in the background", PROGRESS, True, "Launch `harness:analyst` in the background", files=(INBOX,)),
-    turn("an item three days old holds the turn", PROGRESS, True, "0000aaaa", files=((INBOX_NAME, stamped(3.1)),)),
-    turn("the oldest of fresh and old items decides", PROGRESS, True, "0000aaaa", files=((INBOX_NAME, stamped(0.1) + stamped(9)),)),
-    turn("a none bullet files nothing", "## Lessons\n- none\n", False, not_wrote=(INBOX_NAME, "agent=main")),
-    turn("an item two days old holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(2.9)),), lacks="open checks"),
-    turn("an old item past the mark holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(9) + waiting(2)), (MARK_NAME, "3")), lacks="open checks"),
-    turn("an old item that is handled holds nothing", PROGRESS, False, files=((INBOX_NAME, stamped(9)), (HANDLED_NAME, "0000aaaa: rejected: it does not apply\n")), lacks="open checks"),
-    turn("a sub-agent is never held for a retro", PROGRESS, False, files=(INBOX,), extra={"agent_id": "agent-x"}, lacks="open checks"),
-    turn("a sub-agent files no lesson", LESSON_BULLETS, False, extra={"agent_id": "agent-x"}, not_wrote=(INBOX_NAME, "agent=main")),
-    turn("the owner's skip retro silences the hold", PROGRESS, False, files=(INBOX,), transcript=(SKIP_PROMPT,), lacks="open checks"),
-    turn("the owner's skip retro is kept for the session", PROGRESS, False, files=(INBOX,), transcript=(SKIP_PROMPT,), wrote=(SKIPPED_FILE, "1")),
-    turn("a kept skip silences a later turn", PROGRESS, False, files=(INBOX, (SKIPPED_FILE, "1")), lacks="open checks"),
-    turn("a skip in an earlier prompt does not count", PROGRESS, True, "00000000", files=(INBOX,), transcript=(SKIP_PROMPT, OWNER_PROMPT)),
-    turn("a skip in another session is not kept", PROGRESS, True, "00000000", files=(INBOX, ("data/turns/other.skipped", "1"))),
-    turn("a line for one item id closes only that item", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "00000009: rejected: it does not apply\n"))),
-    turn("a partly handled retro still holds", PROGRESS, True, "00000013", files=(INBOX, (HANDLED_NAME, distinct_reasons(19)))),
-    turn("a partly handled retro leaves the mark", PROGRESS, True, files=(INBOX, (HANDLED_NAME, distinct_reasons(19))), not_wrote=(MARK_NAME, "20")),
-    turn("every item handled by its own id moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=(MARK_NAME, "20"), lacks="open checks"),
-    turn("ten agents in the session hold nothing for one waiting item", PROGRESS, False, files=((INBOX_NAME, waiting(1)),), transcript=agent_calls(10), lacks="open checks"),
-    turn("ten agents hold nothing when no item waits", PROGRESS, False, files=((INBOX_NAME, ""),), transcript=agent_calls(10), lacks="open checks"),
-    turn("ten agents hold nothing when every item is handled", PROGRESS, False, files=((INBOX_NAME, waiting(1)), (HANDLED_NAME, distinct_reasons(1))), transcript=agent_calls(10), lacks="open checks"),
-    turn("a lesson bullet is filed as from the main session", LESSON_BULLETS, False, files=(), wrote=(INBOX_NAME, f"id={BULLET_ID} session={SESSION} agent=main time=")),
-    turn("each lesson bullet is filed", LESSON_BULLETS, False, wrote=(INBOX_NAME, "name the file in the brief\n")),
-    turn("a lesson bullet is filed once on a re-held turn", LESSON_BULLETS, False, files=((INBOX_NAME, f"- id={BULLET_ID} session={SESSION} agent=main time=2099-01-01T00:00:00+0000 check the unit twice\n"),), not_wrote=(INBOX_NAME, "check the unit twice\n- id=" + BULLET_ID)),
-    turn("a lesson bullet already filed is not refiled but a new one is", LESSON_BULLETS, False, files=((INBOX_NAME, f"- id={BULLET_ID} session={SESSION} agent=main time=2099-01-01T00:00:00+0000 check the unit twice\n"),), wrote=(INBOX_NAME, "name the file in the brief\n")),
-    turn("a lesson bullet of another session is filed again", LESSON_BULLETS, False, files=((INBOX_NAME, f"- id={BULLET_ID} session=other agent=main time=2099-01-01T00:00:00+0000 check the unit twice\n"),), wrote=(INBOX_NAME, f"id={BULLET_ID} session={SESSION} ")),
-    turn("a none lesson files nothing", "Lessons: none\n", False, not_wrote=(INBOX_NAME, "agent=main")),
-    turn("a bullet outside the Lessons section is not filed", "## Done\n- finished the unit\n", False, not_wrote=(INBOX_NAME, "agent=main")),
-    turn("lessons in a home folder file nothing", LESSON_BULLETS, False, cwd="", config=None, not_wrote=("../" + INBOX_NAME, "agent=main")),
-    turn("a closing line moves the mark", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=(MARK_NAME, "20")),
-    turn("a moved mark leaves the harness folder ignoring itself", PROGRESS, False, files=(INBOX, (HANDLED_NAME, distinct_reasons(20))), wrote=("__harness__/.gitignore", "*")),
-    turn("the mark hides what it covers", PROGRESS, False, files=(INBOX, (MARK_NAME, "15")), lacks="open checks"),
-    turn("twenty past the mark are due", PROGRESS, True, "00000014", files=((INBOX_NAME, waiting(40)), (MARK_NAME, "20"))),
-    turn("a line for an item id closes no retro", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply\n"))),
-    turn("a running agent puts the retro off", PROGRESS, False, files=(INBOX,), transcript=(launch("t1")[0],), lacks="a retro is due"),
-    turn(
-        "one reason cannot close two things",
-        PROGRESS,
-        True,
-        "the same reason already closes 00000001",
-        files=(INBOX, (HANDLED_NAME, "00000001: rejected: it does not apply here\n00000002: rejected: it does not apply here\n")),
-    ),
-    turn("a mark past the inbox is ignored", PROGRESS, True, "00000000", files=(INBOX, (MARK_NAME, "80"))),
-    turn("a retro-N line closes nothing", PROGRESS, True, "`retro-N` line closes nothing: write one line per item id", files=(INBOX, (HANDLED_NAME, "retro-20: rejected: it does not apply\n")), not_wrote=(MARK_NAME, "20")),
-    turn("the probe retro-12 rejected clears none of 12 waiting items", PROGRESS, True, "00000000", files=((INBOX_NAME, waiting(12)), (HANDLED_NAME, "retro-12: rejected: not worth it\n")), not_wrote=(MARK_NAME, "12")),
-    turn("a retro-N rule line closes nothing", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "retro-20: rule written in AGENTS.md\n"))),
-    turn("the hold names a line it ignores and why", PROGRESS, True, "00000001: applied: open.md\\\": after the id write", files=(INBOX, (HANDLED_NAME, "00000001: applied: open.md\n9e4a7424: applied: open.md\n"))),
-    turn("a line for an open id that is ignored is named", PROGRESS, True, "ignores the line \\\"00000001: filed\\\"", files=(INBOX, (HANDLED_NAME, "00000001: filed\n"))),
-    turn("a line with no item id is named", PROGRESS, True, "it starts with no item id", files=(INBOX, (HANDLED_NAME, "done with all of it\n"))),
-    turn("a closed old line that is ignored is not named", PROGRESS, True, lacks="ignores the line \\\"deadbeef", files=(INBOX, (HANDLED_NAME, "deadbeef: applied: open.md\n"))),
-    turn("a filed line closes nothing", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "".join(f"{index:08x}: filed\n" for index in range(20))))),
-    turn("an applied open.md line closes nothing", PROGRESS, True, "00000000", files=(INBOX, (HANDLED_NAME, "".join(f"{index:08x}: applied: open.md\n" for index in range(20))))),
     turn("a failed command quoting a refusal is no refusal", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(QUOTED_REFUSAL,), lacks="refused this turn"),
     turn("a bare none after a refusal gets a note", "Lessons: none\n", False, "refused this turn", files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,)),
     turn("a none with its reason after a refusal is allowed", "Lessons: none: the guard worked as it should\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,), lacks="refused this turn"),
     turn("a refusal before the owner's prompt does not count", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED, OWNER_PROMPT), lacks="refused this turn"),
-    turn("an old line with no session never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef agent=worker add a rule\n"),)),
-    turn("another session's line never blocks", PROGRESS, False, files=((INBOX_NAME, "- id=deadbeef session=other agent=worker a\n"),)),
     turn("a project's headings replace the status", "## Result\nall of it", False, calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a project's missing heading is named", PROGRESS, True, "Result", calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a stopped agent is finished", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=(*launch("t1"), notify("t1", "stopped"))),
-    turn("an empty block count holds the turn", PROGRESS, True, "00000000", files=(INBOX, (BLOCKS_FILE, ""))),
-    turn("a retro mark in other digits is ignored", PROGRESS, True, "00000000", files=(INBOX, (MARK_NAME, "\u00b2"))),
     turn("a pass resets the blocks", PROGRESS, False, files=((BLOCKS_FILE, "2"),), wrote=(BLOCKS_FILE, "0")),
     turn("a background Agent with no result yet is running", PROGRESS, False, calls=BUSY_CALLS, transcript=(launch("t1")[0],)),
     turn(
@@ -2173,8 +1988,8 @@ MAIN_EDIT_CASES = (
     edit_call("the 3rd counted edit is noted", "src/c.py", THREE_EDITS[:2], False, "edit 3 of 3"),
     edit_call("the 1st counted edit is noted", "src/c.py", [], False, "edit 1 of 3"),
     edit_call("an allowed path is never refused", "__scratch__/x.py", THREE_EDITS, False),
-    edit_call("an allowed path is never noted", "__harness__/feedback/inbox.md", THREE_EDITS, False),
-    edit_call("an allowed edit in the file does not count", "src/d.py", ["Edit\t__scratch__/a.py", "Edit\t__harness__/feedback/x.md", *THREE_EDITS[:2]], False, "edit 3 of 3"),
+    edit_call("an allowed path is never noted", "__harness__/notes.md", THREE_EDITS, False),
+    edit_call("an allowed edit in the file does not count", "src/d.py", ["Edit\t__scratch__/a.py", "Edit\t__harness__/x.md", *THREE_EDITS[:2]], False, "edit 3 of 3"),
     edit_call("agent lines do not count", "src/d.py", ["Agent\taudit", "Agent\tfind", *THREE_EDITS[:2]], False, "edit 3 of 3"),
     edit_call("max 0 turns the rule off", "src/d.py", THREE_EDITS, False, config={"main_edits": {"max": 0}}),
     edit_call("a project raises the cap", "src/d.py", THREE_EDITS, False, "edit 4 of 5", config={"main_edits": {"max": 5}}),
@@ -2239,8 +2054,7 @@ DELEGATE_CASES = (
     main_call("an absolute path inside the allow list is allowed", "Write", {"file_path": f"{ROOT}/project/docs/b.md"}, False, settings=ONLY_DOCS),
     main_call("a symlinked path is read resolved", "Write", {"file_path": "link/a.py"}, True, "write_allow", settings=ONLY_DOCS, links=(("project/link", "project/src"),)),
     main_call("a path outside the project is noted whatever the glob", "Write", {"file_path": "../x"}, True, "write_allow", settings={"write_allow": ["*"]}),
-    main_call("the handled file is always allowed", "Edit", {"file_path": "__harness__/feedback/handled.md"}, False),
-    main_call("the inbox is not", "Edit", {"file_path": "__harness__/feedback/inbox.md"}, True, "write_allow"),
+    main_call("a harness folder file is not", "Edit", {"file_path": "__harness__/notes.md"}, True, "write_allow"),
     Case("a sub-agent's edit passes", ("delegate.py",), {"tool_name": "Edit", "agent_id": "a1", "tool_input": {"file_path": "src/a.py"}}, False, config={"delegate": {}}, lacks="delegate rule"),
     Case("a sub-agent's command passes", ("delegate.py",), {"tool_name": "Bash", "agent_id": "a1", "tool_input": {"command": "make x"}}, False, config={"delegate": {}}, lacks="delegate rule"),
     main_call("no delegate key means no rule", "Edit", {"file_path": "src/a.py"}, False, config={}),
@@ -2432,7 +2246,7 @@ WRITE_SET_CASES = (
     write_edit("a path before the sentence end passes", "Write set: src/a.py, README.md. Not docs/index.html: rebuilt later", "README.md", False),
     write_edit("none refuses every project file", "Write set: none; read-only.", "src/a.py", True, "(none)"),
     write_edit("none still allows the scratch folder", "Write set: none; read-only.", "__scratch__/a.py", False),
-    write_edit("the harness folder is always allowed", "Write set: src/a.py", "__harness__/feedback/inbox.md", False),
+    write_edit("the harness folder is always allowed", "Write set: src/a.py", "__harness__/notes.md", False),
     write_edit("the scratch folder is always allowed", "Write set: src/a.py", "__scratch__/run/x.py", False),
     write_edit("a markdown bold label is read", "**Write set:** src/a.py", "src/b.py", True),
     write_edit("a bullet label is read", "- Write set: src/a.py", "src/b.py", True),
@@ -2759,8 +2573,6 @@ CONTEXT_CASES = (
     context("a session start makes the scratch folder ignore itself", {"hook_event_name": "SessionStart"}, wrote=("__scratch__/.gitignore", "*")),
     context("a session start leaves a map of the harness folder", {"hook_event_name": "SessionStart"}, wrote=("__harness__/README.md", "plugin's data folder")),
     context("a session start in the home folder makes no folder", {"hook_event_name": "SessionStart"}, cwd="", not_wrote=("../__harness__/.gitignore", "*")),
-    context("a session start moves the old feedback folder", {"hook_event_name": "SessionStart"}, "Moved `harness-feedback/`", files=(("harness-feedback/inbox.md", "- old\n"),), wrote=("__harness__/feedback/inbox.md", "- old")),
-    context("a session start keeps a feedback folder already moved", {"hook_event_name": "SessionStart"}, lacks="Moved", files=(("harness-feedback/inbox.md", "- old\n"), ("__harness__/feedback/inbox.md", "- new\n")), wrote=("__harness__/feedback/inbox.md", "- new")),
     context("a session start notes an old scratch folder", {"hook_event_name": "SessionStart"}, "The old `scratch/` folder is left alone", files=(("scratch/a.txt", ""),)),
     context("a session start names the orchestrator", {"hook_event_name": "SessionStart"}, "harness:orchestrator"),
     context("a session start's output is hook-specific", {"hook_event_name": "SessionStart"}, '"hookEventName": "SessionStart"'),
@@ -3033,114 +2845,6 @@ COMMIT_CASES = (
 
 
 
-RESET = (("turn.py", "reset"), {"session_id": SESSION})
-HANDLED_AGENTS = (HANDLED_NAME, "0000aaaa: rule written in AGENTS.md\n")
-
-
-def handled_turn(name: str, handled: str, blocks: bool, text: str = "", /, *, rewrite: str = "", files: tuple[tuple[str, str], ...] = (), **options: object) -> Case:
-
-    before = (RESET, (("rewrite.py",), {"path": "AGENTS.md", "text": rewrite})) if rewrite else (RESET,)
-
-    return turn(name, PROGRESS, blocks, text, files=((INBOX_NAME, stamped(3.1)), (HANDLED_NAME, handled), RULE_FILE_BEFORE, *files), before=before, **options)
-
-
-def inbox_line(item_id: str, role: str, text: str, /) -> str:
-    return f"- id={item_id} session=other agent={role} {text}\n"
-
-
-def ledger(count: int, stamp: str, /, *, project: str = f"{ROOT}/project") -> File:
-    rows = "".join(json.dumps({"time": stamp, "project": project, "role": "worker"}) + "\n" for _ in range(count))
-
-    return File("data/ledger.jsonl", rows)
-
-
-OLD_TIME = "2000-01-01T00:00:00+0000"
-NEW_TIME = "2099-01-01T00:00:00+0000"
-SUB_WORKER = {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}
-LESSON_FILES = (
-    (INBOX_NAME, inbox_line("aaaaaaa1", "worker", "check the unit twice") + inbox_line("aaaaaaa2", "scout", "scout only text")),
-    (HANDLED_NAME, "aaaaaaa1: rule written in AGENTS.md.\naaaaaaa2: rule written in AGENTS.md\n"),
-    ("AGENTS.md", "a rule\n"),
-)
-def lessons(padding: int, /) -> tuple[File, ...]:
-
-    return (
-        File(INBOX_NAME, "".join(inbox_line(f"bbbbbbb{n}", "worker", f"entry{n} " + "x" * padding) for n in range(1, 7))),
-        File(HANDLED_NAME, "".join(f"bbbbbbb{n}: rule written in AGENTS.md\n" for n in range(1, 7))),
-        File("AGENTS.md", "a rule\n"),
-    )
-
-
-def auto_lesson_files() -> tuple[File, ...]:
-
-    return (
-        File(INBOX_NAME, inbox_line("aaaaaaa1", "worker", "[auto] DECIDE: pick one")),
-        LESSON_FILES[1],
-        LESSON_FILES[2],
-    )
-
-
-PROBLEM_FILES = ((OPEN_NAME, "- worker: stale line number in the brief\n- scout: scout only text\n- all: quote every glob\n- worker: a third problem\n"),)
-
-
-LOOP_CASES = (
-    handled_turn("loop: a rule line with an unchanged file is refused", HANDLED_AGENTS[1], True, "was not changed"),
-    handled_turn("loop: a rule line with a changed file is allowed", HANDLED_AGENTS[1], False, rewrite="a new rule\n"),
-    handled_turn("loop: a rule line with a missing file is refused", "0000aaaa: rule written in nope.md\n", True, "does not exist"),
-    handled_turn("loop: a rule line naming no file is refused", "0000aaaa: rule written in\n", True, "names no file"),
-    handled_turn("loop: a file outside the rule paths is refused", "0000aaaa: rule written in notes.md\n", True, "no rule file", files=(("notes.md", "n\n"),)),
-    handled_turn("loop: a rule file outside the project and the plugin is refused", f"0000aaaa: rule written in {ROOT}/outside.md\n", True, "lies outside the project and the plugin", files=(("../outside.md", "o\n"),)),
-    handled_turn("loop: a rule file at /etc/hostname does not count", "0000aaaa: rule written in /etc/hostname\n", True, "lies outside the project and the plugin"),
-    handled_turn("loop: a covered file at /etc/hostname does not count", "0000aaaa: covered by /etc/hostname\n", True, "lies outside the project and the plugin"),
-    handled_turn("loop: a path climbing out of the project does not count", "0000aaaa: covered by ../outside.md\n", True, "lies outside the project and the plugin", files=(("../outside.md", "o\n"),)),
-    handled_turn("loop: a covered file inside the plugin root counts", f"0000aaaa: covered by {ROOT}/plugin/rules.md\n", False, files=(("../plugin/rules.md", "r\n"),), plugin_root="plugin"),
-    handled_turn("loop: a dot-slash path inside the project counts", "0000aaaa: covered by ./notes.md\n", False, files=(("notes.md", "n\n"),)),
-    handled_turn("loop: a covered file inside the project counts", "0000aaaa: covered by notes.md\n", False, files=(("notes.md", "n\n"),)),
-    handled_turn("loop: a covered file that is missing is refused", "0000aaaa: covered by nope.md\n", True, "does not exist"),
-    handled_turn("loop: a covered line naming no file is refused", "0000aaaa: covered by\n", True, "names no file"),
-    handled_turn("loop: a fixed file inside the project counts without a rule change", "0000aaaa: fixed in notes.md\n", False, files=(("notes.md", "n\n"),)),
-    handled_turn("loop: a fixed file outside the project is refused", "0000aaaa: fixed in /etc/hostname\n", True, "lies outside the project and the plugin"),
-    handled_turn("loop: a fixed file that is missing is refused", "0000aaaa: fixed in nope.md\n", True, "does not exist"),
-    handled_turn("loop: a closing period after the file is ignored", "0000aaaa: rule written in AGENTS.md.\n", False, rewrite="a new rule\n"),
-    handled_turn("loop: a one-word rejection is refused", "0000aaaa: rejected: no\n", True, "at least 3 words"),
-    handled_turn("loop: an empty rejection is refused", "0000aaaa: rejected:\n", True, "at least 3 words"),
-    handled_turn("loop: a three-word rejection is allowed", "0000aaaa: rejected: not a rule\n", False),
-    context("loop: a worker is told the role's handled lessons", SUB_WORKER, "- (rule in AGENTS.md) check the unit twice", files=LESSON_FILES),
-    context("loop: the lessons carry the already-acted header", SUB_WORKER, "do not redo the request:\\n- (rule in AGENTS.md)", files=LESSON_FILES),
-    context("loop: a lesson whose rule file is gone is skipped", SUB_WORKER, lacks="check the unit twice", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rule written in gone.md\n"))),
-    context("loop: an auto lesson is skipped", SUB_WORKER, FORM_FRAGMENT, lacks="pick one", files=auto_lesson_files()),
-    context("loop: a lesson text is cut to 140 characters", SUB_WORKER, "entry6 " + "x" * 133, lacks="x" * 134, files=lessons(300)),
-    context("loop: a lesson text leaves out the item's time", SUB_WORKER, "- (rule in AGENTS.md) check the unit twice", context_lacks="time=", files=((INBOX_NAME, "- id=aaaaaaa1 session=other agent=worker time=2026-01-01T00:00:00+0000 check the unit twice\n"), LESSON_FILES[1], LESSON_FILES[2])),
-    context("loop: another role's lesson is not told", SUB_WORKER, lacks="scout only", files=LESSON_FILES),
-    context("loop: a rejected lesson is not told", SUB_WORKER, lacks="Past feedback", files=(LESSON_FILES[0], (HANDLED_NAME, "aaaaaaa1: rejected: not a rule\n"))),
-    context("loop: only the last five lessons are told", SUB_WORKER, "entry6", lacks="entry1", files=lessons(5)),
-    context("loop: the lessons stay within 600 characters", SUB_WORKER, "entry6", lacks="entry2", files=lessons(100)),
-    context("loop: an inbox with no handled file is no crash", SUB_WORKER, FORM_FRAGMENT, lacks="Past feedback", files=(LESSON_FILES[0],)),
-    context("loop: a handled file with no inbox is no crash", SUB_WORKER, FORM_FRAGMENT, lacks="Past feedback", files=(LESSON_FILES[1],)),
-    context("loop: an open problem is told to its role", SUB_WORKER, "stale line number", files=PROBLEM_FILES),
-    context("loop: the problems carry their heading", SUB_WORKER, "no rule fixes yet", files=PROBLEM_FILES),
-    context("loop: a problem for all is told", SUB_WORKER, "quote every glob", files=PROBLEM_FILES),
-    context("loop: only two problems are told", SUB_WORKER, "quote every glob", lacks="a third problem", files=PROBLEM_FILES),
-    context("loop: another role's problem is not told", SUB_WORKER, lacks="scout only text", files=PROBLEM_FILES),
-    context("loop: no open file is no crash", SUB_WORKER, FORM_FRAGMENT, lacks="no rule fixes yet"),
-    context("loop: ten new reports ask for a retro", {"hook_event_name": "SessionStart"}, "10 reports since the last retro: run harness:retro.", files=(ledger(10, OLD_TIME),)),
-    context("loop: nine reports ask for nothing", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(9, OLD_TIME),)),
-    context("loop: another project's reports do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME, project="/elsewhere"),)),
-    context("loop: reports older than the marker do not count", {"hook_event_name": "SessionStart"}, lacks="retro", files=(ledger(10, OLD_TIME), ("data/retro-marker", ""))),
-    context("loop: reports newer than the marker count", {"hook_event_name": "SessionStart"}, "12 reports since", files=(ledger(12, NEW_TIME), ("data/retro-marker", ""))),
-    context("loop: ten waiting items tell the session to launch the analyst", {"hook_event_name": "SessionStart"}, "launch `harness:analyst` in the background", files=((INBOX_NAME, waiting(10)),)),
-    context("loop: nine waiting items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(9)),)),
-    context("loop: an item three days old tells the session", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
-    context("loop: an item two days old tells nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, stamped(2.9)),)),
-    context("loop: handled items tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, distinct_reasons(10)))),
-    context("loop: a retro-N line does not silence the due line", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "retro-10: rejected: it does not apply\n"))),
-    context("loop: a rejection with a short reason does not silence the due line", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, waiting(10)), (HANDLED_NAME, "00000000: rejected: no\n"))),
-    context("loop: items before the mark tell nothing", {"hook_event_name": "SessionStart"}, lacks="A retro is due", files=((INBOX_NAME, waiting(12)), (MARK_NAME, "5"))),
-    context("loop: a sub-agent start gets no due line", SUB_WORKER, lacks="A retro is due", files=((INBOX_NAME, waiting(10)),)),
-    context("loop: a due retro replaces the report-count line", {"hook_event_name": "SessionStart"}, lacks="reports since", files=((INBOX_NAME, waiting(10)), ledger(10, OLD_TIME))),
-    context("loop: the retro line keeps the orchestrator line", {"hook_event_name": "SessionStart"}, "harness:orchestrator", files=(ledger(10, OLD_TIME),)),
-    context("loop: a subagent start gets no retro line", SUB_WORKER, lacks="retro", files=(ledger(10, OLD_TIME),)),
-)
 
 
 def background_job(tool_id: str, /, *, reply: str = "Command running in background with ID: b1. Output is being written to: /x", command: str = "make x") -> tuple[dict, dict]:
@@ -3590,9 +3294,7 @@ OWNERSHIP_LINE = "This codebase is yours: what it is for and how it is built are
 OWNERSHIP_CASES = (
     context("a session start says the codebase is the model's", {"hook_event_name": "SessionStart"}, OWNERSHIP_LINE),
     context("a sub-agent start does not say it", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, lacks="This codebase is yours"),
-    context("a session event carrying an agent id gets no retro text", {"hook_event_name": "SessionStart", "agent_id": "a1"}, lacks="A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
     context("a session event carrying an agent id gets no ownership line", {"hook_event_name": "SessionStart", "agent_id": "a1"}, lacks="This codebase is yours"),
-    context("a session event without an agent id still gets the retro text", {"hook_event_name": "SessionStart"}, "A retro is due", files=((INBOX_NAME, stamped(3.1)),)),
     context("a helper start does not say it", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, lacks="This codebase is yours"),
 )
 
@@ -3749,96 +3451,19 @@ def run_case(case: Case, hooks: Path, /) -> str:
         return check_output(case, run, root) or check_files(case, root)
 
 
-MUTANTS_SCRIPT = Path(__file__).resolve().parent / "mutants.py"
-BROKEN_MUTANT = '    ("broken-mutant-text", "guard.py", "text that is in no hook", "x"),\n'
-
-
-def run_mutants_script(script: Path, *options: str) -> subprocess.CompletedProcess[str]:
-
-    return subprocess.run(["uv", "run", "python", str(script), *options], capture_output=True, text=True, timeout=HOOK_TIMEOUT * 6)
-
-
-def check_mutant_runner_stops_on_rot() -> str:
-
-    WORK.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=WORK) as directory:
-        root = Path(directory)
-        (root / "tests").mkdir()
-        (root / "hooks").symlink_to(HOOKS)
-        text = MUTANTS_SCRIPT.read_text()
-        assert text.count("MUTANTS = (\n") == 1
-        copy = root / "tests" / "mutants.py"
-        copy.write_text(text.replace("MUTANTS = (\n", "MUTANTS = (\n" + BROKEN_MUTANT))
-        run = run_mutants_script(copy, "--only", "broken-mutant-text")
-
-    if run.returncode != 1:
-        return f"a mutant whose text is gone must stop the run with exit 1, got {run.returncode}: {run.stdout.strip()[-200:]!r}"
-    if "broken-mutant-text" not in run.stdout or "with their text gone" not in run.stdout:
-        return f"the stop must name the mutant: {run.stdout.strip()[-200:]!r}"
-    if "survived" in run.stdout or "match --only" in run.stdout:
-        return f"no mutant may have run: {run.stdout.strip()[-200:]!r}"
-
-    return ""
-
-
-def check_mutant_runner_counts_matches() -> str:
-
-    run = run_mutants_script(MUTANTS_SCRIPT, "--only", "no-such-mutant-name")
-    if run.returncode != 1 or "0 of" not in run.stdout:
-        return f"a selector that matches nothing must say 0 matched and exit 1, got {run.returncode}: {run.stdout.strip()[-200:]!r}"
-
-    return ""
-
-
-def check_mutant_runner_selects_by_hook_file() -> str:
-
-    sys.path.insert(0, str(MUTANTS_SCRIPT.parent))
-    import mutants
-
-    chosen = mutants.get_chosen(mutants.MUTANTS, "turn.py")
-    expected = [mutant for mutant in mutants.MUTANTS if mutant[1] == "turn.py"]
-    if not expected or chosen != expected:
-        return f"--only turn.py must select the {len(expected)} mutants of turn.py, got {len(chosen)}"
-    both = mutants.get_chosen(mutants.MUTANTS, "turn.py,context.py")
-    if len(both) != len(expected) + len([mutant for mutant in mutants.MUTANTS if mutant[1] == "context.py"]):
-        return "--only takes several hook files at once"
-
-    return ""
-
-
-RUNNER_CHECKS = {
-    "a mutant whose text is gone stops the run before any mutant runs": check_mutant_runner_stops_on_rot,
-    "a selector that matches nothing says so and exits 1": check_mutant_runner_counts_matches,
-    "--only takes a hook file name": check_mutant_runner_selects_by_hook_file,
-}
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the hook cases: what the guard refuses, when a report goes back, when the Stop hook holds a turn, what the delegate and brief rules refuse, and what the context hook says.")
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
-    parser.add_argument("--fail-fast", action="store_true", help="stop at the first failure, for the bug-planting tools")
-    parser.add_argument("--first", default="", help="run the cases of these hooks first, comma-separated")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*WRITE_SET_CASES, *COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *LOOP_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
+    every = [*WRITE_SET_CASES, *COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *DELEGATE_CASES, *MAIN_EDIT_CASES, *BRIEF_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *NUDGE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
-    first = set(arguments.first.split(","))
-    cases.sort(key=lambda case: not first & set(case.script))
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:
         for case, reason in zip(cases, pool.map(lambda case: run_case(case, arguments.hooks), cases)):
             failures += bool(reason)
             print(f"FAIL {case.name}: {reason}" if reason else f"ok   {case.name}", flush=True)
-            if reason and arguments.fail_fast:
-                pool.shutdown(wait=False, cancel_futures=True)
-                break
-    if not failures and arguments.hooks == HOOKS:
-        for name, check in RUNNER_CHECKS.items():
-            if arguments.only in name:
-                reason = check()
-                failures += bool(reason)
-                print(f"FAIL {name}: {reason}" if reason else f"ok   {name}", flush=True)
     print(f"{len(cases)} cases, {failures} failed")
 
     return 1 if failures else 0

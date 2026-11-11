@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from budget import get_agent_path, read_brief
-from common import EDIT_TOOLS, EDITS_KIND, HANDLED, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_git_root, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, make_note_output
+from common import EDIT_TOOLS, EDITS_KIND, HARNESS_FOLDER, SCRATCH_FOLDER, data_folder, find_git_root, find_project, get_write_set, is_in_write_set, is_project_root, is_state_folder, make_note_output
 from shell import Segment, get_segments
 from skill_gate import get_edit_path, get_project_relative, get_written_project_files
 
@@ -70,8 +70,6 @@ def is_allowed_path(path: str, root: Path, settings: dict, cwd: str, /) -> bool:
     if root not in resolved.parents:
         return False
     relative = resolved.relative_to(root).as_posix()
-    if relative == HANDLED:
-        return True
 
     return any(fnmatch.fnmatch(relative, pattern) for pattern in settings.get("write_allow", ()))
 

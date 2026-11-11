@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup init validate test leaks skills strip strip-check mutants map check replay clean
+.PHONY: help setup init validate test leaks skills strip strip-check map check replay clean
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | column -t -s "$$(printf '\t')"
@@ -33,16 +33,12 @@ strip: ## Strip comments and docstrings from every tracked source file (rewrites
 strip-check: ## Fail when the comment stripper breaks a file or misses a comment
 	uv run python tests/check_strip.py
 
-mutants: ## Deliberate-bug audit of every rule; slow, run it once (MUTANT=text narrows it)
-	uv run python tests/mutants.py $(if $(MUTANT),--only $(MUTANT),)
-
 map: ## Rebuild the Harness Map page (docs/index.html) from the agents, skills, hooks and tests
 	uv run python docs/build_map.py
 
-check: ## What the pre-push hook runs: map freshness, cases, mutant check, skill form, leaks
+check: ## What the pre-push hook runs: map freshness, cases, skill form, leaks
 	uv run python docs/build_map.py --check
 	uv run python tests/run_cases.py
-	uv run python tests/mutants.py --check
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	uv run python tests/check_port.py
@@ -51,8 +47,7 @@ check: ## What the pre-push hook runs: map freshness, cases, mutant check, skill
 replay: ## Run the always-on guard over your past Bash commands to find false refusals
 	uv run --script hooks/replay.py
 
-clean: ## Empty __scratch__/ and remove caches (never touches tracked files or .venv); refuses while a mutant audit runs
-	@test ! -e __scratch__/hook-mutants || { echo "a mutant audit is using __scratch__/"; exit 1; }
+clean: ## Empty __scratch__/ and remove caches (never touches tracked files or .venv)
 	find __scratch__ -mindepth 1 -not -path __scratch__/.gitignore -delete 2>/dev/null || true
 	find . -path ./.git -prune -o -path ./.venv -prune -o -name __pycache__ -type d -prune -exec rm -rf {} +
 	rm -rf .pytest_cache .ruff_cache .mypy_cache

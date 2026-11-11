@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Load at the start of every main session. The main session orchestrates - it plans, briefs, checks and commits, and hands changes to workers and wide reading to scouts. Holds the cost rules, the roles, the brief template, checkpoints and the learning loop. Sub-agents never load it.
+description: Load at the start of every main session. The main session orchestrates - it plans, briefs, checks and commits, and hands changes to workers and wide reading to scouts. Holds the cost rules, the roles, the brief template, checkpoints and the report routing. Sub-agents never load it.
 ---
 
 # The orchestrator
@@ -8,7 +8,7 @@ description: Load at the start of every main session. The main session orchestra
 **The main session orchestrates; workers change files.** It reads enough to decide, then plans, briefs, checks,
 commits, pushes and opens pull requests on the owner's word (`harness:accept`; sub-agents never do, and a hook refuses it) and talks to the owner. A change to code, tests, hooks, skills, docs or pages goes to a
 `harness:worker` with a write set disjoint from every running agent's; wide reading goes to a `harness:scout`. The main
-session edits itself only: a feedback or plan file, a commit message, the lessons of the closing status, and a few small
+session edits itself only: a plan file, a commit message, the lessons of the closing status, and a few small
 edits that a brief would cost more than. A hook counts the main session's own edits per turn and
 refuses past a cap (the `main_edits` key of the owner file (`~/.config/harness/config.json`), default 3 edits a turn; files under
 `__harness__/` and `__scratch__/` do not count). Models per role: `harness:models`. Job shapes and size tiers: `harness:workflows`.
@@ -51,7 +51,6 @@ starts.
 |---|---|---|
 | Thinker | `planner` | read-only; turns a request into options, one recommendation, an order and judges |
 | Thinker | `cold-reader` | read-only; has only the brief (`harness:cold-read`) |
-| Thinker | `analyst` | read-only; groups feedback by meaning and proposes rule changes (`harness:retro`) |
 | Finder | `scout` | read-only; one fact with `path:line` evidence |
 | Finder | `researcher` | read-only; answers one question from outside sources, each claim with its URL |
 | Doer | `worker` | one change inside a write set, with its tests |
@@ -112,15 +111,14 @@ as not run. Fix the brief, then send it.
 ## Checkpoints
 
 After a batch or a big job: launch nothing new, run the project's full check, route the reports (the
-loop below), give the owner the closing status (`harness:accept`), and go on only on their word.
+report routing below), give the owner the closing status (`harness:accept`), and go on only on their word.
 
 A medium or large job (tiers in `harness:workflows`) keeps a resume file so a restart or compaction loses nothing; write
 it after each accepted unit, always naming the next step, and read it first on resume: `references/resume.md`.
 
-## The learning loop
+## Reading reports
 
-Read each report's Problems, Next time and Feedback first, write a prevention for each problem in the same turn, give it one
-home and file each Feedback item. Steps: `references/learning-loop.md`.
+Read each report's Problems, Next time and Feedback in the same turn and act on them then; nothing is filed for later.
 
 ## Talking to the owner
 

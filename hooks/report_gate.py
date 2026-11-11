@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from budget import get_agent_path, get_brief, get_default, get_duration, get_turn_limit
-from common import EDIT_TOOLS, HANDBACK_TOOL, INBOX, ensure_harness_folder, PLUGIN_PREFIX, data_folder, find_project, get_feedback_root, get_fenced_indices, get_scratch, get_unfenced_lines, read_events, write_atomic
+from common import EDIT_TOOLS, HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_fenced_indices, get_scratch, get_unfenced_lines, read_events, write_atomic
 from nudge import get_turn_stats
 from skill_gate import get_bash_needs
 from turn import FINISHED_STATUSES, NOTIFICATION, get_notice_text
@@ -33,7 +33,7 @@ VERDICT = re.compile(r"^\W*(done|partial|blocked)\b\W*(\S.*)", re.I | re.S)
 FILE_NAME = re.compile(r"[\w.-]+/[\w./-]+|\b[\w-]+\.[A-Za-z]\w*\b")
 PASS_CLAIM = re.compile(r"\b(tests?|lint|checks?|gates?|build)\b[^.\n]{0,40}\b(pass(?:es|ed)?|clean|green)\b", re.I)
 CHECK_COMMAND = re.compile(
-    r"\b(?:pytest|unittest|ruff|mypy|pyright|tsc|eslint|biome|jest|vitest|flake8|shellcheck|py_compile|run_cases|mutants"
+    r"\b(?:pytest|unittest|ruff|mypy|pyright|tsc|eslint|biome|jest|vitest|flake8|shellcheck|py_compile|run_cases"
     r"|ty\s+check|cargo\s+(?:test|build|check|clippy)|go\s+(?:test|build|vet)|(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:test|build|lint|check)"
     r"|terraform\s+validate|make\s+(?:-\S+\s+)*[\w.-]+)\b|\btests/[\w./-]+\.(?:py|sh)\b"
 )
@@ -535,36 +535,11 @@ def get_tics_note(report: str, /) -> str:
     return f"Writing tics in the report (a note, nothing is held): {'; '.join(found)}. The full list and the plain rewrite are in {TICS_FILE}."
 
 
-def get_feedback(report: str, /) -> list[str]:
-
-    lines = dict(reversed(read_sections(report))).get("Feedback", [])
-    texts = [item_text(item) for item in get_items(lines)]
-
-    return [text for text in texts if text and not NO_FEEDBACK.fullmatch(text)]
-
-
 def get_task_title(report: str, /) -> str:
 
     match = REPORT_TITLE.search(report)
 
     return match.group(1) if match else ""
-
-
-def file_feedback(root: str, session: str, role: str, items: list[str], /) -> list[str]:
-
-    inbox = os.path.join(root, INBOX)
-    known = open(inbox, errors="replace").read() if os.path.exists(inbox) else ""
-    ids: list[str] = []
-    for text in dict.fromkeys(items):
-        item_id = hashlib.sha1(text.encode()).hexdigest()[:8]
-        ids.append(item_id)
-        if f"id={item_id} session={session} " not in known:
-            ensure_harness_folder(Path(root))
-            os.makedirs(os.path.dirname(inbox), exist_ok=True)
-            with open(inbox, "a") as file:
-                file.write(f"- id={item_id} session={session} agent={role} time={time.strftime('%Y-%m-%dT%H:%M:%S%z')} {text}\n")
-
-    return ids
 
 
 def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:
@@ -582,7 +557,7 @@ def get_budget_turns(event: dict, config: dict, role: str, /) -> int | None:
 
 
 def write_ledger(
-    event: dict, root: str, role: str, report: str, send_backs: int, problems: list[str], ids: list[str], extra: dict, /
+    event: dict, root: str, role: str, report: str, send_backs: int, problems: list[str], extra: dict, /
 ) -> None:
 
     sections = dict(reversed(read_sections(report)))
@@ -606,7 +581,6 @@ def write_ledger(
         "open_problems": problems,
         "verdict": verdict.group(1).lower() if verdict else None,
         "causes": [cause.strip().lower() for cause in causes],
-        "feedback_ids": ids,
         "model": event.get("model") or extra.get("model"),
         "budget_turns": extra.get("budget_turns"),
         "files_changed": extra.get("files_changed", []),
@@ -705,8 +679,7 @@ def finish(event: dict, root: str, role: str, report: str, problems: list[str], 
     for stale in (path, get_kept_path(event), get_jobs_path(event), get_cannot_path(event)):
         if stale.exists():
             stale.unlink()
-    session = event.get("session_id") or "unknown"
-    write_ledger(event, root, role, report, send_backs, problems, file_feedback(str(get_feedback_root(Path(root))), session, role, get_feedback(report)), extra)
+    write_ledger(event, root, role, report, send_backs, problems, extra)
 
 
 def is_awaited(report: str, kept: Kept | None, /) -> bool:

@@ -97,7 +97,6 @@ def make_row(path: Path, /) -> dict | None:
         "open_problems": [],
         "scores": {name: scores.get(name) for name in SCORES} if scores else None,
         "causes": [cause.strip().lower() for cause in causes],
-        "feedback_ids": [],
         "tool_turns": get_turn_stats(events),
         "report": report,
         "imported": True,

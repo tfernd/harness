@@ -4,7 +4,7 @@ A Claude Code plugin that makes an AI coding session safer and cheaper to trust.
 refuse risky or wasteful actions, **skills** that give the model short rule sheets, and **agents** that do narrow jobs
 (find a fact, review a diff, run a check) and must report in a fixed, checked form.
 
-**[See the Harness Map](https://tfernd.github.io/harness/)**: one page on what runs when, what each rule stops, and who does what. `make map` rebuilds it from the repo. `make check` fails when it is stale and also runs the cases, mutant, skill, leak, port and strip checks.
+**[See the Harness Map](https://tfernd.github.io/harness/)**: one page on what runs when, what each rule stops, and who does what. `make map` rebuilds it from the repo. `make check` fails when it is stale and also runs the cases, skill, leak, port and strip checks.
 
 Install, update and project setup are written for agents in [AGENTS.md](AGENTS.md). This page says what the plugin does,
 how the parts fit, what it stops and what it does not.
@@ -15,7 +15,6 @@ how the parts fit, what it stops and what it does not.
 - **Stop wasted turns** (in every project). Every agent starts knowing how to make cheap tool calls. Under zsh, a glob that matches nothing is refused and an unquoted pattern (`--include=*.py`) is quoted for the tool, with a note, and an agent that reads one small thing at a time is nudged.
 - **Make agent work checkable.** A sub-agent cannot end with "done": its report has fixed sections, and its claims (files
   changed, exit codes, `path:line` evidence) are checked against what it really did.
-- **Turn problems into rules.** What agents report piles up in an inbox, and a due retro turns it into changes.
 - **Keep the cost down.** The main session orchestrates: it scripts repetitive work, hands changes to `harness:worker` agents
   (a hook caps the edits it makes itself in one turn), and uses agents where parallel work pays.
 
@@ -33,16 +32,14 @@ you ── ask ──> main session (follows the orchestrator skill)
                  │  works itself; scripts the repetitive part
                  │  briefs agents only for parallel or large units
                  ▼
-        agents: planner · cold-reader · analyst · scout · researcher · worker · designer · releaser · runner · reviewer · auditor
+        agents: planner · cold-reader · scout · researcher · worker · designer · releaser · runner · reviewer · auditor
                  │  each ends with a REPORT
 
- at every start     context: orchestrator pointer, tool-habits, report form, open problems
+ at every start     context: orchestrator pointer, tool-habits, report form
  before each call   guard · delegate · skill_gate · brief_lint · budget
  after a read       nudge
- when an agent ends report_gate: checks the report before its handback, files problems in the inbox and the ledger
- when a turn ends   turn: holds for the status and a due retro; files Lessons bullets; a retro is due at 10 items or 3 days
-                 ▼
- inbox ──> analyst ──> a new rule in a hook, skill or brief template, or a line in open.md
+ when an agent ends report_gate: checks the report before its handback and files it in the ledger
+ when a turn ends   turn: holds for the status
 ```
 
 Skills are text the model reads. Hooks run outside the model, so it cannot talk its way past them. Reports are where the
@@ -51,10 +48,10 @@ two meet: a skill says what to write, a hook checks it.
 ## One mode: everywhere
 
 Every rule runs in every repo with no setup: the safety guard with its scratch folder (`__scratch__/`), `/tmp` and package-change
-rules, the commit rule, start-up context, turn tracking, retros and the feedback inbox, the brief, skill, budget and report
+rules, the commit rule, start-up context, turn tracking, the brief, skill, budget and report
 checks for every agent, and the cap on the main session's own edits. One rule stays off until a project names it:
 `delegate`. A start folder that is `/`, the home folder or a parent of it is no project: there
-the scratch rule is off and the feedback goes to the plugin's data folder, not into the folder.
+the scratch rule is off.
 
 Settings come in two layers, each key over the one before: the plugin's defaults (every rule on), then the owner's file
 (`~/.config/harness/config.json`, or `$HARNESS_CONFIG`), which only overrides. Its optional `"projects"` key maps an absolute path or a glob to
@@ -77,10 +74,10 @@ off in the owner file, for example `{"guard": {"commit_style": false}}` or `{"ma
 | Gate | `report_gate.py` | An agent hands back or stops | Any agent type must end with a report: Answer, Not proven and a Verdict of done, partial or blocked, plus Problems, Next time, Open and Feedback when they have something to say. Refuses the handback of a malformed one, or one its transcript does not back (a claim that a check passed needs a Bash call that runs one; a file written through Bash counts as changed), while the agent can still fix it; an agent that stops without a handback gets the report sent back instead. Up to 3 times in all, naming only the sections that are wrong. Files problems and writes the ledger |
 | Gate | `report_gate.py` | An agent hands back | Sends back once a report that says it "can't" do something with no failed call in the transcript: quote the error of a real attempt or write `not attempted: <why>` |
 | Teacher | `report_gate.py` | An agent hands back | Adds a soft note on a report that opens with a negation then a reveal ("It is not X. It is Y.") or stacks negations ("Not X. Not Y. Just Z."); `skills/report/references/prose.md` lists the tics. Refuses nothing |
-| Teacher | `context.py` | Session or agent starts | Adds text agents would otherwise forget: for the main session, the start line "This codebase is yours"; load the orchestrator, the whole `tool-habits` skill, the report form owed, past lessons, open problems. Refuses nothing |
+| Teacher | `context.py` | Session or agent starts | Adds text agents would otherwise forget: for the main session, the start line "This codebase is yours"; load the orchestrator, the whole `tool-habits` skill, the report form owed. Refuses nothing |
 | Teacher | `skill_gate.py` | Before a command or edit | With the `skill_gate` key, lets an edit run and gives the agent the skill's own text when it has not seen it, for that kind of file, including a shell write or a Python script that writes, and for a commit or pull request the `git-commit` text. Once per agent; needs no Skill call |
 | Teacher | `nudge.py` | After a read | Adds one line of advice after a repeated read or three small reads in a row, at most twice per agent, and once per agent after a test or build piped into `tail`/`head` without `pipefail`. Refuses nothing |
-| Closer | `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn, an invalid handled line or a due retro (it also files the Lessons bullets into the inbox); only notes (the turn ends) a status that does not name each agent run under `## Agents`, a lesson with no rule changed, or a bare "no lessons" after a refused call |
+| Closer | `turn.py` | Your turn ends | Holds the turn for a missing status after a long turn; only notes (the turn ends) a status that does not name each agent run under `## Agents`, a lesson with no rule changed, or a bare "no lessons" after a refused call |
 
 A refusal says which rule fired and what to change. A rule marked as letting the call run says so in a note with the result.
 
@@ -101,8 +98,6 @@ ledger.
   is right is not checked; an `auditor` or you must do that.
 - **It does not judge the code.** Style rules live in skills and tests, not in hooks.
 - **Budgets count model turns, not time or tokens.**
-- **A retro can be answered badly.** The Stop hook checks that a rule file changed or that a rejection has its own reason,
-  not that the decision was good.
 - **Nothing runs without `uv`.**
 
 ## Agents
@@ -111,7 +106,6 @@ ledger.
 |---|---|---|---|---|
 | Thinker | `planner` | sonnet | no | Turns a request into options, one recommendation, an order and judges |
 | Thinker | `cold-reader` | sonnet | no | Reads a brief with no history and lists what is unclear |
-| Thinker | `analyst` | sonnet | no | Groups feedback by meaning and proposes up to three rule changes |
 | Finder | `scout` | haiku | no | Settles one fact with `path:line` evidence |
 | Finder | `researcher` | sonnet | no | Answers one question from outside sources, each claim with its URL |
 | Doer | `worker` | sonnet | yes | Makes one change inside a write set, with its tests |
@@ -130,18 +124,8 @@ ledger.
 | Build | `code-python`, `code-js`, `code-html-css`, `code-shell`, `code-terraform`, `code-sql`, `code-yaml`, `code-make`, `refactor`, `comments`, `naming`, `git-commit`, `design`, `explore`, `release` | Style rules loaded before touching those files, changing structure safely, comments, names that say what a thing holds or does, commits, visual design, mock-first building of visual work, preparing a release |
 | Tools | `aws-cli`, `snowflake-cli` | Running those command-line tools safely: what reads, what writes, what to ask first |
 | Check | `testing`, `review`, `audit`, `sweep` | Writing tests that can fail, reviewing a unit, auditing a report, sweeping a whole repo against itself |
-| Report and learn | `report`, `retro`, `hook-authoring`, `skill-authoring`, `agent-authoring` | How agents report, turning past problems into rules, and writing a hook, skill or agent |
+| Report | `report`, `hook-authoring`, `skill-authoring`, `agent-authoring` | How agents report, and writing a hook, skill or agent |
 | Habits | `tool-habits` | Cheap tool calls: batched reads, edits that assert, the whole check chain in one call |
-
-## The learning loop
-
-1. Each report's Feedback items land in `__harness__/feedback/inbox.md`. Its Problems go to the ledger, and its Open items stay
-   in the report for you.
-2. When 20 items wait, the Stop hook holds a session that filed one until a retro is done. Separately, ten new reports
-   add a one-line reminder at session start.
-3. One `analyst` groups the items by meaning, checks them against the code and proposes up to three changes.
-4. The main session applies or rejects each one and names the result in `__harness__/feedback/handled.md`, one line per item id; the hold names any line it ignores.
-5. Problems no rule fixes yet go in `__harness__/feedback/open.md`, and each agent of that role is told at its start.
 
 ## Other tools
 
@@ -205,6 +189,5 @@ Every key is optional and the file itself is not needed: the defaults apply with
 | `report` | `max_chars` caps a report's length (default 6000, outside fenced blocks); extra problem causes |
 | `stop` | Minimum calls before a status is due, its headings, and which files count as rules |
 
-Folders the plugin keeps in a project, each ignored by git through its own `.gitignore` holding `*`: `__harness__/` (a `README.md` that maps it,
-`feedback/` with the inbox, handled lines, open problems and the retro mark) and `__scratch__/` for throwaway files. `rg` and Glob skip ignored folders,
-so read their files by path. An old `harness-feedback/` folder moves into `__harness__/feedback/` at session start. The ledger lives in the plugin's data folder, not in the project.
+Folders the plugin keeps in a project, each ignored by git through its own `.gitignore` holding `*`: `__harness__/` (a `README.md` that maps it) and `__scratch__/` for throwaway files. `rg` and Glob skip ignored folders,
+so read their files by path. The ledger lives in the plugin's data folder, not in the project.

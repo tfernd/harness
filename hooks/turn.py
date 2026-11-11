@@ -13,12 +13,10 @@ import json
 import os
 import re
 import sys
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
-from common import EDIT_TOOLS, EDITS_KIND, FILE_EDGES, HANDLED as HANDLED_NAME, INBOX, RETRO_MARK, data_folder, ensure_harness_folder, find_project, get_plugin_root, get_unfenced_lines, is_project_root, write_atomic
+from common import EDIT_TOOLS, EDITS_KIND, data_folder, find_project, get_unfenced_lines, is_project_root, write_atomic
 from skill_gate import get_written_project_files
 
 MIN_CALLS = 3
@@ -28,6 +26,7 @@ NOT_RULES = frozenset({"settings.local.json"})
 NOT_RULE_FOLDERS = frozenset({"__pycache__", ".git"})
 WORKTREES = (".claude", "worktrees")
 MAX_BLOCKS = 3
+MIN_REASON_WORDS = 3
 LESSONS = re.compile(r"^\s*((#+\s+|\*\*)Lessons?|Lessons?:)", re.I)
 LESSONS_NONE = re.compile(r"^\s*(#+\s+)?\*{0,2}Lessons?\*{0,2}:\*{0,2}\s*none\b", re.I | re.M)
 SECTION_END = re.compile(r"^(#+[ \t]|\s*\*\*[^*]+\*\*)")
@@ -38,22 +37,7 @@ NOTIFICATION = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>[\s\S]*?<status>([
 FINISHED_STATUSES = frozenset({"completed", "failed", "killed", "stopped"})
 AGENT_TOOLS = frozenset({"Agent", "Task"})
 AGENTS_HEADING = "## Agents"
-HANDLED = re.compile(r"(?P<id>[0-9a-f]{8}): (?:(?P<kind>rule written in|fixed in|covered by)[ \t]*(?P<file>\S*)|rejected:(?P<reason>.*))")
-LINE_START = re.compile(r"(?:([0-9a-f]{8})|retro-[0-9]+):")
-RULE_KIND = "rule written in"
-MAX_LISTED = 10
-FILE_OPENERS = "`'\"("
-MAX_LINE_CHARS = 70
-MIN_REASON_WORDS = 3
-RETRO_ITEMS = 10
-RETRO_DAYS = 3
-SECONDS_PER_DAY = 86400
-TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
-MAIN_ROLE = "main"
-SKIP_RETRO = re.compile(r"skip retro", re.I)
-BULLET = re.compile(r"^\s*(?:[-*]|[0-9]+[.)])\s+(\S.*)$")
 REFUSAL = re.compile(r"PreToolUse:\w+ hook error:.*?Blocked by the harness", re.S)
-ITEM_ID = re.compile(r"^- id=([0-9a-f]{8}) session=(\S+)(?: agent=\S+ time=(\S+))? ", re.M)
 
 
 class StatePaths(NamedTuple):
@@ -269,209 +253,10 @@ def get_saved_rules(rules_path: Path, /) -> dict | None:
     return saved if isinstance(saved, dict) else None
 
 
-def check_handled_file(name: str, kind: str, root: Path, rules_path: Path | None, config: dict, /) -> str:
-
-    if not name:
-        return f"it names no file after `{kind}`"
-    root = root.resolve()
-    plugin = get_plugin_root().resolve()
-    path = Path(os.path.expanduser(name))
-    path = (path if path.is_absolute() else root / path).resolve()
-    if not path.is_file():
-        return f"{name} does not exist: name an existing file"
-    if not (path.is_relative_to(root) or path.is_relative_to(plugin)):
-        return f"{name} lies outside the project and the plugin: name a file inside one of them"
-    if kind != RULE_KIND or rules_path is None or not path.is_relative_to(root):
-        return ""
-    saved = get_saved_rules(rules_path)
-    if saved is None:
-        return ""
-    state = get_rule_state(root, config)
-    if str(path) not in state:
-        return f"{name} is no rule file (not under rule_paths): name the rule file that changed"
-    if saved.get(str(path)) == state[str(path)]:
-        return f"{name} was not changed this turn (same content as at the turn's start): write the rule into it"
-
-    return ""
-
-
-class Ignored(NamedTuple):
-
-    item_id: str
-    line: str
-    reason: str
-
-
-class Handled(NamedTuple):
-
-    handled: set[str]
-    invalid: dict[str, str]
-    ignored: list[Ignored]
-
-
-def get_ignored(line: str, /) -> Ignored:
-
-    start = LINE_START.match(line)
-    if start is None:
-        return Ignored("", line, "it starts with no item id")
-    if start.group(1) is None:
-        return Ignored("", line, "a `retro-N` line closes nothing: write one line per item id")
-
-    return Ignored(start.group(1), line, "after the id write `rule written in FILE`, `fixed in FILE`, `covered by FILE` or `rejected: REASON`")
-
-
-def get_handled(root: Path, rules_path: Path | None, config: dict, /) -> Handled:
-
-    path = root / HANDLED_NAME
-    handled: set[str] = set()
-    invalid: dict[str, str] = {}
-    ignored: list[Ignored] = []
-    reason_owners: dict[str, str] = {}
-    for line in (path.read_text(errors="replace") if path.exists() else "").splitlines():
-        if not line.strip():
-            continue
-        match = HANDLED.fullmatch(line.rstrip())
-        if match is None:
-            ignored.append(get_ignored(line.strip()))
-            continue
-        item_id, name, reason = match.group("id"), match.group("file"), match.group("reason")
-        if name is None:
-            is_short = len(reason.split()) < MIN_REASON_WORDS
-            owner = reason_owners.setdefault(" ".join(reason.lower().split()), item_id)
-            if is_short:
-                problem = f"rejected needs a reason of at least {MIN_REASON_WORDS} words"
-            else:
-                problem = f"the same reason already closes {owner}: a reason that fits two items fits neither, so say why this one" if owner != item_id else ""
-        else:
-            problem = check_handled_file(name.lstrip(FILE_OPENERS).rstrip(FILE_EDGES), match.group("kind"), root, rules_path, config)
-        if problem:
-            invalid[item_id] = problem
-        else:
-            handled.add(item_id)
-
-    return Handled(handled, {item_id: why for item_id, why in invalid.items() if item_id not in handled}, ignored)
-
-
-class Item(NamedTuple):
-
-    item_id: str
-    session: str
-    stamp: float | None
-
-
-def get_stamp(text: str | None, /) -> float | None:
-
-    try:
-        return datetime.strptime(text, TIME_FORMAT).timestamp() if text else None
-    except ValueError:
-        return None
-
-
-def get_items(text: str, /) -> list[Item]:
-
-    return [Item(match.group(1), match.group(2), get_stamp(match.group(3))) for match in ITEM_ID.finditer(text)]
-
-
-def get_seen(feedback: Path, count: int, /) -> int:
-
-    mark = feedback / RETRO_MARK
-    text = mark.read_text().strip() if mark.exists() else ""
-
-    return int(text) if text.isdecimal() and text.isascii() and int(text) <= count else 0
-
-
-def has_open_items(items: list[Item], seen: int, handled: set[str], /) -> bool:
-
-    return any(item.item_id not in handled for item in items[seen:])
-
-
-def is_retro_due(items: list[Item], seen: int, handled: set[str], now: float, /) -> bool:
-
-    waiting = items[seen:]
-    stamps = [item.stamp for item in waiting if item.stamp is not None]
-    is_old = bool(stamps) and now - min(stamps) >= RETRO_DAYS * SECONDS_PER_DAY
-    is_big = len(waiting) >= RETRO_ITEMS
-
-    return has_open_items(items, seen, handled) and (is_big or is_old)
-
-
-def get_open_feedback(root: Path, released: set[str], handled: set[str], /) -> list[str]:
-
-    inbox = root / INBOX
-    if not inbox.exists():
-        return []
-    items = get_items(inbox.read_text(errors="replace"))
-    seen = get_seen(root, len(items))
-    if not has_open_items(items, seen, handled):
-        if len(items) > seen:
-            ensure_harness_folder(root)
-            write_atomic(root / RETRO_MARK, str(len(items)))
-        return []
-    if not is_retro_due(items, seen, handled, time.time()):
-        return []
-
-    return [item.item_id for item in items[seen:] if item.item_id not in handled and item.item_id not in released]
-
-
-def get_lesson_bullets(message: str, /) -> list[str]:
-
-    bullets = [match.group(1).strip() for line in get_lessons(message).splitlines() if (match := BULLET.match(line))]
-
-    return [bullet for bullet in dict.fromkeys(bullets) if not bullet.lower().startswith("none")]
-
-
-def file_lessons(root: Path, session: str, message: str, /) -> None:
-
-    bullets = get_lesson_bullets(message)
-    if not bullets:
-        return
-    inbox = root / INBOX
-    known = inbox.read_text(errors="replace") if inbox.exists() else ""
-    for bullet in bullets:
-        item_id = hashlib.sha1(bullet.encode()).hexdigest()[:8]
-        if f"id={item_id} session={session} " in known:
-            continue
-        ensure_harness_folder(root)
-        inbox.parent.mkdir(exist_ok=True)
-        with open(inbox, "a") as file:
-            file.write(f"- id={item_id} session={session} agent={MAIN_ROLE} time={time.strftime(TIME_FORMAT)} {bullet}\n")
-
-
-def is_retro_skipped(transcript: list[dict], skip_path: Path, /) -> bool:
-
-    if skip_path.exists():
-        return True
-    for line in reversed(transcript):
-        if line.get("type") != "user":
-            continue
-        text = get_user_text(line)
-        if text.strip() and not APP_PROMPT.search(text[:APP_PROMPT_HEAD]):
-            if SKIP_RETRO.search(text):
-                write_atomic(skip_path, "1")
-                return True
-            return False
-
-    return False
-
-
-def get_retro_ids(root: Path, event: dict, session: str, message: str, transcript: list[dict], released: set[str], handled: set[str], /) -> list[str]:
-
-    if event.get("agent_id"):
-        return []
-    try:
-        file_lessons(root, session, message)
-        if is_retro_skipped(transcript, get_state_path(session, "skipped")):
-            return []
-
-        return get_open_feedback(root, released, handled)
-    except (OSError, ValueError):
-        return []
-
-
 def stop(event: dict, root: Path, config: dict, /) -> int:
     session = event.get("session_id") or "unknown"
     calls_path, rules_path, blocks_path = get_state_paths(session)
-    deferred_path, released_path = get_state_path(session, "deferred"), get_state_path(session, "released")
+    deferred_path = get_state_path(session, "deferred")
     settings = config.get("stop", {})
     call_lines = calls_path.read_text().splitlines() if calls_path.exists() else []
     calls = len(call_lines)
@@ -494,31 +279,8 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
             )
         if not is_deferred:
             soft += check_agents(message, call_lines)
-    released = set(released_path.read_text().split()) if released_path.exists() else set()
-    handled: set[str] = set()
-    invalid: dict[str, str] = {}
-    open_ids: list[str] = []
-    ignored: list[Ignored] = []
     if is_project_root(root):
         soft += check_lessons(message, rules_path, root, config, transcript)
-        handled, invalid, ignored = get_handled(root, rules_path, config)
-        open_ids = get_retro_ids(root, event, session, message, transcript, released, handled)
-    if open_ids and count_running_agents(transcript) > 0:
-        open_ids = []
-    if open_ids:
-        listed_ids = ", ".join(open_ids[:MAX_LISTED]) + (f" and {len(open_ids) - MAX_LISTED} more" if len(open_ids) > MAX_LISTED else "")
-        hard.append(
-            f"a retro is due: feedback items wait in {INBOX} ({listed_ids}). Launch `harness:analyst` in the background on them, apply or reject its "
-            f'proposals, then add one line per item id to {HANDLED_NAME}: "ID: rule written in FILE" (FILE changed this turn), "ID: fixed in FILE", '
-            f'"ID: covered by FILE" (FILE exists in the project or the plugin) or "ID: rejected: REASON" (at least {MIN_REASON_WORDS} words, '
-            f'one reason per item); a `retro-N:` line closes nothing; or the owner says "skip retro"'
-        )
-    hard += [f"{item_id}: the line in {HANDLED_NAME} does not count, {invalid[item_id]}" for item_id in open_ids if item_id in invalid]
-    if open_ids:
-        unused = [entry for entry in ignored if not entry.item_id or entry.item_id in open_ids]
-        hard += [f'{HANDLED_NAME} ignores the line "{entry.line[:MAX_LINE_CHARS]}": {entry.reason}' for entry in unused[:MAX_LISTED]]
-        if len(unused) > MAX_LISTED:
-            hard.append(f"{HANDLED_NAME} ignores {len(unused) - MAX_LISTED} more lines")
     count = blocks_path.read_text().strip() if blocks_path.exists() else ""
     blocks = int(count) if count.isdecimal() and count.isascii() else 0
     if hard and blocks < MAX_BLOCKS:
@@ -531,8 +293,6 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
         write_atomic(get_state_path(session, EDITS_KIND), "")
     if not is_deferred and deferred_path.exists():
         deferred_path.unlink()
-    if open_ids:
-        write_atomic(released_path, " ".join(sorted(released | set(open_ids))))
     write_atomic(blocks_path, "0")
     if hard:
         print(json.dumps({"systemMessage": f"The turn ends with open checks: {'; '.join([*hard, *soft])}"}))

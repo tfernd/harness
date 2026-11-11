@@ -45,8 +45,7 @@ reported done that is not) caps the grade at 2; grade 4 is only for wrong claims
 `harness:report`. Answer holds, in this order:
 
 - One line, exactly `Grade: N/5 for <role> <unit>`, where `<unit>` is the exact task text of the author's
-  `# Report: <role>, <task>` title (when the task holds a comma, the unit is everything after the first comma and space). Nothing follows it on the line. The ledger queries of `harness:retro`
-  join on that text, so its shape is fixed.
+  `# Report: <role>, <task>` title (when the task holds a comma, the unit is everything after the first comma and space). Nothing follows it on the line.
 - Claims, one line each: TRUE, FALSE or UNSETTLED, the claim in a few words, the evidence.
 - Judges re-run: the command, the exit code, the counts.
 - Write-set breaches and unreported changes.

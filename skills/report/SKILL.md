@@ -42,7 +42,7 @@ a failing command quoted with its exit code>
 | Problems | If any | One cause from the list per item |
 | Next time | If different | Left out when you would do the same |
 | Open | If any | Includes a change needed outside your write set, with its file |
-| Feedback | If any | Each item names a file to change; it goes to `__harness__/feedback/inbox.md` for a retro: the project's (the plugin's data folder when the start folder is `/` or the home folder) |
+| Feedback | If any | Each item names a file to change; the main session reads it in the same turn and acts |
 | Verdict | Always | Last. `done`, `partial` or `blocked`, then one sentence |
 
 A claim that something could not be done needs the quoted error of a real attempt; otherwise write

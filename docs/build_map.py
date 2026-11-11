@@ -186,7 +186,7 @@ class PortNote(NamedTuple):
 
 
 AGENT_KINDS = (
-    Kind("Thinkers", "Work out what to do; write no files.", ("planner", "cold-reader", "analyst")),
+    Kind("Thinkers", "Work out what to do; write no files.", ("planner", "cold-reader")),
     Kind("Finders", "Look things up and answer with sources.", ("scout", "researcher")),
     Kind("Doers", "Change files or run commands inside their write set.", ("worker", "designer", "releaser", "runner")),
     Kind("Checkers", "Test someone else's work, claim by claim.", ("reviewer", "auditor")),
@@ -201,7 +201,7 @@ SKILL_KINDS = (
     ),
     Kind("Tools", "Run a command-line tool without breaking an account.", ("aws-cli", "snowflake-cli")),
     Kind("Check", "Judge work against its spec.", ("testing", "review", "audit", "sweep")),
-    Kind("Report and learn", "Close a job; turn lessons into rules.", ("report", "retro", "hook-authoring", "skill-authoring", "agent-authoring")),
+    Kind("Report", "Close a job; write hooks, skills and agents.", ("report", "hook-authoring", "skill-authoring", "agent-authoring")),
     Kind("Habits", "Cheap tool calls, every session.", ("tool-habits",)),
 )
 HOOK_KINDS = (
@@ -220,7 +220,7 @@ HOOK_JOBS = {
     "context.py": "Starts every session and agent with the tool habits and what it owes.",
     "skill_gate.py": "Hands an agent the rules for a kind of file before its first edit of one, and the commit rules before a commit.",
     "nudge.py": "Adds one line when an agent wastes tool turns, such as reading the same small file twice.",
-    "turn.py": "Holds the main session's turn until it ends with a closing status, and says when a retro is due.",
+    "turn.py": "Holds the main session's turn until it ends with a closing status.",
 }
 LEVELS = (
     Level("stopped", "Stops the call", "never runs", "The call never runs; the agent is told which rule fired and what to do instead.", "stop the call"),
@@ -228,7 +228,7 @@ LEVELS = (
     Level("sent-back", "Sent back", "report redone", "The report goes back to its agent, naming only the parts that are wrong, up to {send_backs} times.", "send the report back"),
     Level("turn", "Turn can't end", "until it is fixed", "The main session's turn does not end until it adds what is missing; it gets {max_blocks} tries.", "keep the turn open until it is fixed"),
     Level("reminder", "Reminds the model", "runs, with a note", "The call runs; one line of advice comes back with the result.", "remind the model"),
-    Level("advice", "Advice", "read, not checked", "Text the model reads before a kind of work. Nothing checks it was followed; a reviewer or a retro catches what slips.", "give the model advice"),
+    Level("advice", "Advice", "read, not checked", "Text the model reads before a kind of work. Nothing checks it was followed; a reviewer catches what slips.", "give the model advice"),
     Level("written", "Written down", "your AGENTS.md", "Your project's own rules in AGENTS.md, written once by /harness:init; they bind as far as the model reads them.", "write the rule into AGENTS.md"),
 )
 BRACES = (
@@ -263,7 +263,6 @@ RULES = (
     Rule("A long turn ends with a closing status", "turn", "turn.py"),
     Rule("A turn that ran agents names each one with its verdict", "turn", "turn.py"),
     Rule("A lesson changes a rule file, or the status says none", "turn", "turn.py"),
-    Rule("A retro is due when feedback items wait", "turn", "turn.py"),
     Rule("The rules for a kind of file arrive before its first edit", "reminder", "skill_gate.py"),
     Rule("A brief missing a line its role needs gets a note", "reminder", "brief_lint.py"),
     Rule("Wasted reads and hidden failures get a note", "reminder", "nudge.py"),
@@ -508,7 +507,6 @@ def get_facts(root: Path, /) -> Facts:
         "report_chars": get_constant(report_gate, "MAX_REPORT_CHARS", int),
         "max_blocks": get_constant(turn, "MAX_BLOCKS", int),
         "min_calls": get_constant(turn, "MIN_CALLS", int),
-        "retro_items": get_constant(turn, "RETRO_ITEMS", int),
         "headings": ", ".join(get_constant(turn, "HEADINGS", tuple)),
         "brief_worker": ", ".join(required.get("worker", required.get("*", []))),
         **budget_values,

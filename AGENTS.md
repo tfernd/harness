@@ -37,11 +37,8 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## Hooks
 - Writing a hook: `harness:hook-authoring` (events, fail open, the time budget, soft against hard, what counts as built). Hooks here are stdlib Python 3.12.
-- Each new rule gets a case in `tests/run_cases.py` and a deliberate-bug control in `tests/mutants.py` that the case catches.
-- A case can pass for the wrong reason: run the mutants of the hook you changed before trusting it (`tests/mutants.py --only`).
-- `tests/mutants.py` copies `hooks/` as it goes: never edit a hook during a run, or its score means nothing.
-- `CASE_THREADS` and `DEFAULT_JOBS` in `tests/mutants.py` keep an audit from freezing the machine: never raise them.
-- A rule is built when it has passed cases, mutants, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
+- Each new rule gets a case in `tests/run_cases.py`; a new check is shown to fail once on a deliberate bug (`harness:testing`).
+- A rule is built when it has passed cases, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
 - A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.
 - The plugin keeps its state in `__harness__/` and throwaway files in `__scratch__/`, each ignored by git through its own `.gitignore` (`*`); a hook makes both.
 
@@ -52,7 +49,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - `tests/check_port.py` ports into `__scratch__/port-check/` and fails on drift (preloads, hook paths, texts, the shim, `install.sh`).
 
 ## Build and release
-- Release order: `make check` (map freshness, hook cases, mutant check, skill form, leaks, port, strip), then commit, then push, then update. `.githooks/pre-push` runs `make check` on every push; `make help` lists the targets.
+- Release order: `make check` (map freshness, hook cases, skill form, leaks, port, strip), then commit, then push, then update. `.githooks/pre-push` runs `make check` on every push; `make help` lists the targets.
 - `docs/index.html` embeds the source of every hook and the text of every agent and skill: a change to any of them makes it stale (the pre-push check then fails). It also needs the port-loss phrases in `README.md`. Run `make map` (`docs/build_map.py`) and commit the page with the change.
 - Commit from the main session only (`harness:git-commit`); a sub-agent never writes to git.
 - Update the installed copy with `claude plugin marketplace update harness && claude plugin update harness@harness`, then restart Claude Code or run `/reload-plugins`: a running session keeps the hooks it loaded at start. Cortex Code and Kiro update with the lines under Install.

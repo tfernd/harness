@@ -21,8 +21,6 @@ jobs:
         run: uv run python docs/build_map.py --check
       - name: Cases
         run: uv run python tests/run_cases.py
-      - name: Mutant check
-        run: uv run python tests/mutants.py --check
       - name: Skill form
         run: uv run python tests/check_skills.py
       - name: Leaks

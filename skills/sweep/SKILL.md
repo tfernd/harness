@@ -1,17 +1,17 @@
 ---
 name: sweep
-description: A whole-repo self-audit any repo can run - map where rules live, one scout per lens, an adversary, a cold verifier, a ranked table, fixes and a check against drift. Load before a release, after a batch of rule changes, or when a retro shows a problem twice.
+description: A whole-repo self-audit any repo can run - map where rules live, one scout per lens, an adversary, a cold verifier, a ranked table, fixes and a check against drift. Load before a release, after a batch of rule changes, or when the same problem comes back.
 ---
 
 # Sweeping a repo against itself
 
 The sweep runs with the harness plugin's roles (scout, runner, auditor, worker), in any repo that has the plugin installed.
-`review` checks a change against its spec; `audit` checks an agent's report; `retro` turns past reports into rules;
+`review` checks a change against its spec; `audit` checks an agent's report;
 `sweep` checks a repo against itself: its rules, docs, config and checks against each other.
 
 ## When
 
-Before a release, after a batch of rule changes, when a retro shows a problem twice, or on the owner's ask.
+Before a release, after a batch of rule changes, or on the owner's ask.
 
 ## Cost shape
 

@@ -60,5 +60,4 @@ A judge that imports a hook by path loads the hook's sibling modules first.
 ## What no tool checks
 
 Whether a message is clear to an agent that has only that text, and whether a rule is worth the friction it causes.
-Read the message cold (`harness:cold-read`), and let the ledger show a rule that keeps firing on good calls
-(`harness:retro`).
+Read the message cold (`harness:cold-read`), and let the ledger show a rule that keeps firing on good calls.
