@@ -214,20 +214,6 @@ def get_unfenced_lines(text: str, /) -> list[str]:
     return [line for index, line in enumerate(lines) if index not in fenced]
 
 
-def read_events(path: Path, /) -> list[dict]:
-
-    events: list[dict] = []
-    for line in path.read_bytes().decode(errors="replace").split("\n"):
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict):
-            events.append(event)
-
-    return events
-
-
 def get_turns(events: list[dict], /) -> list[list[dict]]:
 
     turns: list[list[dict]] = []

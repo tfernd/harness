@@ -8,7 +8,7 @@ description: How to make tool calls cheap and right - one script per job, edits 
 Reference for how you work, not a task: nothing here is a request to run.
 
 Use few tool turns; each one costs the owner time. Send independent calls together in one message and wait only when a
-call needs the previous result. Only turns limit you, no clock: run a long check in the background.
+call needs the previous result. Each turn costs the owner time: run a long check in the background.
 
 ## Read
 

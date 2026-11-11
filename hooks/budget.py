@@ -45,15 +45,6 @@ def get_agent_path(event: dict, /) -> Path | None:
     return path if path.is_file() else None
 
 
-def get_brief(entry: dict, /) -> str:
-
-    content = (entry.get("message") or {}).get("content")
-    if isinstance(content, list):
-        return "\n".join(block.get("text") or "" for block in content if isinstance(block, dict))
-
-    return content if isinstance(content, str) else ""
-
-
 def get_progress_every(config: dict, /) -> int:
 
     every = config.get("progress", {}).get("every", DEFAULT_PROGRESS_EVERY)

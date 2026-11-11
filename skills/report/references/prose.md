@@ -1,6 +1,6 @@
 # Writing tics to avoid in a report
 
-Say the thing once, in the active voice, with its subject named. A hook notes the first two tics softly.
+Say the thing once, in the active voice, with its subject named.
 
 | Tic | Bad | Plain |
 |---|---|---|

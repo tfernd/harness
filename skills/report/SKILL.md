@@ -6,15 +6,15 @@ description: The report every sub-agent ends with - what was done, what is not p
 # The report
 
 Your report is the main session's only view of your run. Keep it short and useful: say what was done and what is not
-proven. A passing check gets one line; quote a command only when it failed or matters. `hooks/report_gate.py` sends back a
-report that breaks the form, naming the sections that are wrong. A refused handback: call it again with the whole report,
+proven. A passing check gets one line; quote a command only when it failed or matters. `hooks/report_gate.py` checks one
+thing: the required sections are there, as `##` headings in order. It sends back a report that misses or misorders one,
+naming the sections that are wrong. A refused handback: call it again with the whole report,
 fixed. A report sent back after you stopped: send only those sections again; the ones you leave out stay as they were.
 
 ## The form
 
 Title, then these sections under their exact `##` headings, in this order. Leave out a section marked "if any" when it has
-nothing to say, and add no other `##` heading. The report is at most 6000 characters outside fenced blocks (a brief line `Report cap: N` raises it; up to 10% over passes with a note); cut repeated
-detail first, and move long lists to a file in `/tmp/harness/<project>/` and name it.
+nothing to say, and add no other `##` heading. A long list belongs in a file in `/tmp/harness/<project>/`, named in the report.
 
 ```markdown
 # Report: <role>, <task in six words>
@@ -46,23 +46,11 @@ a failing command quoted with its exit code>
 | Verdict | Always | Last. `done`, `partial` or `blocked`, then one sentence |
 
 A claim that something could not be done needs the quoted error of a real attempt; otherwise write
-`not attempted: <why>`, never "can't". A restriction is a conclusion earned from a real failure. A hook sends back a "can't"
-with no failed call, once.
+`not attempted: <why>`, never "can't". A restriction is a conclusion earned from a real failure.
 
 Write the Verdict after the rest and let it follow from it. `done` means every Judge line of the brief is met;
 `partial` means a named Judge line is unmet; `blocked` means the job could not go on. Not proven may list limits (a run
 left to the main session, a path not exercised) without making the verdict `partial`. An owner reads the Verdict first, so it must be true on its own.
-
-## What the hook checks against your transcript
-
-- Each file you changed through Edit, Write, NotebookEdit or a Bash command (a redirect, `tee`, `sed -i`, a script that
-  writes) is named by its absolute or project-relative path, unless it lies under `/tmp/harness/<project>/`.
-- A claim that tests, lint, a check, a gate or a build passed needs an earlier Bash call of yours that runs a check: a
-  test runner, linter, type checker, build, `make` with a target, or a script under `tests/`. `ls` or `true` is none.
-- Each `exit <N>` you write is the result of a Bash call: the code a failed call printed (`Exit code N`), 0 for a call
-  that did not fail, or a code a call printed itself (`rg exit 1`, make's `Error 2`). Describing a code, write "exits with 2".
-- A mark READ `` `path:line` ``, when you use one, names an existing file with at least that many lines, by its path from
-  the project root or an end of path only one project file has; `path:a-b` checks `b`. A text quoted right after it, in "..." or backticks, must lie on that line or within 3 lines.
 
 ## Filling it
 

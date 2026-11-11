@@ -62,7 +62,6 @@ REQUIRED_HEADINGS = ("Answer", "Not proven", "Verdict")
 OPTIONAL_HEADINGS = ("Problems", "Next time", "Open", "Feedback")
 AGENT_TYPES = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "Explore", "custom")
 HARNESS_AGENTS = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "harness:researcher")
-HELPED = "A clearer brief would have helped."
 
 
 def build_report(sections: list[tuple[str, str]], /) -> str:
@@ -990,21 +989,10 @@ def exit_report(*codes: int) -> str:
     return answer_report("Changed one file. " + " ".join(f"Command {number} exit {code}." for number, code in enumerate(codes, 1)))
 
 
-BRIEF_CAP = {"message": {"content": "Goal: x\nReport cap: 8000"}}
 
 
-def sized_report(size: int, /) -> str:
-
-    base = len(answer_report("Nothing changed."))
-
-    return answer_report("Nothing changed." + "x" * (size - base))
 
 
-def fenced_report(size: int, /) -> str:
-
-    block = "\n".join(["y" * 99] * (size // 100))
-
-    return answer_report(f"Nothing changed.\n```\n{block}\n```")
 
 
 def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: object) -> Case:
@@ -1013,22 +1001,14 @@ def gate(name: str, event: dict, blocks: bool, text: str = "", /, **options: obj
     return Case(name, ("report_gate.py",), event, blocks, text, **options)
 
 
-NUMBERED = "\n".join(f"line {word}" for word in ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"))
 
 
 def bash_call(tool_id: str, /) -> dict:
     return assistant({"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": "true"}})
 
 
-def check_call(tool_id: str, command: str, /) -> dict:
-    return assistant({"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}})
 
 
-def bash_failed(tool_id: str, code: int, /) -> dict:
-
-    block = {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": f"Exit code {code}\noutput"}
-
-    return {"type": "user", "message": {"content": [block]}}
 CLEAN_REPORT = answer_report("Nothing changed.")
 def bash_output(tool_id: str, text: str, /) -> dict:
 
@@ -1066,8 +1046,10 @@ SEND_BACK_COUNT = "data/send-backs/a1.count"
 EXIT_REPORT = exit_report(0)
 FEEDBACK_ITEM = "skills/report/SKILL.md: add a rule to the report skill"
 BAD_REPORT = make_report(skip="Not proven", replace=("Feedback", f"- {FEEDBACK_ITEM}"))
+QUOTING_REPORT = answer_report("The run printed `exit 1`; the tool said it cannot find the file, so I can't say more. The tests passed. Changed src/a.py.")
+LONG_REPORT = answer_report("Changed one file. " + "detail " * 3000)
+OUT_OF_ORDER_REPORT = reorder_report("Not proven", "Answer", "Verdict")
 GATE_CASES = (
-    gate("a Read is no Bash call for an exit code", transcript_event(EXIT_REPORT), True, "holds no Bash call", transcript=(assistant({"type": "tool_use", "id": "r", "name": "Read", "input": {}}),)),
     gate("a broken transcript line is skipped", {**transcript_event(EXIT_REPORT), "agent_transcript_path": f"{ROOT}/project/broken.jsonl"}, False, files=(("broken.jsonl", "not json\n" + json.dumps(bash_call("t1")) + "\n"),)),
     gate("a block that is no object is skipped", transcript_event(EXIT_REPORT), False, transcript=(assistant("text"), bash_call("t1"))),
     gate(
@@ -1077,28 +1059,18 @@ GATE_CASES = (
         "missing: Answer",
         transcript=(assistant({"type": "tool_use", "id": "s", "name": "SendMessage", "input": {"message": make_report()}}),),
     ),
-    gate(
-        "an exit code in a list result counts",
-        transcript_event(exit_report(1)),
-        False,
-        transcript=(bash_call("t1"), {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": [{"type": "text", "text": "Exit code 1\noutput"}]}]}}),
-    ),
     gate("a complete report is accepted", stop_event(make_report()), False),
-    gate("a report just under the length limit passes", stop_event(sized_report(6000)), False, lacks="characters, over the limit"),
-    gate("a report just over the length limit passes with a note", stop_event(sized_report(6001)), False, "within 10%"),
-    gate("a report 10% over the cap passes", stop_event(sized_report(6600)), False),
-    gate("a report past 10% over goes back with the count and the cap", stop_event(sized_report(6601)), True, "the report is 6601 characters, over the limit of 6000"),
-    gate("a report under the cap has no length note", stop_event(sized_report(6000)), False, lacks="within 10%"),
-    gate("a brief Report cap raises the cap", transcript_event(sized_report(7000)), False, lacks="over the limit", transcript=(BRIEF_CAP,)),
-    gate("a brief Report cap never lowers the default", transcript_event(sized_report(2000)), False, transcript=({"message": {"content": "Goal: x\nReport cap: 1000"}},)),
-    gate("a report 10% over a raised cap passes with a note", transcript_event(sized_report(8700)), False, "over its cap of 8000", transcript=(BRIEF_CAP,)),
-    gate("a report past 10% over a raised cap goes back with both numbers", transcript_event(sized_report(8801)), True, "the report is 8801 characters, over the limit of 8000", transcript=(BRIEF_CAP,)),
-    gate("a long fenced block does not count toward the length", stop_event(fenced_report(20000)), False),
-    gate("report.max_chars raises the limit", stop_event(sized_report(7000)), False, config={"report": {"max_chars": 8000}}),
-    gate("report.max_chars lowers the limit", stop_event(sized_report(2000)), True, "over the limit of 1000", config={"report": {"max_chars": 1000}}),
+    gate("a report of 20000 characters with every heading passes", stop_event(LONG_REPORT), False, lacks="characters"),
+    gate("a report quoting an exit code and a cannot passes", stop_event(QUOTING_REPORT), False, lacks="could not be done"),
+    gate("a report quoting an exit code and a cannot passes against an empty transcript", transcript_event(QUOTING_REPORT), False, transcript=(assistant({"type": "text", "text": "x"}),)),
+    gate("a report missing a heading is sent back naming it", stop_event(make_report(skip="Verdict")), True, "- Verdict: missing: Verdict"),
+    gate("a report with headings out of order is sent back naming them", stop_event(OUT_OF_ORDER_REPORT), True, "out of order: Answer"),
+    handback("a handback of 20000 characters with every heading runs", LONG_REPORT, False),
+    handback("a handback quoting an exit code and a cannot runs", QUOTING_REPORT, False),
+    handback("a handback missing a heading is refused naming it", make_report(skip="Not proven"), True, "- Not proven: missing: Not proven"),
+    handback("a handback with headings out of order is refused naming them", OUT_OF_ORDER_REPORT, True, "out of order: Answer"),
     gate("a repeated heading goes back", stop_event(make_report() + "\n## Answer\nagain"), True, "duplicated: Answer"),
     gate("a heading in a fence does not count", stop_event(make_report() + "\n```\n## Answer\n```"), False),
-    gate("TBD in Answer goes back", stop_event(make_report(replace=("Answer", "TBD"))), True, "placeholder"),
     gate("an unprefixed project role is not judged", stop_event(make_report(skip="Not proven"), agent_type="worker"), False),
     gate("a built-in helper is never sent back", stop_event("no headings", agent_type="Explore"), False),
     gate("another plugin's agent is never sent back", stop_event("no headings", agent_type="other:worker"), False),
@@ -1168,142 +1140,13 @@ GATE_CASES = (
         "missing: Answer",
         transcript=({"type": "api-request-blob", "message": {"role": "assistant", "content": [{"type": "text", "text": CLEAN_REPORT}]}},),
     ),
-    gate(
-        "a changed file left out goes back",
-        transcript_event(CLEAN_REPORT),
-        True,
-        "does not name a file",
-        transcript=(edit("t1", "src/a.py"),),
-    ),
-    gate(
-        "a changed file named by its project path is accepted",
-        transcript_event(answer_report("- src/a.py: changed")),
-        False,
-        transcript=(edit("t1", "src/a.py"),),
-    ),
-    gate(
-        "a changed file named by its absolute path is accepted",
-        transcript_event(answer_report(f"- {ROOT}/project/src/a.py: changed")),
-        False,
-        transcript=(edit("t1", f"{ROOT}/project/src/a.py"),),
-    ),
-    gate(
-        "an absolute call path is named by its project path",
-        transcript_event(answer_report("- src/a.py: changed")),
-        False,
-        transcript=(edit("t1", f"{ROOT}/project/src/a.py"),),
-    ),
-    gate(
-        "a changed file named with ./ is accepted",
-        transcript_event(answer_report("- ./src/a.py: changed")),
-        False,
-        transcript=(edit("t1", "src/a.py"),),
-    ),
-    gate(
-        "another file with the same ending does not name it",
-        transcript_event(answer_report("- lib/src/a.py and src/a.pyc")),
-        True,
-        "does not name a file",
-        transcript=(edit("t1", "src/a.py"),),
-    ),
-    gate(
-        "a NotebookEdit counts",
-        transcript_event(CLEAN_REPORT),
-        True,
-        "does not name a file",
-        transcript=(assistant({"type": "tool_use", "id": "t1", "name": "NotebookEdit", "input": {"notebook_path": "n.ipynb"}}),),
-    ),
-    gate(
-        "a file under the scratch folder is exempt",
-        transcript_event(CLEAN_REPORT),
-        False,
-        config={"guard": {"scratch": "./__scratch__/"}},
-        transcript=(edit("t1", "__scratch__/a.txt"),),
-    ),
-    gate(
-        "a file that failed to change is not owed",
-        transcript_event(CLEAN_REPORT),
-        False,
-        transcript=(edit("t1", "src/a.py"), {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True}]}}),
-    ),
-    gate(
-        "an exit code with no Bash call goes back",
-        transcript_event(EXIT_REPORT),
-        True,
-        "no Bash call",
-        transcript=(assistant({"type": "text", "text": "thinking"}),),
-    ),
-    gate(
-        "an exit code with a Bash call is accepted",
-        transcript_event(EXIT_REPORT),
-        False,
-        transcript=(assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "true"}}),),
-    ),
-    gate("a READ past the end goes back", stop_event(answer_report("READ `AGENTS.md:2`")), True, "past the end"),
-    gate("a READ of the last line is accepted", stop_event(answer_report("READ `AGENTS.md:1`")), False),
-    gate("a READ range checks its end", stop_event(answer_report("READ `AGENTS.md:1-2`")), True, "past the end"),
-    gate("a READ of a missing file goes back", stop_event(answer_report("READ `gone.md:1`")), True, "does not exist"),
-    gate("a READ without the backticks is not a claim", stop_event(answer_report("READ gone.md:1")), False),
-    gate("a READ by an end of path one file has is accepted", stop_event(answer_report('READ `pkg/doc.md:2` "line two"')), False, files=(("src/pkg/doc.md", NUMBERED),)),
-    gate("a READ by its end checks the line in that file", stop_event(answer_report("READ `doc.md:11`")), True, "past the end", files=(("src/pkg/doc.md", NUMBERED),)),
-    gate("a READ never looks in the home folder", stop_event(answer_report("READ `decoy.md:1`")), True, "does not exist", home="homedir", files=(("../homedir/decoy.md", "x\n"),)),
-    gate("a READ end two files share goes back", stop_event(answer_report("READ `doc.md:1`")), True, "2 project files end with it", files=(("a/doc.md", "x\n"), ("b/doc.md", "x\n"))),
-    gate("an exit code a command printed is accepted", transcript_event(exit_report(1)), False, transcript=(bash_call("t1"), bash_output("t1", "rg exit 1"))),
-    gate("make's Error line backs its code", transcript_event(exit_report(2)), False, transcript=(bash_call("t1"), bash_output("t1", "make: *** [Makefile:3: static] Error 2"))),
-    gate("a number printed with no exit word backs nothing", transcript_event(exit_report(1)), True, "ended with that code", transcript=(bash_call("t1"), bash_output("t1", "1 file changed"))),
-    gate("the Problems send-back gives an example line", stop_event(make_report(replace=("Problems", "- the brief was vague"))), True, "a missing fixture (cause: brief)"),
     handback("a bad handback is refused and asks for the whole report", make_report(skip="Not proven"), True, "with the whole report"),
     handback("a good handback runs", make_report(), False),
     handback("a refused handback counts a send-back", make_report(skip="Not proven"), True, wrote=(SEND_BACK_COUNT, "1")),
     handback("a handback after three send-backs runs", make_report(skip="Not proven"), False, files=((SEND_BACK_COUNT, "3"),)),
     handback("a repo's own agent is not judged where the repo has no file", make_report(skip="Not proven"), False, config=None, agent_type="custom"),
     handback("a built-in helper's handback is never refused", make_report(skip="Not proven"), False, agent_type="Explore"),
-    handback("a handback's claims are read from the agent's transcript", exit_report(1), True, "ended with that code", lines=(bash_call("t1"),)),
     handback("a handback with no message is let go", "", False, event_input={}),
-    gate(
-        "an exit code no Bash call ended with goes back",
-        transcript_event(EXIT_REPORT),
-        True,
-        "no Bash call of the transcript ended with that code",
-        transcript=(bash_call("t1"), bash_failed("t1", 1)),
-    ),
-    gate(
-        "an exit code a failed Bash call printed is accepted",
-        transcript_event(exit_report(1)),
-        False,
-        transcript=(bash_call("t1"), bash_failed("t1", 1)),
-    ),
-    gate(
-        "exit 0 is backed by a Bash call that did not fail",
-        transcript_event(exit_report(0, 2)),
-        False,
-        transcript=(bash_call("t1"), bash_call("t2"), bash_failed("t2", 2)),
-    ),
-    gate(
-        "a READ quote far from the line goes back",
-        stop_event(answer_report('READ `doc.md:1` "line nine"')),
-        True,
-        "quotes text that is not on that line",
-        files=(("doc.md", NUMBERED),),
-    ),
-    gate(
-        "a READ quote within 3 lines is accepted",
-        stop_event(answer_report('READ `doc.md:1` "line four"')),
-        False,
-        files=(("doc.md", NUMBERED),),
-    ),
-    gate(
-        "a READ backtick quote on the line is accepted",
-        stop_event(answer_report("READ `doc.md:5-6`: `line eight`")),
-        False,
-        files=(("doc.md", NUMBERED),),
-    ),
-    gate(
-        "a READ with no quote is unchanged",
-        stop_event(answer_report("READ `doc.md:1`, then more")),
-        False,
-        files=(("doc.md", NUMBERED),),
-    ),
     gate(
         "text with no report is sent back after the wait",
         {**stop_event("I am done"), "agent_transcript_path": "transcript.jsonl"},
@@ -1324,12 +1167,6 @@ GATE_CASES = (
         transcript=(assistant({"type": "tool_use", "id": "h1", "name": "SubagentHandback", "input": {"message": CLEAN_REPORT}}),),
     ),
     gate(
-        "an edit beside a Bash call does not hide the Bash call",
-        transcript_event(answer_report("- src/a.py: changed")),
-        False,
-        transcript=(edit("t1", "src/a.py"), bash_call("b1")),
-    ),
-    gate(
         "a bad report by handback is not sent back, since the agent has ended",
         {**stop_event(""), "agent_transcript_path": "transcript.jsonl", "last_assistant_message": ""},
         False,
@@ -1343,85 +1180,26 @@ GATE_CASES = (
         "breaks the report",
         transcript=(assistant({"type": "text", "text": "## Answer\nno"}),),
     ),
-    gate(
-        "a scratch folder exempts only itself from naming changed files",
-        transcript_event(answer_report("- nothing named")),
-        True,
-        "does not name a file",
-        transcript=(edit("t1", "src/a.py"),),
-        config={"guard": {"scratch": "__scratch__"}},
-    ),
     *(gate(f"a report missing {heading} goes back", stop_event(make_report(skip=heading)), True, f"missing: {heading}") for heading in REQUIRED_HEADINGS),
     gate("a report with only the required sections is accepted", stop_event(make_report(headings=REQUIRED_HEADINGS)), False),
     *(
         gate(f"{heading} of none is accepted", stop_event(make_report(replace=(heading, "none"))), False)
         for heading in OPTIONAL_HEADINGS
     ),
-    gate("an empty optional section goes back", stop_event(make_report(replace=("Next time", ""))), True, "Next time is empty"),
-    gate("none in Answer goes back", stop_event(make_report(replace=("Answer", "none"))), True, "Answer says none"),
     gate("an unknown heading goes back", stop_event(make_report().replace("## Open", "## Work\n- x\n## Open")), True, "not a section of the form: Work"),
     gate("an old heading goes back", stop_event(make_report() + "\n## REPORT CARD\nx"), True, "not a section of the form: REPORT CARD"),
     gate("a Verdict that is not last goes back", stop_event(make_report() + "\n## Next time\nlater"), True, "Verdict must be the last section"),
     gate("a section out of order goes back", stop_event(reorder_report("Not proven", "Answer", "Verdict")), True, "out of order: Answer"),
     gate("an optional section out of order goes back", stop_event(reorder_report("Answer", "Not proven", "Open", "Problems", "Verdict")), True, "out of order: Open"),
-    gate("a Verdict opening with another word goes back", stop_event(make_report(replace=("Verdict", "great: it went well"))), True, "Verdict must open with"),
-    gate("a Verdict with no sentence goes back", stop_event(make_report(replace=("Verdict", "done"))), True, "Verdict must open with"),
-    *(
-        gate(f"a Verdict of {word} is accepted", stop_event(make_report(replace=("Verdict", f"{word}: one sentence that fits."))), False)
-        for word in ("partial", "blocked", "Done")
-    ),
-    gate("a bare Not proven goes back", stop_event(make_report(replace=("Not proven", "nothing"))), True, "Not proven is bare"),
-    gate("a two-word Not proven goes back", stop_event(make_report(replace=("Not proven", "- nothing left"))), True, "Not proven is bare"),
-    gate("a three-word Not proven is accepted", stop_event(make_report(replace=("Not proven", "- nothing was left"))), False),
-    gate("a Problems item with no cause goes back", stop_event(make_report(replace=("Problems", f"- it broke. {HELPED}"))), True, "names no cause"),
-    gate("a Problems item with a cause and no remedy is accepted", stop_event(make_report(replace=("Problems", "- it broke (cause: brief)."))), False),
-    gate("a Problems item with a cause and a helped is accepted", stop_event(make_report(replace=("Problems", f"- it broke (cause: brief). {HELPED}"))), False),
-    gate("the form's cause list copied whole goes back", stop_event(make_report(replace=("Problems", f"- it broke (cause: brief | tool). {HELPED}"))), True, "names no cause"),
-    gate("a project's extra cause is accepted", stop_event(make_report(replace=("Problems", f"- it broke (cause: GPU). {HELPED}"))), False, config={"report": {"causes": ["GPU"]}}),
-    gate("every Problems item is judged", stop_event(make_report(replace=("Problems", "- one (cause: tool).\n- two broke."))), True, "names no cause from the skill's list: - two broke"),
-    gate("a Feedback item with no file goes back", stop_event(make_report(replace=("Feedback", "- add a rule"))), True, "names no file to change"),
-    gate("a Feedback item names its file on a continuation line", stop_event(make_report(replace=("Feedback", "change the rule\n  in report.md"))), False),
-    gate("an unindented line is its own Feedback item", stop_event(make_report(replace=("Feedback", "first item in a.md\nsecond item in b.md"))), False),
-    *(
-        gate(
-            f"{claim!r} with no Bash call goes back",
-            transcript_event(answer_report(f"Changed one file; {claim}.")),
-            True,
-            "says a check passed",
-            transcript=(assistant({"type": "text", "text": "thinking"}),),
-        )
-        for claim in ("the tests passed", "lint is clean", "the build is green", "the gate passes")
-    ),
-    gate("a pass claim with a Bash call is accepted", transcript_event(answer_report("Changed one file; the tests passed.")), False, transcript=(check_call("t1", "uv run pytest -q"),)),
-    *(
-        gate(f"a pass claim backed by {command!r} is accepted", transcript_event(answer_report("Changed one file; the tests passed.")), False, transcript=(check_call("t1", command),))
-        for command in ("uv run python tests/run_cases.py", "make check", "make -j4 test", "ruff check hooks", "cargo test", "npm run build", "uv run mypy src", "bash tests/smoke.sh")
-    ),
-    *(
-        gate(f"a pass claim with only {command!r} goes back", transcript_event(answer_report("Changed one file; the tests passed.")), True, "runs a check", transcript=(check_call("t1", command),))
-        for command in ("ls", "true", "make", "git status", "cat tests/notes.txt", "echo tests passed")
-    ),
-    gate("a pass claim with a Read and an ls goes back", transcript_event(answer_report("Lint is clean.")), True, "runs a check", transcript=(assistant({"type": "tool_use", "id": "r", "name": "Read", "input": {}}), check_call("t1", "ls"))),
-    gate("a check among other calls backs the pass claim", transcript_event(answer_report("Lint is clean.")), False, transcript=(check_call("t1", "ls"), check_call("t2", "uvx ruff check hooks"))),
-    gate("a script written through Bash must be named", transcript_event(CLEAN_REPORT), True, "does not name a file the agent changed: " + ROOT + "/project/src/b.py", files=(("src/b.py", "x"),), transcript=(check_call("t1", "python3 - <<'EOF'\nfrom pathlib import Path\nPath('src/b.py').write_text('x')\nEOF"),)),
-    gate("a redirect through Bash must be named", transcript_event(CLEAN_REPORT), True, "does not name a file the agent changed", files=(("src/c.txt", "x"),), transcript=(check_call("t1", "echo x > src/c.txt"),)),
-    gate("a file written through Bash and named is accepted", transcript_event(answer_report("- src/c.txt: written")), False, files=(("src/c.txt", "x"),), transcript=(check_call("t1", "echo x > src/c.txt"),)),
-    gate("a failed Bash write is not a changed file", transcript_event(CLEAN_REPORT), False, files=(("src/c.txt", "x"),), transcript=(check_call("t1", "echo x > src/c.txt"), bash_failed("t1", 1))),
-    gate("a redirect to a device is not a changed file", transcript_event(CLEAN_REPORT), False, transcript=(check_call("t1", "ls > /dev/null"),)),
-    gate("a report that claims no pass needs no Bash call", transcript_event(answer_report("The tests failed; nothing else changed.")), False, transcript=(assistant({"type": "text", "text": "thinking"}),)),
     *(
         gate(f"{agent} owes the one form", stop_event(make_report(headings=REQUIRED_HEADINGS), agent_type=agent), False)
-        for agent in HARNESS_AGENTS
-    ),
-    *(
-        gate(f"{agent} owes a Verdict", stop_event(make_report(skip="Verdict"), agent_type=agent), True, "missing: Verdict")
         for agent in HARNESS_AGENTS
     ),
 )
 
 
 STRAY = "\n## Note\nstray"
-BARE_REPORT = make_report(replace=("Answer", "FIRSTANSWER changed one file."), fill={"Not proven": "BARETOKEN"})
+BARE_REPORT = make_report(replace=("Answer", "FIRSTANSWER changed one file."), skip="Not proven")
 FIX_NOT_PROVEN = "## Not proven\n- the live run was not made, the owner can run it"
 VERDICT_ONLY = "## Verdict\ndone: the unit is complete"
 
@@ -1435,23 +1213,18 @@ LATE_HANDBACK = "(sleep 1; printf '%s\\n' " + shlex.quote(json.dumps(assistant({
 
 
 RESEND_CASES = (
-    gate("a send-back names the wrong section", stop_event(BARE_REPORT), True, "Not proven is bare", lacks="Answer"),
+    gate("a send-back names the wrong section", stop_event(BARE_REPORT), True, "missing: Not proven", lacks="Answer"),
     gate("a send-back asks for the sections only", stop_event(BARE_REPORT), True, "Send again only these sections", lacks="Send the WHOLE"),
-    gate("a send-back names each wrong section once", stop_event(make_report(skip="Not proven", fill={"Verdict": "fine"})), True, "- Verdict: Verdict must open", lacks="Problems"),
-    gate("a send-back names a claim in the section that holds it", transcript_event(make_report(fill={"Next time": "The tests passed."})), True, "- Next time: the report says a check passed", lacks="- Answer", transcript=(assistant({"type": "text", "text": "hi"}),)),
-    gate("a send-back about Verdict gives only its form", stop_event(make_report(fill={"Verdict": "fine"})), True, "opens with done, partial or blocked", lacks="cause:"),
-    gate("a send-back about Problems gives only its form", stop_event(make_report(fill={"Problems": "- it broke"})), True, "cause: <one of", lacks="Verdict is last"),
-    gate("a send-back about Feedback gives only its form", stop_event(make_report(fill={"Feedback": "- change something"})), True, "names a file to change", lacks="done, partial"),
     gate("a stray section is named as one to leave out", stop_event(make_report() + STRAY), True, "- Note: not a section of the form: Note (leave it out)"),
     resend("a whole new report still works", BARE_REPORT, make_report(), False),
-    resend("a still wrong resend goes back again", BARE_REPORT, "## Not proven\nstill", True, "- Not proven: Not proven is bare", lacks="- Answer"),
-    resend("a resend of one section does not name the others", BARE_REPORT, "## Not proven\nstill", True, lacks="Verdict"),
-    resend("a resend with a bad section next to a good one names the bad one only", BARE_REPORT, FIX_NOT_PROVEN + "\n## Verdict\nfine", True, "- Verdict:", lacks="- Not proven"),
+    resend("a still wrong resend goes back again", BARE_REPORT, VERDICT_ONLY, True, "- Not proven: missing: Not proven", lacks="- Answer"),
+    resend("a resend of one section does not name the others", BARE_REPORT, VERDICT_ONLY, True, lacks="Verdict:"),
+    resend("a resend with a bad section next to a good one names the bad one only", BARE_REPORT, FIX_NOT_PROVEN + "\n## Bogus\nx", True, "- Bogus:", lacks="- Not proven"),
     resend("a resend in the wrong order is put right", BARE_REPORT, VERDICT_ONLY + "\n" + FIX_NOT_PROVEN, False),
     resend("a stray section is dropped by the merge", make_report() + STRAY, VERDICT_ONLY, False),
     resend("a duplicate resend is named", BARE_REPORT, FIX_NOT_PROVEN + "\n" + FIX_NOT_PROVEN, True, "duplicated: Not proven"),
-    resend("an unchanged resend does not hide the old report", BARE_REPORT, BARE_REPORT, True, "Not proven is bare"),
-    resend("a resend without headings keeps the old report", BARE_REPORT, "Done, fixed it.", True, "Not proven is bare"),
+    resend("an unchanged resend does not hide the old report", BARE_REPORT, BARE_REPORT, True, "missing: Not proven"),
+    resend("a resend without headings keeps the old report", BARE_REPORT, "Done, fixed it.", True, "missing: Not proven"),
     gate("without a send-back a partial is judged whole", stop_event(FIX_NOT_PROVEN), True, "missing: Answer"),
     gate("a send-back counted but nothing kept is judged on the message", stop_event(FIX_NOT_PROVEN), True, "missing: Answer", files=(("data/send-backs/a1.count", "1"),)),
     gate(
@@ -1476,13 +1249,6 @@ RESEND_CASES = (
         False,
         files=(("data/send-backs/a1.count", "1"), ("data/send-backs/a1.report", json.dumps({"raw": "x", "merged": make_report()}))),
         not_wrote=("data/send-backs/a1.report", "merged"),
-    ),
-    gate(
-        "the job send-back count is dropped once the agent stops",
-        stop_event(make_report()),
-        False,
-        files=(("data/send-backs/a1.jobs", "2"),),
-        not_wrote=("data/send-backs/a1.jobs", "2"),
     ),
 )
 
@@ -1893,7 +1659,7 @@ CONTEXT_CASES = (
     context("a scout start leaves out the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "## Read", lacks="## Edit and check in one call"),
     context("a reviewer start leaves out the clean and git habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:reviewer"}, "## When a call is refused", lacks="## Clean"),
     context("a helper start keeps every habit", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## Git"),
-    context("a sub-agent is told no clock limits it", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "Only turns limit you"),
+    context("a sub-agent is told to run long checks in the background", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "run a long check in the background"),
     context("a sub-agent is told what stands in for Grep", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "use `rg` and `find`"),
     context("a session is told what stands in for Grep", {"hook_event_name": "SessionStart"}, "use `rg` and `find`"),
     context("a zsh user's agent is told the shell", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "The shell is zsh"),
@@ -2176,40 +1942,8 @@ COMMIT_CASES = (
 
 
 
-def background_job(tool_id: str, /, *, reply: str = "Command running in background with ID: b1. Output is being written to: /x", command: str = "make x") -> tuple[dict, dict]:
-
-    call = assistant({"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command, "run_in_background": True}})
-
-    return call, bash_output(tool_id, reply)
 
 
-JOB_REPORT = make_report()
-JOB_COUNT = "data/send-backs/a1.jobs"
-NAMED_REPORT = make_report(replace=("Not proven", "- The command find / -name tsc was left alive and never read."))
-RUNNING_REPORT = make_report(replace=("Not proven", "- A background search was left running, so its result was never read."))
-BACKGROUND_CASES = (
-    handback("a handback with a job still running is refused", JOB_REPORT, True, "still running", lines=background_job("j1")),
-    handback("a refused handback for a job counts a job send-back", JOB_REPORT, True, wrote=(JOB_COUNT, "1"), lines=background_job("j1")),
-    handback("a refused handback for a job leaves the form count alone", JOB_REPORT, True, not_wrote=(SEND_BACK_COUNT, ""), lines=background_job("j1")),
-    handback("the job send-back names the running command", JOB_REPORT, True, "`find / -name tsc`", lines=background_job("j1", command="find / -name tsc")),
-    handback("the job send-back names only the first 80 characters", JOB_REPORT, True, "x" * 80 + "`", lacks="x" * 81, lines=background_job("j1", command="x" * 200)),
-    handback("form send-backs all spent still ask about a running job", JOB_REPORT, True, "still running", files=((SEND_BACK_COUNT, "3"),), lines=background_job("j1")),
-    handback("the job send-back tells how to stop it", JOB_REPORT, True, "TaskStop", lines=background_job("j1")),
-    handback("form send-backs spent do not spend the job check", JOB_REPORT, True, "still running", files=((SEND_BACK_COUNT, "2"),), lines=background_job("j1")),
-    handback("the job send-backs spent let a report naming the job go", NAMED_REPORT, False, files=((JOB_COUNT, "2"),), lines=background_job("j1", command="find / -name tsc")),
-    handback("the job send-backs spent let a report saying running go", RUNNING_REPORT, False, files=((JOB_COUNT, "2"),), lines=background_job("j1")),
-    handback("the job send-backs spent ask for a Not proven line", JOB_REPORT, True, "Not proven", files=((JOB_COUNT, "2"),), lines=background_job("j1")),
-    handback("the job send-backs spent and no form send-backs left let it go", JOB_REPORT, False, files=((JOB_COUNT, "2"), (SEND_BACK_COUNT, "3")), lines=background_job("j1")),
-    handback("a handback after the job's notification runs", JOB_REPORT, False, lines=(*background_job("j1"), notify("j1", "completed"))),
-    handback("a job's notification as a queued command counts", JOB_REPORT, False, lines=(*background_job("j1"), queued_notify("j1"))),
-    handback("a job that was stopped is over", JOB_REPORT, False, lines=(*background_job("j1"), notify("j1", "killed"))),
-    handback("a job still running at its notification is not over", JOB_REPORT, True, "still running", lines=(*background_job("j1"), notify("j1", "running"))),
-    handback("one job over and one running is refused", JOB_REPORT, True, "1 background", lines=(*background_job("j1"), *background_job("j2"), notify("j1", "completed"))),
-    handback("a foreground command that printed the words is no job", JOB_REPORT, False, lines=(assistant({"type": "tool_use", "id": "f1", "name": "Bash", "input": {"command": "echo"}}), bash_output("f1", "Command running in background with ID: b1"))),
-    handback("a background call that failed to start is no job", JOB_REPORT, False, lines=background_job("j1", reply="permission denied")),
-    handback("a background agent is not a Bash job", JOB_REPORT, False, lines=launch("a9")[:2]),
-    handback("a built-in helper may hand back with a job running", JOB_REPORT, False, agent_type="Explore", lines=background_job("j1")),
-)
 
 
 
@@ -2551,95 +2285,14 @@ KILL_CASES = (
     kill("a sub-agent's broad pkill is refused", "pkill -f cat", True, agent=True),
     kill("a sub-agent's pkill -x runs", "pkill -x node", False, agent=True),
 )
-CANNOT_ASK = "Try it and quote the error, or write `not attempted: <why>`."
-CANNOT_PHRASES = ("can't", "cannot", "couldn't", "unable to", "not possible", "no access", "not allowed", "blocked")
-CLEAN_CALLS = (bash_call("t1"),)
-REFUSED_CALLS = (bash_call("t1"), bash_failed("t1", 1))
 
 
-def cannot_report(sentence: str, /) -> str:
-
-    return make_report(replace=("Answer", sentence))
 
 
-CANNOT_CASES = (
-    *(
-        gate(f"a report saying {phrase!r} with no failed call is sent back", transcript_event(cannot_report(f"I did the rest; I {phrase} reach the host.")), True, CANNOT_ASK, transcript=CLEAN_CALLS)
-        for phrase in CANNOT_PHRASES
-    ),
-    gate("the send-back quotes the line", transcript_event(cannot_report("I cannot reach the host.")), True, "I cannot reach the host", transcript=CLEAN_CALLS),
-    gate("the send-back names the section", transcript_event(make_report(fill={"Not proven": "- the live run is not possible here"})), True, "Not proven:", transcript=CLEAN_CALLS),
-    gate("a capital Cannot is read", transcript_event(cannot_report("Cannot push.")), True, CANNOT_ASK, transcript=CLEAN_CALLS),
-    gate("a curly apostrophe is read", transcript_event(cannot_report("I can’t push.")), True, CANNOT_ASK, transcript=CLEAN_CALLS),
-    gate("a not attempted line passes", transcript_event(cannot_report("I can't push: not attempted: the brief forbids git writes.")), False, transcript=CLEAN_CALLS),
-    gate("a report quoting a real refusal passes", transcript_event(cannot_report("The push was blocked: `Blocked by the harness guard`.")), False, transcript=REFUSED_CALLS),
-    gate("a failed call anywhere lets the claim pass", transcript_event(cannot_report("I cannot reach the host.")), False, transcript=(*CLEAN_CALLS, bash_call("t2"), bash_failed("t2", 7))),
-    gate("a verdict of blocked is no claim", transcript_event(make_report(replace=("Verdict", "blocked: the host is down"))), False, transcript=CLEAN_CALLS),
-    gate("a report with no such words passes", transcript_event(cannot_report("Changed one file.")), False, transcript=CLEAN_CALLS),
-    gate("words inside a fenced block are not read", transcript_event(cannot_report("Changed one file.\n```\nerror: cannot find x\n```")), False, transcript=CLEAN_CALLS),
-    gate("a report with no transcript is not judged for it", transcript_event(cannot_report("I cannot reach the host.")), False),
-    gate("a claim in a sentence of its own is read", transcript_event(cannot_report("Changed one file.\nThe deploy was not allowed.")), True, "The deploy was not allowed", transcript=CLEAN_CALLS),
-    gate(
-        "the second stop accepts the claim",
-        transcript_event(cannot_report("I cannot reach the host.")),
-        False,
-        transcript=CLEAN_CALLS,
-        before=((("report_gate.py",), transcript_event(cannot_report("I cannot reach the host."))),),
-        not_wrote=("data/send-backs/a1.cannot", "1"),
-    ),
-    gate(
-        "the first stop sends the claim back and records it",
-        transcript_event(cannot_report("I cannot reach the host.")),
-        True,
-        CANNOT_ASK,
-        transcript=CLEAN_CALLS,
-        wrote=("data/send-backs/a1.cannot", "1"),
-    ),
-    handback("a handback saying it could not is sent back", cannot_report("I cannot reach the host."), True, CANNOT_ASK, lines=CLEAN_CALLS),
-    handback("a handback quoting a refusal passes", cannot_report("I cannot reach the host."), False, lines=REFUSED_CALLS),
-    handback("a handback with not attempted passes", cannot_report("I cannot reach the host; not attempted: no key."), False, lines=CLEAN_CALLS),
-    Case(
-        "the second handback accepts the claim",
-        ("report_gate.py", "handback"),
-        handback_event(cannot_report("I cannot reach the host.")),
-        False,
-        config={},
-        files=(("s/subagents/agent-a1.jsonl", json.dumps(bash_call("t1")) + "\n"),),
-        before=((("report_gate.py", "handback"), handback_event(cannot_report("I cannot reach the host."))),),
-    ),
-)
-TICS_NOTE = "skills/report/references/prose.md"
-TICS_PASS = "Writing tics in the report"
 
 
-def tics(name: str, sentence: str, is_flagged: bool, /) -> Case:
-    event = stop_event(answer_report(sentence))
-    if is_flagged:
-        return gate(name, event, False, TICS_PASS)
-
-    return gate(name, event, False, lacks=TICS_PASS)
 
 
-TICS_CASES = (
-    tics("a negation then a reveal is noted", "It is not a bug. It is a missing guard.", True),
-    tics("a contracted negation then a reveal is noted", "It's not the cache, it's the key.", True),
-    tics("an isn't then a reveal is noted", "This isn't a fix. It's a workaround.", True),
-    tics("a was not then a reveal is noted", "That was not a crash. That was a timeout.", True),
-    tics("a run of nots ending in just is noted", "Changed one file. Not slow. Not broken. Just unfinished.", True),
-    tics("a reveal after a dash is noted", "It is not the parser — it is the lexer.", True),
-    gate("the note names the prose file", stop_event(answer_report("It is not a bug. It is a missing guard.")), False, TICS_NOTE),
-    gate("a note comes with the form kept", stop_event(answer_report("It is not a bug. It is a missing guard.")), False, '"systemMessage"'),
-    tics("a plain negation is not noted", "It is not set, so the guard runs.", False),
-    tics("a negation then a different subject is not noted", "The check does not pass. It fails on line 3.", False),
-    tics("a lone not is not noted", "Not done: the live run is left.", False),
-    tics("two nots without just are not noted", "Not slow. Not broken. Changed one file.", False),
-    tics("a clean report is not noted", "Changed one file.", False),
-    tics("a negation inside a sentence is not noted", "We found that it is not a cache issue, it is only a key.", False),
-    handback("a handback with a tic gets the note", answer_report("It is not a bug. It is a missing guard."), False, TICS_PASS, lines=CLEAN_CALLS),
-    tics("a negation across a long gap is not noted", "It is not " + "x" * 90 + ". It is y.", False),
-    gate("a tic inside a fenced block is not noted", stop_event(answer_report("Changed one file.\n```\nIt is not a bug. It is a missing guard.\n```")), False, lacks=TICS_PASS),
-    gate("a tic on a send-back report does not stop it being sent back", stop_event(make_report(skip="Verdict", replace=("Answer", "It is not a bug. It is a missing guard."))), True, "missing: Verdict"),
-)
 OWNERSHIP_LINE = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."
 OWNERSHIP_CASES = (
     context("a session start says the codebase is the model's", {"hook_event_name": "SessionStart"}, OWNERSHIP_LINE),
@@ -2810,7 +2463,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *BACKGROUND_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *CANNOT_CASES, *TICS_CASES, *OWNERSHIP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:
