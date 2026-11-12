@@ -17,6 +17,7 @@ export type Actions = {
   toggleFold: () => void
   setRange: (range: Range) => void
   toggleGroup: (id: string) => void
+  dismissNote: () => void
 }
 
 export type ViewInput = {

@@ -8,6 +8,8 @@ export type ThemeSetting = Scheme | 'auto'
 
 export type Segment = { state: AgentState; from: number; to: number | null }
 
+export type AgentUsage = { input: number; output: number; cacheRead: number; cacheWrite: number }
+
 export type AgentRow = {
   id: string
   label: string
@@ -20,6 +22,10 @@ export type AgentRow = {
   segments: Segment[]
   background?: number
   isHeld?: true
+  type?: string
+  model?: string
+  usage?: AgentUsage
+  failReason?: string
 }
 
 export type AgentStore = {
@@ -38,6 +44,8 @@ export type Roster = { rows: RosterRow[]; evictedDone: number; evictedFailed: nu
 
 export type Limit = { percent: number; resetsAt: number | null }
 
+export type NamedLimit = { kind: string; name: string; percent: number; resetsAt: number | null }
+
 export type Gauges = {
   contextPercent: number | null
   contextTokens: number | null
@@ -46,6 +54,9 @@ export type Gauges = {
   cachePercent: number | null
   fiveHour: Limit | null
   sevenDay: Limit | null
+  limits: NamedLimit[]
+  costUsd: number | null
+  turns: number
   sessionStartedAt: number | null
   lastCallAt: number | null
   isSubscription: boolean
@@ -61,6 +72,7 @@ declare module 'claude-code' {
       roster: Shaped<Roster>
       gauges: Shaped<Gauges>
       turnStartedAt: number | null
+      isNoteDismissed: boolean
       scheme: ThemeSetting
     }
   }

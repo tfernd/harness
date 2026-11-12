@@ -248,56 +248,30 @@ type Mounted = { findAll: (query: { type: string }) => Promise<{ props: Record<s
 
 const svgProps = async (ui: Mounted, altStart: string): Promise<Record<string, unknown> | undefined> => (await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props['alt']).startsWith(altStart))?.props
 
+const timelineText = async (ui: { find: (query: { key: string }) => Promise<{ text: string } | undefined> }): Promise<string> => (await ui.find({ key: 'timeline' }))?.text ?? ''
+
 const sourceOf = async (ui: Mounted): Promise<string> =>
   (await ui.findAll({ type: 'Svg' }))
     .filter(svg => String(svg.props['alt']).startsWith('Agent '))
     .map(svg => String(svg.props['source']))
     .join('')
 
-test('the desktop draws the band from native text and plain image Svgs, no Raster and no interactive frame', async ($, on) => {
+test('the desktop draws the band from native text and bar Svgs, no Raster and no interactive frame', async ($, on) => {
   mock.clock(on)
   baseHooks(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const timeline = { props: await svgProps(ui, 'Agent timeline') }
-  const ring = { props: await svgProps(ui, 'ctx ') }
+  const bar = await svgProps(ui, 'Session 38%')
 
-  expect(timeline.props).toBeDefined()
-  expect(ring.props).toBeDefined()
-  expect(timeline.props?.['isInteractive']).toBeUndefined()
-  expect(ring.props?.['isInteractive']).toBeUndefined()
-  expect(String(timeline.props?.['source']).startsWith('<svg')).toBe(true)
-  expect(String(ring.props?.['source']).startsWith('<svg')).toBe(true)
+  expect(bar).toBeDefined()
+  expect(bar?.['isInteractive']).toBeUndefined()
+  expect(String(bar?.['source']).startsWith('<svg')).toBe(true)
   expect(await ui.find({ type: 'Raster' })).toBeUndefined()
   expect(await ui.find({ key: 'fold' })).toBeDefined()
   await ui.unmount()
 })
 
-test('a state change inside one second is held, then drawn once; later changes draw at once', async ($, on) => {
-  const clock = mock.clock(on)
-  baseHooks(on)
-  let spawned = 0
-  on('agent.spawn', () => ({ model: 'm', agentId: `a${(spawned += 1)}` }))
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const empty = await sourceOf(ui)
-  await clock.advance(MIN_REBUILD_MS + 500)
-
-  await $.agent.spawn(SPAWN)
-  const first = await sourceOf(ui)
-  await $.agent.spawn(SPAWN)
-  await $.turn.start({ text: '', turnId: 'a', agentId: 'a1' })
-  const held = await sourceOf(ui)
-  await clock.advance(MIN_REBUILD_MS)
-  const second = await sourceOf(ui)
-
-  expect(first).not.toBe(empty)
-  expect(held).toBe(first)
-  expect(second).not.toBe(first)
-  await ui.unmount()
-})
-
-test('a held sub-agent tool call shows RUNNING with its command in the desktop timeline, and THINKING after', async ($, on) => {
+test('a held sub-agent tool call shows running with its command inside the bar, and thinking after', async ($, on) => {
   const clock = mock.clock(on)
   baseHooks(on)
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
@@ -322,18 +296,17 @@ test('a held sub-agent tool call shows RUNNING with its command in the desktop t
   const call = $.tool.call({ tool: 'Bash', command: 'make check', agentId: 'a1' })
   await entered
   await clock.advance(MIN_REBUILD_MS + 200)
-  const during = await sourceOf(ui)
+  const during = await timelineText(ui)
 
-  expect(during).toContain('>RUNNING<')
-  expect(during).toContain('>make check<')
-  expect(during).not.toContain('<title>')
+  expect(during).toContain('running')
+  expect(during).toContain('make check')
 
   release()
   await call
   await clock.advance(MIN_REBUILD_MS + 200)
-  const after = await sourceOf(ui)
+  const after = await timelineText(ui)
 
-  expect(after).toContain('>THINKING<')
+  expect(after).toContain('thinking')
   expect(after).not.toContain('make check')
   await ui.unmount()
 })
@@ -353,6 +326,7 @@ const SVG_INPUT = {
   isWorking: false,
   turnStartedAt: null,
   scheme: 'light',
+  isNoteDismissed: false,
 } as const
 
 const sourceOfPiece = (input: Parameters<typeof piecesOf>[0], key: string): string =>
@@ -376,7 +350,7 @@ test('an unknown theme reads as light and auto puts both palettes under the medi
   expect(light).not.toContain('#1a1c20')
 })
 
-test('a fresh desktop band starts unfolded with every group open', async ($, on) => {
+test('a fresh desktop band starts unfolded with the limit blocks and the timeline', async ($, on) => {
   mock.clock(on)
   baseHooks(on)
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
@@ -384,40 +358,14 @@ test('a fresh desktop band starts unfolded with every group open', async ($, on)
   await $.agent.spawn(SPAWN)
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(JSON.stringify((await ui.find({ key: 'fold' }))?.props)).toContain('▴ fold')
-  expect(JSON.stringify((await ui.find({ key: 'group-button-direct' }))?.props)).toContain('∧')
-  expect(await ui.find({ key: 'range' })).toBeDefined()
+  expect(JSON.stringify((await ui.find({ key: 'fold' }))?.props)).toContain('▴')
+  expect(await ui.find({ key: 'limit-blocks' })).toBeDefined()
+  expect(await ui.find({ key: 'timeline' })).toBeDefined()
+  expect(await ui.find({ key: 'range-1h' })).toBeDefined()
   await ui.unmount()
 })
 
 const groupSpawn = (runId: string) => ({ ...SPAWN, workflow: { runId, agentIndex: 1 } })
-
-test('each timeline group header is a native Button that folds its own rows Svg, and the controls row holds none', async ($, on) => {
-  mock.clock(on)
-  baseHooks(on)
-  let spawned = 0
-  on('agent.spawn', () => ({ model: 'm', agentId: `a${(spawned += 1)}` }))
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.agent.spawn(SPAWN)
-  await $.agent.spawn(groupSpawn('wf_review'))
-  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const rowsAlts = async () => (await ui.findAll({ type: 'Svg' })).map(svg => String(svg.props['alt'])).filter(alt => alt.startsWith('Agent rows'))
-  const controls = await ui.find({ key: 'controls' })
-  const timeline = await ui.find({ key: 'timeline' })
-
-  expect(JSON.stringify(controls)).not.toContain('group-button')
-  expect(JSON.stringify(timeline)).toContain('group-button-direct')
-  expect(JSON.stringify(timeline)).toContain('group-button-wf_review')
-  expect(await rowsAlts()).toHaveLength(2)
-
-  await ui.press({ key: 'group-button-direct' })
-
-  const left = await rowsAlts()
-  expect(left).toHaveLength(1)
-  expect(left[0]).toContain('review')
-  expect(JSON.stringify(await ui.find({ key: 'group-button-direct' }))).toContain('∨')
-  await ui.unmount()
-})
 
 test('the session axis names real times and never the word session', () => {
   const input = { ...SVG_INPUT, range: 'session', gauges: { ...SVG_INPUT.gauges, sessionStartedAt: NOW - 51 * 3_600_000 - 20 * MINUTE } } as const
@@ -525,7 +473,7 @@ test('leaving the window rebuilds the timeline once and a quiet clock tick rebui
   expect(left.builtKeys).toEqual(['timeline-rows-direct'])
 })
 
-test('a main turn with one tool call gives the main row WORKING, then TOOL with its command, then IDLE', async ($, on) => {
+test('a main turn with one tool call gives the main lane working, then tool with its command, then idle', async ($, on) => {
   const clock = mock.clock(on)
   baseHooks(on)
   let release: () => void = () => {}
@@ -543,11 +491,7 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   )
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const titleOf = async (): Promise<string> => {
-    const texts = [...(await sourceOf(ui)).matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(match => match[1] ?? '')
-
-    return texts.slice(texts.indexOf('main session') + 1, texts.indexOf('main session') + 3).join(', ')
-  }
+  const titleOf = async (): Promise<string> => `${(await ui.find({ key: 'glyph-main' }))?.text ?? ''}, ${(await ui.find({ key: 'track-main' }))?.text ?? ''}`
   const idleAtStart = await titleOf()
 
   await $.turn.start({ text: '', turnId: 'm1' })
@@ -564,11 +508,10 @@ test('a main turn with one tool call gives the main row WORKING, then TOOL with 
   await clock.advance(MIN_REBUILD_MS + 200)
   const idle = await titleOf()
 
-  expect(idleAtStart).toBe('IDLE')
-  expect(thinking).toBe('WORKING')
-  expect(tool).toBe('TOOL, make check')
-  expect(idle).toBe('IDLE')
-  expect(await sourceOf(ui)).not.toContain('>idle<')
+  expect(idleAtStart).toBe('● idle, idle')
+  expect(thinking).toBe('● working, working')
+  expect(tool).toBe('● tool, make check')
+  expect(idle).toBe('● idle, idle')
   await ui.unmount()
 })
 
@@ -643,26 +586,6 @@ test('only a folded group gets a density strip, drawn in the tool and thinking c
   expect(source).not.toContain('class="sg-done"')
 })
 
-test('a folded group header says how many agents are in each state now, beside its density strip', async ($, on) => {
-  mock.clock(on)
-  baseHooks(on)
-  on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  await $.agent.spawn(SPAWN)
-  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-
-  expect(JSON.stringify(await ui.find({ key: 'group-header-direct' }))).toContain(' live · ')
-
-  await ui.press({ key: 'group-button-direct' })
-
-  const header = JSON.stringify(await ui.find({ key: 'group-header-direct' }))
-  expect(header).toMatch(/idle|\d+ (tool|think|wait)/)
-  expect(header).not.toMatch(/\b0 (tool|think|wait|ended)/)
-  expect(header).not.toContain(' live · ')
-  expect((await ui.findAll({ type: 'Svg' })).some(svg => String(svg.props['alt']).includes('agents per state'))).toBe(true)
-  await ui.unmount()
-})
-
 const quietInput = (now: number) => {
   const { roster, rows } = stateRoster(['thinking'])
   const quietRows = new Map([...rows].map(([id, row]) => [id, { ...row, segments: [{ state: row.state, from: NOW - 150_000, to: null }] }]))
@@ -716,18 +639,20 @@ test('the auto theme paints no surface and tints with a translucent grey and a t
   expect(bandColorsOf('dark').surface).toBeDefined()
 })
 
-test('on desktop one native range Button shows the range and cycles it on every press', async ($, on) => {
+test('on desktop four range buttons choose the window, and the axis follows', async ($, on) => {
   mock.clock(on)
   baseHooks(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(JSON.stringify((await ui.find({ key: 'range' }))?.props)).toContain('range 1m ▾')
+  expect(JSON.stringify((await ui.find({ key: 'range-1m' }))?.props)).toContain('primary')
+  expect(await ui.find({ key: 'range-15m' })).toBeUndefined()
+  expect((await ui.find({ key: 'axis' }))?.text).toContain('1m ago')
 
-  await ui.press({ key: 'range' })
+  await ui.press({ key: 'range-1h' })
 
-  expect(JSON.stringify((await ui.find({ key: 'range' }))?.props)).toContain('range 5m ▾')
-  expect(await ui.find({ key: 'range-5m' })).toBeUndefined()
+  expect(JSON.stringify((await ui.find({ key: 'range-1h' }))?.props)).toContain('primary')
+  expect((await ui.find({ key: 'axis' }))?.text).toContain('1h ago')
   await ui.unmount()
 })
 

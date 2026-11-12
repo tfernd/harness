@@ -4,24 +4,27 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { AgentState, AgentStore, Gauges, Range, Roster } from '../types'
 
 import { type OpenCall, activityOf, withCall, withoutCall } from './calls'
-import { EMPTY_GAUGES, isSameGauges, withCache, withCompaction, withUsage } from './gauges'
-import { DIRECT_GROUP, DIRECT_LABEL, EMPTY_ROSTER, EMPTY_STORE, type MainActivity, addAgent, agentTypeName, closeOpen, lastEventAt, applyListing, MAIN_ID, endBackgroundTask, finishAgent, startBackgroundTask, isSameRoster, moveAgent, OWNER_QUESTION_TOOLS, moveMain, nextQuietChangeMs, newAgent, rosterOf, sessionTotal } from './model'
+import { bandRefreshMs } from './c1'
+import { EMPTY_GAUGES, isSameGauges, withCache, withCompaction, withTurn, withUsage } from './gauges'
+import { DIRECT_GROUP, DIRECT_LABEL, EMPTY_ROSTER, EMPTY_STORE, type MainActivity, addAgent, agentTypeName, closeOpen, lastEventAt, applyListing, MAIN_ID, endBackgroundTask, finishAgent, startBackgroundTask, isSameRoster, moveAgent, OWNER_QUESTION_TOOLS, moveMain, nextQuietChangeMs, newAgent, noteAgentKind, recordTurnUsage, rosterOf, sessionTotal } from './model'
 import { nextLeaveMs } from './layout'
 import { terminalSchemeOf, themeOf } from './format'
 import { TICK_MS, frameAt } from './paint'
-import { columnsToWidth, refreshAfterMs } from './svg-band'
-import { type PieceCache, chooseBand } from './svg-cache'
+import { columnsToWidth } from './svg-band'
 import { type Actions, type Painter, type Rows, buildBand } from './view'
 import { buildDesktopBand } from './view-desktop'
 
 const RECONCILE_MS = 1000
+
+const FAIL_REASON_WORD: Partial<Record<string, string>> = { aborted: 'aborted', refusal: 'refused', error: 'error' }
 
 const isFolded = atom({ plugin: 'harness-band', key: 'isFolded' } as const, false, { shape: 'isFolded-2' })
 const range = atom({ plugin: 'harness-band', key: 'range' } as const, '1m')
 const foldedGroups = atom({ plugin: 'harness-band', key: 'foldedGroups' } as const, [], { shape: 'foldedGroups-2' })
 const agents = atom({ plugin: 'harness-band', key: 'agents' } as const, EMPTY_STORE, { shape: 'agents-3' })
 const roster = atom({ plugin: 'harness-band', key: 'roster' } as const, EMPTY_ROSTER, { shape: 'roster-1' })
-const gauges = atom({ plugin: 'harness-band', key: 'gauges' } as const, EMPTY_GAUGES, { shape: 'gauges-2' })
+const gauges = atom({ plugin: 'harness-band', key: 'gauges' } as const, EMPTY_GAUGES, { shape: 'gauges-3' })
+const isNoteDismissed = atom({ plugin: 'harness-band', key: 'isNoteDismissed' } as const, false)
 const turnStartedAt = atom({ plugin: 'harness-band', key: 'turnStartedAt' } as const, null)
 const scheme = atom({ plugin: 'harness-band', key: 'scheme' } as const, 'light')
 
@@ -56,9 +59,7 @@ type Runtime = {
   store: AgentStore | null
   roster: Roster | null
   queue: Promise<void>
-  pieces: ReadonlyMap<string, PieceCache>
   refreshAt: number | null
-  retry: Timer | null
   isDrawnByTree: boolean
   isClearing: boolean
   listedIds: Set<string>
@@ -243,15 +244,6 @@ const tick = async ($: EngineInterface, runtime: Runtime): Promise<void> => {
   }
 }
 
-const scheduleRetry = ($: EngineInterface, runtime: Runtime, retryInMs: number | null): void => {
-  runtime.retry?.cancel()
-  runtime.retry = null
-
-  if (retryInMs !== null) {
-    runtime.retry = $.clock.after(retryInMs, () => $.ui.invalidate('ui.render'))
-  }
-}
-
 const startClocks = ($: EngineInterface, runtime: Runtime): void => {
   if (runtime.timers.length > 0) {
     return
@@ -271,9 +263,7 @@ export const register: Register = on => {
     store: null,
     roster: null,
     queue: Promise.resolve(),
-    pieces: new Map(),
     refreshAt: null,
-    retry: null,
     isDrawnByTree: false,
     isClearing: false,
     listedIds: new Set(),
@@ -306,8 +296,6 @@ export const register: Register = on => {
     }
 
     stopTimers(runtime)
-    runtime.retry?.cancel()
-    runtime.retry = null
     await mutateAgents($, runtime, (store, now) => closeOpen(store, now))
     await update($, turnStartedAt, () => null)
 
@@ -331,7 +319,10 @@ export const register: Register = on => {
       const group = event.workflow === undefined ? DIRECT_GROUP : event.workflow.runId
       const groupLabel = event.workflow === undefined ? DIRECT_LABEL : `workflow ${event.workflow.runId.replace(/^wf_/, '').slice(0, 8)}`
 
-      await mutateAgents($, runtime, (store, now) => addAgent(store, newAgent({ id, label: `${event.name ?? agentTypeName(event.subagentType)}-${sessionTotal(store) + 1}`, group, groupLabel, now })))
+      const type = agentTypeName(event.subagentType)
+      const model = typeof result.model === 'string' ? result.model : undefined
+
+      await mutateAgents($, runtime, (store, now) => noteAgentKind(addAgent(store, newAgent({ id, label: `${event.name ?? type}-${sessionTotal(store) + 1}`, group, groupLabel, now })), { id, type, model }))
     }
 
     return result
@@ -386,15 +377,23 @@ export const register: Register = on => {
       await update($, turnStartedAt, () => null)
       await setMainActivity($, runtime, { activity: null })
       const usage = event.usage
+      const calledAt = await $.clock.now()
+      await writeGauges($, current => withTurn(usage === undefined ? current : withCache(current, usage, calledAt)))
 
       if (usage !== undefined) {
-        const calledAt = await $.clock.now()
-        await writeGauges($, current => withCache(current, usage, calledAt))
+        await mutateAgents($, runtime, (store, now) => recordTurnUsage(store, { id: MAIN_ID, tokens: usage, model: usage.model, now }))
       }
     } else {
       const agentId = event.agentId
+      const usage = event.usage
       const state = event.reason === 'answer' ? 'done' : 'failed'
-      await mutateAgents($, runtime, (store, now) => finishAgent(store, { id: agentId, state, now }))
+      const reason = FAIL_REASON_WORD[event.reason]
+
+      if (usage !== undefined) {
+        await mutateAgents($, runtime, (store, now) => recordTurnUsage(store, { id: agentId, tokens: usage, model: usage.model, now }))
+      }
+
+      await mutateAgents($, runtime, (store, now) => finishAgent(store, { id: agentId, state, now, ...(reason === undefined ? {} : { reason }) }))
     }
 
     return next(event)
@@ -436,12 +435,13 @@ export const register: Register = on => {
     startClocks($, runtime)
     const ui = $.ui.resolve(event)
     const hasRaster = 'Raster' in ui
-    const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue] = await Promise.all([read($, isFolded), read($, range), read($, foldedGroups), read($, roster), read($, gauges), read($, turnStartedAt), read($, scheme)])
+    const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue, noteDismissed] = await Promise.all([read($, isFolded), read($, range), read($, foldedGroups), read($, roster), read($, gauges), read($, turnStartedAt), read($, scheme), read($, isNoteDismissed)])
     const store = hasRaster ? runtime.store : await read($, agents)
     const now = await $.clock.now()
     const actions: Actions = {
       toggleFold: () => void update($, isFolded, current => !current),
       setRange: (chosen: Range) => void update($, range, () => chosen),
+      dismissNote: () => void update($, isNoteDismissed, () => true),
       toggleGroup: (id: string) => void update($, foldedGroups, current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id])),
     }
     const rowIndex = indexRows(store)
@@ -459,17 +459,15 @@ export const register: Register = on => {
         isWorking: event.props.isWorking,
         turnStartedAt: startedAt,
         scheme: schemeValue,
+        isNoteDismissed: noteDismissed,
       }
-      const choice = chooseBand(runtime.pieces, svgInput)
-      const wait = refreshAfterMs(svgInput)
-      runtime.pieces = choice.caches
+      const wait = bandRefreshMs({ rows: rowIndex, roster: rosterValue, range: rangeValue, now, isFolded: folded, isWorking: event.props.isWorking })
       runtime.refreshAt = wait === null ? null : now + wait
-      scheduleRetry($, runtime, choice.retryInMs)
       runtime.painters = new Map()
       runtime.requestId = event.requestId
       runtime.isDrawnByTree = true
 
-      return buildDesktopBand({ ui: $.ui.resolve(event), svgs: choice.svgs, input: svgInput, actions })
+      return buildDesktopBand({ ui: $.ui.resolve(event), input: svgInput, actions })
     }
 
     const nextPainters = new Map<string, Painter>()

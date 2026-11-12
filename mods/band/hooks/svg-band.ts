@@ -21,6 +21,7 @@ export type SvgInput = {
   isWorking: boolean
   turnStartedAt: number | null
   scheme: ThemeSetting
+  isNoteDismissed: boolean
 }
 
 export const statusOf = (input: SvgInput): { word: string; state: AgentState } => {

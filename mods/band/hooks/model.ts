@@ -2,6 +2,7 @@ import type { AgentStatus } from 'claude-code'
 
 import type { AgentRow, AgentState, AgentStore, Phase, Roster, RosterRow } from '../types'
 
+import { type TurnTokens, addUsage } from './cost'
 import { formatSpan } from './format'
 
 export const MAX_AGENTS = 200
@@ -152,7 +153,7 @@ export const moveAgent = (store: AgentStore, change: { id: string; state: AgentS
   return { ...store, rows: store.rows.map(agent => (agent.id === change.id ? moved : agent)) }
 }
 
-const newMainRow = (now: number): AgentRow => ({
+export const newMainRow = (now: number): AgentRow => ({
   id: MAIN_ID,
   label: MAIN_LABEL,
   group: MAIN_ID,
@@ -334,9 +335,28 @@ export const endBackgroundTask = (store: AgentStore, input: { taskId: string; no
   return owners.reduce((current, owner) => releaseTask(current, owner, input), store)
 }
 
-export const finishAgent = (store: AgentStore, input: { id: string; state: 'done' | 'failed'; now: number }): AgentStore => {
+const withFailReason = (store: AgentStore, id: string, reason: string | undefined): AgentStore => (reason === undefined ? store : { ...store, rows: store.rows.map(row => (row.id === id ? { ...row, failReason: reason } : row)) })
+
+export const recordTurnUsage = (store: AgentStore, input: { id: string; tokens: TurnTokens; model: string; now: number }): AgentStore => {
+  const grow = (row: AgentRow): AgentRow => ({ ...row, model: input.model, usage: addUsage(row.usage, input.tokens) })
+
+  if (input.id === MAIN_ID) {
+    const ready = ensureMain(store, input.now)
+
+    return ready.main === null ? ready : { ...ready, main: grow(ready.main) }
+  }
+
+  return { ...store, rows: store.rows.map(row => (row.id === input.id ? grow(row) : row)) }
+}
+
+export const noteAgentKind = (store: AgentStore, input: { id: string; type: string; model: string | undefined }): AgentStore => ({
+  ...store,
+  rows: store.rows.map(row => (row.id === input.id ? { ...row, type: input.type, ...(input.model === undefined || row.model !== undefined ? {} : { model: input.model }) } : row)),
+})
+
+export const finishAgent = (store: AgentStore, input: { id: string; state: 'done' | 'failed'; now: number; reason?: string }): AgentStore => {
   const isHeldByTasks = input.state === 'done' && taskIdsOf(store, input.id).length > 0
-  const moved = moveAgent(store, { id: input.id, state: input.state, command: null, now: input.now })
+  const moved = withFailReason(moveAgent(store, { id: input.id, state: input.state, command: null, now: input.now }), input.id, input.state === 'failed' ? input.reason : undefined)
 
   if (input.state === 'failed') {
     return settleHeld(withTasks(moved, input.id, []), input.id, input.now)
@@ -345,7 +365,7 @@ export const finishAgent = (store: AgentStore, input: { id: string; state: 'done
   return isHeldByTasks ? settleHeld(moved, input.id, input.now) : moved
 }
 
-const failLiveRows = (store: AgentStore, at: number): AgentStore => store.rows.filter(row => isLive(row.state)).reduce((current, row) => finishAgent(current, { id: row.id, state: 'failed', now: at }), store)
+const failLiveRows = (store: AgentStore, at: number): AgentStore => store.rows.filter(row => isLive(row.state)).reduce((current, row) => finishAgent(current, { id: row.id, state: 'failed', now: at, reason: 'session ended' }), store)
 
 export const closeOpen = (store: AgentStore, closeAt: number): AgentStore => {
   const failed = failLiveRows(store, closeAt)

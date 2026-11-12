@@ -1,6 +1,6 @@
 import type { SessionContextUsage, SessionRateLimit, TurnUsage } from 'claude-code'
 
-import type { Gauges, Limit } from '../types'
+import type { Gauges, Limit, NamedLimit } from '../types'
 
 export const EMPTY_GAUGES: Gauges = {
   contextPercent: null,
@@ -10,6 +10,9 @@ export const EMPTY_GAUGES: Gauges = {
   cachePercent: null,
   fiveHour: null,
   sevenDay: null,
+  limits: [],
+  costUsd: null,
+  turns: 0,
   sessionStartedAt: null,
   lastCallAt: null,
   isSubscription: false,
@@ -33,8 +36,31 @@ const limitOf = (limits: readonly SessionRateLimit[], kind: string): Limit | nul
   return { percent: found.percentUsed, resetsAt: Number.isNaN(resetsAt) ? null : resetsAt }
 }
 
-export const withUsage = (gauges: Gauges, usage: { context: SessionContextUsage; rateLimits: readonly SessionRateLimit[]; startedAt?: number }): Gauges => ({
+export const KNOWN_LIMIT_NAMES: Readonly<Record<string, string>> = { five_hour: 'Session', seven_day: 'Week' }
+
+export const limitNameOf = (kind: string): string => {
+  const known = KNOWN_LIMIT_NAMES[kind]
+
+  if (known !== undefined) {
+    return known
+  }
+
+  const words = kind.split(/[^A-Za-z0-9]+/).filter(word => word !== '')
+
+  return words.length === 0 ? kind : words.map((word, index) => (index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join(' ')
+}
+
+export const namedLimitsOf = (limits: readonly SessionRateLimit[]): NamedLimit[] =>
+  limits.map(limit => {
+    const resetsAt = limit.resetsAt === undefined ? Number.NaN : Date.parse(limit.resetsAt)
+
+    return { kind: limit.kind, name: limitNameOf(limit.kind), percent: limit.percentUsed, resetsAt: Number.isNaN(resetsAt) ? null : resetsAt }
+  })
+
+export const withUsage = (gauges: Gauges, usage: { context: SessionContextUsage; rateLimits: readonly SessionRateLimit[]; startedAt?: number; cost?: { usd: number } }): Gauges => ({
   ...gauges,
+  limits: namedLimitsOf(usage.rateLimits),
+  costUsd: usage.cost === undefined ? gauges.costUsd : usage.cost.usd,
   contextPercent: usage.context.percent ?? null,
   contextTokens: usage.context.tokens ?? null,
   contextWindow: usage.context.window,
@@ -49,6 +75,8 @@ export const withCache = (gauges: Gauges, usage: TurnUsage, now: number): Gauges
 
   return total === 0 ? gauges : { ...gauges, lastCallAt: now, cachePercent: Math.round((100 * usage.cache_read_input_tokens) / total) }
 }
+
+export const withTurn = (gauges: Gauges): Gauges => ({ ...gauges, turns: gauges.turns + 1 })
 
 export const withCompaction = (gauges: Gauges, tokensBefore: number | undefined): Gauges => ({
   ...gauges,

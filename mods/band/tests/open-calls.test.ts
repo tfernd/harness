@@ -25,13 +25,9 @@ const SPAWN = {
   fork: false,
 } as const
 
-type Mounted = { findAll: (query: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }
+type Mounted = { find: (query: { key: string }) => Promise<{ text: string } | undefined> }
 
-const timelineSource = async (ui: Mounted): Promise<string> =>
-  (await ui.findAll({ type: 'Svg' }))
-    .filter(svg => String(svg.props['alt']).startsWith('Agent '))
-    .map(svg => String(svg.props['source']))
-    .join('')
+const timelineSource = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'timeline' }))?.text ?? ''
 
 const heldAgent = () => {
   const added = addAgent(EMPTY_STORE, newAgent({ id: 'a', label: 'a', group: 'direct', groupLabel: 'direct agents', now: 0 }))
@@ -95,7 +91,7 @@ const gatedCalls = () => {
   return { gates, handler }
 }
 
-test('a sub-agent stays RUNNING while a parallel call is open and thinks only when the last one ends', async ($, on) => {
+test('a sub-agent stays running while a parallel call is open and thinks only when the last one ends', async ($, on) => {
   const clock = mock.clock(on)
   const { gates, handler } = gatedCalls()
   on('session.start', (_, event) => ({ cwd: event.cwd }))
@@ -121,10 +117,10 @@ test('a sub-agent stays RUNNING while a parallel call is open and thinks only wh
   await clock.advance(MIN_REBUILD_MS + 500)
   const whenAllEnded = await timelineSource(ui)
 
-  expect(whileOneOpen).toContain('RUNNING')
-  expect(whileOneOpen).not.toContain('THINKING')
-  expect(whenAllEnded).toContain('THINKING')
-  expect(whenAllEnded).not.toContain('RUNNING')
+  expect(whileOneOpen).toContain('running')
+  expect(whileOneOpen).not.toContain('thinking')
+  expect(whenAllEnded).toContain('thinking')
+  expect(whenAllEnded).not.toContain('running')
   await ui.unmount()
 })
 

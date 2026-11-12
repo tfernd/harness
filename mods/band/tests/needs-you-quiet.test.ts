@@ -87,13 +87,9 @@ const BAND = {
 
 const USAGE = { startedAt: 0, context: { window: 200000, tokens: 1000, percent: 1 }, rateLimits: [] }
 
-type Mounted = { findAll: (query: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }
+type Mounted = { find: (query: { key: string }) => Promise<{ text: string } | undefined> }
 
-const timelineSource = async (ui: Mounted): Promise<string> =>
-  (await ui.findAll({ type: 'Svg' }))
-    .filter(svg => String(svg.props['alt']).startsWith('Agent '))
-    .map(svg => String(svg.props['source']))
-    .join('')
+const timelineSource = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'timeline' }))?.text ?? ''
 
 for (const tool of ['AskUserQuestion', 'ExitPlanMode']) {
   test(`main shows NEEDS YOU while ${tool} is open and leaves it when answered`, async ($, on) => {

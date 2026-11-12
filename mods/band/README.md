@@ -1,8 +1,14 @@
 # harness-band
 
 A Claude Code mod: a band above the prompt with status, context, cache, the 5-hour and week limits, agent counts and a
-fold toggle; unfolded it adds a moving timeline of the main session and its agents (ranges 1m 5m 15m 1h session, groups by workflow
+fold toggle (on the desktop: see "The desktop view"); unfolded it adds a moving timeline of the main session and its agents (ranges 1m 5m 15m 1h session, groups by workflow
 and direct); folded it keeps the band row and one thin live trace per agent. Look and contract: `SPEC.md`.
+
+## The desktop view
+
+Folded it is one row: running, done and failed counts, a tiny lane stack, the session cost, context %, and a mini bar per rate limit. Unfolded it shows the counts, the cost and the fold chevron, then each limit once as a full bar (known kinds are named Session and Week; any other kind is named from its kind string), then the timeline: the main session as its own lane, then one lane per agent with its state, tool, time, tokens and estimated cost. Ranges: 1m, 5m, 1h, session. With no limits (API billing) the blocks show session cost, the agents' estimate, tokens, turns and elapsed. At 80% context a "Long session" note offers Dismiss.
+
+Per-agent cost is tokens times a per-model price (`hooks/cost.ts`, one table); a model not in it shows tokens only. Prices are list prices and an estimate.
 
 ## Install it
 
@@ -37,8 +43,8 @@ drops its state column under 60 columns and the cards go from three to fewer.
 
 ## Known limits
 
-- Rasters exist on the terminal surface only; the desktop surface draws the lanes as coloured text, repainted when the
-  tree is rebuilt, not on the tick.
+- Rasters exist on the terminal surface only; the desktop surface draws the lanes as native Boxes, repainted when the
+  tree is rebuilt (on a change, and every 5 s while anything is live), not on the tick.
 - Raster cells take raw colours, so lanes use a light and a dark palette chosen from the `theme` setting; text and
   borders use the theme's own names.
 - Each agent keeps at most 200 segments; past that the shortest neighbouring pair merges, so old history turns coarse.
