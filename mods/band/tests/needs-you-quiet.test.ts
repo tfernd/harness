@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { AgentRow } from '../types'
 
-import { MIN_REBUILD_MS } from '../hooks/svg-cache'
+import { SETTLE_MS } from './settle'
 
 import { QUIET_AFTER_MS, EMPTY_STORE, MAIN_ID, addAgent, moveAgent, moveMain, nextQuietChangeMs, newAgent, quietMs, stateWordOf } from '../hooks/model'
 
@@ -115,14 +115,14 @@ for (const tool of ['AskUserQuestion', 'ExitPlanMode']) {
     await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
     const ui = await $.ui.mount(BAND)
     await $.turn.start({ text: '', turnId: 't1' })
-    await clock.advance(MIN_REBUILD_MS + 500)
+    await clock.advance(SETTLE_MS + 500)
     const pending = $.tool.call({ tool, questions: [] } as never)
     await entered
-    await clock.advance(MIN_REBUILD_MS + 200)
+    await clock.advance(SETTLE_MS + 200)
     const during = await timelineSource(ui)
     answer()
     await pending
-    await clock.advance(MIN_REBUILD_MS + 200)
+    await clock.advance(SETTLE_MS + 200)
     const after = await timelineSource(ui)
 
     expect(during).toContain('NEEDS YOU')
@@ -155,11 +155,11 @@ test('a permission ask to a person does not show NEEDS YOU: the mode decides who
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount(BAND)
   await $.turn.start({ text: '', turnId: 't1' })
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
   const pending = $.tool.call({ tool: 'Bash', command: 'sleep 17' } as never)
   await entered
   const verdict = await $.tool.check({ tool: 'Bash', input: { command: 'sleep 17' } })
-  await clock.advance(MIN_REBUILD_MS + 200)
+  await clock.advance(SETTLE_MS + 200)
   const during = await timelineSource(ui)
   finish()
   await pending

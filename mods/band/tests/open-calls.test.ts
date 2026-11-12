@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { MIN_REBUILD_MS } from '../hooks/svg-cache'
+import { SETTLE_MS } from './settle'
 
 import { EMPTY_STORE, QUIET_AFTER_MS, agentTypeName, applyListing, finishAgent, moveAgent, newAgent, addAgent, startBackgroundTask, stateWordOf } from '../hooks/model'
 
@@ -73,7 +73,7 @@ test('a prefixed agent type is labelled without the plugin prefix', async ($, on
   const ui = await $.ui.mount(BAND)
 
   await $.agent.spawn(SPAWN)
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
   const source = await timelineSource(ui)
 
   expect(source).toContain('scout-1')
@@ -105,16 +105,16 @@ test('a sub-agent stays running while a parallel call is open and thinks only wh
   await $.agent.spawn(SPAWN)
   const first = $.tool.call({ tool: 'Bash', command: 'first', agentId: 'sub1' })
   const second = $.tool.call({ tool: 'Bash', command: 'second', agentId: 'sub1' })
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
 
   gates.get('first')?.()
   await first
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
   const whileOneOpen = await timelineSource(ui)
 
   gates.get('second')?.()
   await second
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
   const whenAllEnded = await timelineSource(ui)
 
   expect(whileOneOpen).toContain('running')
@@ -138,16 +138,16 @@ test('main keeps NEEDS YOU when a sibling call of the open question ends', async
   await $.turn.start({ text: '', turnId: 't1' })
   const question = $.tool.call({ tool: 'AskUserQuestion', command: 'ask', questions: [] } as never)
   const sibling = $.tool.call({ tool: 'Bash', command: 'sibling' })
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
 
   gates.get('sibling')?.()
   await sibling
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
   const whileAsking = await timelineSource(ui)
 
   gates.get('ask')?.()
   await question
-  await clock.advance(MIN_REBUILD_MS + 500)
+  await clock.advance(SETTLE_MS + 500)
   const afterAnswer = await timelineSource(ui)
 
   expect(whileAsking).toContain('NEEDS YOU')

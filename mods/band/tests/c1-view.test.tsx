@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { MIN_REBUILD_MS } from '../hooks/svg-cache'
+import { SETTLE_MS } from './settle'
 
 const BAND = {
   plugin: 'harness-band',
@@ -149,7 +149,7 @@ test('an agent row estimates its cost from tokens, and an unpriced model shows t
   const tokens = { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
   await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'answer', usage: { ...tokens, model: 'claude-sonnet-4-5' } })
   await $.turn.complete({ ...TURN, agentId: 'a2', reason: 'answer', usage: { ...tokens, model: 'fable-1' } })
-  await clock.advance(MIN_REBUILD_MS)
+  await clock.advance(SETTLE_MS)
 
   expect(await textOf(ui, 'cost-a1')).toBe('~$4.50')
   expect(await textOf(ui, 'tokens-a1')).toBe('1M / 100k')
