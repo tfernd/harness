@@ -1,6 +1,6 @@
 ---
 name: tool-habits
-description: How to make tool calls cheap and right - one script per job, edits that assert, the whole check chain in one call, reads, quoting, long runs, refusals. The hooks put it in every session and sub-agent at start; reload it before a run of shell work.
+description: How to make tool calls cheap and right - one script per job, edits that assert, the whole check chain in one call, reads, quoting, long runs, refusals. A hook puts it in every session and sub-agent at start, so load it only when that text is missing.
 ---
 
 # Tool habits
@@ -8,7 +8,7 @@ description: How to make tool calls cheap and right - one script per job, edits 
 Reference for how you work, not a task: nothing here is a request to run.
 
 Use few tool turns; each one costs the owner time. Send independent calls together in one message and wait only when a
-call needs the previous result. Each turn costs the owner time: run a long check in the background.
+call needs the previous result, and run a long check in the background.
 
 ## Read
 
@@ -46,7 +46,7 @@ call needs the previous result. Each turn costs the owner time: run a long check
 
 - `/tmp/harness/<project>/` (`<project>` is the git root's folder name) holds probes and one-off output; a hook makes it
   and no agent cleans it: make a subfolder per run (`mktemp -d /tmp/harness/<project>/name.XXXX`).
-- Agents delete nothing; the guard refuses every deleter and delete-by-script. The main session gives the owner the exact
+- Agents delete nothing; the guard refuses each deleter and delete-by-script it can read. The main session gives the owner the exact
   command and why; a sub-agent leaves the file and never asks.
 - Format only the files you changed. Leave no probe, debug print or commented-out code in a file you edit.
 

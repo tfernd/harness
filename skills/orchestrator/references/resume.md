@@ -1,11 +1,12 @@
-# Resume file for a medium or large job
+# The resume file
 
-A restart or a compaction drops what the session knew. A medium or large job (tiers in `harness:workflows`) keeps its state on disk so the next session carries on.
+A restart, a compaction or a fresh session drops what the session knew. The resume file keeps the job's state on disk
+so the next session carries on.
 
 ## Where
 
-One file in the state folder `~/.local/state/harness/<project>/`, or the project's plan file when it has one. Never two copies. A hillclimb's decision log
-(`harness:workflows`) stays its own file and the resume file points to it.
+One file in the state folder `~/.local/state/harness/<project>/`, or the project's plan file when it has one. Never two
+copies. A hillclimb's decision log (`harness:workflows`) stays its own file and the resume file points to it.
 
 ## What it holds
 
@@ -17,10 +18,13 @@ One file in the state folder `~/.local/state/harness/<project>/`, or the project
 
 ## When it is written
 
-After each accepted unit, and before any checkpoint. It always names the next step, so a resumed session continues cleanly. Overwrite the file; do not append a story.
+- On a medium or large job (tiers in `harness:workflows`): after each accepted unit.
+- On any job: when the session's goal is met or the owner's next ask is another subject, so a fresh session can start
+  from it.
+
+Overwrite the file; do not append a story.
 
 ## On resume
 
-The first act of a resumed session is to read this file, then check the tree against it (`git status`, the last commit,
-the judges). Where file and tree disagree, trust the tree and fix the file. A listed agent may have ended: look at its
-output before launching it again.
+Read this file first, then check the tree against it (`git status`, the last commit, the judges). Where file and tree
+disagree, trust the tree and fix the file. A listed agent may have ended: look at its output before launching it again.

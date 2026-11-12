@@ -10,9 +10,9 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 - Off limits (read only if asked, never edited or imported): <paths, or "none">.
 
 ## 3. Writing code
-- Before touching a file, load the skill the `skill_gate` setting names for it; a hook checks edits, shell writes and commits.
-- Run the project's lint, format and type checks before the report; their exit codes go in it.
-- Checks, cited by name: the check gate `<command>` (run once; a third failing run stops you); the full gate
+- Before touching a file, load the skill for its kind (`harness:code` lists them); a hook hands you its text on your first edit if you have not.
+- Run the project's lint, format and type checks before the report; a failing one goes in it with its exit code.
+- Checks, cited by name: the check gate `<command>` (run once, when the unit is written); the full gate
   `<command>`.
 - A bug fix starts with a test that fails for the reported cause (`harness:workflows`).
 - A failure in a file outside the files the brief names is another agent's unfinished work: report it, never fix it.
@@ -43,7 +43,6 @@ Every rule above has an enforcer; a rule with none is the first to be broken aga
 ## 9. Review rules
 <!-- Optional; the reviewer reads it first (`harness:review`). Delete the comment markers to use it.
 - Severity A here: <what counts>.
-- At most <5> C findings.
 - Skip: <paths and classes CI already enforces>.
 - Always check: <items>.
 - Accepted issues, security included: <known issues the review does not report>.

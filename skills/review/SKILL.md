@@ -12,9 +12,8 @@ not the reviewer's: see the last section.
 
 ## Project review rules
 
-Read first the "Review rules" section of the project's `AGENTS.md`, if it has one: what counts as A there, a cap on C
-findings (default 5), paths and classes to skip (what CI already enforces), an "always check" list, and accepted
-issues. Detail: `references/rules.md`.
+Read first the "Review rules" section of the project's `AGENTS.md`, if it has one: what counts as A there, paths and
+classes to skip (what CI already enforces), an "always check" list, and accepted issues. Detail: `references/rules.md`.
 
 ## Order
 
@@ -49,15 +48,20 @@ issues. Detail: `references/rules.md`.
 
 - After the first pass, review only the diff since the last review.
 - Name the class of a bug (for example "an unchecked path join") and list every instance, so one fix covers all.
-- After 3 rounds on one unit, stop and rethink the approach with the owner.
+- A review of a fix asks two more questions, each answered with an input: can the fix be bypassed, and does a variant
+  of the bug remain.
+- A unit that comes back with the same class of fault again is not converging: the main session stops and rethinks the
+  approach with the owner.
 
 ## A finding
 
 One entry: `path:line` with the line's text (lines move), the severity, the command that shows it with its output (or why
 no test would catch it), a one-line fix. Findings are sorted A, B, C. A finding survives only with that command and
 output; a suspicion without them is reported as unsure, not as a finding: unsure items go in a separate list after C.
+The output must show the stated cause failing, not only that something fails. Rerun each finding's command on the
+current tree just before reporting; one that no longer shows is reported as fixed, not as a finding.
 "No findings" is a valid result; never pad a review to look thorough. The main session reruns a finding's command
-before relaying it (`harness:orchestrator`).
+before relaying it (`harness:orchestrator`, its accept reference).
 
 ## Lenses a brief may add (on its `Role:` line, for example `Role: reviewer, lens: Interface`)
 

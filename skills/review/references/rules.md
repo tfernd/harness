@@ -5,7 +5,6 @@ The project's `AGENTS.md` may hold a "Review rules" section (template: `template
 | Entry | Effect |
 |---|---|
 | Severity A here | Adds to what counts as A; nothing in it lowers the A of `harness:review` |
-| Cap on C | At most that many C findings; default 5. Drop the rest |
 | Skip | Paths and classes of finding that CI already enforces: not reported |
 | Always check | Items checked on every review, reported even if clean |
 | Accepted issues | Known issues, security ones included: not reported |

@@ -35,6 +35,7 @@ The hooks of a plugin sit in `hooks/hooks.json`: one entry per command, each wit
 - **Config only overrides.** A rule works with no config; the owner's file turns it off or tunes it.
 - **Judge the thing, not text that mentions it:** parse a command as a shell does; a quoted string or heredoc body is
   not a command.
+- **A hook is one layer, not a sandbox.** It judges what it can read; say so wherever its rule is described.
 - **Do not hold a stop forever.** A Stop hold has a cap on blocks, after which it lets go with one warning.
 
 ## What counts as built
@@ -46,7 +47,7 @@ A rule is built when it has all four:
    the cases, see the failing line. A rule that cannot fail is not a rule.
 3. **A replay on real data:** run the rule over real past commands or transcripts and read every hit. Passing cases only
    show the code matches your assumption; a replay shows what agents really did, and finds false refusals. A replay
-   where fewer than one fire in ten is true is a reason to narrow the rule before the live run.
+   where most fires are false is a reason to narrow the rule before the live run.
 4. **A live run:** the plugin loaded in a real session (`claude --plugin-dir .` for a plugin), the rule fired once and
    its message read as an agent would read it.
 

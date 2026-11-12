@@ -44,8 +44,7 @@ export const assertNever = (value: never): never => {
 
 ## Size and structure
 
-- Function about 30 lines, file about 500 lines: a project may enforce by a script that counts lines per file.
-  Complexity: Biome `noExcessiveCognitiveComplexity`; ESLint `complexity`, `max-lines-per-function`.
+- Complexity: Biome `noExcessiveCognitiveComplexity`; ESLint `complexity`.
 - Dependency direction: Biome `noRestrictedImports` / ESLint `no-restricted-imports` with patterns per folder, or
   `eslint-plugin-boundaries`, or a script that reads import specifiers from the syntax tree. Write the allowed
   directions once (for example `shared <- features <- app`).

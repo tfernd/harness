@@ -1,15 +1,18 @@
 ---
 name: report
-description: The report every sub-agent ends with - what was done, what is not proven, problems, what to do differently, feedback and a verdict written last. A hook sends back a report that breaks the form. Preloaded by every role; load it yourself before writing a report.
+description: The report every sub-agent ends with - what the diff does not show, what is not proven, problems, what to do differently, feedback and a verdict written last. A hook sends back a harness role's report that breaks the form. Every harness role preloads it; an agent without it loads it before writing a report.
 ---
 
 # The report
 
-Your report is the main session's only view of your run. Keep it short and useful: say what was done and what is not
-proven. A passing check gets one line; quote a command only when it failed or matters. `hooks/report_gate.py` checks one
-thing: the required sections are there, as `##` headings in order. It sends back a report that misses or misorders one,
-naming the sections that are wrong. A refused handback: call it again with the whole report,
-fixed. A report sent back after you stopped: send only those sections again; the ones you leave out stay as they were.
+The main session reads your diff and can rerun your Judge. Your report says what those cannot show: the choices you
+made, what surprised you, and what is not proven. Keep it short. A passing check gets one line; quote a command only
+when it failed or matters.
+
+`hooks/report_gate.py` checks one thing: the required sections are there, as `##` headings in order. It sends back a
+report that misses or misorders one, naming the sections that are wrong. A refused handback: call it again with the
+whole report, fixed. A report sent back after you stopped: send only those sections again; the ones you leave out stay
+as they were.
 
 ## The form
 
@@ -17,10 +20,10 @@ Title, then these sections under their exact `##` headings, in this order. Leave
 nothing to say, and add no other `##` heading. A long list belongs in a file in `/tmp/harness/<project>/`, named in the report.
 
 ```markdown
-# Report: <role>, <task in six words>
+# Report: <role>, <the task in a few words>
 ## Answer
-<what was asked and what was done or found, in plain words, naming each file changed. Passing checks in one line;
-a failing command quoted with its exit code>
+<what was done or found, in plain words, by theme: the choices made and anything unexpected. Passing checks in one
+line; a failing command quoted with its exit code>
 ## Not proven
 - <what was not run or shown, and why>
 ## Problems
@@ -39,7 +42,7 @@ a failing command quoted with its exit code>
 |---|---|---|
 | Answer | Always | States what happened, not how good it is; the judgement waits for Verdict |
 | Not proven | Always | Never bare: "nothing" needs its reason |
-| Problems | If any | One cause from the list per item |
+| Problems | If any | Only what a change to a brief, a rule or a tool would prevent; one cause from the list per item |
 | Next time | If different | Left out when you would do the same |
 | Open | If any | Includes a change needed in a file your brief does not name, with its file |
 | Feedback | If any | Each item names a file to change; the main session reads it in the same turn and acts |
@@ -56,8 +59,7 @@ left to the main session, a path not exercised) without making the verdict `part
 
 - Send the report only after every background job you started has ended or been stopped; a stray job wakes you again after
   the report. A job still needed is stopped and listed under Not proven with the command to rerun it.
-
-- Keep notes as you work: each retry, failed call and rule that pulled the other way; a report written from memory drops them.
-- "The agent itself" is a cause, and the most useful one to admit. A mistake left out is the worse failure.
+- Note a problem when it happens; a report written from memory drops it. A retry that cost nothing is left out.
+- "The agent itself" is a cause, and the most useful one to admit.
 - Writing tics to avoid, each with a plain form: `references/prose.md`.
 - Mark a claim that isn't obvious as READ, DERIVED or PROBED (`harness:evidence`), with `path:line` or the command.

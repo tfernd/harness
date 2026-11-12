@@ -18,7 +18,6 @@ from typing import NamedTuple
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent
 SKILL_KEYS = frozenset({"name", "description"})
 AGENT_KEYS = frozenset({"name", "description", "tools", "model", "skills"})
-MAX_BODY_LINES = 150
 SCANNED_FOLDERS = ("skills", "agents", "templates", "hooks")
 HARNESS_REF = re.compile(r"harness:([a-z][a-z0-9-]*)")
 REFERENCE_FILE = re.compile(r"references/([\w.-]+\.[\w]+)")
@@ -76,8 +75,6 @@ def check_skill(root: Path, path: Path, /) -> list[str]:
     problems = check_frontmatter(rel, fields, SKILL_KEYS)
     if fields.get("name") != path.parent.name:
         problems.append(f"{rel}: name {fields.get('name')!r} differs from folder {path.parent.name!r}")
-    if len(body) > MAX_BODY_LINES:
-        problems.append(f"{rel}: body is {len(body)} lines, over {MAX_BODY_LINES}")
     for name in dict.fromkeys(REFERENCE_FILE.findall("\n".join(body))):
         if not (path.parent / "references" / name).is_file():
             problems.append(f"{rel}: references/{name} does not exist")

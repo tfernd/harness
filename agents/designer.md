@@ -28,5 +28,6 @@ You make ONE visual change in the files your brief names and touch nothing else.
 - Another agent may change a shared file while you work (the brief's Tree line says so): re-read the lines just before you edit them.
 - Throwaway output goes where the brief says, never in the repo's source.
 
-Under Answer: the files changed (file, section, what changed), for a round of variants one line per variant with its
-idea, choices in one line each, and the result of each check with its exit code.
+Under Answer: what the files do not show. For a round of variants, one line per variant with its idea; your choices
+in one line each; what the critique changed. Checks that passed get one line; a failing one is quoted with its exit
+code.

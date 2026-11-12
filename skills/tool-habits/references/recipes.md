@@ -42,9 +42,9 @@ Gates that depend on each other (format, then lint, then test) chain with `&&` i
 
 ## A one-line edit: assert before and after
 
-One exact change is the Edit tool. Several changes, or an edit joined to a check, use the Python edit form of the body
-(`sub(...)` asserts each target occurs once). `sed -i` is for files under `/tmp/harness/<project>/` only: the guard refuses it
-elsewhere.
+One exact change is the Edit tool. Several changes, or an edit joined to a check, use a script that asserts each target
+occurs once, as below. `sed -i` is for files under `/tmp/harness/<project>/`: on a project file the guard lets it run
+with a note.
 
 ```bash
 set -o pipefail

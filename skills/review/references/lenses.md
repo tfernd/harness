@@ -2,12 +2,11 @@
 
 ## The brief for one lens scout
 
-Field names follow the brief template of `harness:orchestrator`; `Lens:` through `Output:` are added lines.
+The lines follow the brief of `harness:orchestrator`; `Lens:` through `Output:` are added.
 
 ```
 Role:      scout
 Goal:      find every <lens> finding in <scope>, so the sweep can rank them
-Tree:      base commit; nobody editing
 Input:     /tmp/harness/<project>/sweep/map.md and the files of the map that belong to the scope (paths only)
 Lens:      the lens name and its paragraph below
 Scope:     the folders or file list this scout may read
@@ -15,7 +14,6 @@ Quote:     both sides verbatim with path:line; the line's text, not a paraphrase
 Clean:     NOT FOUND for a lens with nothing; never a guess
 Coverage:  files read, then files in scope not read
 Output:    the finding table below
-Report:    harness:report, headings in order
 ```
 
 ## The finding shape

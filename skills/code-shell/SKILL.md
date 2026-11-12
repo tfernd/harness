@@ -11,7 +11,7 @@ No comments or docstrings: `harness:code`. One-off commands in a tool call: `har
 
 - Shell fits for gluing programs: run a command, pipe, test an exit code, set an environment, move files.
 - Move to a script in another language when the script needs any of: arrays of records or maps, JSON or other
-  structured data, arithmetic beyond integers, more than about 100 lines, a branch you cannot read in one screen, or
+  structured data, arithmetic beyond integers, a branch you cannot read in one screen, or
   tests of its own logic.
 - A script in the repo that others run has a `#!/usr/bin/env bash` first line, the executable bit, and a name that says its job; usage is printed by `--help`.
 

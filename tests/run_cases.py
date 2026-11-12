@@ -1414,18 +1414,9 @@ def turn(
     return Case(name, ("turn.py", "stop"), event, blocks, text, files=(counted, *files), transcript=transcript, **options)
 
 
-REFUSED = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "PreToolUse:Bash hook error: [guard.py]: Blocked by the harness guard: no"}]}}
-QUOTED_REFUSAL = {"type": "user", "message": {"content": [{"type": "tool_result", "is_error": True, "content": "FAIL expected Blocked by the harness guard"}]}}
-OWNER_PROMPT = {"type": "user", "message": {"content": "the next job"}}
 BLOCKS_FILE = f"data/turns/{SESSION}.blocks"
 CALLS_FILE = f"data/turns/{SESSION}.calls"
-RULES_FILE = f"data/turns/{SESSION}.rules"
 DEFERRED_FILE = f"data/turns/{SESSION}.deferred"
-RULE_FILE_BEFORE = ("AGENTS.md", "a rule\n")
-RULES_KEPT = (RULES_FILE, "{}")
-RULES_OTHER = (RULES_FILE, '{"AGENTS.md": "changed since"}')
-LESSONS = "Done.\n\n**Lessons:** the brief was vague, so a rule is needed.\n"
-NO_RULE_PATHS = {"stop": {"rule_paths": []}}
 TURN_CASES = (
     turn("the status is read from the transcript when the event has none", "", False, calls=BUSY_CALLS, transcript=(assistant({"type": "text", "text": FULL_STATUS}),)),
     turn("a transcript line that is no object is skipped", "", False, transcript=(12, assistant({"type": "text", "text": "Done."}))),
@@ -1436,7 +1427,7 @@ TURN_CASES = (
     turn("a turn that ran a named agent gets a note to list it under Agents", FULL_STATUS, False, "Missing: Audit the parser", calls=["Agent\tAudit the parser", "Edit", "Edit"]),
     turn("a soft check alone gives a note and no hold", FULL_STATUS, False, "Note, the turn is not held", calls=["Agent\tAudit the parser", "Edit", "Edit"], lacks="decision", wrote=(BLOCKS_FILE, "0")),
     turn("a soft check alone ends the turn as passed", FULL_STATUS, False, calls=["Agent\tAudit the parser", "Edit", "Edit"], files=((BLOCKS_FILE, "2"),), not_wrote=(CALLS_FILE, "Agent"), wrote=(BLOCKS_FILE, "0")),
-    turn("a soft check beside a hard one holds the turn for the hard one", "Done.\n\n**Lessons:** the brief was vague, so a rule is needed.\n", True, "needs the job status", calls=BUSY_CALLS, files=(RULES_KEPT,), config=NO_RULE_PATHS),
+    turn("a soft check beside a hard one holds the turn for the hard one", "Done.", True, "note, does not hold the turn", calls=["Agent\tAudit the parser", "Edit", "Edit"]),
     turn("an Agents section naming each agent passes", f"{FULL_STATUS}\n## Agents\n- audit the parser: done, problems none", False, calls=["Agent\tAudit the parser", "Edit", "Edit"]),
     turn("an agent named outside the Agents section gets a note", f"{FULL_STATUS}\n## Agents\n- other\n## Notes\naudit the parser", False, "Missing", calls=["Agent\tAudit the parser", "Edit", "Edit"]),
     Case("add keeps an agent's description", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Agent", "tool_input": {"description": "audit  the\nparser"}}, False, config={}, wrote=(CALLS_FILE, "Agent\taudit the parser")),
@@ -1487,17 +1478,12 @@ TURN_CASES = (
     turn("a killed agent is finished", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=(*launch("t1"), notify("t1", "killed"))),
     turn("a foreground agent never runs on", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=launch("t1", is_background=False)),
     turn("no agent and no status is refused", PROGRESS, True, "Needs you", calls=BUSY_CALLS),
-    turn("the full status with no agent is allowed", FULL_STATUS + "\nLessons: none", False, calls=BUSY_CALLS, files=(RULES_KEPT,)),
+    turn("the full status with no agent is allowed", FULL_STATUS, False, calls=BUSY_CALLS),
     turn("two calls need no status", PROGRESS, False, calls=["Edit", "Edit"]),
     turn("the Stop hook ignores a heading in a fence", f"```\n{FULL_STATUS}\n```", True, "Verdict", calls=BUSY_CALLS),
     turn("a project's min_calls is read", PROGRESS, False, calls=BUSY_CALLS, config={"stop": {"min_calls": 5}}),
     turn("no project file still asks for the closing status", PROGRESS, True, "job status", calls=BUSY_CALLS, config=None),
     turn("an empty blocks file counts as zero", PROGRESS, True, "Verdict", calls=BUSY_CALLS, files=((BLOCKS_FILE, ""),), lacks="let the call run", wrote=(BLOCKS_FILE, "1")),
-    turn("junk saved rules do not trap the lessons check", LESSONS, False, files=((RULES_FILE, "{junk"),), config=NO_RULE_PATHS, lacks="let the call run"),
-    turn("an empty saved rules file does not trap the lessons check", LESSONS, False, files=((RULES_FILE, ""),), config=NO_RULE_PATHS, lacks="let the call run"),
-    turn("lessons with a rule change are allowed", LESSONS, False, files=(RULES_OTHER,), config=NO_RULE_PATHS),
-    turn("a change under skills counts as a rule change by default", LESSONS, False, files=((RULES_FILE, '{"@ROOT@/project/AGENTS.md": "caa155adf81fddd29ab4b21a147927fb0295eb53"}'), ("skills/x/SKILL.md", "new rule\n")), config=None),
-    turn("Lessons: none is allowed", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, lacks="no change to show"),
     turn(
         "the third block is the last",
         PROGRESS,
@@ -1515,9 +1501,6 @@ TURN_CASES = (
         calls=BUSY_CALLS,
         files=((BLOCKS_FILE, "3"),),
     ),
-    turn("a failed command quoting a refusal is no refusal", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(QUOTED_REFUSAL,), lacks="refused this turn"),
-    turn("a none with its reason after a refusal is allowed", "Lessons: none: the guard worked as it should\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED,), lacks="refused this turn"),
-    turn("a refusal before the owner's prompt does not count", "Lessons: none\n", False, files=(RULES_KEPT,), config=NO_RULE_PATHS, transcript=(REFUSED, OWNER_PROMPT), lacks="refused this turn"),
     turn("a project's headings replace the status", "## Result\nall of it", False, calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a project's missing heading is named", PROGRESS, True, "Result", calls=BUSY_CALLS, config={"stop": {"headings": ["Result"]}}),
     turn("a stopped agent is finished", PROGRESS, True, "Verdict", calls=BUSY_CALLS, transcript=(*launch("t1"), notify("t1", "stopped"))),
@@ -1537,27 +1520,15 @@ TURN_CASES = (
         calls=BUSY_CALLS,
         transcript=(assistant({"type": "text", "text": PROGRESS}), {"type": "user", "message": {"content": [{"type": "text", "text": FULL_STATUS}]}}),
     ),
-    turn(
-        "a sub-agent's message keeps the rule baseline",
-        "## Verdict\nx\n## Lessons\n- a lesson written down",
-        False,
-        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": "AGENTS.md", "text": "a new rule\n"}), (("turn.py", "reset"), {"session_id": SESSION, "prompt": 'Another Claude session sent a message:\n<agent-message from="a1">'})),
-    ),
-    turn(
-        "a notification keeps the rule baseline",
-        "## Verdict\nx\n## Lessons\n- a lesson written down",
-        False,
-        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": "AGENTS.md", "text": "a new rule\n"}), (("turn.py", "reset"), {"session_id": SESSION, "prompt": "<task-notification>\n<status>completed</status>"})),
-    ),
     turn("a progress note keeps the count", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1"), wrote=(CALLS_FILE, "Agent"), config={}),
     turn("a progress note marks the status as due", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1"), wrote=(DEFERRED_FILE, "1")),
-    turn("the status empties the count", FULL_STATUS + "\nLessons: none", False, calls=BUSY_CALLS, files=(RULES_KEPT,), not_wrote=(CALLS_FILE, "Agent")),
+    turn("the status empties the count", FULL_STATUS, False, calls=BUSY_CALLS, not_wrote=(CALLS_FILE, "Agent")),
     turn(
         "the status clears the due mark",
-        FULL_STATUS + "\nLessons: none",
+        FULL_STATUS,
         False,
         calls=BUSY_CALLS,
-        files=(RULES_KEPT, (DEFERRED_FILE, "1")),
+        files=((DEFERRED_FILE, "1"),),
         not_wrote=(DEFERRED_FILE, "1"),
     ),
     turn(
@@ -1574,22 +1545,8 @@ TURN_CASES = (
         calls=BUSY_CALLS,
         transcript=(*launch("t1"), both_notify()),
     ),
-    turn("a fence that never closes does not hide the status", FULL_STATUS + "\nLessons: none\n```\nopen", False, calls=BUSY_CALLS, files=(RULES_KEPT,)),
+    turn("a fence that never closes does not hide the status", FULL_STATUS + "\n```\nopen", False, calls=BUSY_CALLS),
     turn("the project variable counts past a cd", PROGRESS, True, "Verdict", calls=BUSY_CALLS, cwd="elsewhere", project_dir="project"),
-    turn(
-        "a rule file changed this turn counts",
-        LESSONS,
-        False,
-        files=((RULE_FILE_BEFORE),),
-        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": "AGENTS.md", "text": "a new rule\n"})),
-    ),
-    turn(
-        "a file in .claude counts",
-        LESSONS,
-        False,
-        files=((".claude/rules/a.md", "old\n"),),
-        before=((("turn.py", "reset"), {"session_id": SESSION}), (("rewrite.py",), {"path": ".claude/rules/a.md", "text": "new\n"})),
-    ),
     Case(
         "add counts a call of the session",
         ("turn.py", "add"),
@@ -1614,17 +1571,8 @@ TURN_CASES = (
         {"session_id": SESSION, "prompt": "<task-notification>"},
         False,
         config={},
-        files=((CALLS_FILE, "Agent\nEdit\n"), (DEFERRED_FILE, "1"), (RULES_FILE, '{"kept": "x"}')),
+        files=((CALLS_FILE, "Agent\nEdit\n"), (DEFERRED_FILE, "1")),
         wrote=(CALLS_FILE, "Agent\nEdit\n"),
-    ),
-    Case(
-        "reset keeps the turn's rule state when a status is due",
-        ("turn.py", "reset"),
-        {"session_id": SESSION},
-        False,
-        config={},
-        files=((DEFERRED_FILE, "1"), (RULES_FILE, '{"kept": "x"}')),
-        wrote=(RULES_FILE, "kept"),
     ),
     Case(
         "reset still zeroes the blocks when a status is due",
@@ -1750,7 +1698,10 @@ CONTEXT_CASES = (
     context("a worker start carries the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Edit and check in one call"),
     context("a scout start leaves out the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "## Read", lacks="## Edit and check in one call"),
     context("a reviewer start leaves out the clean and git habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:reviewer"}, "## When a call is refused", lacks="## Clean"),
-    context("a helper start keeps every habit", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## Git"),
+    context("a helper start keeps the editing habits and leaves out the git one", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## Clean", lacks="## Git"),
+    context("a worker start leaves out the git habit", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Clean", lacks="## Git"),
+    context("a session start keeps the git habit", {"hook_event_name": "SessionStart"}, "## Git"),
+    context("a sub-agent's session start is not told to load the orchestrator", {"hook_event_name": "SessionStart", "agent_id": "a1", "agent_type": "harness:worker"}, "few tool turns", lacks="harness:orchestrator"),
     context("a sub-agent is told to run long checks in the background", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "run a long check in the background"),
     context("a sub-agent is told what stands in for Grep", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "use `rg` and `find`"),
     context("a session is told what stands in for Grep", {"hook_event_name": "SessionStart"}, "use `rg` and `find`"),
@@ -1766,11 +1717,13 @@ CONTEXT_CASES = (
     context("a session start names the orchestrator", {"hook_event_name": "SessionStart"}, "harness:orchestrator"),
     context("a session start's output is hook-specific", {"hook_event_name": "SessionStart"}, '"hookEventName": "SessionStart"'),
     *(
-        context(f"{agent} is told the report form", {"hook_event_name": "SubagentStart", "agent_type": agent}, FORM_FRAGMENT)
+        context(f"{agent} is left to its preloaded report skill", {"hook_event_name": "SubagentStart", "agent_type": agent}, lacks=FORM_FRAGMENT)
+        if agent.startswith("harness:")
+        else context(f"{agent} is told the report form", {"hook_event_name": "SubagentStart", "agent_type": agent}, FORM_FRAGMENT)
         for agent in AGENT_TYPES
     ),
     context("a session start is not told the report form", {"hook_event_name": "SessionStart"}, lacks="Not proven"),
-    context("a role is not given the headings twice", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, lacks="only if they have nothing"),
+    context("a helper is not told that a hook checks its report", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, lacks="A hook sends back"),
     context("a session start states the tool-turn rule", {"hook_event_name": "SessionStart"}, "few tool turns"),
     context("a session start carries the tool-habits skill", {"hook_event_name": "SessionStart"}, "## When a call is refused"),
     context("a sub-agent start carries the tool-habits skill", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## When a call is refused"),
@@ -2519,10 +2472,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
         if case.project_dir:
             environment["CLAUDE_PROJECT_DIR"] = str(root / case.project_dir)
         for script, event in case.before:
-            if script == ("rewrite.py",):
-                (project / event["path"]).write_text(event["text"])
-            else:
-                run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
+            run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
         if not (hooks / case.script[0]).is_file():
             return f"the hook is missing: {case.script[0]}"
         started = time.monotonic()

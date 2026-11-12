@@ -10,8 +10,8 @@ Before a release, after a batch of rule changes, or on the owner's ask.
 
 ## Cost shape
 
-About six cheap scouts (one per lens), one adversary, one verifier, then the fix workers. Tell the owner at launch.
-A large repo gets one scout per lens per scope of about 40 files or one top folder; the coverage lists decide the second wave.
+One cheap scout per lens, one adversary, one verifier, then the fix workers. Tell the owner at launch.
+A large repo gets one scout per lens per top folder; the coverage lists decide the second wave.
 
 ## Roles and models
 
@@ -23,7 +23,7 @@ A large repo gets one scout per lens per scope of about 40 files or one top fold
 | 5 Rank | main session | |
 | 6 Fix, 7 Prevent | `worker`, one per disjoint set of files | its default |
 
-Briefs use the template of `harness:orchestrator`; the lens brief's fields are in `lenses.md`.
+Briefs follow `harness:orchestrator`; the lens brief's fields are in `lenses.md`.
 
 ## Procedure
 
@@ -57,7 +57,7 @@ Briefs use the template of `harness:orchestrator`; the lens brief's fields are i
 7. **Prevent.** A drift that can come back is fixed by a check, or by generating the text from its source, not only by
    editing the line again.
 8. **Record.** The verifier's report carries one Feedback line per CONFIRMED finding that needs a rule, naming the file
-   to change and the problem it would have prevented (`harness:report`), so the main session files it.
+   to change and the problem it would have prevented (`harness:report`), so the main session acts on it.
 
 ## Done when
 

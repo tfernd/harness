@@ -7,8 +7,9 @@ A skill is read by an agent in the middle of a job. It must be short, general an
 - `skills/<name>/SKILL.md`, `name` equal to the folder. Frontmatter holds `name` and `description` only.
 - **Description:** what the skill gives, then when to load it ("Load
   before ..."). The description is the only text an agent sees when deciding; a vague one means a skill never loads.
-- **Body:** at most 150 lines, a title, short sections, tables for lookups, steps for procedures. Detail that only
-  some readers need goes in `references/<file>`, named from the body so a reader knows when to open it.
+- **Body:** a title, short sections, tables for lookups, steps for procedures. The body is read whole each time the
+  skill loads: detail that only some readers need goes in `references/<file>`, named from the body so a reader knows
+  when to open it.
 - A `references/<file>` names only the skill's own folder.
 - Write for an agent with the skill and nothing else: no "as discussed", no history of how the rule came about.
 
@@ -29,8 +30,9 @@ A skill is read by an agent in the middle of a job. It must be short, general an
   wrong tool: propose a check (`hook.md`).
   Then shorten the skill to the line the hook cannot enforce.
 - **Test a skill cold:** give a fresh agent only the skill and a task, and list what it had to guess. Each guess is a missing line.
-- When a skill grows past the limit, move detail to `references/` before cutting rules.
-- The project's skill check (a script that reads frontmatter, lengths and every pointer) runs before pushing.
+- When the base model changes, test the skill cold again, with it and without it. A rule the new model follows
+  unprompted is cut.
+- The project's skill check (a script that reads frontmatter and every pointer) runs before pushing.
 
 ## What no tool checks
 

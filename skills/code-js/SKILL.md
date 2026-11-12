@@ -56,8 +56,8 @@ No comments or docstrings: `harness:code`. Web pages: `harness:code-html-css`.
 
 - One job per function and per module; the same code is never written twice. A helper a second module needs moves to
   a shared folder.
-- Size: a function over about 30 lines, or one whose steps need separating, is split into named helpers
-  (biome `noExcessiveCognitiveComplexity` flags complexity). A file over about 500 lines is split by job.
+- Size: a function whose steps need separating is split into named helpers (biome `noExcessiveCognitiveComplexity`
+  flags complexity). A file that holds several jobs is split by job.
 - Dependency direction: shared code imports nothing from features; a feature never imports a sibling feature; a
   low-level folder never imports a higher one. Check with the project's import rule or a script.
 - No module-level mutable state (`let`, mutable object or array at top level). State lives in the caller or in one

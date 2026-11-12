@@ -6,39 +6,31 @@
    in any other file is sent back, not kept.
 2. Future-reader test: would a fresh agent reading this cold find it easier or harder? Names say what a thing is, docs
    are true of the code under them. If harder, the unit goes back to its writer.
-3. Gates follow the unit's tier in `harness:workflows`. Small: the project's own checks alone. Medium and large: the
-   product run, the checks, then one `reviewer` at the end of the round (`harness:review`); the main session reruns the worker's Judge only when its report is the sole evidence of a claim. The main session reruns each finding's command and drops one whose output does not show it, then applies the rest
-   and compares the test count and deleted files with the baseline. A gate that could not run is accepted only as "not
-   run" and listed.
-4. Update the plan: the unit's row leaves "Next", a decision it settled is recorded, a line it made
-   false is deleted in the same proposal.
-5. Write the commit proposal (`harness:git`) before the next unit starts.
+3. Run the gates of the unit's tier (`harness:workflows`). Rerun the worker's Judge only when its report is the sole
+   evidence of a claim. After a review, rerun each finding's command, drop a finding whose output does not show its
+   stated cause, and brief workers for the rest. A gate that could not run is accepted only as "not run" and listed.
+4. A new module is wired where the project registers modules.
+5. Update the plan: the unit's row leaves "Next", a decision it settled is recorded, a line it made false is removed.
+6. Write the commit proposal (`harness:git`) before the next unit starts.
 
 ## The closing status
 
-Due after a turn that ran agents or edited many files, once no background agent is still running. A turn that ends while agents run is a progress note of a few lines with no status headings; a quick answer does not need it either. The Stop hook asks for the status when it is due, so never write it ahead of that.
+The Stop hook (`hooks/turn.py`) asks for it at the end of a turn that ran several agents or edits, once no background
+agent is still running. Never write it before the hook asks: a turn that ends while agents run gets a progress note of
+a few lines, and a quick answer gets nothing.
 
-Plain words first, then narrow tables, under these exact `##` headings in this order. Required: `## Verdict`,
-`## Done`, `## Needs you`, `## Next`. The others are left out when empty.
+Short lines, no tables, under these `##` headings in this order. The hook holds the turn for the required ones and
+notes an agent missing from `## Agents`.
 
-1. `## Verdict`: one or two sentences: done, partial or blocked, and the one thing that matters most.
-2. `## Done`: table Item | Result (done, partly, failed) | Evidence (the proposal file, or the command and exit code).
-   It lists every ask the owner made since the last status, each marked done or not with its evidence, so the owner need not ask
-   "anything missing?"; the same list serves a checkpoint.
-3. Optional: `## Decisions` (Decision | Reason | Alternative rejected | Taken by), so the owner can overrule one; `## Problems`
-   (Problem | Fix | State), where a fix is a rule, hook or gate named by its file, never "be careful".
-4. `## Agents`, required when the turn ran agents: one row per agent, its Task cell starting with the description it was
-   given, and what happened to its problems (fixed in FILE, filed, rejected: why, or none); then a one-line model fit (was
-   each model right for its task). The Stop hook only notes a section that misses an agent; it does not hold the turn.
+| Heading | When | Holds |
+|---|---|---|
+| `## Verdict` | Always | Done, partial or blocked, and the one thing that matters most |
+| `## Done` | Always | One line per ask since the last status: the ask, done, partly or failed, and its evidence (a command with its exit code, or a file) |
+| `## Agents` | The turn ran agents | One line per agent: the description it was given, its verdict, and what happened to its problems (fixed in FILE, rejected: why, or none) |
+| `## Decisions` | If any | A choice made for the owner, with its reason, so they can overrule it |
+| `## Needs you` | Always | What only the owner can do, each with what happens if they do nothing; "nothing" when empty |
+| `## Not proven` | If any | What was skipped or only read. A problem not resolved carries to the next status |
+| `## Next` | Always | The one thing to do next, with its cost |
 
-   | Agent (role, model) | Task | Result | Quality 1-5 | What went wrong | Brief fix |
-   |---|---|---|---|---|---|
-
-   Quality is your reading of the agent's work, 1 to 5. Say when the agent's Verdict disagrees with it.
-5. `## Needs you`: actions only the owner can take, each with what happens if they do nothing; "nothing" when empty.
-6. Optional: `## Not proven` (what was skipped or only read); `## Numbers` (only those the verdict rests on, a signed percent
-   against a named baseline with its command).
-7. `## Next`: the one thing to do next, with its cost.
-
-Rules: say what a thing does before its jargon. Report failures and bent rules as plainly as successes. Mark each claim
-measured (ran, with the command) or read (seen, not run).
+Say what a thing does before its jargon. Report a failure or a bent rule as plainly as a success. A number is a signed
+percent against a named baseline, with its command.

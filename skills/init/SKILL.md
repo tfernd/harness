@@ -6,7 +6,7 @@ description: Load to set a project up for the harness plugin. Writes AGENTS.md f
 # Initialize a project
 
 Every harness rule runs with no setup, and the plugin reads no file inside a project. The plugin cannot ship a project's `AGENTS.md`, so this skill writes it from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md`.
-The main session asks (step 2) and does the writing; the owner approves the result.
+The main session asks (step 2) and writes the proposal; the owner approves it; a `harness:worker` installs it.
 
 ## Steps
 
@@ -17,16 +17,16 @@ The main session asks (step 2) and does the writing; the owner approves the resu
 3. **Propose.** Write the file first to `/tmp/harness/<project>/init/AGENTS.md`. Replace every placeholder in angle brackets with a project fact;
    leave none. `TOPIC` is the one placeholder you leave unchanged: it names a folder the agents choose.
 4. **Diff and install.** Run `diff -u AGENTS.md /tmp/harness/<project>/init/AGENTS.md` (a missing target is a new
-   file). An existing target is overwritten only on the owner's word: keep, replace, or merge; ask. A new file is
-   installed after the owner approves it. When merging into an existing `AGENTS.md`, add the missing sections and
-   leave the owner's lines as they are.
+   file). An existing target is overwritten only on the owner's word: keep, replace, or merge; ask. On the owner's yes,
+   brief a `harness:worker` to install the proposal. When merging into an existing `AGENTS.md`, it adds the missing
+   sections and leaves the owner's lines as they are.
 5. **Report** the file written or skipped and why, and the choices left to the owner.
 
-## What the plugin keeps in the project
+## What the plugin keeps outside the project
 
 - `~/.local/state/harness/<project>/` holds the harness's state and a `README.md` that maps it.
 - `/tmp/harness/<project>/` holds throwaway files.
-- Each folder carries its own `.gitignore` holding `*`, written by a hook when the folder is made, so git sees neither and nothing needs committing or ignoring by hand. `rg` and Glob skip ignored folders, so read their files by path.
+- Both sit outside the project, so git sees neither. Read their files by path.
 
 ## Overrides
 

@@ -7,7 +7,7 @@ description: How a spec is written for a large or public-contract job - a file w
 
 A spec is a file in the repo (`~/.local/state/harness/<project>/<topic>/SPEC.md` unless the project names a place), written before any
 worker starts. Workers and readers get its path in the brief. A spec that lives only in chat is not a spec.
-The orchestrator decides what goes in and briefs a worker to write the file. Sizes that need one: `harness:workflows`.
+The orchestrator decides what goes in and briefs a worker to write the file. Tiers that need one: `harness:workflows`.
 
 ## Sections, in this order
 

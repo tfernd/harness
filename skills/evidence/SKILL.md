@@ -39,7 +39,7 @@ that matches today's inputs.
 
 ONE narrow question, fast, no file written; stop when you can answer. Read with the project's read tools (Read, Grep,
 Glob); Bash only for read-only commands and probes (`wc`, `git show|log|diff`); name the folders for `find`. Report the answer first, then `path:line` evidence with the
-line's text, at most 10 findings each marked READ, DERIVED or PROBED, as in `harness:report`, and what you did not check.
+line's text, each finding marked READ, DERIVED or PROBED, as in `harness:report`, and what you did not check.
 
 ## For the orchestrator
 

@@ -148,7 +148,7 @@ def check_agents(message: str, call_lines: list[str], /) -> list[str]:
 
     return [
         f'the turn ran agents, so the status needs an "{AGENTS_HEADING}" section: one line per agent, starting with the description '
-        f"it was given, then its verdict and what happened to its problems (fixed in FILE, filed, rejected: why, or none). "
+        f"it was given, then its verdict and what happened to its problems (fixed in FILE, rejected: why, or none). "
         f'Missing: {"; ".join(missing)}'
     ]
 

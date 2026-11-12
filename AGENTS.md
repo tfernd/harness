@@ -25,14 +25,14 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
   blocked" message names the rule and the change to make.
 
 ## Skills
-- Writing a skill: `harness:authoring` (`references/skill.md`: form, limits, one home per fact, no project domain). `tests/check_skills.py` enforces the limits and the pointers.
+- Writing a skill: `harness:authoring` (`references/skill.md`: form, one home per fact, no project domain). `tests/check_skills.py` checks the frontmatter and the pointers. What reaches each agent, and when: the "What loads when" table of `skills/authoring/SKILL.md`.
 - This repo is public, so nothing in it may name a person, a machine, a private project or a domain.
   `tests/check_leaks.py` enforces it (private words come from `$HARNESS_PRIVATE_WORDS` or
   `~/.config/harness/private-words`, never stored here). Run it before pushing.
 
 ## Agents
 - Writing an agent: `harness:authoring` (`references/agent.md`).
-- A new role is added in the same change to: the roles table and the models table in
+- A new role is added in the same change to: the roles and models table in
   `skills/orchestrator/SKILL.md`, and the page (`docs/build_map.py`, `docs/map.html.in`).
 
 ## Hooks

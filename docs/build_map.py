@@ -267,7 +267,7 @@ HOOK_JOBS = {
     "commit_gate.py": "Refuses a commit message out of form or crediting an AI, and a commit that drops tests without saying why.",
     "budget.py": "Tells the main session what each agent is doing.",
     "report_gate.py": "Sends a report back when a required section is missing or out of order.",
-    "context.py": "Starts every session and agent with the tool habits and what it owes.",
+    "context.py": "Starts every session and agent with the tool habits.",
     "skill_gate.py": "Hands an agent the rules for a kind of file before its first edit of one, and the commit rules before a commit.",
     "turn.py": "Holds the main session's turn until it ends with a closing status.",
 }
@@ -297,7 +297,7 @@ EVENTS = (
     Event("Stop", "when the turn ends"),
 )
 RULES = (
-    Rule("Deleting files is refused, except named files inside the scratch folder", "stopped", "guard.py"),
+    Rule("Deleting files is refused, in the scratch folder too", "stopped", "guard.py"),
     Rule("Rewriting shared history is refused", "stopped", "guard.py"),
     Rule("A wildcard the shell would get wrong is refused", "stopped", "guard.py"),
     Rule("A commit message out of form, or crediting an AI, is refused", "stopped", "commit_gate.py"),
@@ -305,7 +305,7 @@ RULES = (
     Rule("Adding or removing packages asks you first", "asks", "guard.py"),
     Rule("A report needs its parts and a verdict", "sent-back", "report_gate.py"),
     Rule("A long turn ends with a closing status", "turn", "turn.py"),
-    Rule("A turn that ran agents names each one with its verdict", "turn", "turn.py"),
+    Rule("A turn that ran agents names each one with its verdict", "reminder", "turn.py"),
     Rule("The rules for a kind of file arrive before its first edit", "reminder", "skill_gate.py"),
     Rule("The main session gets a note of what each agent is doing", "reminder", "budget.py"),
     Rule("A shell write outside the scratch folder gets a note", "reminder", "guard.py"),
