@@ -111,7 +111,7 @@ commands to find false refusals.
 | Kind | Skills | Use |
 |---|---|---|
 | Run the job | `orchestrator`, `workflows`, `init` | How the main session works, picks a model per role, accepts a unit, picks a job shape, builds visual work mock-first, sets a project up |
-| Think | `evidence`, `spec` | Settling facts, writing and cold-reading a spec |
+| Think | `evidence`, `spec` | Settling facts and writing a spec |
 | Build | `code-python`, `code-js`, `code-html-css`, `code-shell`, `code-terraform`, `code-sql`, `code-yaml`, `code-make`, `code`, `git`, `design` | Style rules loaded before touching those files, comments, names and refactoring in any language, commits and releases, visual design |
 | Tools | `aws-cli`, `snowflake-cli` | Running those command-line tools safely: what reads, what writes, what to ask first |
 | Check | `testing`, `review` | Writing tests that can fail, reviewing a unit, finding a bug's cause, sweeping a whole repo against itself |

@@ -76,7 +76,7 @@ build/app: $(SRCS)
 ## Destructive recipes
 
 - Never `rm -rf $(VAR)` when VAR may be empty or unset: the delete can land on the wrong tree. Use a fixed path
-  (`rm -rf -- __scratch__/build`), or guard the variable on its own line before the delete:
+  (`rm -rf -- build/tmp`), or guard the variable on its own line before the delete:
 
 ```make
 clean-build:
