@@ -68,6 +68,7 @@ Local modules live in `./modules/<module_name>`.
 - Never run `plan` or `apply` against a real backend or account; a local plan with no refresh and no lock is fine.
   Deploys are the owner's: hand over the commands in run order, one copy-paste block each. Never act on a workspace
   while the owner is applying it.
+- The harness guard asks before `terraform`, `tofu` or `terragrunt` `apply`, `destroy`, `import`, `taint`, `untaint`, `force-unlock`, `state rm|mv|push` and `workspace delete`, and before `output` (it prints secrets).
 - Copy the nearest working sibling workspace or module before writing a new one, and follow the repo's own file-naming
   and folder pattern for `.tfvars` and workspaces.
 - Declare apply order between workspaces (platform before project) where the repo's deploy tool supports it.

@@ -102,8 +102,9 @@ KILL_INFORMATION = frozenset({"V", "h"})
 KILL_INFORMATION_OPTIONS = frozenset({"--help", "--version"})
 ASK_RULE = "packages"
 CLOUD_RULE = "cloud"
+SECRET_RULE = "secret"
 INSTALLER_RULE = "installer"
-ASK_RULES = (ASK_RULE, CLOUD_RULE, INSTALLER_RULE)
+ASK_RULES = (ASK_RULE, CLOUD_RULE, SECRET_RULE, INSTALLER_RULE)
 DBT_RULE = "dbt"
 SNOW_RULE = "snow"
 AGENT_RULE = "agent"
@@ -125,6 +126,10 @@ MESSAGES = {
     "is fetched) and let it run. Put the delay flag first yourself, or run the project's own tool, to skip this note.",
     CLOUD_RULE: "`{what}` writes to an AWS account, and that cannot be undone from this session, so the owner is asked first: run it "
     "yourself, or have the owner approve it. Reads (`describe-`, `list-`, `get-`, `s3 ls`) run freely; see `harness:aws-cli`.",
+    SECRET_RULE: "`{what}` reads or prints a credential (a key, a token, a `.env` file, Terraform state or an environment dump), and what it "
+    "shows stays in this session's transcript, so the owner is asked first: have the owner approve it, or work from names only (`.env.example`, "
+    "`aws configure list`, `terraform output -json` without the values). The owner turns the question off by setting `guard.ask_secrets` to false "
+    "in `~/.config/harness/config.json`; see `harness:aws-cli`.",
     DBT_RULE: "`{what}` runs dbt against a target that is not a dev one, and a shared warehouse is the owner's to change: run it "
     "with `--target dev`, or ask the owner for their word in this job. The owner gives it by listing the target under "
     "`guard.dbt_dev_targets`, or by setting `guard.block_dbt_targets` to false, in `~/.config/harness/config.json`. `dbt parse`, "
@@ -132,7 +137,9 @@ MESSAGES = {
     SNOW_RULE: "`{what}`: a write to Snowflake, or any use of a production connection, is the owner's to run or approve. Do not "
     "rephrase it. Put the SQL in a file in `/tmp/harness/<project>/`, name the exact `snow` command and what it changes, and say so in your "
     "report. The owner runs it, or sets `guard.block_snow` to false in `~/.config/harness/config.json`. Reads (`select`, `show`, "
-    "`describe`, `list`) on a non-production connection run freely; see `harness:snowflake-cli`.",
+    "`describe`, `list`) on a non-production connection run freely. A sandbox connection runs writes freely: its name holds `sandbox`, or the "
+    "owner lists it under `guard.snow_sandbox_connections` in `~/.config/harness/config.json`; even there `DROP` or `CREATE OR REPLACE` of a "
+    "database or schema, `EXECUTE` and any `prod` connection stay with the owner. See `harness:snowflake-cli`.",
     INSTALLER_RULE: "`{what}` runs code that nobody has read, so the owner is asked first: download it to a file in `/tmp/harness/<project>/`, read it, "
     "then run that file, or have the owner approve the pipe.",
     AGENT_RULE: "`{what}` writes to a repository or its history, and a sub-agent never runs a git or gh command that writes. Do not "
@@ -176,11 +183,13 @@ class Policy(NamedTuple):
     scratch: str = ""
     ask_packages: bool = False
     ask_cloud: bool = False
+    ask_secrets: bool = False
     ask_installers: bool = False
     tool_delay_days: int = 0
     block_dbt: bool = False
     dbt_dev_targets: tuple[str, ...] = ()
     block_snow: bool = False
+    snow_sandbox_connections: tuple[str, ...] = ()
     is_agent: bool = False
 
 
@@ -204,11 +213,13 @@ def get_policy(cwd: str, /) -> Policy:
         scratch=get_scratch(root, config),
         ask_packages=bool(guard.get("ask_packages") or guard.get("deny_packages")),
         ask_cloud=bool(guard.get("ask_cloud")),
+        ask_secrets=guard.get("ask_secrets") is not False,
         ask_installers=bool(guard.get("ask_installers")),
         tool_delay_days=get_delay_days(guard.get("tool_delay_days")),
         block_dbt=guard.get("block_dbt_targets") is not False,
         dbt_dev_targets=get_names(guard.get("dbt_dev_targets")),
         block_snow=guard.get("block_snow") is not False,
+        snow_sandbox_connections=get_names(guard.get("snow_sandbox_connections")),
     )
 
 
@@ -474,7 +485,12 @@ INFRASTRUCTURE_WRITES = {
     "cdk": frozenset({"deploy", "destroy", "bootstrap", "watch", "import"}),
 }
 S3_SCHEME = "s3://"
-CLOUD_TOOLS = frozenset({"aws", *INFRASTRUCTURE_WRITES})
+TERRAFORM_TOOLS = ("terraform", "tofu", "terragrunt")
+TERRAGRUNT_RUNNERS = frozenset({"run", "run-all"})
+TERRAFORM_WRITES = frozenset({"apply", "destroy", "import", "taint", "untaint", "force-unlock"})
+TERRAFORM_STATE_WRITES = frozenset({"rm", "mv", "push", "replace-provider"})
+TERRAFORM_INFORMATION_OPTIONS = frozenset({"-help", "--help"})
+CLOUD_TOOLS = frozenset({"aws", *INFRASTRUCTURE_WRITES, *TERRAFORM_TOOLS})
 CLOUD_WRAPPERS = frozenset({"npx", "bunx", "pnpx", "uv", "uvx", "poetry", "pnpm", "npm", "yarn", "bun", "pipx"})
 FETCHERS = frozenset({"curl", "wget", "fetch"})
 CODE_READERS = frozenset({"node", "perl", "ruby"})
@@ -520,6 +536,27 @@ def is_aws_read(arguments: list[str], /) -> bool:
     return operation in AWS_SERVICE_READS.get(service, frozenset()) or operation in AWS_READ_OPERATIONS or operation.startswith(AWS_READ_PREFIXES)
 
 
+def get_subcommand_words(arguments: list[str], /) -> list[str]:
+
+    words = [argument for argument in arguments if not argument.startswith("-")]
+    while words[:1] and words[0] in TERRAGRUNT_RUNNERS:
+        words = words[1:]
+
+    return words
+
+
+def get_terraform_write(words: list[str], /) -> str:
+
+    verb = words[0].removesuffix("-all") if words else ""
+    following = words[1] if len(words) > 1 else ""
+    if verb in TERRAFORM_WRITES:
+        return verb
+    if verb == "state" and following in TERRAFORM_STATE_WRITES:
+        return f"state {following}"
+
+    return "workspace delete" if verb == "workspace" and following == "delete" else ""
+
+
 def get_cloud_label(command: Command, /) -> str:
 
     name = os.path.basename(command.name)
@@ -529,9 +566,126 @@ def get_cloud_label(command: Command, /) -> str:
         return get_cloud_label(Command(arguments[wrapped], command.arguments[wrapped + 1 :])) if wrapped >= 0 else ""
     if name == "aws":
         return "" if is_aws_read(arguments) else " ".join(["aws", *get_positionals(arguments, AWS_VALUE_OPTIONS)[:2]])
+    if name in TERRAFORM_TOOLS:
+        write = get_terraform_write(get_subcommand_words(arguments))
+        return f"{name} {write}" if write and not TERRAFORM_INFORMATION_OPTIONS & set(arguments) else ""
     writes = INFRASTRUCTURE_WRITES.get(name, frozenset()) & set(arguments)
 
     return f"{name} {min(writes)}" if writes and "--help" not in arguments else ""
+
+
+AWS_SECRET_OPERATIONS = frozenset({
+    "get-secret-value", "batch-get-secret-value", "get-session-token", "get-federation-token", "get-login-password", "get-authorization-token",
+    "generate-db-auth-token", "get-role-credentials", "export-credentials",
+})
+AWS_SECRET_SERVICE_OPERATIONS = {
+    "configure": frozenset({"get"}),
+    "eks": frozenset({"get-token"}),
+    "s3": frozenset({"presign"}),
+    "lambda": frozenset({"get-function", "get-function-configuration"}),
+}
+AWS_PARAMETER_READS = frozenset({"get-parameter", "get-parameters", "get-parameters-by-path"})
+AWS_DECRYPTION_OPTION = "--with-decryption"
+AWS_ROLE_PREFIX = "assume-role"
+SECRET_FILE_NAMES = frozenset({".envrc", ".netrc", ".git-credentials", ".npmrc", ".pypirc"})
+SECRET_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".tfstate", ".tfstate.backup")
+SECRET_FILE_PATHS = (
+    (".snowflake", "connections.toml"), (".snowflake", "config.toml"), (".dbt", "profiles.yml"), (".config", "gh", "hosts.yml"),
+    (".docker", "config.json"), (".kube", "config"),
+)
+ENV_FILE_PREFIX = ".env"
+ENV_TEMPLATE_SUFFIXES = frozenset({"example", "sample", "template", "dist"})
+ENV_GLOB_STARTS = ("*", "?", "[")
+AWS_FOLDER = ".aws"
+AWS_PUBLIC_FILE = "config"
+SSH_FOLDER = ".ssh"
+SSH_KEY_PREFIX = "id_"
+SSH_PUBLIC_SUFFIX = ".pub"
+NON_PATH_CHARACTERS = "\\|()^"
+SECRET_PATTERN_OPTIONS = frozenset({*(option for options in GLOB_PATTERN_OPTIONS.values() for option in options), "-e", "--regexp"})
+SECRET_NEUTRAL_COMMANDS = frozenset("ls stat file test [ [[ echo printf touch mkdir wc du which chmod chown cd pwd basename dirname realpath readlink".split())
+
+
+def is_env_file(name: str, /) -> bool:
+
+    suffix = name.removeprefix(ENV_FILE_PREFIX)
+    if suffix == name:
+        return False
+    is_template = suffix[1:].rsplit(".", 1)[-1] in ENV_TEMPLATE_SUFFIXES
+
+    return suffix == "" or suffix.startswith(ENV_GLOB_STARTS) or (suffix.startswith(".") and not is_template)
+
+
+def is_secret_path(path: str, /) -> bool:
+
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return False
+    name, folders = parts[-1], parts[:-1]
+    is_aws_file = AWS_FOLDER in folders and not (folders[-1] == AWS_FOLDER and name == AWS_PUBLIC_FILE)
+    is_ssh_key = folders[-1:] == [SSH_FOLDER] and name.startswith(SSH_KEY_PREFIX) and not name.endswith(SSH_PUBLIC_SUFFIX)
+    is_listed = any(tuple(parts[-len(listed) :]) == listed for listed in SECRET_FILE_PATHS)
+    is_named = name in SECRET_FILE_NAMES or name.endswith(SECRET_FILE_SUFFIXES)
+
+    return is_env_file(name) or is_aws_file or is_ssh_key or is_listed or is_named
+
+
+def get_secret_operand(arguments: list[str], /) -> str:
+
+    for index, argument in enumerate(arguments):
+        previous = arguments[index - 1] if index else ""
+        option, _, value = argument.partition("=")
+        is_pattern = previous in SECRET_PATTERN_OPTIONS or option in SECRET_PATTERN_OPTIONS
+        is_text = any(character.isspace() or character in NON_PATH_CHARACTERS for character in argument)
+        if not is_pattern and not is_text and (is_secret_path(argument) or is_secret_path(value)):
+            return argument
+
+    return ""
+
+
+def get_aws_secret_label(arguments: list[str], /) -> str:
+
+    positionals = get_positionals(arguments, AWS_VALUE_OPTIONS)
+    service, operation = ([*positionals, "", ""])[:2]
+    is_service_secret = operation in AWS_SECRET_SERVICE_OPERATIONS.get(service, frozenset())
+    is_decrypted = service == "ssm" and operation in AWS_PARAMETER_READS and AWS_DECRYPTION_OPTION in arguments
+    is_secret = operation in AWS_SECRET_OPERATIONS or operation.startswith(AWS_ROLE_PREFIX) or is_service_secret or is_decrypted
+
+    return f"aws {service} {operation}" if is_secret else ""
+
+
+def get_terraform_secret_label(command: Command, /) -> str:
+
+    for tool in TERRAFORM_TOOLS:
+        arguments = get_tool_arguments(command, tool)
+        if arguments is not None and get_subcommand_words(arguments)[:1] == ["output"]:
+            return f"{tool} output"
+
+    return ""
+
+
+def get_secret_label(segment: Segment, command: Command, /) -> str:
+
+    name = os.path.basename(command.name)
+    arguments = [word.text for word in command.arguments]
+    if name == "printenv":
+        return "printenv"
+    if not name and any(os.path.basename(word.text) == "env" for word in segment.words):
+        return "env"
+    aws = get_tool_arguments(command, "aws")
+    aws_label = get_aws_secret_label(aws) if aws is not None else ""
+    gh = get_tool_arguments(command, "gh")
+    is_gh_token = gh is not None and get_positionals(gh, GH_VALUE_OPTIONS)[:2] == ["auth", "token"]
+    operand = "" if name in SECRET_NEUTRAL_COMMANDS else get_secret_operand(arguments)
+
+    return aws_label or ("gh auth token" if is_gh_token else "") or get_terraform_secret_label(command) or (f"{name} {operand}" if operand else "")
+
+
+def get_read_secret_label(tool_input: dict, /) -> str:
+
+    path = str(tool_input.get("file_path") or "")
+
+    return f"Read {path}" if is_secret_path(path) else ""
 
 
 def reads_stdin_as_code(name: str, arguments: list[str], /) -> bool:
@@ -608,6 +762,8 @@ SNOW_VERBS = frozenset({"deploy", "drop", "execute"})
 SNOW_WRITE_COMMANDS = frozenset({("object", "create"), ("stage", "remove")})
 SNOW_PRODUCTION_WORD = "prod"
 SNOW_PATH_LENGTH = 3
+SNOW_SANDBOX_WORD = "sandbox"
+SNOW_CONTAINERS = frozenset({"DATABASE", "SCHEMA"})
 SQL_WRITES = frozenset({
     "CREATE", "ALTER", "DROP", "TRUNCATE", "DELETE", "UPDATE", "INSERT", "MERGE", "GRANT", "REVOKE", "CALL", "EXECUTE", "PUT", "REMOVE",
     "COPY", "UNDROP",
@@ -697,10 +853,17 @@ def find_sql_write(text: str, /) -> str:
     return next((keyword for keyword in keywords if keyword), "")
 
 
-def get_snow_sql_write(arguments: list[str], directory: str | None, /) -> str:
+def get_snow_sql_texts(arguments: list[str], directory: str | None, /) -> list[str]:
 
     texts = get_option_values(arguments, "q", "--query")
     texts.extend(read_sql_file(filename, directory) for filename in get_option_values(arguments, "f", "--filename"))
+
+    return texts
+
+
+def get_snow_sql_write(arguments: list[str], directory: str | None, /) -> str:
+
+    texts = get_snow_sql_texts(arguments, directory)
     keywords = (find_sql_write(text) for text in texts)
 
     return next((keyword for keyword in keywords if keyword), "")
@@ -721,7 +884,33 @@ def get_snow_write(arguments: list[str], directory: str | None, /) -> str:
     return f"snow {' '.join(path[:end])}" if verbs or is_command or is_upload else ""
 
 
-def get_snow_label(segment: Segment, command: Command, directory: str | None, /) -> str:
+def is_container_statement(statement: str, /) -> bool:
+
+    words = [word.upper() for word in SQL_WORD.findall(statement)[:5]]
+    is_drop = words[:1] == ["DROP"] and bool(SNOW_CONTAINERS & set(words[1:3]))
+    is_replace = words[:3] == ["CREATE", "OR", "REPLACE"] and bool(SNOW_CONTAINERS & set(words[3:5]))
+
+    return is_drop or is_replace or words[:1] == ["EXECUTE"]
+
+
+def is_snow_sandbox_unsafe(arguments: list[str], directory: str | None, /) -> bool:
+
+    path = get_positionals(arguments, SNOW_VALUE_OPTIONS)
+    if path[:1] == ["sql"]:
+        statements = (statement for text in get_snow_sql_texts(arguments, directory) for statement in SQL_NOISE.sub(" ", text).split(";"))
+        return any(is_container_statement(statement) for statement in statements)
+
+    return path[:2] == ["object", "drop"] and bool(SNOW_CONTAINERS & {word.upper() for word in path[2:3]})
+
+
+def is_sandbox_connection(name: str, policy: Policy, /) -> bool:
+
+    lowered = name.lower()
+
+    return not is_unexpanded(name) and (SNOW_SANDBOX_WORD in lowered or lowered in policy.snow_sandbox_connections)
+
+
+def get_snow_label(segment: Segment, command: Command, directory: str | None, policy: Policy, /) -> str:
 
     arguments = get_tool_arguments(command, SNOW_TOOL)
     if arguments is None:
@@ -733,8 +922,11 @@ def get_snow_label(segment: Segment, command: Command, directory: str | None, /)
         *get_assigned_environment(segment, SNOW_CONNECTION_VARIABLE),
     ]
     production = next((name for name in connections if SNOW_PRODUCTION_WORD in name.lower()), "")
+    if production:
+        return write or f"snow with the production connection {production}"
+    is_sandbox = bool(connections) and all(is_sandbox_connection(name, policy) for name in connections)
 
-    return write or (f"snow with the production connection {production}" if production else "")
+    return "" if is_sandbox and not is_snow_sandbox_unsafe(arguments, directory) else write
 
 
 MIN_PREFIX = 3
@@ -1263,7 +1455,7 @@ def get_hidden_command(command: Command, text: str, policy: Policy, /) -> str:
 
 def find_script_command(script: str, policy: Policy, /) -> str:
 
-    findings = Findings([], [], [], [], [], [], [], [], [], [])
+    findings = new_findings()
     find_breaches(get_segments(script), None, False, policy, findings, script)
 
     return next(iter(findings.denied + findings.hidden), "") or next(
@@ -1599,6 +1791,12 @@ class Findings(NamedTuple):
     dbt: list[str]
     snow: list[str]
     agent: list[str]
+    secret: list[str]
+
+
+def new_findings() -> Findings:
+
+    return Findings(*([] for _ in Findings._fields))
 
 
 def find_breaches(
@@ -1629,7 +1827,7 @@ def find_breaches(
 def find_command_breaches(command: str, cwd: str | None, policy: Policy, /, *, is_background: bool = False, findings: Findings | None = None) -> list[str]:
 
     is_zsh = os.path.basename(os.environ.get("SHELL") or "") == "zsh"
-    collected = findings if findings is not None else Findings([], [], [], [], [], [], [], [], [], [])
+    collected = findings if findings is not None else new_findings()
 
     return find_breaches(get_segments(command), cwd, is_zsh, policy, collected, command, scope=Scope(command))
 
@@ -1653,7 +1851,9 @@ def get_command_breaches(
     cloud = get_cloud_label(command) if policy.ask_cloud else ""
     findings.cloud.extend([cloud] if cloud else [])
     dbt = get_dbt_label(segment, command, policy) if policy.block_dbt else ""
-    snow = get_snow_label(segment, command, directory) if policy.block_snow else ""
+    snow = get_snow_label(segment, command, directory, policy) if policy.block_snow else ""
+    secret = get_secret_label(segment, command) if policy.ask_secrets else ""
+    findings.secret.extend([secret] if secret else [])
     findings.dbt.extend([dbt] if dbt else [])
     findings.snow.extend([snow] if snow else [])
     agent = get_agent_label(command) if policy.is_agent else ""
@@ -1672,6 +1872,7 @@ def get_command_breaches(
         (ASK_RULE, is_asked and delay is None),
         ("delay", delay is not None and not delay.is_flagged),
         (CLOUD_RULE, bool(cloud)),
+        (SECRET_RULE, bool(secret)),
         (DBT_RULE, bool(dbt)),
         (SNOW_RULE, bool(snow)),
         ("glob", bool(missing)),
@@ -1815,11 +2016,12 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     denied = MESSAGES["denied"].format(what=(findings.denied or ["this git command"])[0])
     hidden = MESSAGES["hidden"].format(what=(findings.hidden or ["this command"])[0])
     cloud = MESSAGES[CLOUD_RULE].format(what=(findings.cloud or ["this command"])[0])
+    secret = MESSAGES[SECRET_RULE].format(what=(findings.secret or ["this command"])[0])
     installer = MESSAGES[INSTALLER_RULE].format(what=(findings.installer or ["this command"])[0])
     dbt = MESSAGES[DBT_RULE].format(what=(findings.dbt or ["this dbt command"])[0])
     snow = MESSAGES[SNOW_RULE].format(what=(findings.snow or ["this snow command"])[0])
     agent = MESSAGES[AGENT_RULE].format(what=(findings.agent or ["this command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
+    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, SECRET_RULE: secret, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
     lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
         reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)
@@ -1831,12 +2033,25 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     return 2
 
 
+def refuse_read(tool_input: dict, cwd: str, /) -> int:
+
+    label = get_read_secret_label(tool_input)
+    if not label or not get_policy(cwd).ask_secrets:
+        return 0
+    findings = new_findings()
+    findings.secret.append(label)
+
+    return refuse([SECRET_RULE], findings)
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
+    if event.get("tool_name") == "Read":
+        return refuse_read(tool_input, cwd)
     policy = get_policy(cwd)._replace(is_agent=bool(event.get("agent_id")))
-    findings = Findings([], [], [], [], [], [], [], [], [], [])
+    findings = new_findings()
     if event.get("tool_name") == "Bash":
         command = tool_input.get("command") or ""
         breaches = find_command_breaches(command, cwd, policy, findings=findings)

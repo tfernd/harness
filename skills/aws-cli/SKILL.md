@@ -24,6 +24,7 @@ No comments or docstrings: `harness:code`. Templates in Terraform: `harness:code
   role you are on.
 - Add `--output json --no-cli-pager` when you parse the result, and `--query` to keep the output small.
 - Keys never go on a command line or into a file; use a profile or the environment.
+- The harness guard asks before a call that returns a secret (`secretsmanager get-secret-value`, `ssm get-parameter --with-decryption`, `sts assume-role`, `ecr get-login-password`, `s3 presign`, `lambda get-function`) and before `.env`, `~/.aws` or `printenv` reads: use `describe-` and `list-` calls and names instead.
 
 ## Lambda
 

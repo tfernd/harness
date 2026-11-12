@@ -585,9 +585,9 @@ GUARD_CASES = (
         "aws ec2 describe-instances", "aws iam list-users", "aws iam get-user", "aws ssm get-parameter --name n",
         "aws lambda batch-get-functions", "aws s3api head-object --bucket b --key k", "aws cloudtrail lookup-events",
         "aws quicksight search-dashboards --aws-account-id 1", "aws logs filter-log-events --log-group-name g", "aws ec2 wait instance-running --instance-ids i-1",
-        "aws s3 ls", "aws s3 ls s3://b --recursive", "aws s3 presign s3://b/k", "aws s3 cp s3://b/k ./k", "aws s3 cp s3://b/k -",
+        "aws s3 ls", "aws s3 ls s3://b --recursive", "aws s3 cp s3://b/k ./k", "aws s3 cp s3://b/k -",
         "aws s3 sync s3://b ./d", "aws s3 sync s3://b ./d --exclude '*.tmp'", "aws sts get-caller-identity", "aws logs tail g --follow",
-        "aws configure list", "aws configure get region", "aws configure list-profiles", "aws help", "aws --version", "aws", "aws ec2 help",
+        "aws configure list", "aws configure list-profiles", "aws help", "aws --version", "aws", "aws ec2 help",
         "aws s3 cp help", "aws ec2 run-instances --help",
         "aws --profile p --region eu-west-1 --output json --no-cli-pager --debug ec2 describe-instances",
         "aws --endpoint-url http://x --profile p s3 ls", "aws ec2 --region r describe-volumes", "sudo aws iam list-users",
@@ -956,6 +956,98 @@ GUARD_CASES = (
         bash("rm in the scratchpad of another account is refused", f"rm -rf /tmp/claude-{os.getuid() + 1}/p/s/scratchpad/out", True, DELETE),
     bash("rm in a scratchpad outside a claude folder is refused", "rm -rf /tmp/p/scratchpad/out", True, DELETE),
     Case("an unexpected error in the guard lets the call run", ("guard.py",), {"tool_name": "Bash", "tool_input": "rm -rf /"}, False, "failed and let the call run", STRICT, is_exit_one=True),
+)
+
+
+def read_call(name: str, path: str, blocks: bool, text: str = "", /, **options: object) -> Case:
+    event = {"tool_name": "Read", "tool_input": {"file_path": path}}
+
+    return Case(name, ("guard.py",), event, blocks, text, **options)
+
+
+SECRET = "reads or prints a credential"
+SECRET_FILES = (
+    "cat .env", "cat .env.local", "cat .env.production", "head -n 3 .env.staging", "cat '.env*'", "source .env", ". .env", "cat .envrc", "grep KEY .env",
+    "cp .env /tmp/harness/x/env", "base64 .env", "less ~/.aws/credentials", "cat ~/.aws/sso/cache/token.json", "cat $HOME/.aws/credentials", "tail ~/.ssh/id_rsa", "cat ~/.ssh/id_ed25519",
+    "cat server.pem", "cat certs/tls.key", "base64 cert.p12", "cat cert.pfx", "cat store.jks", "cat ~/.netrc", "cat ~/.git-credentials", "cat ~/.npmrc",
+    "cat .npmrc", "cat ~/.pypirc", "cat terraform.tfstate", "grep password infra/prod.tfstate.backup", "cat ~/.snowflake/connections.toml",
+    "cat ~/.snowflake/config.toml", "cat ~/.dbt/profiles.yml", "cat ~/.config/gh/hosts.yml", "cat ~/.docker/config.json", "cat ~/.kube/config",
+    "docker run --env-file .env img", "docker run --env-file=.env img", "bash -c 'cat .env'", "cd app && cat .env", "uv run python tool.py .env",
+)
+SECRET_PRINTS = (
+    "printenv", "printenv HOME", "printenv | grep TOKEN", "env", "env | sort", "FOO=1 env", "env -i",
+    "aws secretsmanager get-secret-value --secret-id s", "aws secretsmanager batch-get-secret-value --secret-id-list s", "aws ssm get-parameter --name n --with-decryption",
+    "aws ssm get-parameters --names n --with-decryption", "aws ssm get-parameters-by-path --path / --with-decryption", "aws sts get-session-token", "aws sts assume-role --role-arn r --role-session-name s",
+    "aws sts assume-role-with-web-identity --role-arn r", "aws sts get-federation-token --name n", "aws configure get aws_access_key_id", "aws configure get region", "aws configure export-credentials",
+    "aws ecr get-login-password", "aws ecr get-authorization-token", "aws ecr-public get-login-password", "aws eks get-token --cluster-name c", "aws rds generate-db-auth-token --hostname h",
+    "aws sso get-role-credentials --role-name r", "aws s3 presign s3://b/k", "aws lambda get-function --function-name f", "aws lambda get-function-configuration --function-name f",
+    "aws --profile p --region r secretsmanager get-secret-value --secret-id s", "uv run aws secretsmanager get-secret-value --secret-id s", "gh auth token", "gh --repo a/b auth token",
+    "terraform output", "terraform output -json", "tofu output db_password", "terragrunt output", "terragrunt run-all output", "terraform -chdir=infra output",
+)
+SECRET_PASSES = (
+    ".env.example", "cat .env.example", "cat .env.sample", "cat .env.template", "cat .env.dist", "cat app/.env.local.example", "cat ~/.ssh/id_ed25519.pub", "cat ~/.ssh/config", "cat ~/.ssh/known_hosts",
+    "cat ~/.aws/config", "ls ~/.aws/credentials", "ls .env", "echo .env", "touch .env", "test -f .env", "cat .environment", "cat README.md", "cat src/key_store.py", "cat notes.key.md",
+    "env FOO=1 make test", "env -u HOME make test", "FOO=1 env make test", "env -C /tmp ls", "aws s3 ls", "aws lambda list-functions", "aws ssm get-parameter --name n", "aws ssm get-parameters-by-path --path /",
+    "aws sts get-caller-identity", "aws configure list", "aws ecr describe-repositories", "aws secretsmanager list-secrets", "aws secretsmanager describe-secret --secret-id s", "aws eks describe-cluster --name c",
+    "gh auth status", "gh pr list", "terraform plan", "terraform validate", "terraform fmt", "terraform init", "terraform show", "terraform state list", "terraform state show aws_s3_bucket.b",
+    "tofu plan", "terragrunt plan", "terragrunt run-all plan", "echo printenv", "grep -n env README.md", "git log --oneline",
+    "find . -not -name '*.key'", "grep -e '\\.key' src", "rg -g '*.pem' x", "grep -rn --include='*.key' x .", "grep -n '.key ==' f.js", "grep -n 'a|.key' f.js", "find . -name '*.pem' -o -name '*.p12'",
+)
+SECRET_ASK_OFF = {"guard": {"ask_secrets": False}}
+TERRAFORM_WRITES = (
+    "terraform apply", "terraform apply -auto-approve", "terraform -chdir=infra apply", "terraform destroy", "terraform import aws_s3_bucket.b b", "terraform taint aws_s3_bucket.b",
+    "terraform untaint aws_s3_bucket.b", "terraform force-unlock abc", "terraform state rm aws_s3_bucket.b", "terraform state mv a b", "terraform state push x.tfstate",
+    "terraform state replace-provider a b", "terraform workspace delete w", "tofu apply", "tofu destroy -auto-approve", "terragrunt apply", "terragrunt run-all apply", "terragrunt run --all -- apply",
+    "terragrunt destroy", "terragrunt apply-all", "terragrunt state rm a", "uvx terraform apply", "cd infra && terraform apply", "bash -c 'terraform apply'",
+)
+SNOW_SANDBOX_PASSES = (
+    "snow sql -q 'create table t(a int)' -c sandbox", "snow sql -q 'drop table t' -c my_sandbox", "snow sql -q 'insert into t values (1)' --connection Sandbox_Dev", "snow sql -q 'create schema s' --connection=sandbox",
+    "snow sql -q 'create or replace table t(a int)' -c sandbox", "snow sql -q 'drop schema_audit' -c sandbox", "snow object create table --json x -c sandbox", "snow app deploy -c sandbox",
+    "snow object drop table t -c sandbox", "SNOWFLAKE_DEFAULT_CONNECTION_NAME=sandbox snow sql -q 'delete from t'", "snow sql -f write.sql -c sandbox", "cd x && snow sql -q 'truncate t' -c sandbox",
+)
+SNOW_SANDBOX_BLOCKS = (
+    "snow sql -q 'drop database d' -c sandbox", "snow sql -q 'DROP SCHEMA IF EXISTS s' -c sandbox", "snow sql -q 'select 1; drop database d' -c sandbox", "snow sql -q 'create or replace database d' -c sandbox",
+    "snow sql -q 'create or replace transient schema s' -c sandbox", "snow sql -q \"execute immediate 'drop database d'\" -c sandbox", "snow object drop database d -c sandbox", "snow object drop schema d.s -c sandbox",
+    "snow sql -q 'create table t(a int)' -c sandbox_prod", "snow sql -q 'select 1' -c prod", "snow sql -q 'select 1' -c prod_sandbox", "snow sql -q 'create table t(a int)'", "snow sql -q 'create table t(a int)' -c dev",
+    "snow sql -q 'create table t(a int)' -c sandbox -c dev", "snow sql -q 'create table t(a int)' -c $SANDBOX", "SNOWFLAKE_DEFAULT_CONNECTION_NAME=dev snow sql -q 'create table t(a int)'",
+)
+SECRET_CASES = (
+    *(bash(f"secret asks: {command!r}", command, True, SECRET, config=None) for command in (*SECRET_FILES, *SECRET_PRINTS)),
+    *(bash(f"secret runs: {command!r}", command, False, config=None) for command in SECRET_PASSES),
+    *(agent_bash(f"secret asks a sub-agent: {command!r}", command, True, SECRET) for command in ("cat .env", "aws secretsmanager get-secret-value --secret-id s", "printenv")),
+    *(read_call(f"secret read asks: {path!r}", path, True, SECRET, config=None) for path in (
+        "/srv/u/app/.env", "/srv/u/app/.env.local", "/srv/u/.aws/credentials", "/srv/u/.aws/sso/cache/a.json", "/srv/u/.ssh/id_rsa", "/srv/u/.ssh/id_ed25519", "/x/server.pem", "/x/tls.key",
+        "/x/a.p12", "/x/a.pfx", "/x/a.jks", "/srv/u/.netrc", "/srv/u/.git-credentials", "/srv/u/.npmrc", "/srv/u/.pypirc", "/x/terraform.tfstate", "/x/terraform.tfstate.backup",
+        "/srv/u/.snowflake/connections.toml", "/srv/u/.snowflake/config.toml", "/srv/u/.dbt/profiles.yml", "/srv/u/.config/gh/hosts.yml", "/srv/u/.docker/config.json", "/srv/u/.kube/config", "/x/.envrc",
+    )),
+    *(read_call(f"secret read runs: {path!r}", path, False, config=None) for path in (
+        "/srv/u/app/.env.example", "/srv/u/app/.env.sample", "/srv/u/app/.env.template", "/srv/u/app/.env.dist", "/srv/u/.ssh/id_ed25519.pub", "/srv/u/.ssh/config", "/srv/u/.aws/config",
+        "/srv/u/app/README.md", "/srv/u/app/src/keys.py", "/srv/u/.config/other/hosts.yml",
+    )),
+    read_call("secret read: an override lets it run", "/srv/u/app/.env", False, config=SECRET_ASK_OFF),
+    read_call("secret read: the reason is an ask", "/srv/u/app/.env", True, ASK, config=None, lacks="Blocked"),
+    read_call("secret read: the reason names the file", "/srv/u/app/.env", True, "`Read /srv/u/app/.env`", config=None),
+    bash("secret: the ask reason names the command", "cat .env", True, "`cat .env`", config=None, lacks="Blocked"),
+    bash("secret: the ask reason says how to turn it off", "cat .env", True, "guard.ask_secrets", config=None),
+    bash("secret: an override lets a secret read run", "cat .env", False, config=SECRET_ASK_OFF),
+    bash("secret: an override keeps the cloud question", "aws s3 rm s3://b/k", True, CLOUD, config=SECRET_ASK_OFF),
+    bash("secret: an override of the cloud question keeps the secret question", "cat .env", True, SECRET, config={"guard": {"ask_cloud": False}}),
+    bash("secret: a delete beside a secret read is refused outright", "cat .env; rm a", True, "Blocked by the harness guard", config=None, lacks="permissionDecision"),
+    bash("secret: a secret read through ssh asks", "ssh host cat .env", True, SECRET, config=None),
+    *(bash(f"terraform asks: {command!r}", command, True, CLOUD, config=None, files=(("node_modules/.bin/terraform", ""),)) for command in TERRAFORM_WRITES),
+    bash("terraform: the ask reason names the command", "terraform apply", True, "`terraform apply`", config=None, lacks="Blocked"),
+    bash("terraform: an override lets apply run", "terraform apply", False, config={"guard": {"ask_cloud": False}}),
+    bash("terraform: plan beside apply asks", "terraform plan && terraform apply", True, CLOUD, config=None),
+    bash("terraform: help runs", "terraform apply -help", False, config=None),
+    *(bash(f"snow sandbox runs: {command!r}", command, False, config=None, files=SNOW_WRITE_FILES) for command in SNOW_SANDBOX_PASSES),
+    *(bash(f"snow sandbox still blocks: {command!r}", command, True, SNOW_TEXT, config=None, files=SNOW_WRITE_FILES) for command in SNOW_SANDBOX_BLOCKS),
+    bash("snow sandbox: an owner-listed connection runs writes", "snow sql -q 'create table t(a int)' -c scratch_one", False, config={"guard": {"snow_sandbox_connections": ["scratch_one"]}}),
+    bash("snow sandbox: a listed connection is matched whatever its case", "snow sql -q 'create table t(a int)' -c Scratch_One", False, config={"guard": {"snow_sandbox_connections": ["SCRATCH_one"]}}),
+    bash("snow sandbox: a listed connection leaves the others blocked", "snow sql -q 'create table t(a int)' -c dev", True, SNOW_TEXT, config={"guard": {"snow_sandbox_connections": ["scratch_one"]}}),
+    bash("snow sandbox: a listed connection holding prod stays blocked", "snow sql -q 'select 1' -c scratch_prod", True, SNOW_TEXT, config={"guard": {"snow_sandbox_connections": ["scratch_prod"]}}),
+    bash("snow sandbox: a listed connection still blocks drop database", "snow sql -q 'drop database d' -c scratch_one", True, SNOW_TEXT, config={"guard": {"snow_sandbox_connections": ["scratch_one"]}}),
+    bash("snow sandbox: the refusal says how to mark a sandbox", "snow sql -q 'create table t(a int)' -c dev", True, "guard.snow_sandbox_connections", config=None),
+    bash("snow sandbox: a sandbox read runs", "snow sql -q 'select 1' -c sandbox", False, config=None),
 )
 
 
@@ -2174,7 +2266,7 @@ PIPEFAIL_UNCHANGED = (
     "cargo fmt | tail",
     "go mod tidy | tail",
     "terraform fmt | tail",
-    "terraform apply | tail",
+    "terraform show | tail",
     "uv run python script.py | tail",
     "python tests/run_cases.py | tail",
     "sh -c 'cd src; pytest | tail -5'",
@@ -2463,7 +2555,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

@@ -22,7 +22,7 @@ ROUTES = {
     "PreToolUse": (
         ("", "budget.py", ""),
         ("SubagentHandback", "report_gate.py", "handback"),
-        ("Bash|Write|Edit|NotebookEdit", "guard.py", ""),
+        ("Bash|Write|Edit|NotebookEdit|Read", "guard.py", ""),
         ("Bash|Write|Edit|NotebookEdit", "skill_gate.py", ""),
         ("Bash", "commit_gate.py", ""),
     ),

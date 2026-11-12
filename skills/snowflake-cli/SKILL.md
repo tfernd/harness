@@ -23,6 +23,7 @@ SQL itself (DDL, dynamic tables, procedures, cost): `harness:code-sql`. No comme
 - Propose a write with the exact command and what it changes (objects created, replaced, dropped; rows touched; stage paths).
 - A production connection is never used, even to read, without the owner's word.
 - The harness guard refuses a `snow` write (a write statement in `-q` or `-f`, `snow object create|drop`, a `deploy`, `drop` or `execute` command) and any call on a connection with `prod` in its name. A refusal is not a reason to rephrase the command: put the SQL in `/tmp/harness/<project>/` and propose it.
+- A sandbox connection (its name holds `sandbox`, or the owner lists it under `guard.snow_sandbox_connections`) runs writes without a refusal; `DROP` or `CREATE OR REPLACE` of a database or schema and `EXECUTE` still go to the owner.
 - A read that could be large carries `LIMIT`; use `--format json` when a program parses the result.
 - Check `snow <cmd> --help` for a flag before relying on it.
 - SQL with quoted identifiers goes in a file run with `-f`, never nested in `-q`: the shell strips the inner quotes.
