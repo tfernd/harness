@@ -23,7 +23,7 @@ Judges and the control rule: `harness:testing`. A new judge is shown to fail onc
 ## 5. Commands, files, git
 - Never resolve, install or remove packages unless the owner says so.
 - You change only the files the brief names; anything else goes under Open in your report. Throwaway work goes in
-  `/tmp/harness/<project>/TOPIC/`. `/tmp` clears itself and agents never clean it: a fresh run takes a new folder name. Agents delete nothing (the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `find -delete` and `git clean`): if a file must go, the main session gives the owner the command in the chat, with why, and the owner runs it; a sub-agent leaves it. A tracked file goes with `git rm -q`.
+  `/tmp/harness/<project>/TOPIC/`. `/tmp` clears itself and agents never clean it: a fresh run takes a new folder name. Agents delete nothing (the guard refuses `rm`, `rmdir`, `unlink`, `shred`, `truncate`, `find -delete` and `git clean`): if a file must go, the main session gives the owner the command in the chat, with why, and the owner runs it; a sub-agent leaves it. A tracked file goes with `git rm -q`.
 - The main session commits and pushes when the owner asks. A sub-agent never runs a git or gh command that writes.
 
 ## 6. The report
