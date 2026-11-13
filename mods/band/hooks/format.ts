@@ -20,6 +20,24 @@ export const formatShort = (milliseconds: number): string => {
   return seconds < 3600 ? `${Math.floor(seconds / 60)}m${pad(seconds % 60)}` : `${Math.floor(seconds / 3600)}h${pad(Math.floor((seconds % 3600) / 60))}`
 }
 
+export const formatAge = (milliseconds: number): string => {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000))
+
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m${pad(seconds % 60)}s`
+  }
+
+  if (seconds < 86_400) {
+    return `${Math.floor(seconds / 3600)}h${pad(Math.floor((seconds % 3600) / 60))}m`
+  }
+
+  return `${Math.floor(seconds / 86_400)}d${Math.floor((seconds % 86_400) / 3600)}h`
+}
+
 export const formatSpan = (milliseconds: number): string => {
   const seconds = Math.max(0, Math.floor(milliseconds / 1000))
 

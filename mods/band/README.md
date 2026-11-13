@@ -6,9 +6,12 @@ and direct); folded it keeps the band row and one thin live trace per agent. Loo
 
 ## The desktop view
 
-Folded it is one row: running, done and failed counts, a tiny lane stack, the session cost, context %, and a mini bar per rate limit. Unfolded it shows the counts, the cost and the fold chevron, then each limit once as a full bar (known kinds are named Session and Week; any other kind is named from its kind string), then the timeline: the main session as its own lane, then one lane per agent with its state, tool, time, tokens and estimated cost. Ranges: 1m, 5m, 1h, session. With no limits (API billing) the blocks show session cost, the agents' estimate, tokens, turns and elapsed. At 80% context a "Long session" note offers Dismiss.
+Folded it is one row: a ring of concentric arcs (5-hour, week, Fable when the host reports it, context), each in its own colour with a legend that names it in the same colour, then "main" and its state, a tiny lane stack, the running, done and failed counts, the session cost and a chevron.
 
-Per-agent cost is tokens times a per-model price (`hooks/cost.ts`, one table); a model not in it shows tokens only. Prices are list prices and an estimate.
+Unfolded it is a left gutter and a tile column. The gutter shows each arc with a bar in its colour, then the session total, main est. and agents est. (with tokens in and out under API billing). The tiles, two across, are main first and then each agent: name, model, state icon and word, detail, a 24-cell strip for the chosen range (1m, 5m, 1h, all), time, tokens and estimated cost; hover shows the full facts. An empty slot reads "No agents yet this session." or "+N ended earlier".
+
+Per-agent cost is tokens times a per-model price (`hooks/cost.ts`, one table); a model not in it shows tokens only. Prices are list prices and an estimate. Main est. is the session total minus the agents' estimate, or main's own token estimate when the host gives no total.
+
 
 ## Install it
 
@@ -43,7 +46,7 @@ drops its state column under 60 columns and the cards go from three to fewer.
 
 ## Known limits
 
-- Rasters exist on the terminal surface only; the desktop surface draws the lanes as native Boxes, repainted when the
+- Rasters exist on the terminal surface only; the desktop surface draws the ring, bars, strips and lanes as small Svgs, repainted when the
   tree is rebuilt (on a change, and every 5 s while anything is live), not on the tick.
 - Raster cells take raw colours, so lanes use a light and a dark palette chosen from the `theme` setting; text and
   borders use the theme's own names.

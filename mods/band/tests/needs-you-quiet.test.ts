@@ -89,7 +89,7 @@ const USAGE = { startedAt: 0, context: { window: 200000, tokens: 1000, percent: 
 
 type Mounted = { find: (query: { key: string }) => Promise<{ text: string } | undefined> }
 
-const timelineSource = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'timeline' }))?.text ?? ''
+const timelineSource = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'unfolded' }))?.text ?? ''
 
 for (const tool of ['AskUserQuestion', 'ExitPlanMode']) {
   test(`main shows NEEDS YOU while ${tool} is open and leaves it when answered`, async ($, on) => {
@@ -125,8 +125,8 @@ for (const tool of ['AskUserQuestion', 'ExitPlanMode']) {
     await clock.advance(SETTLE_MS + 200)
     const after = await timelineSource(ui)
 
-    expect(during).toContain('NEEDS YOU')
-    expect(after).not.toContain('NEEDS YOU')
+    expect(during).toContain('needs you')
+    expect(after).not.toContain('needs you')
     await ui.unmount()
   })
 }
@@ -165,7 +165,7 @@ test('a permission ask to a person does not show NEEDS YOU: the mode decides who
   await pending
 
   expect(verdict.decision).toBe('ask')
-  expect(during).not.toContain('NEEDS YOU')
+  expect(during).not.toContain('needs you')
   expect(during).toContain('sleep 17')
   await ui.unmount()
 })

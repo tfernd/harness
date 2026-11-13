@@ -1,0 +1,273 @@
+import { type FoundElement, expect, mock, test } from 'claude-code/testing'
+
+import { arcColorOf, paletteOf } from '../hooks/desktop-theme'
+import { SETTLE_MS } from './settle'
+
+const BAND = {
+  plugin: 'harness-band',
+  component: 'AbovePrompt',
+  requestId: 'band',
+  surface: 'desktop',
+  props: { hasSurvey: false, isWorking: false, maxRows: 30, bodyColumns: 100, scroll: { offset: 0, bodyRows: 30 }, view: {} },
+} as const
+
+const SPAWN = {
+  tool_use_id: 'u1',
+  prompt: 'go',
+  description: 'build it',
+  subagentType: 'harness:worker',
+  provider: { plugin: 'engine', tier: 'core' },
+  parentModel: 'm',
+  background: true,
+  fork: false,
+  name: 'build',
+} as const
+
+const TURN = { turnId: 't1', answer: '', durationMs: 1, isAborted: false } as const
+
+const HOUR = 3_600_000
+const MINUTE = 60_000
+
+const LIMITS = [
+  { kind: 'five_hour', percentUsed: 35, resetsAt: '1970-01-01T05:00:00Z' },
+  { kind: 'seven_day', percentUsed: 52, resetsAt: '1970-01-05T05:00:00Z' },
+  { kind: 'fable_weekly', percentUsed: 83, resetsAt: '1970-01-05T05:00:00Z' },
+]
+
+type Rate = { kind: string; percentUsed: number; resetsAt?: string }
+
+const usageOf = (input: { percent: number; tokens: number; rateLimits: readonly Rate[]; startedAt?: number; usd?: number | null }) => ({
+  startedAt: input.startedAt ?? 0,
+  context: { window: 200_000, tokens: input.tokens, percent: input.percent },
+  rateLimits: [...input.rateLimits],
+  ...(input.usd === null ? {} : { cost: { usd: input.usd ?? 3.84 } }),
+})
+
+const hooksFor = (on: Parameters<typeof mock.clock>[0], usage: ReturnType<typeof usageOf>, theme = 'light') => {
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
+  on('session.end', (_, event) => ({ sessionId: event.sessionId }))
+  on('session.usage', () => ({ value: usage }))
+  on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'text', value: theme, provider: { plugin: 'engine', tier: 'core' }, isLocked: false }] }))
+  on('agent.list', () => ({ value: [] }))
+  on('turn.start', (_, event) => ({ turnId: event.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+}
+
+type Finder = { find: (query: { key: string }) => Promise<FoundElement | undefined>; findAll: (query: { type: string }) => Promise<FoundElement[]> }
+
+const isFound = (value: unknown): value is FoundElement => typeof value === 'object' && value !== null && 'type' in value && 'props' in value
+
+const textOf = async (ui: Finder, key: string): Promise<string | undefined> => (await ui.find({ key }))?.text
+
+const childrenOf = (found: FoundElement | undefined): FoundElement[] => (found === undefined || !Array.isArray(found.children) ? [] : found.children.filter(isFound))
+
+const firstTextColorOf = (found: FoundElement | undefined): unknown => {
+  const queue = childrenOf(found)
+
+  for (const child of queue) {
+    if (child.type === 'Text' && child.props['color'] !== undefined) {
+      return child.props['color']
+    }
+
+    queue.push(...childrenOf(child))
+  }
+
+  return undefined
+}
+
+const swatchColorOf = async (ui: Finder, id: string): Promise<unknown> => firstTextColorOf(await ui.find({ key: 'legend-' + id }))
+
+const cardOf = (tile: FoundElement | undefined): FoundElement | undefined => childrenOf(tile).find(child => child.props['display'] === 'none')
+
+const ringSourceOf = async (ui: Finder): Promise<string> => {
+  const sources = (await ui.findAll({ type: 'Svg' })).map(svg => String(svg.props['source']))
+
+  return sources.find(source => source.includes('<circle')) ?? ''
+}
+
+const countOf = (text: string | undefined, part: string): number => (text ?? '').split(part).length - 1
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`folded in ${theme}, the legend swatch of each arc is the colour that arc is drawn in, Fable included`, async ($, on) => {
+    mock.clock(on)
+    hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS }), theme)
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount(BAND)
+
+    await ui.press({ key: 'fold' })
+
+    const palette = paletteOf(theme)
+    const source = await ringSourceOf(ui)
+
+    expect(await swatchColorOf(ui, 'fiveHour')).toBe(arcColorOf(palette, 'fiveHour'))
+    expect(await swatchColorOf(ui, 'week')).toBe(arcColorOf(palette, 'week'))
+    expect(await swatchColorOf(ui, 'fable')).toBe(arcColorOf(palette, 'fable'))
+    expect(await swatchColorOf(ui, 'context')).toBe(arcColorOf(palette, 'context'))
+    expect(source).toContain('--arcFable:' + arcColorOf(palette, 'fable'))
+    expect(source).toContain('class="s-arcFiveHour"')
+    expect(source).toContain('class="s-arcFable"')
+    expect(countOf(source, '<circle')).toBe(8)
+    expect(await textOf(ui, 'legend-fiveHour')).toMatch(/^●5h35%↻\d+:00 [AP]M$/)
+    expect(await textOf(ui, 'legend-fable')).toMatch(/^●Fable83% ▲↻\w{3} \d+:00 [AP]M$/)
+    expect(await textOf(ui, 'legend-context')).toBe('●Ctx28%56k/200k')
+    await ui.unmount()
+  })
+}
+
+test('folded without a Fable limit, the ring has three arcs and the legend has no Fable entry', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS.slice(0, 2) }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  await ui.press({ key: 'fold' })
+
+  const source = await ringSourceOf(ui)
+
+  expect(countOf(source, '<circle')).toBe(6)
+  expect(source).not.toContain('class="s-arcFable"')
+  expect(await ui.find({ key: 'legend-fable' })).toBeUndefined()
+  expect(await ui.find({ key: 'legend-week' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('unfolded, the gutter shows each arc with its name, percent and a bar in its colour, then the spend split', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS, usd: 35.63 }))
+  on('agent.spawn', () => ({ model: 'claude-sonnet-4-5', agentId: 'a1' }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'answer', usage: { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-4-5' } })
+  const ui = await $.ui.mount(BAND)
+  const palette = paletteOf('light')
+
+  expect(await textOf(ui, 'arc-fiveHour')).toContain('5-hour35%')
+  expect(await textOf(ui, 'arc-fable')).toContain('Fable83% ▲')
+  expect(await textOf(ui, 'arc-context')).toBe('●Context28%56k of 200k')
+  expect(firstTextColorOf(await ui.find({ key: 'arc-week' }))).toBe(arcColorOf(palette, 'week'))
+  expect(await textOf(ui, 'spend-session')).toBe('session total$35.63')
+  expect(await textOf(ui, 'spend-main')).toBe('main est.~$31.13')
+  expect(await textOf(ui, 'spend-agents')).toBe('agents est.~$4.50')
+  expect(await ui.find({ key: 'spend-in' })).toBeUndefined()
+  expect(await textOf(ui, 'cost-main')).toBe('~$31.13')
+  await ui.unmount()
+})
+
+test('with no total from the host, main est. is the token estimate and the label says so', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: [], usd: null }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.turn.complete({ ...TURN, reason: 'answer', usage: { input_tokens: 1_000_000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-4-1' } })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'spend-session')).toBe('session total—')
+  expect(await textOf(ui, 'spend-main')).toBe('main est. (tokens)~$5.00')
+  expect(await textOf(ui, 'spend-in')).toBe('tokens in1M')
+  expect(await textOf(ui, 'spend-out')).toBe('tokens out0')
+  expect(await ui.find({ key: 'arc-fiveHour' })).toBeUndefined()
+  expect(await ui.find({ key: 'arc-context' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the main tile time is the session age, 1h52m, not hours counted from a distant first event', async ($, on) => {
+  mock.clock(on, { now: 100 * HOUR })
+  hooksFor(on, usageOf({ percent: 10, tokens: 20_000, rateLimits: LIMITS, startedAt: 100 * HOUR - (HOUR + 52 * MINUTE) }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'time-main')).toBe('1h52m')
+  await ui.unmount()
+})
+
+test('unfolded and folded share no fact: the session cost shows once in each, and each view lacks the other\'s parts', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS, usd: 35.63 }))
+  on('agent.spawn', () => ({ model: 'claude-sonnet-4-5', agentId: 'a1' }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'answer', usage: { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-4-5' } })
+  const ui = await $.ui.mount(BAND)
+  const unfolded = await textOf(ui, 'unfolded')
+
+  expect(countOf(unfolded, '$35.63')).toBe(1)
+  expect(countOf(unfolded, '35%')).toBe(1)
+  expect(countOf(unfolded, '28%')).toBe(1)
+  expect(await ui.find({ key: 'cost' })).toBeUndefined()
+  expect(await ringSourceOf(ui)).toBe('')
+  expect(await ui.find({ key: 'legend' })).toBeUndefined()
+  expect(await ui.find({ key: 'mini-lanes' })).toBeUndefined()
+  expect(await ui.find({ key: 'main-state' })).toBeUndefined()
+  expect(await ui.find({ key: 'gutter' })).toBeDefined()
+  expect(await ui.find({ key: 'tile-a1' })).toBeDefined()
+
+  await ui.press({ key: 'fold' })
+  const folded = await textOf(ui, 'folded')
+
+  expect(countOf(folded, '$35.63')).toBe(1)
+  expect(countOf(folded, '35%')).toBe(1)
+  expect(await ui.find({ key: 'gutter' })).toBeUndefined()
+  expect(await ui.find({ key: 'tile-main' })).toBeUndefined()
+  expect(await ui.find({ key: 'header' })).toBeUndefined()
+  expect(await ui.find({ key: 'spend-session' })).toBeUndefined()
+  expect(await ringSourceOf(ui)).toContain('<circle')
+  expect(await ui.find({ key: 'mini-lanes' })).toBeDefined()
+  expect(await textOf(ui, 'main-state')).toContain('main')
+  await ui.unmount()
+})
+
+test('with no agents the empty slot says "No agents yet this session." and is not a button', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 10, tokens: 20_000, rateLimits: LIMITS }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'ghost')).toBe('No agents yet this session.')
+  expect(await ui.find({ key: 'earlier' })).toBeUndefined()
+  expect(await ui.find({ key: 'tile-main' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an agent that ended before the range shows "+1 ended earlier", not "No agents yet", and pressing it switches to all', async ($, on) => {
+  const clock = mock.clock(on)
+  hooksFor(on, usageOf({ percent: 10, tokens: 20_000, rateLimits: LIMITS }))
+  on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'answer' })
+  await clock.advance(2 * MINUTE)
+
+  expect(await textOf(ui, 'ghost')).toBe('+1 ended earlier')
+  expect(await textOf(ui, 'ghost')).not.toContain('No agents')
+  expect(await ui.find({ key: 'tile-a1' })).toBeUndefined()
+
+  await ui.press({ key: 'earlier' })
+  await clock.advance(SETTLE_MS)
+
+  expect(await ui.find({ key: 'tile-a1' })).toBeDefined()
+  expect((await ui.find({ key: 'range-session' }))?.props['variant']).toBe('primary')
+  expect(await ui.find({ key: 'earlier' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a tile shows name, model, state, detail, strip, time, tokens and cost, and hover reveals the full facts', async ($, on) => {
+  const clock = mock.clock(on)
+  hooksFor(on, usageOf({ percent: 10, tokens: 20_000, rateLimits: LIMITS }))
+  on('agent.spawn', () => ({ model: 'claude-sonnet-4-5', agentId: 'a1' }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'error', usage: { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-4-5' } })
+  await clock.advance(SETTLE_MS)
+
+  expect(await textOf(ui, 'name-a1')).toBe('build-1')
+  expect(await textOf(ui, 'model-a1')).toBe('sonnet')
+  expect(await textOf(ui, 'state-a1')).toBe('✕ failed')
+  expect(await textOf(ui, 'detail-a1')).toBe('error')
+  expect(await textOf(ui, 'tokens-a1')).toBe('1M / 100k')
+  expect(await textOf(ui, 'cost-a1')).toBe('~$4.50')
+  expect((await ui.findAll({ type: 'Svg' })).some(svg => svg.props['alt'] === 'build-1 activity over the range')).toBe(true)
+  expect(await textOf(ui, 'tile-a1')).toContain('ran for')
+  expect(cardOf(await ui.find({ key: 'tile-a1' }))?.props['display']).toBe('none')
+  await ui.unmount()
+})

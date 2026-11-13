@@ -27,7 +27,9 @@ const SPAWN = {
 
 type Mounted = { find: (query: { key: string }) => Promise<{ text: string } | undefined> }
 
-const timelineSource = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'timeline' }))?.text ?? ''
+const timelineSource = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'unfolded' }))?.text ?? ''
+
+const agentStateOf = async (ui: Mounted): Promise<string> => (await ui.find({ key: 'state-sub1' }))?.text ?? ''
 
 const heldAgent = () => {
   const added = addAgent(EMPTY_STORE, newAgent({ id: 'a', label: 'a', group: 'direct', groupLabel: 'direct agents', now: 0 }))
@@ -110,17 +112,15 @@ test('a sub-agent stays running while a parallel call is open and thinks only wh
   gates.get('first')?.()
   await first
   await clock.advance(SETTLE_MS + 500)
-  const whileOneOpen = await timelineSource(ui)
+  const whileOneOpen = await agentStateOf(ui)
 
   gates.get('second')?.()
   await second
   await clock.advance(SETTLE_MS + 500)
-  const whenAllEnded = await timelineSource(ui)
+  const whenAllEnded = await agentStateOf(ui)
 
-  expect(whileOneOpen).toContain('running')
-  expect(whileOneOpen).not.toContain('thinking')
-  expect(whenAllEnded).toContain('thinking')
-  expect(whenAllEnded).not.toContain('running')
+  expect(whileOneOpen).toBe('❯ bash')
+  expect(whenAllEnded).toBe('⋯ thinking')
   await ui.unmount()
 })
 
@@ -150,7 +150,7 @@ test('main keeps NEEDS YOU when a sibling call of the open question ends', async
   await clock.advance(SETTLE_MS + 500)
   const afterAnswer = await timelineSource(ui)
 
-  expect(whileAsking).toContain('NEEDS YOU')
-  expect(afterAnswer).not.toContain('NEEDS YOU')
+  expect(whileAsking).toContain('needs you')
+  expect(afterAnswer).not.toContain('needs you')
   await ui.unmount()
 })

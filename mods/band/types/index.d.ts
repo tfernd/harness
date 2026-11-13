@@ -72,7 +72,6 @@ declare module 'claude-code' {
       roster: Shaped<Roster>
       gauges: Shaped<Gauges>
       turnStartedAt: number | null
-      isNoteDismissed: boolean
       scheme: ThemeSetting
     }
   }

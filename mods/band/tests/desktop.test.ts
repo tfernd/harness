@@ -4,7 +4,7 @@ import type { AgentRow } from '../types'
 
 import { MODEL_PRICES, estimateCostUsd, formatUsd } from '../hooks/cost'
 import { EMPTY_GAUGES, limitNameOf, namedLimitsOf, withUsage } from '../hooks/gauges'
-import { AXIS_TICK_COUNT, axisTicksOf, bandRefreshMs, spanOf, timelineWindowOf, toneOfPercent } from '../hooks/c1'
+import { bandRefreshMs, timelineWindowOf } from '../hooks/desktop'
 import { EMPTY_ROSTER, EMPTY_STORE, MAIN_ID, recordTurnUsage } from '../hooks/model'
 
 const NOW = 100_000_000
@@ -79,32 +79,6 @@ test('the window follows the range: 1m, 5m, 1h end now, and session starts at th
   expect(timelineWindowOf({ range: '1h', now: NOW, sessionStartedAt: null, rows })).toEqual({ start: NOW - HOUR, end: NOW })
   expect(timelineWindowOf({ range: 'session', now: NOW, sessionStartedAt: NOW - 3 * HOUR, rows })).toEqual({ start: NOW - 3 * HOUR, end: NOW })
   expect(timelineWindowOf({ range: 'session', now: NOW, sessionStartedAt: NOW - 5_000, rows })).toEqual({ start: NOW - MINUTE, end: NOW })
-})
-
-test('the axis labels are evenly spaced, first "ago", last "now"', () => {
-  const hour = axisTicksOf({ start: NOW - HOUR, end: NOW })
-  const minute = axisTicksOf({ start: NOW - MINUTE, end: NOW })
-
-  expect(hour.map(tick => tick.text)).toEqual(['1h ago', '40m', '20m', 'now'])
-  expect(minute.map(tick => tick.text)).toEqual(['1m ago', '40s', '20s', 'now'])
-  expect(hour.map(tick => tick.fraction)).toEqual([0, 1 / 3, 2 / 3, 1])
-  expect(hour).toHaveLength(AXIS_TICK_COUNT)
-})
-
-test('a bar spans its share of the window, clips at the left edge, and is left out when it lies outside', () => {
-  const window = { start: NOW - 10 * MINUTE, end: NOW }
-
-  expect(spanOf(window, NOW - 5 * MINUTE, NOW)).toEqual({ left: 50, width: 50 })
-  expect(spanOf(window, NOW - 20 * MINUTE, NOW - 5 * MINUTE)).toEqual({ left: 0, width: 50 })
-  expect(spanOf(window, NOW - 20 * MINUTE, NOW - 11 * MINUTE)).toBeNull()
-  expect(spanOf(window, NOW + MINUTE, NOW + 2 * MINUTE)).toBeNull()
-  expect(spanOf(window, NOW, NOW)).toEqual({ left: 98, width: 2 })
-})
-
-test('context tone goes amber at 80 and red at 95', () => {
-  expect(toneOfPercent(79)).toBe('ink')
-  expect(toneOfPercent(80)).toBe('warn')
-  expect(toneOfPercent(95)).toBe('fail')
 })
 
 test('the band refreshes every 5 s while anything is live and not at all when idle and empty', () => {

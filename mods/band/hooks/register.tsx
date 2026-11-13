@@ -4,7 +4,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { AgentState, AgentStore, Gauges, Range, Roster } from '../types'
 
 import { type OpenCall, activityOf, withCall, withoutCall } from './calls'
-import { bandRefreshMs } from './c1'
+import { bandRefreshMs } from './desktop'
 import { EMPTY_GAUGES, isSameGauges, withCache, withCompaction, withTurn, withUsage } from './gauges'
 import { DIRECT_GROUP, DIRECT_LABEL, EMPTY_ROSTER, EMPTY_STORE, type MainActivity, addAgent, agentTypeName, closeOpen, lastEventAt, applyListing, MAIN_ID, endBackgroundTask, finishAgent, startBackgroundTask, isSameRoster, moveAgent, OWNER_QUESTION_TOOLS, moveMain, nextQuietChangeMs, newAgent, noteAgentKind, recordTurnUsage, rosterOf, sessionTotal } from './model'
 import { nextLeaveMs } from './layout'
@@ -24,7 +24,6 @@ const foldedGroups = atom({ plugin: 'harness-band', key: 'foldedGroups' } as con
 const agents = atom({ plugin: 'harness-band', key: 'agents' } as const, EMPTY_STORE, { shape: 'agents-3' })
 const roster = atom({ plugin: 'harness-band', key: 'roster' } as const, EMPTY_ROSTER, { shape: 'roster-1' })
 const gauges = atom({ plugin: 'harness-band', key: 'gauges' } as const, EMPTY_GAUGES, { shape: 'gauges-3' })
-const isNoteDismissed = atom({ plugin: 'harness-band', key: 'isNoteDismissed' } as const, false)
 const turnStartedAt = atom({ plugin: 'harness-band', key: 'turnStartedAt' } as const, null)
 const scheme = atom({ plugin: 'harness-band', key: 'scheme' } as const, 'light')
 
@@ -435,13 +434,12 @@ export const register: Register = on => {
     startClocks($, runtime)
     const ui = $.ui.resolve(event)
     const hasRaster = 'Raster' in ui
-    const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue, noteDismissed] = await Promise.all([read($, isFolded), read($, range), read($, foldedGroups), read($, roster), read($, gauges), read($, turnStartedAt), read($, scheme), read($, isNoteDismissed)])
+    const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue] = await Promise.all([read($, isFolded), read($, range), read($, foldedGroups), read($, roster), read($, gauges), read($, turnStartedAt), read($, scheme)])
     const store = hasRaster ? runtime.store : await read($, agents)
     const now = await $.clock.now()
     const actions: Actions = {
       toggleFold: () => void update($, isFolded, current => !current),
       setRange: (chosen: Range) => void update($, range, () => chosen),
-      dismissNote: () => void update($, isNoteDismissed, () => true),
       toggleGroup: (id: string) => void update($, foldedGroups, current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id])),
     }
     const rowIndex = indexRows(store)
@@ -459,7 +457,6 @@ export const register: Register = on => {
         isWorking: event.props.isWorking,
         turnStartedAt: startedAt,
         scheme: schemeValue,
-        isNoteDismissed: noteDismissed,
       }
       const wait = bandRefreshMs({ rows: rowIndex, roster: rosterValue, range: rangeValue, now, isFolded: folded, isWorking: event.props.isWorking })
       runtime.refreshAt = wait === null ? null : now + wait

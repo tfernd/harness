@@ -244,14 +244,14 @@ type Mounted = { findAll: (query: { type: string }) => Promise<{ props: Record<s
 
 const svgProps = async (ui: Mounted, altStart: string): Promise<Record<string, unknown> | undefined> => (await ui.findAll({ type: 'Svg' })).find(svg => String(svg.props['alt']).startsWith(altStart))?.props
 
-const timelineText = async (ui: { find: (query: { key: string }) => Promise<{ text: string } | undefined> }): Promise<string> => (await ui.find({ key: 'timeline' }))?.text ?? ''
+const textOf = async (ui: { find: (query: { key: string }) => Promise<{ text: string } | undefined> }, key: string): Promise<string> => (await ui.find({ key }))?.text ?? ''
 
 test('the desktop draws the band from native text and bar Svgs, no Raster and no interactive frame', async ($, on) => {
   mock.clock(on)
   baseHooks(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const bar = await svgProps(ui, 'Session 38%')
+  const bar = await svgProps(ui, '5-hour 38%')
 
   expect(bar).toBeDefined()
   expect(bar?.['isInteractive']).toBeUndefined()
@@ -261,7 +261,7 @@ test('the desktop draws the band from native text and bar Svgs, no Raster and no
   await ui.unmount()
 })
 
-test('a held sub-agent tool call shows running with its command inside the bar, and thinking after', async ($, on) => {
+test('a held sub-agent tool call shows bash with its command on the tile, and thinking after', async ($, on) => {
   const clock = mock.clock(on)
   baseHooks(on)
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
@@ -286,18 +286,17 @@ test('a held sub-agent tool call shows running with its command inside the bar, 
   const call = $.tool.call({ tool: 'Bash', command: 'make check', agentId: 'a1' })
   await entered
   await clock.advance(SETTLE_MS + 200)
-  const during = await timelineText(ui)
+  const during = await textOf(ui, 'tile-a1')
 
-  expect(during).toContain('running')
-  expect(during).toContain('make check')
+  expect(await textOf(ui, 'state-a1')).toBe('❯ bash')
+  expect(await textOf(ui, 'detail-a1')).toBe('make check')
+  expect(during).toContain('bash')
 
   release()
   await call
   await clock.advance(SETTLE_MS + 200)
-  const after = await timelineText(ui)
-
-  expect(after).toContain('thinking')
-  expect(after).not.toContain('make check')
+  expect(await textOf(ui, 'state-a1')).toBe('⋯ thinking')
+  expect(await textOf(ui, 'detail-a1')).toBe('')
   await ui.unmount()
 })
 
@@ -311,7 +310,7 @@ test('an unknown theme reads as light', () => {
   expect(themeOf('auto')).toBe('auto')
 })
 
-test('a fresh desktop band starts unfolded with the limit blocks and the timeline', async ($, on) => {
+test('a fresh desktop band starts unfolded with the gutter and the tiles', async ($, on) => {
   mock.clock(on)
   baseHooks(on)
   on('agent.spawn', () => ({ model: 'm', agentId: 'a1' }))
@@ -319,9 +318,9 @@ test('a fresh desktop band starts unfolded with the limit blocks and the timelin
   await $.agent.spawn(SPAWN)
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(JSON.stringify((await ui.find({ key: 'fold' }))?.props)).toContain('▴')
-  expect(await ui.find({ key: 'limit-blocks' })).toBeDefined()
-  expect(await ui.find({ key: 'timeline' })).toBeDefined()
+  expect(JSON.stringify((await ui.find({ key: 'fold' }))?.props)).toContain('⌃')
+  expect(await ui.find({ key: 'gutter' })).toBeDefined()
+  expect(await ui.find({ key: 'tile-a1' })).toBeDefined()
   expect(await ui.find({ key: 'range-1h' })).toBeDefined()
   await ui.unmount()
 })
@@ -352,7 +351,7 @@ test('the cache countdown refreshes every minute, every 15 s under 5m, and not o
   expect(cacheRefreshMs(at(61 * MINUTE), NOW)).toBeNull()
 })
 
-test('a main turn with one tool call gives the main lane working, then tool with its command, then idle', async ($, on) => {
+test('a main turn with one tool call gives the main tile thinking, then bash with its command, then idle', async ($, on) => {
   const clock = mock.clock(on)
   baseHooks(on)
   let release: () => void = () => {}
@@ -370,7 +369,7 @@ test('a main turn with one tool call gives the main lane working, then tool with
   )
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const titleOf = async (): Promise<string> => `${(await ui.find({ key: 'glyph-main' }))?.text ?? ''}, ${(await ui.find({ key: 'track-main' }))?.text ?? ''}`
+  const titleOf = async (): Promise<string> => `${await textOf(ui, 'state-main')}, ${await textOf(ui, 'detail-main')}`
   const idleAtStart = await titleOf()
 
   await $.turn.start({ text: '', turnId: 'm1' })
@@ -387,10 +386,10 @@ test('a main turn with one tool call gives the main lane working, then tool with
   await clock.advance(SETTLE_MS + 200)
   const idle = await titleOf()
 
-  expect(idleAtStart).toBe('● idle, idle')
-  expect(thinking).toBe('● working, working')
-  expect(tool).toBe('● tool, make check')
-  expect(idle).toBe('● idle, idle')
+  expect(idleAtStart).toBe('○ idle, ')
+  expect(thinking).toBe('⋯ thinking, ')
+  expect(tool).toBe('❯ bash, make check')
+  expect(idle).toBe('○ idle, since 0s')
   await ui.unmount()
 })
 
@@ -403,7 +402,7 @@ test('the auto theme paints no surface and tints with a translucent grey and a t
   expect(bandColorsOf('dark').surface).toBeDefined()
 })
 
-test('on desktop four range buttons choose the window, and the axis follows', async ($, on) => {
+test('on desktop four range buttons choose the window, and the last one reads all', async ($, on) => {
   mock.clock(on)
   baseHooks(on)
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -411,12 +410,11 @@ test('on desktop four range buttons choose the window, and the axis follows', as
 
   expect(JSON.stringify((await ui.find({ key: 'range-1m' }))?.props)).toContain('primary')
   expect(await ui.find({ key: 'range-15m' })).toBeUndefined()
-  expect((await ui.find({ key: 'axis' }))?.text).toContain('1m ago')
+  expect(await textOf(ui, 'range-session')).toBe('all')
 
   await ui.press({ key: 'range-1h' })
 
   expect(JSON.stringify((await ui.find({ key: 'range-1h' }))?.props)).toContain('primary')
-  expect((await ui.find({ key: 'axis' }))?.text).toContain('1h ago')
   await ui.unmount()
 })
 
