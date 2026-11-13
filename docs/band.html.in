@@ -47,55 +47,9 @@
             <button type="button" class="bp-pause" data-pause aria-pressed="false">Pause</button>
           </div>
         </div>
-        <p class="bp-note">Simulated: agents start, think, run tools, finish or fail on a timer, six times faster than real. Press the chevron to fold the band, pick a range, or hover a tile for its facts.</p>
+        <p class="bp-note">This is the band's own drawing code fed by simulated events: agents start, think, run tools, finish or fail six times faster than real. Press the chevron to fold the band, pick a range, or hover a tile for its facts.</p>
 
-        <div class="band" data-band>
-          <div class="fold" data-view="folded" hidden>
-            <div class="fold-gauges">
-              <svg class="ring" viewBox="0 0 26 26" role="img" aria-label="Limits and context rings" data-ring></svg>
-              <div class="legend" data-legend></div>
-            </div>
-            <div class="fold-main">
-              <div class="fold-main-line">
-                <strong>main</strong>
-                <span class="counts" data-counts>
-                  <span class="count is-live" data-count="live"></span>
-                  <span class="count is-done" data-count="done"></span>
-                  <span class="count is-failed" data-count="failed"></span>
-                </span>
-              </div>
-              <span class="activity" data-main-activity></span>
-            </div>
-            <svg class="lane" viewBox="0 0 112 16" preserveAspectRatio="none" role="img" aria-label="Main and live agents over the last 5 minutes" data-lane></svg>
-            <button type="button" class="fold-button" aria-expanded="false" aria-label="Unfold the band" data-fold><span class="chevron" aria-hidden="true"></span></button>
-          </div>
-
-          <div class="open" data-view="open">
-            <div class="gutter">
-              <div class="gutter-limits" data-limits></div>
-              <svg class="gutter-rule" viewBox="0 0 150 1" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="150" y1="0.5" y2="0.5"/></svg>
-              <dl class="spend" data-spend></dl>
-            </div>
-            <div class="open-main">
-              <div class="open-head">
-                <div class="ranges" role="group" aria-label="Range">
-                  <button type="button" class="range" aria-pressed="false" data-range="1m">1m</button>
-                  <button type="button" class="range" aria-pressed="true" data-range="5m">5m</button>
-                  <button type="button" class="range" aria-pressed="false" data-range="1h">1h</button>
-                  <button type="button" class="range" aria-pressed="false" data-range="all">all</button>
-                </div>
-                <span class="open-head-label">agents</span>
-                <span class="counts" data-counts>
-                  <span class="count is-live" data-count="live"></span>
-                  <span class="count is-done" data-count="done"></span>
-                  <span class="count is-failed" data-count="failed"></span>
-                </span>
-                <button type="button" class="fold-button" aria-expanded="true" aria-label="Fold the band" data-fold><span class="chevron" aria-hidden="true"></span></button>
-              </div>
-              <ul class="tiles" data-tiles></ul>
-            </div>
-          </div>
-        </div>
+        <div class="band" data-band role="group" aria-label="The agent band, simulated"></div>
       </section>
 
       <div class="bp-lower">
@@ -152,5 +106,6 @@
   </div>
 
   <script defer src="band.js"></script>
+  <script defer src="band-view.js"></script>
 </body>
 </html>

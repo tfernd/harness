@@ -5,3 +5,4 @@ docs/index.html
 docs/band.html
 .venv/
 .ruff_cache/
+docs/band-view.js

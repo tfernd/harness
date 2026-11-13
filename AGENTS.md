@@ -49,7 +49,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## Build and release
 - Release order: `make check` (skill form, leaks, hook cases when hooks changed), then commit, then push, then update. `.githooks/pre-push` runs `make check` on every push; `make help` lists the targets.
-- `docs/index.html` and `docs/band.html` are generated and git-ignored: GitHub builds and publishes them on push (`.github/workflows/pages.yml`), and `make map` builds them locally for viewing. The builder needs the port-loss phrases in `README.md`.
+- `docs/index.html` and `docs/band.html` are generated and git-ignored: GitHub builds and publishes them on push (`.github/workflows/pages.yml`), and `make map` builds them locally for viewing. The band page bundles the band's own view with `bun` (`docs/band-host/`), so `make map` needs `bun` on `PATH`. The builder needs the port-loss phrases in `README.md`.
 - Commit from the main session only (`harness:git`); a sub-agent never writes to git.
 - Update the installed copy with `claude plugin marketplace update harness && claude plugin update harness@harness`, then restart Claude Code or run `/reload-plugins`: a running session keeps the hooks it loaded at start. Cortex Code and Kiro update with the lines under Install.
 - `.github/workflows/check.yml` runs the checks above on a push or pull request to `main`, and builds the page so a broken builder fails; `pages.yml` publishes `docs/` on a push to `main` (the repo's Pages source is "GitHub Actions").

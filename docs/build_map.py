@@ -18,6 +18,8 @@ import io
 import json
 import keyword
 import re
+import shutil
+import subprocess
 import sys
 import tokenize
 from collections.abc import Iterable
@@ -31,6 +33,8 @@ PAGE = Path("docs") / "index.html"
 BAND_TEMPLATE = Path("docs") / "band.html.in"
 BAND_PAGE = Path("docs") / "band.html"
 PAGES = ((TEMPLATE, PAGE), (BAND_TEMPLATE, BAND_PAGE))
+BAND_VIEW_BUILDER = Path("docs") / "band-host" / "build.ts"
+BAND_VIEW_BUNDLE = Path("docs") / "band-view.js"
 ASSETS = (Path("docs") / "style.css", Path("docs") / "script.js")
 FINGERPRINT_LENGTH = 10
 DISPATCH_COMMAND = re.compile(r"hooks/dispatch\.py\"\s+(\w+)")
@@ -1448,6 +1452,17 @@ def get_difference(committed: str, fresh: str, /) -> str:
     return f"it has {len(committed_lines)} lines and a fresh build {len(fresh_lines)}"
 
 
+def build_band_view(root: Path) -> None:
+    bun = shutil.which("bun")
+    if bun is None:
+        raise ValueError("bun is missing, and docs/band-view.js is bundled with it: curl -fsSL https://bun.sh/install | bash")
+    completed = subprocess.run([bun, "run", str(root / BAND_VIEW_BUILDER)], cwd=root, check=False)
+    if completed.returncode != 0:
+        raise ValueError(f"bun failed with exit {completed.returncode} while bundling {BAND_VIEW_BUILDER}")
+    if not (root / BAND_VIEW_BUNDLE).is_file():
+        raise ValueError(f"bun ran but {BAND_VIEW_BUNDLE} was not written")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the plugin map page.")
     parser.add_argument("--root", type=Path, default=ROOT, help="the repository to read, whose docs/index.html is the page (default: this one)")
@@ -1464,6 +1479,11 @@ def main() -> int:
         print(f"build_map: {error}", file=sys.stderr)
         return 1
     if not arguments.check:
+        try:
+            build_band_view(root)
+        except ValueError as error:
+            print(f"build_map: {error}", file=sys.stderr)
+            return 1
         for page, text in pages:
             (root / page).write_text(text, encoding="utf-8", newline="\n")
         counts = ", ".join(f"{facts.values[key]} {key}" for key in ("agents", "skills", "hooks"))
