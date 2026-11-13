@@ -6,8 +6,8 @@ import { type ArcId, svgStyleFor } from './desktop-theme'
 
 export type DrawnSvg = { source: string; width: number; height: number }
 
-const wrapSvg = (setting: ThemeSetting, width: number, height: number, body: string): DrawnSvg => ({
-  source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '"><style>' + svgStyleFor(setting) + '</style>' + body + '</svg>',
+const wrapSvg = (setting: ThemeSetting, width: number, height: number, body: string, aspect = ''): DrawnSvg => ({
+  source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '"' + aspect + '><style>' + svgStyleFor(setting) + '</style>' + body + '</svg>',
   width,
   height,
 })
@@ -19,6 +19,8 @@ const rect = (box: Box): string => '<rect class="' + box.className + '" x="' + b
 const ARC_FILL: Readonly<Record<ArcId, string>> = { fiveHour: 'f-arcFiveHour', week: 'f-arcWeek', fable: 'f-arcFable', context: 'f-arcContext' }
 
 const ARC_STROKE: Readonly<Record<ArcId, string>> = { fiveHour: 's-arcFiveHour', week: 's-arcWeek', fable: 's-arcFable', context: 's-arcContext' }
+
+const STRETCH = ' preserveAspectRatio="none"'
 
 export const RING_SIZE = 26
 export const RING_OUTER_RADIUS = 11.5
@@ -98,7 +100,7 @@ export const stripWidthOf = (cellCount: number): number => cellCount * (STRIP_CE
 export const stripSvg = (input: { cells: readonly CellKind[]; setting: ThemeSetting }): DrawnSvg => {
   const shapes = input.cells.map((kind, index) => cellShapes(kind, { x: index * (STRIP_CELL_WIDTH + STRIP_CELL_GAP), width: STRIP_CELL_WIDTH, height: STRIP_HEIGHT, radius: 1 }))
 
-  return wrapSvg(input.setting, stripWidthOf(input.cells.length), STRIP_HEIGHT, shapes.join(''))
+  return wrapSvg(input.setting, stripWidthOf(input.cells.length), STRIP_HEIGHT, shapes.join(''), STRETCH)
 }
 
 const laneRunShape = (run: CellRun, y: number): string => {
@@ -127,5 +129,5 @@ export const miniLanesSvg = (input: { lanes: readonly (readonly CellKind[])[]; s
   })
   const nowLine = rect({ x: MINI_LANES_WIDTH - 1, y: 0, width: 1, height, radius: 0, className: 'f-ink' })
 
-  return wrapSvg(input.setting, MINI_LANES_WIDTH, height, bars.join('') + nowLine)
+  return wrapSvg(input.setting, MINI_LANES_WIDTH, height, bars.join('') + nowLine, STRETCH)
 }

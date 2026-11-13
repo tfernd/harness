@@ -41,6 +41,6 @@ test('the unfolded tree is a gutter and a tile column, and the folded tree is on
   await ui.press({ key: 'fold' })
   const folded = keysOf(await ui.drawn())
 
-  expect(folded).toEqual(['folded', 'ring', 'legend', 'legend-column-0', 'legend-fiveHour', 'legend-fable', 'legend-column-1', 'legend-week', 'legend-context', 'main-state', 'mini-lanes', 'counts', 'spacer', 'fold'])
+  expect(folded).toEqual(['folded', 'ring', 'legend', 'legend-column-0', 'legend-fiveHour', 'legend-fable', 'legend-column-1', 'legend-week', 'legend-last-context', 'legend-context', 'cost', 'main-state', 'main-line', 'counts', 'mini-lanes', 'fold'])
   await ui.unmount()
 })

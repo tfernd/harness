@@ -34,9 +34,9 @@ export const modelBadgeOf = (model: string | undefined): string | null => {
 
 const tokenCostOf = (row: AgentRow | undefined): number | null => (row?.usage === undefined ? null : estimateCostUsd(row.usage, row.model))
 
-const costTextOf = (usd: number | null): string => (usd === null ? NO_VALUE : '~' + formatUsd(usd))
+const costTextOf = (usd: number | null): string => (usd === null ? '' : '~' + formatUsd(usd))
 
-const tokensTextOf = (row: AgentRow): string => (row.usage === undefined ? NO_VALUE : formatTokens(tokensInOf(row.usage)) + ' / ' + formatTokens(row.usage.output))
+const tokensTextOf = (row: AgentRow): string => (row.usage === undefined ? '' : formatTokens(tokensInOf(row.usage)) + ' / ' + formatTokens(row.usage.output))
 
 export type MainEstimate = { usd: number | null; isFromTotal: boolean }
 

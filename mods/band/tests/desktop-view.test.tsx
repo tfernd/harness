@@ -1,7 +1,7 @@
 import { type FoundElement, expect, mock, test } from 'claude-code/testing'
 
 import { arcColorOf, paletteOf } from '../hooks/desktop-theme'
-import { GUTTER_COLUMNS, RANGE_HINT } from '../hooks/view-desktop'
+import { GUTTER_COLUMNS } from '../hooks/view-desktop'
 import { SETTLE_MS } from './settle'
 
 const GAP_ALLOWANCE_COLUMNS = 4
@@ -293,7 +293,21 @@ const truncatingTextsIn = async (ui: Finder, key: string): Promise<string[]> => 
   return truncating
 }
 
-test('folded, the counts stack in a column and main sits over its state, each part in its own line', async ($, on) => {
+const textLinesOf = (found: FoundElement | undefined): number => {
+  if (found === undefined) {
+    return 0
+  }
+
+  if (found.type === 'Text') {
+    return 1
+  }
+
+  const lines = childrenOf(found).map(textLinesOf)
+
+  return found.props['flexDirection'] === 'column' ? lines.reduce((sum, count) => sum + count, 0) : Math.max(0, ...lines)
+}
+
+test('folded, the row is two text lines tall in every column, the cost sits in the legend, the lane grows and nothing trails the chevron', async ($, on) => {
   mock.clock(on)
   hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS }))
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -301,13 +315,19 @@ test('folded, the counts stack in a column and main sits over its state, each pa
 
   await ui.press({ key: 'fold' })
 
-  const counts = await ui.find({ key: 'counts' })
-  const mainState = await ui.find({ key: 'main-state' })
+  const folded = await ui.find({ key: 'folded' })
+  const row = childrenOf(folded)
 
-  expect(counts?.props['flexDirection']).toBe('column')
-  expect(childrenOf(counts).filter(child => child.type === 'Text')).toHaveLength(3)
-  expect(mainState?.props['flexDirection']).toBe('column')
-  expect(childrenOf(mainState).filter(child => child.type === 'Text')).toHaveLength(2)
+  for (const column of row) {
+    expect(textLinesOf(column)).toBeLessThanOrEqual(2)
+  }
+
+  expect(textLinesOf(await ui.find({ key: 'legend' }))).toBe(2)
+  expect(await textOf(ui, 'legend')).toContain('$3.84')
+  expect(await ui.find({ key: 'cost' })).toBeDefined()
+  expect((await ui.find({ key: 'mini-lanes' }))?.props['flexGrow']).toBe(1)
+  expect(await textOf(ui, 'main-state')).toContain('▶0')
+  expect(row[row.length - 1]?.type).toBe('Button')
   await ui.unmount()
 })
 
@@ -318,7 +338,6 @@ test('nothing the owner reads in full is ellipsised: legend and header texts nev
   const ui = await $.ui.mount(BAND)
 
   expect(await truncatingTextsIn(ui, 'header')).toEqual([])
-  expect(await textOf(ui, 'header')).toContain(RANGE_HINT)
 
   for (const id of ['fiveHour', 'week', 'fable', 'context']) {
     const row = (await textOf(ui, 'arc-' + id)) ?? ''
@@ -335,5 +354,29 @@ test('nothing the owner reads in full is ellipsised: legend and header texts nev
 
   expect(await textOf(ui, 'legend-fable')).toMatch(/↻\w{3} \d{2}:00$/)
   expect((await ui.find({ key: 'legend' }))?.props['overflow']).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a tile bottom line can shrink its strip, keeps time and cost at natural width, and shows no placeholder before usage', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS }))
+  on('agent.spawn', () => ({ model: 'claude-sonnet-4-5', agentId: 'a1' }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.agent.spawn(SPAWN)
+  const ui = await $.ui.mount(BAND)
+
+  for (const id of ['main', 'a1']) {
+    const strip = await ui.find({ key: 'strip-' + id })
+
+    expect(strip?.props['flexShrink']).toBe(1)
+    expect(strip?.props['minWidth']).toBe(0)
+    expect(strip?.props['overflow']).toBe('hidden')
+    expect(childrenOf(strip)[0]?.props['width']).toBeUndefined()
+    expect((await ui.find({ key: 'time-' + id }))?.props['flexShrink']).toBe(0)
+  }
+
+  expect(await ui.find({ key: 'tokens-a1' })).toBeUndefined()
+  expect(await ui.find({ key: 'cost-a1' })).toBeUndefined()
+  expect(await textOf(ui, 'bottom-a1')).not.toContain('—')
   await ui.unmount()
 })

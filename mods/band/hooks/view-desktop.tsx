@@ -5,7 +5,7 @@ import type { Range } from '../types'
 import { type Activity, cellsOf } from './activity'
 import { type Arc, apiBillingText, arcsOf, isWarning, legendColumnsOf, resetClockOf, toneOfPercent } from './arcs'
 import { type DesktopPalette, type Tone, arcColorOf, paletteOf } from './desktop-theme'
-import { GUTTER_BAR_WIDTH, MINI_LANE_CELLS, STRIP_HEIGHT, barSvg, miniLanesSvg, ringSvg, ruleSvg, stripSvg, stripWidthOf } from './desktop-svg'
+import { GUTTER_BAR_WIDTH, MINI_LANE_CELLS, STRIP_HEIGHT, barSvg, miniLanesSvg, ringSvg, ruleSvg, stripSvg } from './desktop-svg'
 import { type Ghost, type Tile, MINI_LANES_RANGE, TIMELINE_RANGES, mainEstimateLabelOf, miniLaneRowsOf, rangeLabelOf, spendOf, tilesOf, timelineWindowOf } from './desktop'
 import { formatUsd } from './cost'
 import { formatTokens } from './format'
@@ -23,7 +23,6 @@ export type DesktopView = {
 }
 
 export const GUTTER_COLUMNS = 36
-export const RANGE_HINT = 'cell = 1/24 of range'
 export const AGENTS_LABEL = 'agents'
 export const MAIN_NAME = 'main'
 
@@ -57,11 +56,11 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const spend = spendOf({ gauges, rows: input.rows })
   const hasLimits = gauges.limits.length > 0
 
-  const countsBox = (direction: 'row' | 'column') => (
-    <Box key="counts" flexDirection={direction} gap={direction === 'row' ? SECTION_GAP : 0} flexShrink={0}>
-      <Text bold dimColor={counts.live === 0} color={palette.run}>{'▶ ' + counts.live}</Text>
-      <Text bold dimColor={counts.done === 0} color={palette.done}>{'✓ ' + counts.done}</Text>
-      <Text bold dimColor={counts.failed === 0} color={palette.fail}>{'✕ ' + counts.failed}</Text>
+  const countsBox = () => (
+    <Box key="counts" flexDirection="row" gap={ITEM_GAP} flexShrink={0}>
+      <Text bold dimColor={counts.live === 0} color={palette.run}>{'▶' + counts.live}</Text>
+      <Text bold dimColor={counts.done === 0} color={palette.done}>{'✓' + counts.done}</Text>
+      <Text bold dimColor={counts.failed === 0} color={palette.fail}>{'✕' + counts.failed}</Text>
     </Box>
   )
 
@@ -80,14 +79,32 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Box>
   )
 
+  const costText = gauges.costUsd === null ? null : <Box key="cost" flexShrink={0}><Text bold>{formatUsd(gauges.costUsd)}</Text></Box>
+
+  const legendColumn = (column: readonly Arc[], index: number, columns: readonly (readonly Arc[])[]) => {
+    const firstColumnLines = (!hasLimits ? 1 : 0) + (columns[0]?.length ?? 0)
+    const isCostColumn = index === 1
+    const isShorter = column.length < firstColumnLines
+    const lastArc = column[column.length - 1]
+    const items = column.map((arc, position) => (isCostColumn && !isShorter && position === column.length - 1 ? (
+      <Box key={'legend-last-' + arc.id} flexDirection="row" gap={SECTION_GAP} flexShrink={0}>
+        {legendItem(arc)}
+        {costText}
+      </Box>
+    ) : legendItem(arc)))
+
+    return (
+      <Box key={'legend-column-' + index} flexDirection="column" flexShrink={0}>
+        {index === 0 && !hasLimits ? <Text key="api" dimColor>{apiBillingText(spend.tokensIn, spend.tokensOut)}</Text> : null}
+        {items}
+        {isCostColumn && (isShorter || lastArc === undefined) ? costText : null}
+      </Box>
+    )
+  }
+
   const legend = (
     <Box key="legend" flexDirection="row" gap={SECTION_GAP} flexShrink={0}>
-      {legendColumnsOf(arcs).map((column, index) => (
-        <Box key={'legend-column-' + index} flexDirection="column" flexShrink={0}>
-          {index === 0 && !hasLimits ? <Text key="api" dimColor>{apiBillingText(spend.tokensIn, spend.tokensOut)}</Text> : null}
-          {column.map(legendItem)}
-        </Box>
-      ))}
+      {legendColumnsOf(arcs).map((column, index, columns) => legendColumn(column, index, columns))}
     </Box>
   )
 
@@ -116,15 +133,15 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
           {legend}
         </Box>
         <Box key="main-state" flexDirection="column" flexShrink={0}>
-          <Text bold>{MAIN_NAME}</Text>
+          <Box key="main-line" flexDirection="row" gap={SECTION_GAP}>
+            <Text bold>{MAIN_NAME}</Text>
+            {countsBox()}
+          </Box>
           {activityText(tiles.main.activity)}
         </Box>
-        <Box key="mini-lanes" alignSelf="center" flexShrink={1} minWidth={0} overflow="hidden">
-          <Svg source={mini.source} alt="main and live agents, last 5m" width={mini.width} height={mini.height} />
+        <Box key="mini-lanes" alignSelf="center" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+          <Svg source={mini.source} alt="main and live agents, last 5m" height={mini.height} />
         </Box>
-        {countsBox('column')}
-        <Box key="spacer" flexGrow={1} />
-        {gauges.costUsd === null ? null : <Text key="cost" bold>{formatUsd(gauges.costUsd)}</Text>}
         {foldButton}
       </Box>
     )
@@ -186,10 +203,9 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const header = (
     <Box key="header" flexDirection="row" alignItems="center" gap={SECTION_GAP}>
       {rangeButtons}
-      <Text key="hint" dimColor>{RANGE_HINT}</Text>
       <Box key="spacer" flexGrow={1} />
       <Text dimColor>{AGENTS_LABEL}</Text>
-      {countsBox('row')}
+      {countsBox()}
       {foldButton}
     </Box>
   )
@@ -220,10 +236,12 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
           {field('detail-' + tile.id, <Text dimColor wrap="truncate-end">{tile.activity.detail}</Text>, true)}
         </Box>
         <Box key={'bottom-' + tile.id} flexDirection="row" alignItems="center" gap={SECTION_GAP}>
-          <Svg source={strip.source} alt={tile.name + ' activity over the range'} width={stripWidthOf(tile.strip.length)} height={STRIP_HEIGHT} />
+          <Box key={'strip-' + tile.id} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            <Svg source={strip.source} alt={tile.name + ' activity over the range'} height={STRIP_HEIGHT} />
+          </Box>
           {field('time-' + tile.id, <Text bold>{tile.time}</Text>)}
-          {field('tokens-' + tile.id, <Text dimColor wrap="truncate-end">{tile.tokens}</Text>, true)}
-          {field('cost-' + tile.id, <Text bold>{tile.cost}</Text>)}
+          {tile.tokens === '' ? null : field('tokens-' + tile.id, <Text dimColor wrap="truncate-end">{tile.tokens}</Text>, true)}
+          {tile.cost === '' ? null : field('cost-' + tile.id, <Text bold>{tile.cost}</Text>)}
         </Box>
         {tileCard(tile)}
       </Box>
