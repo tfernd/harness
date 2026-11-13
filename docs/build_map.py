@@ -263,7 +263,7 @@ HOOK_KINDS = (
     Kind("Closers", "Hold the turn until it is recorded.", ("turn.py",)),
 )
 HOOK_JOBS = {
-    "guard.py": "Refuses deletes, history rewrites and wildcards the shell would get wrong; asks you before a package is added or removed.",
+    "guard.py": "Refuses deletes, history rewrites, a sub-agent's git writes and wildcards the shell would get wrong; asks you before a package change, an AWS write, a credential read or a piped installer.",
     "commit_gate.py": "Refuses a commit message out of form or crediting an AI, and a commit that drops tests without saying why.",
     "budget.py": "Tells the main session what each agent is doing.",
     "report_gate.py": "Sends a report back when a required section is missing or out of order.",
@@ -303,6 +303,10 @@ RULES = (
     Rule("A commit message out of form, or crediting an AI, is refused", "stopped", "commit_gate.py"),
     Rule("A commit that leaves fewer tests without saying why is refused", "stopped", "commit_gate.py"),
     Rule("Adding or removing packages asks you first", "asks", "guard.py"),
+    Rule("Reading a credential file or printing a secret asks you first", "asks", "guard.py"),
+    Rule("Writing to an AWS account asks you first", "asks", "guard.py"),
+    Rule("Piping a downloaded script into a shell asks you first", "asks", "guard.py"),
+    Rule("A sub-agent's git or gh command that writes is refused", "stopped", "guard.py"),
     Rule("A report needs its parts and a verdict", "sent-back", "report_gate.py"),
     Rule("A long turn ends with a closing status", "turn", "turn.py"),
     Rule("A turn that ran agents names each one with its verdict", "reminder", "turn.py"),

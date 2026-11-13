@@ -1,46 +1,90 @@
 {
   const THEME_KEY = "harness-map-theme";
-  const SPEED = 4;
-  const TICK_MS = 125;
-  const MAX_STEP_MS = 1000;
   const SECOND = 1000;
   const MINUTE = 60 * SECOND;
   const HOUR = 60 * MINUTE;
-  const WORK_MS = 5 * MINUTE;
-  const IDLE_MS = MINUTE;
-  const SEED_START_MS = -(18 * MINUTE + 74 * SECOND);
-  const CACHE_LIFETIME_MS = HOUR;
-  const MAX_ROWS = 6;
-  const MIN_LIVE = 3;
-  const MAX_LIVE = 5;
+  const SPEED = 6;
+  const TICK_MS = 250;
+  const MAX_REAL_STEP_MS = SECOND;
+  const SIM_STEP_MS = 500;
+  const SEED_MS = 6 * MINUTE;
+  const SESSION_AGE_MS = 47 * MINUTE;
+  const STRIP_CELLS = 24;
+  const LANE_CELLS = 56;
+  const LANE_WIDTH = 112;
+  const LANE_STEP = 4;
+  const LANE_HEIGHT = 3;
+  const MAX_LANES = 4;
+  const MAX_TILES = 12;
+  const MAX_KEPT_ENDED = 150;
+  const CELL_WIDTH = 5;
+  const CELL_GAP = 1;
+  const CELL_HEIGHT = 8;
+  const LANE_RANGE_MS = 5 * MINUTE;
   const FAIL_CHANCE = 0.15;
-  const KEEP_ENDED_MS = 2 * HOUR;
-  const LINGER_MS = 5 * SECOND;
-  const TOOL_LABELS = [
-    "uv run pytest -q",
-    "make check",
-    'rg -n "budget" hooks',
-    "git diff --stat",
-    "uvx ruff check",
-    "node --check band.js",
-    "make map",
-    "sed -n 1,80p SPEC.md",
+  const PERMISSION_CHANCE = 0.12;
+  const HIGH_PERCENT = 80;
+  const CRITICAL_PERCENT = 95;
+  const CONTEXT_WINDOW_TOKENS = 1_000_000;
+  const RING_SIZE = 26;
+  const RING_OUTER_RADIUS = 11.5;
+  const RING_STEP = 3;
+  const BAR_WIDTH = 100;
+  const BAR_HEIGHT = 4;
+  const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+  const RANGE_MS = { "1m": MINUTE, "5m": 5 * MINUTE, "1h": HOUR, all: 0 };
+  const PRICE_PER_MILLION = { opus: { input: 5, output: 25 }, sonnet: { input: 3, output: 15 }, haiku: { input: 1, output: 5 } };
+
+  const ROLES = [
+    { role: "scout", model: "haiku", tasks: ["hooks", "docs", "skills", "tests", "port"] },
+    { role: "worker", model: "sonnet", tasks: ["band", "guard", "page", "cases", "report"] },
+    { role: "reviewer", model: "opus", tasks: ["diff", "spec", "hooks"] },
+    { role: "designer", model: "sonnet", tasks: ["tiles", "ring"] },
+    { role: "researcher", model: "sonnet", tasks: ["api", "limits"] },
   ];
-  const ROLES = ["worker", "scout", "reviewer", "designer"];
-  const GROUPS = [
-    { key: "workflow", tag: "WORKFLOW", name: "workflow: review pass" },
-    { key: "direct", tag: "DIRECT", name: "direct agents" },
+
+  const TOOLS = [
+    { kind: "bash", targets: ["uv run pytest -q", "make check", "git diff --stat", "uvx ruff check", "make map"] },
+    { kind: "editing", targets: ["docs/band.css", "hooks/guard.py", "mods/band/hooks/arcs.ts", "skills/design/SKILL.md"] },
+    { kind: "reading", targets: ["hooks/turn.py", "AGENTS.md", "docs/build_map.py", "README.md"] },
+    { kind: "searching", targets: ['rg -n "budget" hooks', "**/*.tsx", 'rg -n "ring" mods'] },
+    { kind: "web", targets: ["docs.claude.com/en/docs/claude-code"] },
   ];
-  const PILL_TEXT = {
-    launched: "STARTING",
-    thinking: "THINKING",
-    tool: "RUNNING",
-    waiting: "WAITING",
-    finished: "FINISHED",
-    failed: "FAILED",
+
+  const ACTIVITY_ICON = {
+    idle: "○",
+    thinking: "⋯",
+    permission: "⊘",
+    bash: "❯",
+    editing: "✎",
+    reading: "≡",
+    searching: "⌕",
+    web: "⊕",
+    done: "✓",
+    failed: "✕",
   };
-  const MAIN_PILL_TEXT = { launched: "IDLE", thinking: "WORKING", tool: "TOOL", waiting: "NEEDS YOU" };
-  const WAIT_CHANCE = 0.15;
+
+  const ACTIVITY_WORD = {
+    idle: "idle",
+    thinking: "thinking",
+    permission: "waiting",
+    bash: "bash",
+    editing: "editing",
+    reading: "reading",
+    searching: "searching",
+    web: "web",
+    done: "done",
+    failed: "failed",
+  };
+
+  const ARC_DEFINITIONS = {
+    fiveHour: { name: "5-hour", short: "5h", suffix: "five" },
+    week: { name: "Week", short: "Wk", suffix: "week" },
+    fable: { name: "Fable", short: "Fable", suffix: "fable" },
+    context: { name: "Context", short: "Ctx", suffix: "context" },
+  };
+
+  const FAIL_REASONS = ["tests failed", "merge conflict", "gave up after 3 tries"];
 
   const createRandom = (seed) => {
     let state = seed >>> 0;
@@ -53,599 +97,754 @@
     };
   };
 
-  const pick = (random, list) => list[Math.floor(random() * list.length)];
+  const pickFrom = (random, list) => list[Math.floor(random() * list.length)];
   const between = (random, low, high) => low + random() * (high - low);
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const pad = (value) => String(value).padStart(2, "0");
 
-  const planSpan = (random, kind, start) => {
-    const isTool = kind === "tool";
-    const length =
-      kind === "launched"
-        ? between(random, 2 * SECOND, 5 * SECOND)
-        : kind === "waiting"
-          ? between(random, 4 * SECOND, 12 * SECOND)
-          : isTool
-            ? between(random, 6 * SECOND, 26 * SECOND)
-            : between(random, 8 * SECOND, 32 * SECOND);
-    const labels = { launched: "starting", waiting: "waiting", thinking: "reasoning" };
-    return { kind, start, end: null, plannedEnd: start + length, label: isTool ? pick(random, TOOL_LABELS) : labels[kind] };
+  const formatAge = (milliseconds) => {
+    const seconds = Math.max(0, Math.floor(milliseconds / SECOND));
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m${pad(seconds % 60)}s`;
+    return `${Math.floor(seconds / 3600)}h${pad(Math.floor((seconds % 3600) / 60))}m`;
   };
 
-  const nextKind = (random, kind) => {
-    if (kind === "launched") return "thinking";
-    if (kind === "tool") return "thinking";
-    return random() < WAIT_CHANCE && kind === "thinking" ? "waiting" : "tool";
+  const formatSpan = (milliseconds) => {
+    const seconds = Math.max(0, Math.floor(milliseconds / SECOND));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`;
   };
 
-  const createAgent = (random, id, group, start) => ({
-    id,
-    name: `harness:${pick(random, ROLES)}-${id}`,
-    group,
-    spawnedAt: start,
-    state: "live",
+  const formatTokens = (tokens) => {
+    if (tokens >= 1_000_000) return `${Number((tokens / 1_000_000).toFixed(1))}M`;
+    if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
+    return String(Math.round(tokens));
+  };
+
+  const formatUsd = (usd) => `$${usd.toFixed(2)}`;
+
+  const costOf = (model, tokensIn, tokensOut) => {
+    const price = PRICE_PER_MILLION[model];
+    return (tokensIn * price.input + tokensOut * price.output) / 1_000_000;
+  };
+
+  const lastSegmentIn = (segments, from, to) => {
+    let found = null;
+    for (const segment of segments) {
+      const end = segment.to ?? Infinity;
+      if (segment.from < to && end > from) found = segment;
+    }
+    return found;
+  };
+
+  const openSegment = (row, state, at) => {
+    const last = row.segments.at(-1);
+    if (last && last.to === null) last.to = at;
+    row.segments.push({ state, from: at, to: null });
+    row.state = state;
+  };
+
+  const createAgent = (random, counter, now) => {
+    const spec = pickFrom(random, ROLES);
+    const row = {
+      id: `agent-${counter}`,
+      label: `${spec.role}-${pickFrom(random, spec.tasks)}`,
+      model: spec.model,
+      startedAt: now,
+      endedAt: null,
+      state: "thinking",
+      tool: null,
+      permission: false,
+      failReason: "",
+      plannedEnd: now + between(random, 30 * SECOND, 90 * SECOND),
+      nextChangeAt: now + between(random, 2 * SECOND, 6 * SECOND),
+      tokensIn: 0,
+      tokensOut: 0,
+      segments: [],
+    };
+    openSegment(row, "thinking", now);
+    return row;
+  };
+
+  const createMain = (now) => ({
+    id: "main",
+    label: "main",
+    model: "opus",
+    startedAt: now,
     endedAt: null,
-    detail: "",
-    limit: Math.floor(between(random, 6, 14)),
-    spans: [planSpan(random, "launched", start)],
+    state: "thinking",
+    tool: null,
+    permission: false,
+    failReason: "",
+    plannedEnd: Infinity,
+    nextChangeAt: now,
+    tokensIn: 8_100_000,
+    tokensOut: 92_000,
+    segments: [{ state: "thinking", from: now, to: null }],
   });
 
-  const lastSpan = (agent) => agent.spans[agent.spans.length - 1];
-
-  const endAgent = (agent, state, at) => {
-    const current = lastSpan(agent);
-    if (current.end === null) current.end = Math.min(at, current.plannedEnd);
-    agent.state = state;
-    agent.endedAt = at;
-    agent.detail = state === "failed" ? "tests failed" : "completed";
-  };
-
-  const advanceAgent = (random, agent, now) => {
-    while (agent.state === "live") {
-      const current = lastSpan(agent);
-      if (current.end !== null || current.plannedEnd > now) return;
-      current.end = current.plannedEnd;
-      if (agent.spans.length >= agent.limit) {
-        endAgent(agent, random() < FAIL_CHANCE ? "failed" : "finished", current.end);
-        return;
-      }
-      agent.spans.push(planSpan(random, nextKind(random, current.kind), current.end));
-    }
-  };
-
-  const liveAgents = (model) => model.agents.filter((agent) => agent.state === "live");
-
-  const spawnAgent = (model) => {
-    model.spawned += 1;
-    const group = model.random() < 0.6 ? "workflow" : "direct";
-    model.agents.push(createAgent(model.random, model.spawned, group, model.now));
-  };
-
-  const startTurn = (model) => {
-    model.isWorking = true;
-    model.turnStart = model.now;
-    model.turnEnd = model.now + WORK_MS;
-    model.cacheCalledAt = model.now;
-    const idle = model.main.spans[model.main.spans.length - 1];
-    if (idle && idle.end === null) idle.end = model.now;
-    model.main.spans.push(planSpan(model.random, "thinking", model.now));
-    for (let count = 0; count < MIN_LIVE; count += 1) spawnAgent(model);
-  };
-
-  const finishTurn = (model) => {
-    model.isWorking = false;
-    model.lastTurnMs = model.now - model.turnStart;
-    model.idleEnd = model.now + IDLE_MS;
-    const current = lastSpan(model.main);
-    if (current.end === null) current.end = Math.min(model.now, current.plannedEnd);
-    model.main.spans.push({ kind: "launched", start: current.end, end: null, plannedEnd: Number.POSITIVE_INFINITY, label: "waiting for a prompt" });
-    for (const agent of liveAgents(model)) endAgent(agent, "finished", model.now);
-  };
-
-  const maybeSpawn = (model, deltaMs) => {
-    if (model.turnEnd - model.now < 20 * SECOND) return;
-    const live = liveAgents(model).length;
-    const rate = live < MIN_LIVE ? 0.5 : live < MAX_LIVE ? 0.04 : 0;
-    if (model.random() < (rate * deltaMs) / SECOND) spawnAgent(model);
-  };
-
-  const countEnded = (model) => {
-    model.done = model.agents.filter((agent) => agent.state === "finished").length + model.prunedDone;
-    model.failed = model.agents.filter((agent) => agent.state === "failed").length + model.prunedFailed;
-  };
-
-  const pruneAgents = (model) => {
-    const keep = [];
-    for (const agent of model.agents) {
-      const isOld = agent.state !== "live" && model.now - agent.endedAt > KEEP_ENDED_MS + LINGER_MS;
-      if (!isOld) keep.push(agent);
-      else if (agent.state === "finished") model.prunedDone += 1;
-      else model.prunedFailed += 1;
-    }
-    model.agents = keep;
-  };
-
-  const stepModel = (model, deltaMs) => {
-    model.now += deltaMs;
-    if (model.isWorking && model.now >= model.turnEnd) finishTurn(model);
-    else if (!model.isWorking && model.now >= model.idleEnd) startTurn(model);
-    advanceAgent(model.random, model.main, model.now);
-    for (const agent of model.agents) advanceAgent(model.random, agent, model.now);
-    if (model.isWorking) maybeSpawn(model, deltaMs);
-    pruneAgents(model);
-    countEnded(model);
-  };
-
-  const advanceModel = (model, deltaMs) => {
-    let remaining = deltaMs;
-    while (remaining > 0) {
-      const step = Math.min(remaining, MAX_STEP_MS);
-      stepModel(model, step);
-      remaining -= step;
-    }
-  };
-
-  const createModel = (seed) => {
-    const random = createRandom(seed);
-    const main = {
-      id: 0,
-      name: "main session",
-      group: "main",
-      state: "live",
-      endedAt: null,
-      detail: "",
-      limit: Number.POSITIVE_INFINITY,
-      spans: [],
-    };
+  const createModel = () => {
+    const random = createRandom(20260513);
+    const sessionStart = -SESSION_AGE_MS;
     const model = {
       random,
-      now: SEED_START_MS,
-      sessionStart: SEED_START_MS,
-      main,
+      now: -SEED_MS,
+      sessionStart,
+      counter: 0,
+      desiredLive: 2,
+      nextDesiredAt: -SEED_MS,
+      main: createMain(sessionStart),
       agents: [],
-      spawned: 0,
-      prunedDone: 0,
-      prunedFailed: 0,
-      done: 0,
-      failed: 0,
-      isWorking: false,
-      turnStart: SEED_START_MS,
-      turnEnd: SEED_START_MS,
-      idleEnd: SEED_START_MS,
-      lastTurnMs: 0,
-      cacheCalledAt: SEED_START_MS,
+      evictedDone: 0,
+      evictedFailed: 0,
+      retiredUsd: 0,
+      retiredIn: 0,
+      retiredOut: 0,
+      mainUsd: 35.08,
+      limits: { fiveHour: 23, week: 57, fable: 82 },
+      contextTokens: 99_000,
     };
-    startTurn(model);
-    advanceModel(model, -SEED_START_MS);
-    model.cacheCalledAt = -18 * MINUTE;
+    advance(model, SEED_MS);
     return model;
   };
 
-  const pad = (value) => String(value).padStart(2, "0");
-
-  const formatClock = (ms) => {
-    const total = Math.max(0, Math.floor(ms / SECOND));
-    return `${Math.floor(total / 60)}:${pad(total % 60)}`;
+  const setTool = (random, row) => {
+    const spec = pickFrom(random, TOOLS);
+    row.tool = { kind: spec.kind, target: pickFrom(random, spec.targets) };
+    row.permission = random() < PERMISSION_CHANCE && spec.kind !== "reading";
   };
 
-  const formatSpan = (ms) => {
-    if (ms < 90 * SECOND) return `${Math.max(1, Math.round(ms / SECOND))}s`;
-    if (ms < 10 * MINUTE && ms % MINUTE !== 0) return `${Math.floor(ms / MINUTE)}m${pad(Math.round((ms % MINUTE) / SECOND))}s`;
-    if (ms < 90 * MINUTE) return `${Math.round(ms / MINUTE)}m`;
-    return `${Math.round(ms / HOUR)}h`;
-  };
-
-  const formatRemaining = (ms) => {
-    const hours = Math.floor(ms / HOUR);
-    const minutes = Math.floor((ms % HOUR) / MINUTE);
-    if (hours >= 24) return `${Math.floor(hours / 24)}d${hours % 24}h`;
-    return `${hours}h${pad(minutes)}`;
-  };
-
-  const readGauges = (model) => {
-    const seconds = model.now / SECOND;
-    const contextK = 93 + seconds * 0.05;
-    const cacheReadK = 319 + seconds * 0.2;
-    return {
-      ctx: { pct: contextK / 10, detail: `${Math.round(contextK)}k/1M ↻${Math.round(cacheReadK)}k` },
-      five: { pct: 35 + seconds * 0.004, detail: `in ${formatRemaining(3 * HOUR + 16 * MINUTE - model.now)}` },
-      week: { pct: 11 + seconds * 0.0004, detail: `in ${formatRemaining(6 * 24 * HOUR + HOUR - model.now)}` },
-    };
-  };
-
-  const create = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-  };
-
-  const required = (root, selector) => {
-    const node = root.querySelector(selector);
-    if (!node) throw new Error(`The band page is missing ${selector}.`);
-    return node;
-  };
-
-  const readRangeMs = (model, rangeMs) => (rangeMs === 0 ? Math.max(model.now - model.sessionStart, MINUTE) : rangeMs);
-
-  const currentKind = (agent) => {
-    if (agent.state !== "live") return agent.state;
-    const current = lastSpan(agent);
-    return current.end === null ? current.kind : "idle";
-  };
-
-  const drawSpans = (track, agent, windowStart, rangeMs, now) => {
-    const runs = [];
-    const lastIndex = agent.spans.length - 1;
-    agent.spans.forEach((span, index) => {
-      const end = span.end ?? Math.min(now, span.plannedEnd);
-      const start = Math.max(span.start, windowStart);
-      if (end <= windowStart || end <= start) return;
-      const isEndMark = index === lastIndex && agent.state !== "live";
-      runs.push({ kind: isEndMark ? agent.state : span.kind, start, end });
-    });
-    if (runs.length === 0) {
-      track.replaceChildren();
+  const stepAgent = (model, row, now) => {
+    const { random } = model;
+    if (now >= row.plannedEnd) {
+      const failed = random() < FAIL_CHANCE;
+      row.endedAt = now;
+      row.failReason = failed ? pickFrom(random, FAIL_REASONS) : "";
+      openSegment(row, failed ? "failed" : "done", now);
+      row.segments.at(-1).to = now + SECOND;
       return;
     }
-    const laneStart = runs[0].start;
-    const laneEnd = runs[runs.length - 1].end;
-    const laneSpan = Math.max(1, laneEnd - laneStart);
-    const lane = create("div", "ab-lane");
-    lane.style.insetInlineStart = `${((laneStart - windowStart) / rangeMs) * 100}%`;
-    lane.style.inlineSize = `${((laneEnd - laneStart) / rangeMs) * 100}%`;
-    for (const run of runs) {
-      const node = create("span", `ab-span is-${run.kind}`);
-      node.style.insetInlineStart = `${((run.start - laneStart) / laneSpan) * 100}%`;
-      node.style.inlineSize = `${((run.end - run.start) / laneSpan) * 100}%`;
-      lane.append(node);
+    if (now < row.nextChangeAt) return;
+    if (row.state === "waiting") {
+      openSegment(row, "tool", now);
+      row.nextChangeAt = now + between(random, 5 * SECOND, 20 * SECOND);
+      return;
     }
-    track.replaceChildren(lane);
-  };
-
-  const setPill = (row, agent) => {
-    const current = lastSpan(agent);
-    const isBetween = currentKind(agent) === "idle";
-    const kind = isBetween ? current.kind : currentKind(agent);
-    const isMain = agent.group === "main";
-    const isIdle = isMain && kind === "launched";
-    row.pill.className = `ab-pill is-${kind}`;
-    row.pill.textContent = isMain ? MAIN_PILL_TEXT[kind] : PILL_TEXT[kind];
-    const isEnded = agent.state !== "live";
-    let detail = agent.detail;
-    if (agent.state === "live") detail = isIdle ? "waiting for a prompt" : current.label;
-    row.detail.textContent = detail;
-    row.detail.classList.toggle("is-ended", isEnded || isIdle);
-    row.name.classList.toggle("is-ended", isEnded);
-  };
-
-  const createRow = (agent, isMain) => {
-    const element = create("div", "ab-row");
-    const name = create("span", `ab-name${isMain ? "" : " is-strong"}`, agent.name);
-    const track = create("div", "ab-track");
-    const state = create("div", "ab-state");
-    const pill = create("span", "ab-pill");
-    const detail = create("span", "ab-detail");
-    state.append(pill, detail);
-    element.append(name, track, state);
-    return { element, name, track, pill, detail, agent };
-  };
-
-  const chooseVisible = (model, windowStart) => {
-    const candidates = model.agents.filter((agent) => agent.state === "live" || agent.endedAt >= windowStart - LINGER_MS);
-    const ranked = [...candidates].sort((left, right) => {
-      if ((left.state === "live") !== (right.state === "live")) return left.state === "live" ? -1 : 1;
-      return left.state === "live" ? left.spawnedAt - right.spawnedAt : right.endedAt - left.endedAt;
-    });
-    const shown = new Set(ranked.slice(0, MAX_ROWS).map((agent) => agent.id));
-    return ranked.filter((agent) => shown.has(agent.id));
-  };
-
-  const STRIP_BINS = 60;
-  const STRIP_HEIGHT = 16;
-  const SVG_NS = "http://www.w3.org/2000/svg";
-
-  const kindAt = (agent, at, now) => {
-    for (const span of agent.spans) {
-      const end = span.end ?? Math.min(now, span.plannedEnd);
-      if (span.start <= at && at < end) return span.kind;
+    if (row.state === "tool") {
+      openSegment(row, "thinking", now);
+      row.nextChangeAt = now + between(random, 4 * SECOND, 14 * SECOND);
+      return;
     }
-    return null;
+    setTool(random, row);
+    if (row.permission) {
+      openSegment(row, "waiting", now);
+      row.nextChangeAt = now + between(random, 4 * SECOND, 10 * SECOND);
+      return;
+    }
+    openSegment(row, "tool", now);
+    row.nextChangeAt = now + between(random, 6 * SECOND, 24 * SECOND);
   };
 
-  const stepPath = (heights, bottoms) => {
-    const x = (bin) => bin;
-    let path = `M0 ${heights[0]}`;
-    for (let bin = 0; bin < heights.length; bin += 1) path += `H${x(bin + 1)}${bin + 1 < heights.length ? `V${heights[bin + 1]}` : ""}`;
-    path += `V${bottoms[bottoms.length - 1]}`;
-    for (let bin = bottoms.length - 1; bin >= 0; bin -= 1) path += `H${x(bin)}${bin > 0 ? `V${bottoms[bin - 1]}` : ""}`;
-    return `${path}Z`;
+  const stepMain = (model, now) => {
+    const { random, main } = model;
+    if (now < main.nextChangeAt) return;
+    const hasLive = model.agents.some((row) => row.endedAt === null);
+    const roll = random();
+    if (roll < (hasLive ? 0.45 : 0.1)) {
+      openSegment(main, "launched", now);
+      main.nextChangeAt = now + between(random, 6 * SECOND, 18 * SECOND);
+      return;
+    }
+    if (roll < 0.75) {
+      openSegment(main, "thinking", now);
+      main.tool = null;
+      main.nextChangeAt = now + between(random, 5 * SECOND, 15 * SECOND);
+      return;
+    }
+    setTool(random, main);
+    main.permission = false;
+    openSegment(main, "tool", now);
+    main.nextChangeAt = now + between(random, 4 * SECOND, 14 * SECOND);
   };
 
-  const drawStrip = (svg, agents, windowStart, rangeMs, now) => {
-    const live = agents.filter((agent) => agent.state === "live" || agent.endedAt > windowStart);
-    const series = Array.from({ length: STRIP_BINS }, (_, bin) => {
-      const at = windowStart + ((bin + 0.5) / STRIP_BINS) * rangeMs;
-      const counts = { tool: 0, thinking: 0, waiting: 0 };
-      for (const agent of live) {
-        const kind = kindAt(agent, at, now);
-        if (kind === "tool" || kind === "thinking" || kind === "waiting") counts[kind] += 1;
+  const grow = (model, stepMs) => {
+    const seconds = stepMs / SECOND;
+    const live = model.agents.filter((row) => row.endedAt === null);
+    let busySeconds = 0;
+    for (const row of live) {
+      if (row.state === "waiting") continue;
+      row.tokensIn += seconds * (row.state === "tool" ? 1900 : 700);
+      row.tokensOut += seconds * (row.state === "tool" ? 25 : 70);
+      busySeconds += seconds;
+    }
+    const main = model.main;
+    if (main.state === "thinking" || main.state === "tool") {
+      main.tokensIn += seconds * 9000;
+      main.tokensOut += seconds * 60;
+      model.mainUsd += seconds * 0.011;
+      model.contextTokens += seconds * 260;
+      busySeconds += seconds;
+    }
+    if (model.contextTokens > CONTEXT_WINDOW_TOKENS * (CRITICAL_PERCENT / 100)) model.contextTokens = CONTEXT_WINDOW_TOKENS * 0.14;
+    model.limits.fiveHour = Math.min(99.4, model.limits.fiveHour + busySeconds * 0.0016);
+    model.limits.week = Math.min(99.4, model.limits.week + busySeconds * 0.0002);
+    model.limits.fable = Math.min(99.4, model.limits.fable + busySeconds * 0.0006);
+  };
+
+  const evictOld = (model) => {
+    const ended = model.agents.filter((row) => row.endedAt !== null);
+    const surplus = ended.length - MAX_KEPT_ENDED;
+    if (surplus <= 0) return;
+    const gone = new Set(ended.slice(0, surplus));
+    for (const row of gone) {
+      if (row.state === "done") model.evictedDone += 1;
+      else model.evictedFailed += 1;
+      model.retiredUsd += costOf(row.model, row.tokensIn, row.tokensOut);
+      model.retiredIn += row.tokensIn;
+      model.retiredOut += row.tokensOut;
+    }
+    model.agents = model.agents.filter((row) => !gone.has(row));
+  };
+
+  const advance = (model, elapsedMs) => {
+    const target = model.now + elapsedMs;
+    while (model.now < target) {
+      const step = Math.min(SIM_STEP_MS, target - model.now);
+      model.now += step;
+      const now = model.now;
+      if (now >= model.nextDesiredAt) {
+        model.desiredLive = 1 + Math.floor(model.random() * 4);
+        model.nextDesiredAt = now + between(model.random, 20 * SECOND, 60 * SECOND);
       }
-      return counts;
-    });
-    const peak = Math.max(1, ...series.map((counts) => counts.tool + counts.thinking + counts.waiting));
-    const base = STRIP_HEIGHT - 1;
-    const scale = (base - 1) / peak;
-    const floors = series.map(() => base);
-    const nodes = [];
-    for (const kind of ["tool", "thinking", "waiting"]) {
-      const tops = series.map((counts, bin) => Number((floors[bin] - counts[kind] * scale).toFixed(2)));
-      if (series.some((counts) => counts[kind] > 0)) {
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute("class", `ab-strip-${kind}`);
-        path.setAttribute("d", stepPath(tops, floors));
-        nodes.push(path);
+      stepMain(model, now);
+      for (const row of model.agents) if (row.endedAt === null) stepAgent(model, row, now);
+      const liveCount = model.agents.filter((row) => row.endedAt === null).length;
+      if (liveCount < model.desiredLive && model.random() < 0.14) {
+        model.counter += 1;
+        model.agents.push(createAgent(model.random, model.counter, now));
       }
-      tops.forEach((top, bin) => {
-        floors[bin] = top;
-      });
+      grow(model, step);
     }
-    const line = document.createElementNS(SVG_NS, "path");
-    line.setAttribute("class", "ab-strip-base");
-    line.setAttribute("d", `M0 ${base + 0.5}H${STRIP_BINS}`);
-    svg.replaceChildren(line, ...nodes);
+    evictOld(model);
   };
 
-  const groupCountsText = (group) => {
-    const live = group.agents.filter((agent) => agent.state === "live");
-    const count = (kind) => live.filter((agent) => currentKind(agent) === kind).length;
-    const entries = [
-      [count("tool"), "tool"],
-      [count("thinking"), "think"],
-      [count("waiting"), "wait"],
-      [group.agents.length - live.length, "ended"],
+  const activityOf = (row, now) => {
+    const isMain = row.id === "main";
+    if (row.state === "done") return { kind: "done", detail: "", tone: "done" };
+    if (row.state === "failed") return { kind: "failed", detail: row.failReason, tone: "fail" };
+    if (row.state === "waiting") return { kind: "permission", detail: "permission: Bash", tone: "warn" };
+    if (row.state === "launched") {
+      const last = row.segments.at(-1);
+      return { kind: "idle", detail: `since ${formatSpan(now - last.from)}`, tone: "idle" };
+    }
+    if (row.state === "tool" && row.tool) return { kind: row.tool.kind, detail: row.tool.target, tone: isMain ? "ink" : "run" };
+    return { kind: "thinking", detail: "", tone: isMain ? "ink" : "run" };
+  };
+
+  const cellKindOf = (row, state) => {
+    if (row.id === "main") {
+      if (state === "tool") return "ink";
+      if (state === "thinking") return "ink-soft";
+      if (state === "waiting") return "warn";
+      return "idle";
+    }
+    if (row.state === "done" || row.state === "failed") {
+      const ended = row.state === "done" ? "done" : "fail";
+      if (state === "tool") return ended;
+      if (state === "done") return "done";
+      if (state === "failed") return "fail";
+      return `${ended}-soft`;
+    }
+    if (state === "tool") return "run";
+    if (state === "waiting") return "warn";
+    return "run-soft";
+  };
+
+  const cellsOf = (row, windowStart, windowEnd, count) => {
+    const length = (windowEnd - windowStart) / count;
+    return Array.from({ length: count }, (_, index) => {
+      const from = windowStart + index * length;
+      const segment = lastSegmentIn(row.segments, from, from + length);
+      if (!segment) return "empty";
+      return cellKindOf(row, segment.state);
+    });
+  };
+
+  const windowOf = (model, rangeName) => {
+    const length = RANGE_MS[rangeName];
+    if (length === 0) return { start: Math.min(model.sessionStart, model.now - MINUTE), end: model.now };
+    return { start: model.now - length, end: model.now };
+  };
+
+  const countsOf = (model) => {
+    const live = model.agents.filter((row) => row.endedAt === null).length;
+    const done = model.agents.filter((row) => row.state === "done").length + model.evictedDone;
+    const failed = model.agents.filter((row) => row.state === "failed").length + model.evictedFailed;
+    return { live, done, failed };
+  };
+
+  const spendOf = (model) => {
+    let agentsUsd = model.retiredUsd;
+    let tokensIn = model.main.tokensIn + model.retiredIn;
+    let tokensOut = model.main.tokensOut + model.retiredOut;
+    for (const row of model.agents) {
+      agentsUsd += costOf(row.model, row.tokensIn, row.tokensOut);
+      tokensIn += row.tokensIn;
+      tokensOut += row.tokensOut;
+    }
+    return { sessionUsd: model.mainUsd + agentsUsd, mainUsd: model.mainUsd, agentsUsd, tokensIn, tokensOut };
+  };
+
+  const arcsOf = (model, billing) => {
+    const context = {
+      id: "context",
+      percent: (model.contextTokens / CONTEXT_WINDOW_TOKENS) * 100,
+      reset: null,
+      usage: [formatTokens(model.contextTokens), formatTokens(CONTEXT_WINDOW_TOKENS)],
+    };
+    if (billing === "api") return [context];
+    return [
+      { id: "fiveHour", percent: model.limits.fiveHour, reset: "13:50", usage: null },
+      { id: "week", percent: model.limits.week, reset: "Sun 04:00", usage: null },
+      { id: "fable", percent: model.limits.fable, reset: "Sun 04:00", usage: null },
+      context,
     ];
-    const parts = entries.filter(([amount]) => amount > 0).map(([amount, word]) => `${amount} ${word}`);
-    return parts.length === 0 ? "idle" : parts.join(" · ");
   };
 
-  const groupSignature = (groups, collapsed) =>
-    groups
-      .map((group) => `${group.key}${collapsed.has(group.key) ? "c" : "o"}${group.agents.map((agent) => agent.id).join(",")}`)
-      .join("|");
+  const svgElement = (name, attributes) => {
+    const element = document.createElementNS(SVG_NAMESPACE, name);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+    return element;
+  };
 
-  const createBand = (root, model, options) => {
-    const view = {
-      status: required(root, "[data-status]"),
-      turn: required(root, "[data-turn]"),
-      cache: required(root, "[data-cache]"),
-      live: required(root, "[data-live]"),
-      done: required(root, "[data-done]"),
-      fail: required(root, "[data-fail]"),
-      axisStart: required(root, "[data-axis-start]"),
-      axisMiddle: required(root, "[data-axis-middle]"),
-      rows: required(root, "[data-rows]"),
-      earlier: required(root, "[data-earlier]"),
-      foldLabel: required(root, "[data-fold-label]"),
-      foldButton: required(root, "[data-fold]"),
-      gauges: new Map(),
-    };
-    for (const node of root.querySelectorAll("[data-gauge]")) {
-      view.gauges.set(node.dataset.gauge, {
-        arc: required(node, "[data-arc]"),
-        pct: required(node, "[data-pct]"),
-        detail: required(node, "[data-detail]"),
+  const textElement = (tag, text, className = "") => {
+    const element = document.createElement(tag);
+    element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  };
+
+  const percentText = (percent) => `${Math.round(percent)}%${percent >= HIGH_PERCENT ? " ▲" : ""}`;
+
+  const toneOfPercent = (percent) => {
+    if (percent >= CRITICAL_PERCENT) return "tone-fail";
+    return percent >= HIGH_PERCENT ? "tone-warn" : "";
+  };
+
+  const percentElement = (percent) => {
+    const element = textElement("span", percentText(percent), toneOfPercent(percent));
+    if (percent >= HIGH_PERCENT) element.classList.add("is-bold");
+    return element;
+  };
+
+  const stripShapes = (cells, cellWidth, cellGap, height, radius, groundOnEmpty) => {
+    const shapes = [];
+    cells.forEach((kind, index) => {
+      const x = index * (cellWidth + cellGap);
+      if (kind === "empty" || kind === "idle") {
+        if (!groundOnEmpty) return;
+        shapes.push(svgElement("rect", { x, y: 0, width: cellWidth, height, rx: radius, class: "fill-rail" }));
+        if (kind === "idle") shapes.push(svgElement("rect", { x: x + (cellWidth - 2) / 2, y: (height - 2) / 2, width: 2, height: 2, rx: 1, class: "fill-muted" }));
+        return;
+      }
+      shapes.push(svgElement("rect", { x, y: 0, width: cellWidth, height, rx: radius, class: `fill-${kind}` }));
+    });
+    return shapes;
+  };
+
+  const drawStrip = (svg, cells) => {
+    svg.replaceChildren(...stripShapes(cells, CELL_WIDTH, CELL_GAP, CELL_HEIGHT, 1, true));
+  };
+
+  const drawLane = (svg, lanes) => {
+    const shapes = [];
+    const cellWidth = LANE_WIDTH / LANE_CELLS;
+    lanes.forEach((cells, index) => {
+      const y = index * LANE_STEP;
+      shapes.push(svgElement("rect", { x: 0, y, width: LANE_WIDTH, height: LANE_HEIGHT, class: "fill-rail" }));
+      let runStart = 0;
+      cells.forEach((kind, cellIndex) => {
+        const isEnd = cellIndex === cells.length - 1 || cells[cellIndex + 1] !== kind;
+        if (!isEnd) return;
+        const x = runStart * cellWidth;
+        const width = Math.max(1, (cellIndex - runStart + 1) * cellWidth);
+        runStart = cellIndex + 1;
+        if (kind === "empty") return;
+        if (kind === "idle") shapes.push(svgElement("rect", { x, y: y + 1, width, height: 1, class: "fill-muted" }));
+        else shapes.push(svgElement("rect", { x, y, width, height: LANE_HEIGHT, class: `fill-${kind}` }));
       });
-    }
-    const state = {
-      rangeMs: options.rangeMs,
-      isFolded: false,
-      collapsed: new Set(),
-      signature: "",
-      mainRow: null,
-      agentRows: new Map(),
-      groupHeads: new Map(),
-    };
+    });
+    shapes.push(svgElement("rect", { x: LANE_WIDTH - 1, y: 0, width: 1, height: LANE_HEIGHT + (Math.max(1, lanes.length) - 1) * LANE_STEP, class: "fill-ink" }));
+    svg.replaceChildren(...shapes);
+  };
 
-    const rebuildRows = (groups) => {
-      const focusedKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.group : undefined;
-      state.agentRows.clear();
-      state.groupHeads.clear();
-      state.mainRow = createRow(model.main, true);
-      const nodes = [state.mainRow.element];
-      for (const group of groups) {
-        const head = create("button", `ab-group${state.collapsed.has(group.key) ? " is-collapsed" : ""}`);
-        head.type = "button";
-        head.dataset.group = group.key;
-        head.setAttribute("aria-expanded", String(!state.collapsed.has(group.key)));
-        const line = create("span", "ab-group-row");
-        const count = create("span", "ab-group-count");
-        const title = create("span", "ab-group-title");
-        title.append(create("span", "ab-chevron"), create("span", "ab-group-tag", group.tag), create("span", "ab-group-name", group.name.replace(/^workflow: /, "")));
-        title.firstChild.setAttribute("aria-hidden", "true");
-        line.append(title);
-        let strip = null;
-        if (state.collapsed.has(group.key)) {
-          strip = document.createElementNS(SVG_NS, "svg");
-          strip.setAttribute("class", "ab-strip");
-          strip.setAttribute("viewBox", `0 0 ${STRIP_BINS} ${STRIP_HEIGHT}`);
-          strip.setAttribute("preserveAspectRatio", "none");
-          strip.setAttribute("aria-hidden", "true");
-          line.classList.add("is-strip");
-          line.append(strip);
-        }
-        line.append(count);
-        head.append(line);
-        state.groupHeads.set(group.key, { count, strip });
-        nodes.push(head);
-        if (state.collapsed.has(group.key)) continue;
-        for (const agent of group.agents) {
-          const row = createRow(agent, false);
-          state.agentRows.set(agent.id, row);
-          nodes.push(row.element);
+  const drawRing = (svg, arcs) => {
+    const center = RING_SIZE / 2;
+    const circles = arcs.flatMap((arc, index) => {
+      const radius = RING_OUTER_RADIUS - index * RING_STEP;
+      const circumference = 2 * Math.PI * radius;
+      const filled = (circumference * clamp(arc.percent, 0, 100)) / 100;
+      const common = { cx: center, cy: center, r: radius };
+      return [
+        svgElement("circle", { ...common, class: "stroke-rail" }),
+        svgElement("circle", {
+          ...common,
+          class: `stroke-arc-${ARC_DEFINITIONS[arc.id].suffix}`,
+          "stroke-dasharray": `${filled.toFixed(2)} ${circumference.toFixed(2)}`,
+          transform: `rotate(-90 ${center} ${center})`,
+        }),
+      ];
+    });
+    svg.replaceChildren(...circles);
+    svg.setAttribute("aria-label", arcs.map((arc) => `${ARC_DEFINITIONS[arc.id].name} ${Math.round(arc.percent)}%`).join(", "));
+  };
+
+  const drawBar = (percent, id) => {
+    const svg = svgElement("svg", { class: "limit-bar", viewBox: `0 0 ${BAR_WIDTH} ${BAR_HEIGHT}`, preserveAspectRatio: "none", role: "img", "aria-label": `${ARC_DEFINITIONS[id].name} ${Math.round(percent)}%` });
+    svg.append(svgElement("rect", { x: 0, y: 0, width: BAR_WIDTH, height: BAR_HEIGHT, rx: 2, class: "fill-rail" }));
+    const width = Math.round(clamp(percent, 0, 100));
+    if (width > 0) svg.append(svgElement("rect", { x: 0, y: 0, width, height: BAR_HEIGHT, rx: 2, class: `fill-arc-${ARC_DEFINITIONS[id].suffix}` }));
+    return svg;
+  };
+
+  const dotElement = (id) => textElement("span", "●", `text-arc-${ARC_DEFINITIONS[id].suffix}`);
+
+  const resetText = (arc) => (arc.reset === null ? "" : `↻${arc.reset}`);
+
+  const legendItem = (arc) => {
+    const item = textElement("span", "", "legend-item");
+    item.append(dotElement(arc.id), textElement("strong", ARC_DEFINITIONS[arc.id].short), percentElement(arc.percent));
+    const detail = arc.reset === null ? arc.usage.join("/") : resetText(arc);
+    item.append(textElement("span", detail, "band-dim"));
+    return item;
+  };
+
+  const legendOf = (arcs, spend, billing) => {
+    const hasLimits = billing === "subscription";
+    const columns = [arcs.filter((_, index) => index % 2 === 0), arcs.filter((_, index) => index % 2 === 1)];
+    const cost = textElement("strong", formatUsd(spend.sessionUsd));
+    const firstLines = (hasLimits ? 0 : 1) + columns[0].length;
+    const isCostShorter = columns[1].length < firstLines;
+    return columns.map((column, index) => {
+      const element = document.createElement("div");
+      element.className = "legend-column";
+      if (index === 0 && !hasLimits) element.append(textElement("span", `API billing · ${formatTokens(spend.tokensIn)} in / ${formatTokens(spend.tokensOut)} out`, "band-dim"));
+      column.forEach((arc, position) => {
+        const isLast = position === column.length - 1;
+        if (index === 1 && !isCostShorter && isLast) {
+          const line = textElement("span", "", "legend-last");
+          line.append(legendItem(arc), cost.cloneNode(true));
+          element.append(line);
+        } else element.append(legendItem(arc));
+      });
+      if (index === 1 && (isCostShorter || column.length === 0)) element.append(cost);
+      return element;
+    });
+  };
+
+  const activityText = (activity) => `${ACTIVITY_ICON[activity.kind]} ${ACTIVITY_WORD[activity.kind]}`;
+
+  const factsOf = (row, activity, spend, now, isMain) => {
+    const usd = isMain ? spend.mainUsd : costOf(row.model, row.tokensIn, row.tokensOut);
+    const lifetime = (row.endedAt ?? now) - row.startedAt;
+    return [
+      ["now", activity.detail ? `${ACTIVITY_WORD[activity.kind]}: ${activity.detail}` : ACTIVITY_WORD[activity.kind]],
+      ["model", row.model],
+      [isMain ? "session age" : "ran for", formatAge(lifetime)],
+      ["tokens in", `${formatTokens(row.tokensIn)} (cache reads included)`],
+      ["tokens out", formatTokens(row.tokensOut)],
+      [isMain ? "main est." : "cost", `~${formatUsd(usd)}${isMain ? " session total minus agents" : " estimated from tokens"}`],
+    ];
+  };
+
+  const createTile = () => {
+    const root = document.createElement("li");
+    root.className = "tile";
+    root.tabIndex = 0;
+    const top = document.createElement("div");
+    top.className = "tile-top";
+    const name = textElement("strong", "", "tile-name");
+    const model = textElement("span", "", "tile-model");
+    const state = textElement("strong", "");
+    const detail = textElement("span", "", "tile-detail");
+    top.append(name, model, state, detail);
+    const bottom = document.createElement("div");
+    bottom.className = "tile-bottom";
+    const strip = svgElement("svg", { class: "strip", viewBox: `0 0 ${STRIP_CELLS * (CELL_WIDTH + CELL_GAP) - CELL_GAP} ${CELL_HEIGHT}`, preserveAspectRatio: "none", role: "img" });
+    const time = textElement("strong", "", "tile-time");
+    const tokens = textElement("span", "", "tile-tokens");
+    const cost = textElement("strong", "", "tile-cost");
+    bottom.append(strip, time, tokens, cost);
+    const card = document.createElement("div");
+    card.className = "tile-card";
+    card.setAttribute("aria-hidden", "true");
+    const cardTitle = textElement("span", "", "tile-card-title");
+    const facts = document.createElement("dl");
+    card.append(cardTitle, facts);
+    root.append(top, bottom, card);
+    return { root, name, model, state, detail, strip, time, tokens, cost, cardTitle, facts };
+  };
+
+  const fillTile = (tile, row, model, windowRange, spend) => {
+    const isMain = row.id === "main";
+    const now = model.now;
+    const activity = activityOf(row, now);
+    const hasUsage = isMain || now - row.startedAt > 8 * SECOND;
+    tile.name.textContent = row.label;
+    tile.model.textContent = row.model;
+    tile.state.textContent = activityText(activity);
+    tile.state.className = `tone-${activity.tone}`;
+    tile.detail.textContent = activity.detail;
+    drawStrip(tile.strip, cellsOf(row, windowRange.start, windowRange.end, STRIP_CELLS));
+    tile.strip.setAttribute("aria-label", `${row.label} activity over the range`);
+    tile.time.textContent = formatAge(((row.endedAt ?? now) - (isMain ? model.sessionStart : row.startedAt)));
+    tile.tokens.textContent = hasUsage ? `${formatTokens(row.tokensIn)}↓ ${formatTokens(row.tokensOut)}↑` : "no usage";
+    tile.cost.textContent = hasUsage ? `~${formatUsd(isMain ? spend.mainUsd : costOf(row.model, row.tokensIn, row.tokensOut))}` : "";
+    tile.root.classList.toggle("is-waiting", activity.kind === "permission");
+    tile.root.setAttribute("aria-label", `${row.label}, ${activityText(activity)}`);
+    tile.cardTitle.textContent = `${row.label} ${activityText(activity)}`;
+    const rows = factsOf(row, activity, spend, now, isMain).map(([term, value]) => {
+      const fact = document.createElement("div");
+      fact.className = "fact";
+      fact.append(textElement("dt", term), textElement("dd", value));
+      return fact;
+    });
+    tile.facts.replaceChildren(...rows);
+  };
+
+  const createBand = (root, model, settings) => {
+    const folded = root.querySelector('[data-view="folded"]');
+    const open = root.querySelector('[data-view="open"]');
+    const ring = root.querySelector("[data-ring]");
+    const legend = root.querySelector("[data-legend]");
+    const lane = root.querySelector("[data-lane]");
+    const mainActivity = root.querySelector("[data-main-activity]");
+    const limits = root.querySelector("[data-limits]");
+    const spendList = root.querySelector("[data-spend]");
+    const tileList = root.querySelector("[data-tiles]");
+    const foldButtons = [...root.querySelectorAll("[data-fold]")];
+    const rangeButtons = [...root.querySelectorAll("[data-range]")];
+    const countGroups = [...root.querySelectorAll("[data-counts]")];
+    const tiles = new Map();
+    let ghost = { key: "", element: null };
+
+    const showCounts = (counts) => {
+      const symbols = { live: "▶", done: "✓", failed: "✕" };
+      for (const group of countGroups) {
+        for (const element of group.querySelectorAll("[data-count]")) {
+          const key = element.dataset.count;
+          element.textContent = `${symbols[key]}${counts[key]}`;
+          element.classList.toggle("is-zero", counts[key] === 0);
         }
       }
-      view.rows.replaceChildren(...nodes);
-      if (focusedKey) view.rows.querySelector(`[data-group="${focusedKey}"]`)?.focus();
+    };
+
+    const drawGutter = (arcs, spend) => {
+      const blocks = arcs.map((arc) => {
+        const block = document.createElement("div");
+        const head = document.createElement("div");
+        head.className = "limit-head";
+        const name = textElement("span", "", "limit-name");
+        name.append(dotElement(arc.id), textElement("strong", ARC_DEFINITIONS[arc.id].name), percentElement(arc.percent));
+        head.append(name);
+        const detail = arc.reset === null ? arc.usage.join(" of ") : `↻ ${arc.reset}`;
+        head.append(textElement("span", detail, "band-dim"));
+        block.append(head, drawBar(arc.percent, arc.id));
+        return block;
+      });
+      limits.replaceChildren(...blocks);
+      const lines = [
+        ["session total", formatUsd(spend.sessionUsd), true],
+        ["main est.", `~${formatUsd(spend.mainUsd)}`, false],
+        ["agents est.", `~${formatUsd(spend.agentsUsd)}`, false],
+      ];
+      if (settings.billing === "api") {
+        lines.push(["tokens in", formatTokens(spend.tokensIn), false], ["tokens out", formatTokens(spend.tokensOut), false]);
+      }
+      spendList.replaceChildren(
+        ...lines.map(([term, value, isStrong]) => {
+          const row = document.createElement("div");
+          row.className = "spend-row";
+          row.append(textElement("dt", term), textElement("dd", value, isStrong ? "is-bold" : ""));
+          return row;
+        }),
+      );
+    };
+
+    const makeGhost = (text, canWiden) => {
+      const item = document.createElement("li");
+      item.className = "ghost";
+      if (canWiden) {
+        const button = textElement("button", text, "ghost-button");
+        button.type = "button";
+        button.dataset.widen = "all";
+        item.append(button);
+      } else item.textContent = text;
+      return item;
+    };
+
+    const drawTiles = (spend) => {
+      const windowRange = windowOf(model, settings.range);
+      const isShown = (row) => row.endedAt === null || row.endedAt >= windowRange.start;
+      const inWindow = model.agents.filter(isShown);
+      const shown = inWindow.slice(-(MAX_TILES - 1));
+      const earlier = model.agents.length - inWindow.length + model.evictedDone + model.evictedFailed;
+      const hidden = inWindow.length - shown.length;
+      const entries = [model.main, ...shown];
+      const keep = new Set(entries.map((row) => row.id));
+      for (const [id, tile] of tiles) {
+        if (!keep.has(id)) {
+          tile.root.remove();
+          tiles.delete(id);
+        }
+      }
+      const elements = entries.map((row) => {
+        if (!tiles.has(row.id)) tiles.set(row.id, createTile());
+        const tile = tiles.get(row.id);
+        fillTile(tile, row, model, windowRange, spend);
+        return tile.root;
+      });
+      const parts = [earlier > 0 ? `+${earlier} ended earlier` : "", hidden > 0 ? `+${hidden} more` : ""].filter(Boolean);
+      const hasAgents = model.agents.length + model.evictedDone + model.evictedFailed > 0;
+      const ghostText = hasAgents ? parts.join(" \u00b7 ") : "No agents yet this session.";
+      const canWiden = hasAgents && earlier > 0 && settings.range !== "all";
+      const ghostKey = ghostText === "" ? "" : `${ghostText}|${canWiden}`;
+      if (ghostKey !== ghost.key) ghost = { key: ghostKey, element: ghostKey === "" ? null : makeGhost(ghostText, canWiden) };
+      if (ghost.element) elements.push(ghost.element);
+      const current = [...tileList.children];
+      const isSame = current.length === elements.length && current.every((child, index) => child === elements[index]);
+      if (!isSame) tileList.replaceChildren(...elements);
     };
 
     const render = () => {
-      const rangeMs = readRangeMs(model, state.rangeMs);
-      const windowStart = model.now - rangeMs;
-      const visible = chooseVisible(model, windowStart);
-      const groups = GROUPS.map((group) => ({ ...group, agents: visible.filter((agent) => agent.group === group.key) })).filter(
-        (group) => group.agents.length > 0,
-      );
-      const signature = groupSignature(groups, state.collapsed);
-      if (signature !== state.signature) {
-        state.signature = signature;
-        rebuildRows(groups);
-      }
-      if (state.mainRow) {
-        drawSpans(state.mainRow.track, model.main, windowStart, rangeMs, model.now);
-        setPill(state.mainRow, model.main);
-      }
-      for (const row of state.agentRows.values()) {
-        drawSpans(row.track, row.agent, windowStart, rangeMs, model.now);
-        setPill(row, row.agent);
-      }
-      for (const group of groups) {
-        const head = state.groupHeads.get(group.key);
-        if (head.strip) {
-          drawStrip(head.strip, group.agents, windowStart, rangeMs, model.now);
-          head.count.textContent = groupCountsText(group);
-        } else {
-          const live = group.agents.filter((agent) => agent.state === "live").length;
-          head.count.textContent = `${live} live · ${group.agents.length - live} ended`;
-        }
-      }
-      view.axisStart.textContent = `-${formatSpan(rangeMs)}`;
-      view.axisMiddle.textContent = `-${formatSpan(rangeMs / 2)}`;
-      const earlier = model.spawned - visible.length;
-      view.earlier.textContent = earlier > 0 ? `+${earlier} earlier` : "";
-      view.earlier.hidden = earlier <= 0;
-      renderSummary();
-    };
-
-    const renderSummary = () => {
-      view.status.textContent = model.isWorking ? "WORKING" : "IDLE";
-      view.status.classList.toggle("is-idle", !model.isWorking);
-      view.turn.textContent = model.isWorking
-        ? `turn ${formatClock(model.now - model.turnStart)}`
-        : `last turn ${formatClock(model.lastTurnMs)}`;
-      const coldMs = CACHE_LIFETIME_MS - (model.now - model.cacheCalledAt);
-      view.cache.textContent = coldMs > 0 ? `cold in ~${Math.ceil(coldMs / MINUTE)}m` : "cold";
-      const live = liveAgents(model).length;
-      view.live.textContent = `${live} live`;
-      view.done.textContent = `${model.done} done`;
-      view.fail.textContent = `${model.failed} fail`;
-      const gauges = readGauges(model);
-      for (const [key, values] of Object.entries(gauges)) {
-        const gauge = view.gauges.get(key);
-        if (!gauge) continue;
-        const pct = Math.min(100, values.pct);
-        gauge.arc.setAttribute("stroke-dasharray", `${pct.toFixed(1)} 100`);
-        gauge.pct.textContent = `${Math.round(pct)}%`;
-        gauge.detail.textContent = values.detail;
+      const spend = spendOf(model);
+      const arcs = arcsOf(model, settings.billing);
+      const counts = countsOf(model);
+      showCounts(counts);
+      drawRing(ring, arcs);
+      legend.replaceChildren(...legendOf(arcs, spend, settings.billing));
+      const mainState = activityOf(model.main, model.now);
+      mainActivity.textContent = activityText(mainState);
+      mainActivity.className = `activity tone-${mainState.tone}`;
+      const laneWindow = { start: model.now - LANE_RANGE_MS, end: model.now };
+      const liveAgents = model.agents.filter((row) => row.endedAt === null);
+      const laneRows = [model.main, ...liveAgents].slice(0, MAX_LANES);
+      drawLane(lane, laneRows.map((row) => cellsOf(row, laneWindow.start, laneWindow.end, LANE_CELLS)));
+      if (!settings.isFolded) {
+        drawGutter(arcs, spend);
+        drawTiles(spend);
       }
     };
 
-    const setRange = (rangeMs) => {
-      state.rangeMs = rangeMs;
-      for (const button of root.querySelectorAll("[data-range]")) {
-        button.setAttribute("aria-pressed", String(Number(button.dataset.range) === rangeMs));
+    const showFold = () => {
+      folded.hidden = !settings.isFolded;
+      open.hidden = settings.isFolded;
+      for (const button of foldButtons) {
+        button.setAttribute("aria-expanded", String(!settings.isFolded));
+        button.setAttribute("aria-label", settings.isFolded ? "Unfold the band" : "Fold the band");
       }
-      render();
     };
 
-    const toggleFold = () => {
-      state.isFolded = !state.isFolded;
-      root.classList.toggle("is-folded", state.isFolded);
-      view.foldButton.classList.toggle("is-folded", state.isFolded);
-      view.foldButton.setAttribute("aria-expanded", String(!state.isFolded));
-      view.foldLabel.textContent = state.isFolded ? "unfold" : "fold";
-    };
-
-    const toggleGroup = (key) => {
-      if (state.collapsed.has(key)) state.collapsed.delete(key);
-      else state.collapsed.add(key);
-      state.signature = "";
-      render();
+    const showRange = () => {
+      for (const button of rangeButtons) button.setAttribute("aria-pressed", String(button.dataset.range === settings.range));
     };
 
     root.addEventListener("click", (event) => {
       if (!(event.target instanceof Element)) return;
+      if (event.target.closest("[data-fold]")) {
+        settings.isFolded = !settings.isFolded;
+        showFold();
+        render();
+        return;
+      }
       const rangeButton = event.target.closest("[data-range]");
-      if (rangeButton instanceof HTMLElement) return setRange(Number(rangeButton.dataset.range));
-      if (event.target.closest("[data-fold]")) return toggleFold();
-      const groupButton = event.target.closest("[data-group]");
-      if (groupButton instanceof HTMLElement && groupButton.dataset.group) toggleGroup(groupButton.dataset.group);
+      if (rangeButton instanceof HTMLElement) {
+        settings.range = rangeButton.dataset.range ?? "5m";
+        showRange();
+        render();
+        return;
+      }
+      if (event.target.closest("[data-widen]")) {
+        settings.range = "all";
+        showRange();
+        render();
+      }
     });
 
+    showFold();
+    showRange();
     return { render };
   };
 
-  const bindTheme = (button) => {
+  const bindTheme = (switchButton, choiceButtons) => {
     const page = document.documentElement;
     const applyTheme = (theme) => {
       page.dataset.theme = theme;
-      button.setAttribute("aria-checked", String(theme === "dark"));
+      switchButton.setAttribute("aria-checked", String(theme === "dark"));
+      for (const choice of choiceButtons) choice.setAttribute("aria-pressed", String(choice.dataset.themeChoice === theme));
     };
-    button.addEventListener("click", () => {
-      const theme = page.dataset.theme === "dark" ? "dark" : "light";
-      const next = theme === "dark" ? "light" : "dark";
-      applyTheme(next);
+    const choose = (theme) => {
+      applyTheme(theme);
       try {
-        localStorage.setItem(THEME_KEY, next);
+        localStorage.setItem(THEME_KEY, theme);
       } catch (error) {
         console.warn("The theme could not be saved.", error);
       }
-    });
+    };
+    switchButton.addEventListener("click", () => choose(page.dataset.theme === "dark" ? "light" : "dark"));
+    for (const choice of choiceButtons) choice.addEventListener("click", () => choose(choice.dataset.themeChoice === "dark" ? "dark" : "light"));
     applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
   };
 
-  const bindPause = (button, onChange, isPausedAtStart) => {
-    let isPaused = isPausedAtStart;
+  const bindBilling = (buttons, settings, onChange) => {
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        settings.billing = button.dataset.billingChoice === "api" ? "api" : "subscription";
+        for (const other of buttons) other.setAttribute("aria-pressed", String(other === button));
+        onChange();
+      });
+    }
+  };
+
+  const bindPause = (button, state) => {
     const show = () => {
-      button.textContent = isPaused ? "Resume" : "Pause";
-      button.setAttribute("aria-pressed", String(isPaused));
+      button.textContent = state.isPaused ? "Resume" : "Pause";
+      button.setAttribute("aria-pressed", String(state.isPaused));
     };
     button.addEventListener("click", () => {
-      isPaused = !isPaused;
+      state.isPaused = !state.isPaused;
       show();
-      onChange(isPaused);
     });
     show();
   };
 
+  const required = (parent, selector) => {
+    const element = parent.querySelector(selector);
+    if (!element) throw new Error(`The band page is missing ${selector}.`);
+    return element;
+  };
+
   const start = () => {
-    const root = required(document, "[data-band]");
-    bindTheme(required(document, "[data-theme-toggle]"));
-    const model = createModel(Date.now());
-    const band = createBand(root, model, { rangeMs: 5 * MINUTE });
+    bindTheme(required(document, "[data-theme-toggle]"), [...document.querySelectorAll("[data-theme-choice]")]);
+    const settings = { billing: "subscription", range: "5m", isFolded: false };
+    const model = createModel();
+    const band = createBand(required(document, "[data-band]"), model, settings);
+    const state = { isPaused: window.matchMedia("(prefers-reduced-motion: reduce)").matches };
+    bindBilling([...document.querySelectorAll("[data-billing-choice]")], settings, band.render);
+    bindPause(required(document, "[data-pause]"), state);
     band.render();
-    let isPaused = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let lastReal = performance.now();
-    bindPause(
-      required(document, "[data-pause]"),
-      (value) => {
-        isPaused = value;
-        lastReal = performance.now();
-      },
-      isPaused,
-    );
-    window.setInterval(() => {
-      const real = performance.now();
-      const elapsed = Math.min(real - lastReal, 2 * SECOND);
-      lastReal = real;
-      if (isPaused) return;
-      advanceModel(model, elapsed * SPEED);
+    setInterval(() => {
+      const nowReal = performance.now();
+      const elapsed = Math.min(nowReal - lastReal, MAX_REAL_STEP_MS);
+      lastReal = nowReal;
+      if (state.isPaused || document.hidden) return;
+      advance(model, elapsed * SPEED);
       band.render();
     }, TICK_MS);
   };
 
-  start();
-}
-
-{
   const COPY_LABEL = "Copy";
   const COPIED_LABEL = "Copied";
   const SELECTED_LABEL = "Selected: press Ctrl+C";
@@ -692,5 +891,6 @@
     });
   };
 
+  start();
   for (const root of document.querySelectorAll("[data-install]")) bindInstall(root);
 }
