@@ -38,7 +38,7 @@ const costTextOf = (usd: number | null): string => (usd === null ? '' : '~' + fo
 
 export const NO_USAGE_TEXT = 'no usage'
 
-const tokensTextOf = (row: AgentRow): string => (row.usage === undefined ? NO_USAGE_TEXT : formatTokens(tokensInOf(row.usage)) + '↓ ' + formatTokens(row.usage.output) + '↑')
+const tokensTextOf = (row: AgentRow, cost: string): string => (row.usage === undefined ? (cost === '' ? NO_USAGE_TEXT : '') : formatTokens(tokensInOf(row.usage)) + '↓ ' + formatTokens(row.usage.output) + '↑')
 
 export type MainEstimate = { usd: number | null; isFromTotal: boolean }
 
@@ -108,6 +108,7 @@ export const tileOf = (row: AgentRow, context: TileContext): Tile => {
   const activity = activityOf(row, context.now)
   const startedAt = isMain ? (context.sessionStartedAt ?? row.startedAt) : row.startedAt
   const endedAt = row.endedAt ?? context.now
+  const cost = costTextOf(isMain ? context.spend.main.usd : tokenCostOf(row))
   const base: Omit<Tile, 'facts'> = {
     id: row.id,
     isMain,
@@ -117,8 +118,8 @@ export const tileOf = (row: AgentRow, context: TileContext): Tile => {
     isWaiting: activity.kind === 'needs-you' || activity.kind === 'permission',
     strip: cellsOf(row, context.window, context.now),
     time: formatAge(endedAt - startedAt),
-    tokens: tokensTextOf(row),
-    cost: costTextOf(isMain ? context.spend.main.usd : tokenCostOf(row)),
+    tokens: tokensTextOf(row, cost),
+    cost,
   }
 
   return { ...base, facts: factsOf(row, base, context) }

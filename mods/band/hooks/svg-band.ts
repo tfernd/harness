@@ -13,6 +13,7 @@ export type SvgInput = {
   isWorking: boolean
   turnStartedAt: number | null
   scheme: ThemeSetting
+  loadedAt: number
 }
 
 export const columnsToWidth = (columns: number): number => Math.max(320, Math.min(1100, Math.round(columns * 8)))

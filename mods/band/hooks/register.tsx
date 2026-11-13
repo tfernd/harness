@@ -64,6 +64,7 @@ type Runtime = {
   listedIds: Set<string>
   openCalls: Map<string, readonly OpenCall[]>
   callSerial: number
+  loadedAt: number | null
   pendingUsage: PendingUsage[]
 }
 
@@ -289,9 +290,11 @@ export const register: Register = on => {
     pendingUsage: [],
     openCalls: new Map(),
     callSerial: 0,
+    loadedAt: null,
   }
 
   on('session.start', async ($, event, next) => {
+    runtime.loadedAt ??= await $.clock.now()
     const result = await next(event)
 
     if (!runtime.isClearing) {
@@ -461,6 +464,7 @@ export const register: Register = on => {
     const [folded, rangeValue, groups, rosterValue, gaugeValues, startedAt, schemeValue] = await Promise.all([read($, isFolded), read($, range), read($, foldedGroups), read($, roster), read($, gauges), read($, turnStartedAt), read($, scheme)])
     const store = hasRaster ? runtime.store : await read($, agents)
     const now = await $.clock.now()
+    runtime.loadedAt ??= now
     const actions: Actions = {
       toggleFold: () => void update($, isFolded, current => !current),
       setRange: (chosen: Range) => void update($, range, () => chosen),
@@ -482,6 +486,7 @@ export const register: Register = on => {
         isWorking: event.props.isWorking,
         turnStartedAt: startedAt,
         scheme: schemeValue,
+        loadedAt: runtime.loadedAt,
       }
       const wait = bandRefreshMs({ rows: rowIndex, roster: rosterValue, range: rangeValue, now, isFolded: folded, isWorking: event.props.isWorking })
       runtime.refreshAt = wait === null ? null : now + wait

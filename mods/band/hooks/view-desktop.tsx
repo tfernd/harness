@@ -3,7 +3,8 @@ import type { Elements, RenderElement } from 'claude-code'
 import type { Range } from '../types'
 
 import { type Activity, cellsOf } from './activity'
-import { type Arc, apiBillingText, arcsOf, isWarning, legendColumnsOf, resetClockOf, toneOfPercent } from './arcs'
+import { type Arc, apiBillingText, arcsOf, isWarning, legendColumnsOf, percentTextOf, resetClockOf, toneOfPercent } from './arcs'
+import { COST_COLUMNS, GUTTER_COLUMNS, MAIN_COLUMN_PADDING_COLUMNS, SECTION_GAP_COLUMNS, STRIP_MIN_COLUMNS, TILE_PADDING_COLUMNS, TIME_COLUMNS, TOKENS_COLUMNS, legendColumnsWidthOf, miniLaneColumnsOf, pixelsOf, stripColumnsOf } from './desktop-fit'
 import { type DesktopPalette, type Tone, arcColorOf, paletteOf } from './desktop-theme'
 import { GUTTER_BAR_WIDTH, MINI_LANE_CELLS, STRIP_HEIGHT, barSvg, miniLanesSvg, ringSvg, ruleSvg, stripSvg } from './desktop-svg'
 import { type Ghost, type Tile, MINI_LANES_RANGE, TIMELINE_RANGES, mainEstimateLabelOf, miniLaneRowsOf, rangeLabelOf, spendOf, tilesOf, timelineWindowOf } from './desktop'
@@ -22,17 +23,11 @@ export type DesktopView = {
   actions: Actions
 }
 
-export const GUTTER_COLUMNS = 36
 export const AGENTS_LABEL = 'agents'
 export const MAIN_NAME = 'main'
-export const TOKENS_COLUMNS = 12
-export const COST_COLUMNS = 9
-export const STRIP_MIN_COLUMNS = 12
-export const TIME_COLUMNS = 6
-export const TILE_PADDING_COLUMNS = 4
-export const SECTION_GAP_COLUMNS = 2
 export const TILE_MIN_COLUMNS = TILE_PADDING_COLUMNS + STRIP_MIN_COLUMNS + TIME_COLUMNS + TOKENS_COLUMNS + COST_COLUMNS + 3 * SECTION_GAP_COLUMNS
-export const MAIN_COLUMN_PADDING_COLUMNS = 4
+export { COST_COLUMNS, GUTTER_COLUMNS, MAIN_COLUMN_PADDING_COLUMNS, SECTION_GAP_COLUMNS, STRIP_MIN_COLUMNS, TILE_PADDING_COLUMNS, TIME_COLUMNS, TOKENS_COLUMNS }
+
 export const TWO_TILES_MIN_COLUMNS = GUTTER_COLUMNS + 1 + MAIN_COLUMN_PADDING_COLUMNS + 2 * TILE_MIN_COLUMNS + 1
 
 const FRAME_PAD_X = 'sm'
@@ -46,8 +41,6 @@ const toneColorOfPercent = (palette: DesktopPalette, percent: number): string | 
 
   return tone === 'ink' ? undefined : colorOfTone(palette, tone)
 }
-
-const percentTextOf = (percent: number): string => Math.round(percent) + '%' + (isWarning(percent) ? ' ▲' : '')
 
 const groupsOf = <Item,>(items: readonly Item[], size: number): Item[][] => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, index * size + size))
 
@@ -64,6 +57,12 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const tiles = tilesOf({ roster: input.roster, rows: input.rows, now, window, gauges })
   const spend = spendOf({ gauges, rows: input.rows })
   const hasLimits = gauges.limits.length > 0
+  const hasAnswerSinceLoad = gauges.lastCallAt !== null && gauges.lastCallAt >= input.loadedAt
+  const isApiBilling = !hasLimits && hasAnswerSinceLoad
+  const apiText = isApiBilling ? apiBillingText(spend.tokensIn, spend.tokensOut) : null
+  const hasAgents = input.roster.rows.length + input.roster.evictedDone + input.roster.evictedFailed > 0
+  const hasAgentSpend = hasAgents && spend.agentsUsd > 0
+  const showMainEstimate = hasAgentSpend || !spend.main.isFromTotal
   const tilesPerRow = input.columns >= TWO_TILES_MIN_COLUMNS ? 2 : 1
   const tileWidth = tilesPerRow === 2 ? '50%' : undefined
 
@@ -93,7 +92,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const costText = gauges.costUsd === null ? null : <Box key="cost" flexShrink={0}><Text bold>{formatUsd(gauges.costUsd)}</Text></Box>
 
   const legendColumn = (column: readonly Arc[], index: number, columns: readonly (readonly Arc[])[]) => {
-    const firstColumnLines = (!hasLimits ? 1 : 0) + (columns[0]?.length ?? 0)
+    const firstColumnLines = (apiText !== null ? 1 : 0) + (columns[0]?.length ?? 0)
     const isCostColumn = index === 1
     const isShorter = column.length < firstColumnLines
     const lastArc = column[column.length - 1]
@@ -106,7 +105,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
 
     return (
       <Box key={'legend-column-' + index} flexDirection="column" flexShrink={0}>
-        {index === 0 && !hasLimits ? <Text key="api" dimColor>{apiBillingText(spend.tokensIn, spend.tokensOut)}</Text> : null}
+        {index === 0 && apiText !== null ? <Text key="api" dimColor>{apiText}</Text> : null}
         {items}
         {isCostColumn && (isShorter || lastArc === undefined) ? costText : null}
       </Box>
@@ -136,6 +135,8 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     const miniWindow = windowFor(MINI_LANES_RANGE, now, now)
     const mini = miniLanesSvg({ lanes: miniRows.map(row => cellsOf(row, miniWindow, now, MINI_LANE_CELLS)), setting: input.scheme })
     const ring = ringSvg({ arcs, setting: input.scheme })
+    const legendColumns = legendColumnsWidthOf({ columns: legendColumnsOf(arcs), now, costUsd: gauges.costUsd, apiText })
+    const laneColumns = miniLaneColumnsOf({ columns: input.columns, legendColumns, activity: tiles.main.activity })
 
     return (
       <Box key="folded" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X} {...surface}>
@@ -151,7 +152,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
           {activityText(tiles.main.activity)}
         </Box>
         <Box key="mini-lanes" alignSelf="center" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-          <Svg source={mini.source} alt="main and live agents, last 5m" height={mini.height} />
+          <Svg source={mini.source} alt="main and live agents, last 5m" width={pixelsOf(laneColumns)} height={mini.height} />
         </Box>
         {foldButton}
       </Box>
@@ -193,10 +194,10 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
       <Svg source={rule.source} alt="" width={rule.width} height={rule.height} />
       <Box key="spend" flexDirection="column">
         {spendLine('spend-session', 'session total', usdText(spend.sessionUsd), true)}
-        {spendLine('spend-main', mainEstimateLabelOf(spend.main), usdText(spend.main.usd, '~'))}
-        {spendLine('spend-agents', 'agents est.', usdText(spend.agentsUsd, '~'))}
-        {hasLimits ? null : spendLine('spend-in', 'tokens in', formatTokens(spend.tokensIn))}
-        {hasLimits ? null : spendLine('spend-out', 'tokens out', formatTokens(spend.tokensOut))}
+        {showMainEstimate ? spendLine('spend-main', mainEstimateLabelOf(spend.main), usdText(spend.main.usd, '~')) : null}
+        {hasAgentSpend ? spendLine('spend-agents', 'agents est.', usdText(spend.agentsUsd, '~')) : null}
+        {hasLimits || spend.tokensIn === 0 ? null : spendLine('spend-in', 'tokens in', formatTokens(spend.tokensIn))}
+        {hasLimits || spend.tokensOut === 0 ? null : spendLine('spend-out', 'tokens out', formatTokens(spend.tokensOut))}
       </Box>
     </Box>
   )
@@ -235,6 +236,8 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Box>
   )
 
+  const stripColumns = stripColumnsOf({ columns: input.columns, tilesPerRow })
+
   const tileBox = (tile: Tile) => {
     const strip = stripSvg({ cells: tile.strip, setting: input.scheme })
 
@@ -248,7 +251,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
         </Box>
         <Box key={'bottom-' + tile.id} flexDirection="row" alignItems="center" gap={SECTION_GAP}>
           <Box key={'strip-' + tile.id} flexGrow={1} flexShrink={1} minWidth={STRIP_MIN_COLUMNS} overflow="hidden">
-            <Svg source={strip.source} alt={tile.name + ' activity over the range'} height={STRIP_HEIGHT} />
+            <Svg source={strip.source} alt={tile.name + ' activity over the range'} width={pixelsOf(stripColumns)} height={STRIP_HEIGHT} />
           </Box>
           <Box key={'time-' + tile.id} flexShrink={0} minWidth={TIME_COLUMNS} overflow="hidden">
             <Text bold>{tile.time}</Text>
@@ -265,19 +268,20 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     )
   }
 
-  const ghostBox = (ghost: Ghost) => (
-    <Box key="ghost" flexDirection="row" justifyContent="center" flexGrow={1} flexShrink={1} width={tileWidth} minWidth={ghost.text.length + 4} borderStyle="round" borderDimColor>
-      {ghost.widensRange ? (
+  const ghostLine = (ghost: Ghost) =>
+    ghost.widensRange ? (
+      <Box key="ghost" flexDirection="row" flexShrink={0}>
         <Button key="earlier" plain onPress={() => actions.setRange('session')}>
           {ghost.text}
         </Button>
-      ) : (
+      </Box>
+    ) : (
+      <Box key="ghost" flexDirection="row" flexShrink={0}>
         <Text key="ghost-text" dimColor>{ghost.text}</Text>
-      )}
-    </Box>
-  )
+      </Box>
+    )
 
-  const slots = [tileBox(tiles.main), ...tiles.agents.map(tileBox), ...(tiles.ghost === null ? [] : [ghostBox(tiles.ghost)])]
+  const slots = [tileBox(tiles.main), ...tiles.agents.map(tileBox)]
 
   const tileRows = groupsOf(slots, tilesPerRow).map((pair, index) => (
     <Box key={'tile-row-' + index} flexDirection="row" gap={ITEM_GAP}>
@@ -290,6 +294,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     <Box key="main-column" flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} gap={ITEM_GAP} paddingX={FRAME_PAD_X} paddingY={ITEM_GAP}>
       {header}
       {tileRows}
+      {tiles.ghost === null ? null : ghostLine(tiles.ghost)}
     </Box>
   )
 

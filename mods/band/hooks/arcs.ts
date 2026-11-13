@@ -13,6 +13,8 @@ export const toneOfPercent = (percent: number): Tone => (percent >= CRITICAL_PER
 
 export const isWarning = (percent: number): boolean => percent >= HIGH_PERCENT
 
+export const percentTextOf = (percent: number): string => Math.round(percent) + '%' + (isWarning(percent) ? ' ▲' : '')
+
 const limitArc = (limit: NamedLimit | undefined, spec: { id: ArcId; name: string; short: string }): Arc[] => (limit === undefined ? [] : [{ ...spec, percent: limit.percent, resetsAt: limit.resetsAt, usage: null }])
 
 const contextUsageOf = (gauges: Gauges): string | null => (gauges.contextTokens !== null && gauges.contextWindow !== null ? formatTokens(gauges.contextTokens) + ' of ' + formatTokens(gauges.contextWindow) : null)
@@ -36,4 +38,4 @@ export const resetClockOf = (resetsAt: number, now: number): string => {
 
 export const legendColumnsOf = (arcs: readonly Arc[]): [Arc[], Arc[]] => [arcs.filter((_, index) => index % 2 === 0), arcs.filter((_, index) => index % 2 === 1)]
 
-export const apiBillingText = (tokensIn: number, tokensOut: number): string => 'API billing · ' + formatTokens(tokensIn) + ' in / ' + formatTokens(tokensOut) + ' out'
+export const apiBillingText = (tokensIn: number, tokensOut: number): string => (tokensIn === 0 && tokensOut === 0 ? 'API billing' : 'API billing · ' + formatTokens(tokensIn) + ' in / ' + formatTokens(tokensOut) + ' out')

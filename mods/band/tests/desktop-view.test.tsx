@@ -6,6 +6,7 @@ import { SETTLE_MS } from './settle'
 
 const GAP_ALLOWANCE_COLUMNS = 4
 const GUTTER_PADDING_COLUMNS = 4
+const STRIP_PX_AT_100_COLUMNS = (100 - 36 - 1 - 4 - 37) * 8
 
 const BAND = {
   plugin: 'harness-band',
@@ -167,7 +168,7 @@ test('with no total from the host, main est. is the token estimate and the label
   expect(await textOf(ui, 'spend-session')).toBe('session total—')
   expect(await textOf(ui, 'spend-main')).toBe('main est. (tokens)~$5.00')
   expect(await textOf(ui, 'spend-in')).toBe('tokens in1M')
-  expect(await textOf(ui, 'spend-out')).toBe('tokens out0')
+  expect(await ui.find({ key: 'spend-out' })).toBeUndefined()
   expect(await ui.find({ key: 'arc-fiveHour' })).toBeUndefined()
   expect(await ui.find({ key: 'arc-context' })).toBeDefined()
   await ui.unmount()
@@ -371,7 +372,7 @@ test('a tile bottom line can shrink its strip, keeps time and cost at natural wi
     expect(strip?.props['flexShrink']).toBe(1)
     expect(strip?.props['minWidth']).toBe(STRIP_MIN_COLUMNS)
     expect(strip?.props['overflow']).toBe('hidden')
-    expect(childrenOf(strip)[0]?.props['width']).toBeUndefined()
+    expect(childrenOf(strip)[0]?.props['width']).toBe(STRIP_PX_AT_100_COLUMNS)
     expect((await ui.find({ key: 'time-' + id }))?.props['flexShrink']).toBe(0)
   }
 
@@ -464,4 +465,128 @@ tileLayoutTest('a narrow band stacks the tiles in one column and never lets a st
 
 tileLayoutTest('a wide band keeps two tile columns', TWO_TILES_MIN_COLUMNS, layout => {
   expect(layout.sizes).toEqual([2, 1])
+})
+
+const bandAt = (columns: number) => ({ ...BAND, props: { ...BAND.props, bodyColumns: columns } })
+
+const svgWidthsOf = async (ui: Finder, altStart: string): Promise<unknown[]> => (await ui.findAll({ type: 'Svg' })).filter(svg => String(svg.props['alt']).startsWith(altStart)).map(svg => svg.props['width'])
+
+test('nothing to count shows no zero rows: no tokens in or out, no agents estimate, no main estimate equal to the total, and no 0 in / 0 out', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: [], usd: 50.72 }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'spend-session')).toBe('session total$50.72')
+
+  for (const key of ['spend-main', 'spend-agents', 'spend-in', 'spend-out']) {
+    expect(await ui.find({ key })).toBeUndefined()
+  }
+
+  expect(await textOf(ui, 'unfolded')).not.toMatch(/\b0 in|\b0 out|~\$0\.00/)
+  await ui.press({ key: 'fold' })
+  expect(await textOf(ui, 'folded')).not.toMatch(/\b0 in|\b0 out/)
+  await ui.unmount()
+})
+
+test('API billing is not claimed before an answer has come since the load, and is claimed after one arrives with no limits', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: [], usd: 50.72 }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+  await ui.press({ key: 'fold' })
+
+  expect(await textOf(ui, 'legend')).not.toContain('API')
+  await $.turn.complete({ ...TURN, reason: 'answer', usage: { input_tokens: 1_000_000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-4-1' } })
+  await ui.unmount()
+  const after = await $.ui.mount(BAND)
+
+  expect(await textOf(after, 'legend')).toContain('API billing · 1M in / 0 out')
+  await after.unmount()
+})
+
+test('with limits reported there is no API billing label, even after an answer', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: LIMITS }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.turn.complete({ ...TURN, reason: 'answer', usage: { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-4-1' } })
+  const ui = await $.ui.mount(BAND)
+  await ui.press({ key: 'fold' })
+
+  expect(await textOf(ui, 'legend')).not.toContain('API')
+  await ui.unmount()
+})
+
+test('the folded lane and every tile strip get an explicit width that grows by 8 px for each extra column', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: LIMITS }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const narrow = await $.ui.mount(bandAt(120))
+  const stripNarrow = (await svgWidthsOf(narrow, 'main activity'))[0]
+  await narrow.press({ key: 'fold' })
+  const laneNarrow = (await svgWidthsOf(narrow, 'main and live agents'))[0]
+  await narrow.unmount()
+  const wide = await $.ui.mount(bandAt(139))
+  const laneWide = (await svgWidthsOf(wide, 'main and live agents'))[0]
+  await wide.press({ key: 'fold' })
+  const stripWide = (await svgWidthsOf(wide, 'main activity'))[0]
+  await wide.unmount()
+
+  expect(stripNarrow).toBe((120 - 36 - 1 - 4 - 37) * 8)
+  expect(stripWide).toBe((139 - 36 - 1 - 4 - 37) * 8)
+  expect(Number(laneNarrow)).toBeGreaterThan(14 * 8)
+  expect(Number(laneWide) - Number(laneNarrow)).toBe(19 * 8)
+})
+
+test('the strip keeps its minimum width on a band too narrow to fill and the lane never drops under its minimum', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: LIMITS }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(bandAt(60))
+
+  expect((await svgWidthsOf(ui, 'main activity'))[0]).toBe(STRIP_MIN_COLUMNS * 8)
+  await ui.press({ key: 'fold' })
+  expect((await svgWidthsOf(ui, 'main and live agents'))[0]).toBe(14 * 8)
+  await ui.unmount()
+})
+
+test('a main tile with a cost and no tokens shows the cost and no "no usage"', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: LIMITS, usd: 50.72 }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'cost-main')).toBe('~$50.72')
+  expect(await textOf(ui, 'tokens-main')).toBe('')
+  await ui.unmount()
+})
+
+test('a main tile with neither tokens nor cost shows "no usage"', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: LIMITS, usd: null }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'tokens-main')).toBe('no usage')
+  expect(await textOf(ui, 'cost-main')).toBe('')
+  await ui.unmount()
+})
+
+test('the empty-session note is one muted line: no border, no growth, not a tile slot', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 13, tokens: 132_000, rateLimits: LIMITS }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+  const ghost = await ui.find({ key: 'ghost' })
+
+  expect(ghost?.props['borderStyle']).toBeUndefined()
+  expect(ghost?.props['flexGrow']).toBeUndefined()
+  expect(childrenOf(ghost)[0]?.props['dimColor']).toBe(true)
+  expect(textLinesOf(ghost)).toBe(1)
+
+  for (const row of (await ui.findAll({ type: 'Box' })).filter(box => String(box.props['key']).startsWith('tile-row-'))) {
+    expect(childrenOf(row).map(child => child.props['key'])).not.toContain('ghost')
+  }
+
+  await ui.unmount()
 })
