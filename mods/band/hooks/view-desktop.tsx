@@ -22,8 +22,8 @@ export type DesktopView = {
   actions: Actions
 }
 
-export const GUTTER_COLUMNS = 24
-export const RANGE_HINT = 'each cell is 1/24 of the range, newest right'
+export const GUTTER_COLUMNS = 36
+export const RANGE_HINT = 'cell = 1/24 of range'
 export const AGENTS_LABEL = 'agents'
 export const MAIN_NAME = 'main'
 
@@ -57,8 +57,8 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const spend = spendOf({ gauges, rows: input.rows })
   const hasLimits = gauges.limits.length > 0
 
-  const countsBox = (
-    <Box key="counts" flexDirection="row" gap={SECTION_GAP} alignItems="center" flexShrink={0}>
+  const countsBox = (direction: 'row' | 'column') => (
+    <Box key="counts" flexDirection={direction} gap={direction === 'row' ? SECTION_GAP : 0} flexShrink={0}>
       <Text bold dimColor={counts.live === 0} color={palette.run}>{'▶ ' + counts.live}</Text>
       <Text bold dimColor={counts.done === 0} color={palette.done}>{'✓ ' + counts.done}</Text>
       <Text bold dimColor={counts.failed === 0} color={palette.fail}>{'✕ ' + counts.failed}</Text>
@@ -81,7 +81,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   )
 
   const legend = (
-    <Box key="legend" flexDirection="row" gap={SECTION_GAP} flexShrink={1} minWidth={0} overflow="hidden">
+    <Box key="legend" flexDirection="row" gap={SECTION_GAP} flexShrink={0}>
       {legendColumnsOf(arcs).map((column, index) => (
         <Box key={'legend-column-' + index} flexDirection="column" flexShrink={0}>
           {index === 0 && !hasLimits ? <Text key="api" dimColor>{apiBillingText(spend.tokensIn, spend.tokensOut)}</Text> : null}
@@ -111,18 +111,18 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
 
     return (
       <Box key="folded" flexDirection="row" alignItems="center" gap={SECTION_GAP} paddingX={FRAME_PAD_X} {...surface}>
-        <Box key="ring" flexDirection="row" alignItems="center" gap="sm" flexShrink={1} minWidth={0}>
+        <Box key="ring" flexDirection="row" alignItems="center" gap="sm" flexShrink={0}>
           <Svg source={ring.source} alt={arcs.map(arc => arc.name + ' ' + Math.round(arc.percent) + '%').join(', ')} width={ring.width} height={ring.height} />
           {legend}
         </Box>
-        <Box key="main-state" flexDirection="row" gap={ITEM_GAP} alignItems="center" flexShrink={0}>
+        <Box key="main-state" flexDirection="column" flexShrink={0}>
           <Text bold>{MAIN_NAME}</Text>
           {activityText(tiles.main.activity)}
         </Box>
         <Box key="mini-lanes" alignSelf="center" flexShrink={1} minWidth={0} overflow="hidden">
           <Svg source={mini.source} alt="main and live agents, last 5m" width={mini.width} height={mini.height} />
         </Box>
-        {countsBox}
+        {countsBox('column')}
         <Box key="spacer" flexGrow={1} />
         {gauges.costUsd === null ? null : <Text key="cost" bold>{formatUsd(gauges.costUsd)}</Text>}
         {foldButton}
@@ -141,7 +141,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
             <Text bold>{arc.name}</Text>
             <Text bold={isWarning(arc.percent)} color={toneColorOfPercent(palette, arc.percent)}>{percentTextOf(arc.percent)}</Text>
           </Box>
-          {arc.resetsAt === null && arc.usage === null ? null : <Text dimColor wrap="truncate-end">{arc.resetsAt === null ? (arc.usage ?? '') : '↻ ' + resetClockOf(arc.resetsAt, now)}</Text>}
+          {arc.resetsAt === null && arc.usage === null ? null : <Text dimColor>{arc.resetsAt === null ? (arc.usage ?? '') : '↻ ' + resetClockOf(arc.resetsAt, now)}</Text>}
         </Box>
         <Svg source={bar.source} alt={arc.name + ' ' + Math.round(arc.percent) + '%'} width={bar.width} height={bar.height} />
       </Box>
@@ -186,10 +186,10 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const header = (
     <Box key="header" flexDirection="row" alignItems="center" gap={SECTION_GAP}>
       {rangeButtons}
-      <Text key="hint" dimColor wrap="truncate-end">{RANGE_HINT}</Text>
+      <Text key="hint" dimColor>{RANGE_HINT}</Text>
       <Box key="spacer" flexGrow={1} />
       <Text dimColor>{AGENTS_LABEL}</Text>
-      {countsBox}
+      {countsBox('row')}
       {foldButton}
     </Box>
   )

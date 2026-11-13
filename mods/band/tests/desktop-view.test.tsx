@@ -1,7 +1,11 @@
 import { type FoundElement, expect, mock, test } from 'claude-code/testing'
 
 import { arcColorOf, paletteOf } from '../hooks/desktop-theme'
+import { GUTTER_COLUMNS, RANGE_HINT } from '../hooks/view-desktop'
 import { SETTLE_MS } from './settle'
+
+const GAP_ALLOWANCE_COLUMNS = 4
+const GUTTER_PADDING_COLUMNS = 4
 
 const BAND = {
   plugin: 'harness-band',
@@ -107,8 +111,8 @@ for (const theme of ['light', 'dark'] as const) {
     expect(source).toContain('class="s-arcFiveHour"')
     expect(source).toContain('class="s-arcFable"')
     expect(countOf(source, '<circle')).toBe(8)
-    expect(await textOf(ui, 'legend-fiveHour')).toMatch(/^●5h35%↻\d+:00 [AP]M$/)
-    expect(await textOf(ui, 'legend-fable')).toMatch(/^●Fable83% ▲↻\w{3} \d+:00 [AP]M$/)
+    expect(await textOf(ui, 'legend-fiveHour')).toMatch(/^●5h35%↻\d{2}:00$/)
+    expect(await textOf(ui, 'legend-fable')).toMatch(/^●Fable83% ▲↻\w{3} \d{2}:00$/)
     expect(await textOf(ui, 'legend-context')).toBe('●Ctx28%56k/200k')
     await ui.unmount()
   })
@@ -269,5 +273,67 @@ test('a tile shows name, model, state, detail, strip, time, tokens and cost, and
   expect((await ui.findAll({ type: 'Svg' })).some(svg => svg.props['alt'] === 'build-1 activity over the range')).toBe(true)
   expect(await textOf(ui, 'tile-a1')).toContain('ran for')
   expect(cardOf(await ui.find({ key: 'tile-a1' }))?.props['display']).toBe('none')
+  await ui.unmount()
+})
+
+const TRUNCATING_WRAPS = ['truncate', 'truncate-end', 'truncate-start', 'truncate-middle']
+
+const truncatingTextsIn = async (ui: Finder, key: string): Promise<string[]> => {
+  const queue = childrenOf(await ui.find({ key }))
+  const truncating: string[] = []
+
+  for (const child of queue) {
+    if (child.type === 'Text' && TRUNCATING_WRAPS.includes(String(child.props['wrap']))) {
+      truncating.push(child.text ?? '')
+    }
+
+    queue.push(...childrenOf(child))
+  }
+
+  return truncating
+}
+
+test('folded, the counts stack in a column and main sits over its state, each part in its own line', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  await ui.press({ key: 'fold' })
+
+  const counts = await ui.find({ key: 'counts' })
+  const mainState = await ui.find({ key: 'main-state' })
+
+  expect(counts?.props['flexDirection']).toBe('column')
+  expect(childrenOf(counts).filter(child => child.type === 'Text')).toHaveLength(3)
+  expect(mainState?.props['flexDirection']).toBe('column')
+  expect(childrenOf(mainState).filter(child => child.type === 'Text')).toHaveLength(2)
+  await ui.unmount()
+})
+
+test('nothing the owner reads in full is ellipsised: legend and header texts never truncate, and the longest gutter row fits the gutter', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 100, tokens: 200_000, rateLimits: LIMITS.map(limit => ({ ...limit, percentUsed: 100 })) }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  expect(await truncatingTextsIn(ui, 'header')).toEqual([])
+  expect(await textOf(ui, 'header')).toContain(RANGE_HINT)
+
+  for (const id of ['fiveHour', 'week', 'fable', 'context']) {
+    const row = (await textOf(ui, 'arc-' + id)) ?? ''
+
+    expect(await truncatingTextsIn(ui, 'arc-' + id)).toEqual([])
+    expect(row.length + GAP_ALLOWANCE_COLUMNS).toBeLessThanOrEqual(GUTTER_COLUMNS - GUTTER_PADDING_COLUMNS)
+  }
+
+  await ui.press({ key: 'fold' })
+
+  for (const id of ['fiveHour', 'week', 'fable', 'context']) {
+    expect(await truncatingTextsIn(ui, 'legend-' + id)).toEqual([])
+  }
+
+  expect(await textOf(ui, 'legend-fable')).toMatch(/↻\w{3} \d{2}:00$/)
+  expect((await ui.find({ key: 'legend' }))?.props['overflow']).toBeUndefined()
   await ui.unmount()
 })

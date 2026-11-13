@@ -28,7 +28,7 @@ export const arcsOf = (gauges: Gauges): Arc[] => [
 
 export const resetClockOf = (resetsAt: number, now: number): string => {
   const date = new Date(resetsAt)
-  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const time = date.toLocaleTimeString('en-GB', { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })
   const day = resetsAt - now >= ONE_DAY_MS ? date.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' : ''
 
   return day + time
