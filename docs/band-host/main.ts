@@ -37,6 +37,11 @@ const start = async (): Promise<void> => {
   let isDrawing = false
   let isDrawWanted = false
 
+  const setColumns = (): void => {
+    columns = Math.max(1, Math.floor(root.clientWidth / COLUMN_PX))
+    document.dispatchEvent(new CustomEvent('band-columns', { detail: columns }))
+  }
+
   const draw = async (): Promise<void> => {
     if (!isDrawingEnabled) {
       return
@@ -69,12 +74,12 @@ const start = async (): Promise<void> => {
 
   await sim.start(engine)
   await engine.advance(SEED_VIRTUAL_MS)
-  columns = Math.max(1, Math.floor(root.clientWidth / COLUMN_PX))
+  setColumns()
   isDrawingEnabled = true
   await draw()
 
   new ResizeObserver(() => {
-    columns = Math.max(1, Math.floor(root.clientWidth / COLUMN_PX))
+    setColumns()
     reportDraw()
   }).observe(root)
 

@@ -32,10 +32,29 @@ TEMPLATE = Path("docs") / "map.html.in"
 PAGE = Path("docs") / "index.html"
 BAND_TEMPLATE = Path("docs") / "band.html.in"
 BAND_PAGE = Path("docs") / "band.html"
-PAGES = ((TEMPLATE, PAGE), (BAND_TEMPLATE, BAND_PAGE))
+FLOW_TEMPLATE = Path("docs") / "flow.html.in"
+FLOW_PAGE = Path("docs") / "flow.html"
+PAGES = ((TEMPLATE, PAGE), (FLOW_TEMPLATE, FLOW_PAGE), (BAND_TEMPLATE, BAND_PAGE))
 BAND_VIEW_BUILDER = Path("docs") / "band-host" / "build.ts"
 BAND_VIEW_BUNDLE = Path("docs") / "band-view.js"
-ASSETS = (Path("docs") / "style.css", Path("docs") / "script.js")
+ASSETS = (Path("docs") / "style.css", Path("docs") / "script.js", Path("docs") / "site.js", Path("docs") / "flow.js")
+SITE_PAGES = (
+    ("home", "index.html", "Harness", "What the harness plugin for Claude Code does: its agents, skills and hooks, and how hard each rule binds.", ()),
+    ("flow", "flow.html", "How it connects", "How the harness parts call each other: the main session, its agents, their skills and the hooks that check them.", ("flow.css",)),
+    ("band", "band.html", "Band", "A live, simulated preview of the agent band: a mod that sits above the Claude Code prompt and shows limits, context, cost and every agent.", ("band.css",)),
+)
+SITE_REPO = "https://github.com/tfernd/harness"
+THEME_SCRIPT = """  <script>
+    try {
+      const savedTheme = localStorage.getItem("harness-map-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (savedTheme === "dark" || (savedTheme === null && prefersDark)) document.documentElement.dataset.theme = "dark";
+      const savedTarget = localStorage.getItem("harness-map-target");
+      if (savedTarget === "cortex" || savedTarget === "kiro") document.documentElement.dataset.target = savedTarget;
+    } catch (error) {
+      console.warn("The saved theme or install target could not be read.", error);
+    }
+  </script>"""
 FINGERPRINT_LENGTH = 10
 DISPATCH_COMMAND = re.compile(r"hooks/dispatch\.py\"\s+(\w+)")
 HOOK_COMMAND = re.compile(r"uv run --script \"[^\"]*hooks/([\w-]+\.py)\"(?:\s+(\S+))?")
@@ -585,6 +604,8 @@ def get_facts(root: Path, /) -> Facts:
         "headings": ", ".join(get_constant(turn, "HEADINGS", tuple)),
         "style_hash": get_fingerprint(root / ASSETS[0]),
         "script_hash": get_fingerprint(root / ASSETS[1]),
+        "site_hash": get_fingerprint(root / ASSETS[2]),
+        "flow_hash": get_fingerprint(root / ASSETS[3]),
     }
 
     return Facts(
@@ -1389,9 +1410,77 @@ def make_diagram(layout: Layout, /) -> str:
     )
 
 
-def make_slot(slot: Slot, layout: Layout | None, /) -> str:
+def get_site_page(key: str, /) -> tuple[str, str, str, str, tuple[str, ...]]:
+
+    for page in SITE_PAGES:
+        if page[0] == key:
+            return page
+
+    raise ValueError(f"the template names an unknown site page: {key}")
+
+
+def make_site_head(key: str, facts: Facts, /) -> str:
+
+    _, _, title, description, styles = get_site_page(key)
+    full_title = title if key == "home" else f"{title} - Harness"
+    extra = "".join(f'\n  <link rel="stylesheet" href="{name}">' for name in styles)
+
+    return (
+        '  <meta charset="utf-8">\n'
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"  <title>{html.escape(full_title)}</title>\n"
+        f'  <meta name="description" content="{html.escape(description)}">\n'
+        '  <link rel="preconnect" href="https://fonts.googleapis.com">\n'
+        '  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+        '  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">\n'
+        f"{THEME_SCRIPT}\n"
+        f'  <link rel="stylesheet" href="style.css?v={facts.values["style_hash"]}">{extra}'
+    )
+
+
+def make_site_bar(key: str, /) -> str:
+
+    links = []
+    for page_key, href, title, _, _ in SITE_PAGES:
+        current = ' aria-current="page"' if page_key == key else ""
+        links.append(f'<li><a class="site-link" href="{href}"{current}>{html.escape(title)}</a></li>')
+    items = "\n        ".join(links)
+
+    return (
+        '<div class="site-bar">\n'
+        '      <a class="site-brand" href="index.html">Harness</a>\n'
+        '      <div class="site-tools">\n'
+        f'      <nav aria-label="Pages"><ul class="site-nav">\n        {items}\n      </ul></nav>\n'
+        '      <button type="button" class="theme-switch" role="switch" aria-checked="false" data-theme-toggle>\n'
+        '        <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>\n'
+        '        <span class="theme-switch-label">Dark</span>\n'
+        "      </button>\n"
+        "      </div>\n"
+        "    </div>"
+    )
+
+
+def make_site_footer(key: str, /) -> str:
+
+    get_site_page(key)
+
+    return (
+        '<footer class="site-footer">\n'
+        "      <span>Harness: agents, skills and hooks for coding agents.</span>\n"
+        f'      <a href="{SITE_REPO}">Source on GitHub</a>\n'
+        "    </footer>"
+    )
+
+
+def make_slot(slot: Slot, layout: Layout | None, facts: Facts, /) -> str:
 
     match slot.name:
+        case "site-head" if slot.arguments:
+            return make_site_head(slot.arguments[0], facts)
+        case "site-bar" if slot.arguments:
+            return make_site_bar(slot.arguments[0])
+        case "site-footer" if slot.arguments:
+            return make_site_footer(slot.arguments[0])
         case "pyramid" if layout:
             return make_pyramid(layout)
         case "panels" if layout:
@@ -1419,9 +1508,10 @@ def make_layout(slots: list[Slot], facts: Facts, /) -> Layout:
 
     check_places(facts)
     names = [slot.name for slot in slots]
-    wrong = [name for name in SINGLE_SLOTS if names.count(name) != 1]
-    if wrong:
-        raise ValueError(f"the template must hold each of {', '.join(SINGLE_SLOTS)} once")
+    has_map = any(name in SINGLE_SLOTS for name in names)
+    wrong = [name for name in SINGLE_SLOTS if has_map and names.count(name) != 1]
+    if wrong or names.count("diagram") > 1:
+        raise ValueError(f"the template must hold each of {', '.join(SINGLE_SLOTS)} once, and the diagram at most once")
 
     return Layout(facts, get_level_hooks(facts.hooks))
 
@@ -1430,12 +1520,12 @@ def make_page(template: str, facts: Facts, /) -> str:
 
     with_facts = FACT.sub(lambda match: get_fact(facts.values, match.group(1)), template)
     slots = [Slot(match.group(1), tuple(match.group(2).split())) for match in SLOT.finditer(with_facts)]
-    layout = make_layout(slots, facts) if any(slot.name in SINGLE_SLOTS for slot in slots) else None
+    layout = make_layout(slots, facts) if any(slot.name in (*SINGLE_SLOTS, "diagram") for slot in slots) else None
     bare = SLOT.sub("", with_facts)
     for leftover in ("[[@", "{{"):
         if leftover in bare:
             raise ValueError(f"the template holds a marker the build cannot read, near {bare[bare.index(leftover) :][:60]!r}")
-    page = SLOT.sub(lambda match: make_slot(Slot(match.group(1), tuple(match.group(2).split())), layout), with_facts)
+    page = SLOT.sub(lambda match: make_slot(Slot(match.group(1), tuple(match.group(2).split())), layout, facts), with_facts)
 
     return page
 

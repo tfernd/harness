@@ -1,34 +1,15 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>The agent band - Harness</title>
-  <meta name="description" content="A live, simulated preview of the agent band: a mod that sits above the Claude Code prompt and shows limits, context, cost and every agent.">
-  <script>
-    try {
-      const savedTheme = localStorage.getItem("harness-map-theme");
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      if (savedTheme === "dark" || (savedTheme === null && prefersDark)) document.documentElement.dataset.theme = "dark";
-    } catch (error) {
-      console.warn("The saved theme could not be read.", error);
-    }
-  </script>
-  <link rel="stylesheet" href="style.css?v={{style_hash}}">
-  <link rel="stylesheet" href="band.css">
+[[@site-head band]]
 </head>
 <body>
   <div class="page">
+    [[@site-bar band]]
+
     <header class="page-intro">
-      <div class="page-title-row">
-        <h1 class="page-title">The agent band</h1>
-        <button type="button" class="theme-switch" role="switch" aria-checked="false" data-theme-toggle>
-          <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
-          <span class="theme-switch-label">Dark</span>
-        </button>
-      </div>
+      <h1 class="page-title">The agent band</h1>
       <p class="page-lede">A strip above the Claude Code prompt that shows your limits, your context, what the session costs and what every agent is doing right now. It is a separate plugin and works with or without the harness.</p>
-      <p><a href="index.html">&larr; Back to the Harness Map</a></p>
     </header>
 
     <main class="bp-main">
@@ -40,16 +21,28 @@
               <button type="button" class="install-tab install-mode" data-billing-choice="subscription" aria-pressed="true">Subscription</button>
               <button type="button" class="install-tab install-mode" data-billing-choice="api" aria-pressed="false">API</button>
             </div>
-            <div class="install-tablist" role="group" aria-label="Band theme">
-              <button type="button" class="install-tab install-mode" data-theme-choice="light" aria-pressed="true">Light</button>
-              <button type="button" class="install-tab install-mode" data-theme-choice="dark" aria-pressed="false">Dark</button>
-            </div>
             <button type="button" class="bp-pause" data-pause aria-pressed="false">Pause</button>
           </div>
         </div>
         <p class="bp-note">This is the band's own drawing code fed by simulated events: agents start, think, run tools, finish or fail six times faster than real. Press the chevron to fold the band, pick a range, or hover a tile for its facts.</p>
 
-        <div class="band" data-band role="group" aria-label="The agent band, simulated"></div>
+        <div class="bp-size" data-size>
+          <label class="bp-size-label" for="band-width">Width</label>
+          <input class="bp-range" id="band-width" type="range" min="320" max="1600" step="10" value="1280" data-size-range>
+          <div class="install-tablist" role="group" aria-label="Width presets">
+            <button type="button" class="install-tab install-mode" data-size-preset="360" aria-pressed="false">Narrow</button>
+            <button type="button" class="install-tab install-mode" data-size-preset="800" aria-pressed="false">Medium</button>
+            <button type="button" class="install-tab install-mode" data-size-preset="1400" aria-pressed="false">Wide</button>
+          </div>
+          <p class="bp-readout" role="status" data-size-readout><span data-size-px>-</span> px, <span data-size-columns>-</span> columns</p>
+        </div>
+
+        <div class="bp-stage">
+          <div class="bp-frame" data-frame>
+            <div class="band" data-band role="group" aria-label="The agent band, simulated"></div>
+          </div>
+        </div>
+        <p class="bp-note">Drag the bottom-right corner of the frame, move the slider or pick a preset: the band lays itself out again for the width it gets, as in a terminal of that many columns.</p>
       </section>
 
       <div class="bp-lower">
@@ -94,7 +87,7 @@
             <div class="install-panel">
               <code class="install-command" data-mode="install">[[@install-command claude]]</code>
               <button type="button" class="install-copy" data-mode="install" data-copy="[[@install-copy claude]]">Copy</button>
-              <p class="install-note" data-mode="install">Needs <code>uv</code> on your <code>PATH</code>. Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project. For Cortex Code and Kiro, see the <a href="index.html">Harness Map</a>.</p>
+              <p class="install-note" data-mode="install">Needs <code>uv</code> on your <code>PATH</code>. Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project. For Cortex Code and Kiro, see the <a href="index.html">Harness page</a>.</p>
               <code class="install-command" data-mode="uninstall" hidden>[[@install-command claude-off]]</code>
               <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy claude-off]]">Copy</button>
               <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. The band plugin is not touched.</p>
@@ -103,8 +96,11 @@
         </section>
       </div>
     </main>
+
+    [[@site-footer band]]
   </div>
 
+  <script defer src="site.js?v={{site_hash}}"></script>
   <script defer src="band.js"></script>
   <script defer src="band-view.js"></script>
 </body>

@@ -1,32 +1,10 @@
 {
-  const THEME_KEY = "harness-map-theme";
   const HOVER_DELAY_MS = 90;
   const EDGE_PX = 12;
   const WIDE_QUERY = window.matchMedia("(min-width: 40rem)");
   const page = document.documentElement;
 
   const findClosest = (event, selector) => (event.target instanceof Element ? event.target.closest(selector) : null);
-
-  const save = (key, value) => {
-    try {
-      localStorage.setItem(key, value);
-    } catch (error) {
-      console.warn(`The choice ${key} could not be saved.`, error);
-    }
-  };
-
-  const bindTheme = (button) => {
-    const applyTheme = (theme) => {
-      page.dataset.theme = theme;
-      button.setAttribute("aria-checked", String(theme === "dark"));
-    };
-    button.addEventListener("click", () => {
-      const theme = page.dataset.theme === "dark" ? "light" : "dark";
-      applyTheme(theme);
-      save(THEME_KEY, theme);
-    });
-    applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
-  };
 
   const bindTips = (root) => {
     let open = null;
@@ -160,8 +138,6 @@
     });
   };
 
-  const themeButton = document.querySelector("[data-theme-toggle]");
-  if (themeButton) bindTheme(themeButton);
   const panels = document.querySelector("[data-panels]");
   if (!panels) throw new Error("The page has no panels.");
   bindTips(panels);

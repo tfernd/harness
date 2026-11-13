@@ -27,7 +27,7 @@ leaks: ## Fail when a file names a person, machine, home path or private word
 skills: ## Fail when a skill or agent leaves the form AGENTS.md demands
 	uv run python tests/check_skills.py
 
-map: ## Build the Harness Map page (docs/index.html, git-ignored) from the agents, skills, hooks and tests
+map: ## Build the site pages (docs/index.html, flow.html, band.html; git-ignored) from the agents, skills, hooks and tests
 	uv run python docs/build_map.py
 
 TSC ?= tsc

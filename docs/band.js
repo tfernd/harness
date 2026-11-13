@@ -1,30 +1,31 @@
 {
-  const THEME_KEY = "harness-map-theme";
-
-  const bindTheme = (switchButton, choiceButtons) => {
-    const page = document.documentElement;
-    const applyTheme = (theme) => {
-      page.dataset.theme = theme;
-      switchButton.setAttribute("aria-checked", String(theme === "dark"));
-      for (const choice of choiceButtons) choice.setAttribute("aria-pressed", String(choice.dataset.themeChoice === theme));
-    };
-    const choose = (theme) => {
-      applyTheme(theme);
-      try {
-        localStorage.setItem(THEME_KEY, theme);
-      } catch (error) {
-        console.warn("The theme could not be saved.", error);
-      }
-    };
-    switchButton.addEventListener("click", () => choose(page.dataset.theme === "dark" ? "light" : "dark"));
-    for (const choice of choiceButtons) choice.addEventListener("click", () => choose(choice.dataset.themeChoice === "dark" ? "dark" : "light"));
-    applyTheme(page.dataset.theme === "dark" ? "dark" : "light");
-  };
-
   const required = (parent, selector) => {
     const element = parent.querySelector(selector);
     if (!element) throw new Error(`The band page is missing ${selector}.`);
     return element;
+  };
+
+  const bindSize = (controls, frame) => {
+    const range = required(controls, "[data-size-range]");
+    const pixels = required(controls, "[data-size-px]");
+    const columns = required(controls, "[data-size-columns]");
+    const presets = [...controls.querySelectorAll("[data-size-preset]")];
+    const setWidth = (width) => {
+      frame.style.inlineSize = `${width}px`;
+    };
+    const showWidth = () => {
+      const width = Math.round(frame.getBoundingClientRect().width);
+      pixels.textContent = String(width);
+      range.value = String(width);
+      for (const preset of presets) preset.setAttribute("aria-pressed", String(Number(preset.dataset.sizePreset) === width));
+    };
+    range.addEventListener("input", () => setWidth(range.valueAsNumber));
+    for (const preset of presets) preset.addEventListener("click", () => setWidth(Number(preset.dataset.sizePreset)));
+    document.addEventListener("band-columns", (event) => {
+      columns.textContent = String(event.detail);
+    });
+    new ResizeObserver(showWidth).observe(frame);
+    showWidth();
   };
 
   const COPY_LABEL = "Copy";
@@ -73,6 +74,6 @@
     });
   };
 
-  bindTheme(required(document, "[data-theme-toggle]"), [...document.querySelectorAll("[data-theme-choice]")]);
+  bindSize(required(document, "[data-size]"), required(document, "[data-frame]"));
   for (const root of document.querySelectorAll("[data-install]")) bindInstall(root);
 }

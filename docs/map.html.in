@@ -1,273 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Harness</title>
-  <meta name="description" content="What the harness plugin for Claude Code does: its agents, skills and hooks, and how hard each rule binds.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
-  <script>
-    try {
-      const savedTheme = localStorage.getItem("harness-map-theme");
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      if (savedTheme === "dark" || (savedTheme === null && prefersDark)) document.documentElement.dataset.theme = "dark";
-      const savedTarget = localStorage.getItem("harness-map-target");
-      if (savedTarget === "cortex" || savedTarget === "kiro") document.documentElement.dataset.target = savedTarget;
-    } catch (error) {
-      console.warn("The saved theme or install target could not be read.", error);
-    }
-  </script>
-  <link rel="stylesheet" href="style.css?v={{style_hash}}">
-  <style>
-    .wire {
-      --wire-spawn: #1d4ed8;
-      --wire-preload: #0f766e;
-      --wire-inject: #7c3aed;
-      --wire-check: #c2410c;
-      --wire-point: #4b5563;
-      --wire-main: #111827;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: var(--space-3);
-      min-inline-size: 0;
-      padding: var(--space-4);
-    }
-
-    :root[data-theme="dark"] .wire {
-      --wire-spawn: #8ab4ff;
-      --wire-preload: #4fd8c4;
-      --wire-inject: #c4a8ff;
-      --wire-check: #ff9a6b;
-      --wire-point: #b4bcc8;
-      --wire-main: #eef1f5;
-    }
-
-    .wire-title {
-      font-size: var(--text-panel);
-      font-weight: 700;
-    }
-
-    .wire-intro {
-      max-inline-size: var(--measure);
-      font-size: var(--text-body);
-    }
-
-    .wire-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2);
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    .wire-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-2);
-      min-block-size: var(--chip-height-touch);
-      padding-inline: var(--space-3);
-      border: 1px solid var(--line-strong);
-      border-radius: var(--radius-pill);
-      background: var(--surface);
-      color: var(--ink);
-      font: inherit;
-      font-size: var(--text-chip);
-      cursor: pointer;
-    }
-
-    .wire-toggle:hover {
-      background: var(--surface-soft);
-    }
-
-    .wire-toggle[aria-pressed="true"] {
-      border-color: var(--ink);
-      background: var(--surface-soft);
-      font-weight: 600;
-    }
-
-    .wire-toggle[aria-pressed="false"] .wire-swatch {
-      opacity: var(--dim-level);
-    }
-
-    .wire-swatch {
-      flex: none;
-      inline-size: 2.5rem;
-      block-size: 0.75rem;
-    }
-
-    .wire-status {
-      min-block-size: 1.25rem;
-      font-size: var(--text-body);
-      color: var(--muted);
-    }
-
-    .wire-scroll {
-      overflow-x: auto;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--surface-soft);
-    }
-
-    .wire-svg {
-      display: block;
-      inline-size: 100%;
-      min-inline-size: 62rem;
-      block-size: auto;
-    }
-
-    .wire-line {
-      fill: none;
-      stroke-linecap: round;
-      transition: opacity var(--duration);
-    }
-
-    .wire-line.is-spawn {
-      stroke: var(--wire-spawn);
-      stroke-width: 3;
-    }
-
-    .wire-line.is-preload {
-      stroke: var(--wire-preload);
-      stroke-width: 2;
-    }
-
-    .wire-line.is-inject {
-      stroke: var(--wire-inject);
-      stroke-width: 2;
-      stroke-dasharray: 8 5;
-    }
-
-    .wire-line.is-check {
-      stroke: var(--wire-check);
-      stroke-width: 2.25;
-      stroke-dasharray: 1 5;
-    }
-
-    .wire-line.is-point {
-      stroke: var(--wire-point);
-      stroke-width: 1.75;
-      stroke-dasharray: 3 3;
-    }
-
-    .wire-head {
-      stroke: none;
-    }
-
-    .wire-head.is-spawn {
-      fill: var(--wire-spawn);
-    }
-
-    .wire-head.is-preload {
-      fill: var(--wire-preload);
-    }
-
-    .wire-head.is-inject {
-      fill: var(--wire-inject);
-    }
-
-    .wire-head.is-check {
-      fill: var(--wire-check);
-    }
-
-    .wire-head.is-point {
-      fill: var(--wire-point);
-    }
-
-    .wire-edges .wire-line {
-      opacity: 0.9;
-    }
-
-    .wire-edges .wire-line.is-off {
-      display: none;
-    }
-
-    .wire-edges .wire-line.is-dim {
-      opacity: 0.06;
-    }
-
-    .wire-edges .wire-line.is-linked {
-      opacity: 1;
-      stroke-width: 3.5;
-    }
-
-    .wire-node {
-      cursor: pointer;
-      transition: opacity var(--duration);
-    }
-
-    .wire-node rect {
-      fill: var(--surface);
-      stroke: var(--line-strong);
-      stroke-width: 1.5;
-    }
-
-    .wire-node.is-hook rect {
-      stroke: var(--kind-hook);
-    }
-
-    .wire-node.is-agent rect {
-      stroke: var(--kind-agent);
-    }
-
-    .wire-node.is-skill rect {
-      stroke: var(--kind-skill);
-    }
-
-    .wire-node.is-main rect {
-      stroke: var(--wire-main);
-      stroke-width: 2.5;
-    }
-
-    .wire-node:hover rect,
-    .wire-node[aria-pressed="true"] rect {
-      stroke-width: 3;
-    }
-
-    .wire-node:focus-visible {
-      outline: none;
-    }
-
-    .wire-node:focus-visible rect {
-      stroke: var(--focus);
-      stroke-width: 3.5;
-    }
-
-    .wire-node.is-dim {
-      opacity: var(--dim);
-    }
-
-    .wire-name {
-      fill: var(--ink);
-      font-size: 15px;
-      font-weight: 700;
-    }
-
-    .wire-sub {
-      fill: var(--muted);
-      font-size: 12.5px;
-    }
-
-    .wire-skill {
-      fill: var(--ink);
-      font-size: 13px;
-    }
-
-    .wire-column {
-      fill: var(--ink);
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .wire-line,
-      .wire-node {
-        transition: none;
-      }
-    }
-  </style>
+[[@site-head home]]
 </head>
 <body>
   <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -281,20 +15,11 @@
     <symbol id="i-kind" viewBox="0 0 16 16"><path d="M2.5 2.5h6l5 5-6 6-5-5z"/></symbol>
   </svg>
   <div class="page">
+    [[@site-bar home]]
+
     <header class="page-head">
       <div class="page-intro">
-        <div class="page-title-row">
-          <h1 class="page-title">Harness</h1>
-          <button type="button" class="theme-switch" role="switch" aria-checked="false" data-theme-toggle>
-            <span class="theme-switch-track" aria-hidden="true"><span class="theme-switch-thumb"></span></span>
-            <span class="theme-switch-label">Dark</span>
-          </button>
-          <a class="band-link" href="band.html">
-            <span class="band-link-dot" aria-hidden="true"></span>
-            See the agent band
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        </div>
+        <h1 class="page-title">Harness</h1>
         <p class="page-lede">A plugin for any coding agent (Claude Code, Cortex Code, Kiro): agents do the work, skills tell them how, and hooks enforce the rules.</p>
         <ul class="stats" aria-label="What ships">
           <li><span class="stats-value">{{agents}}</span> agents</li>
@@ -341,7 +66,7 @@
           <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy kiro-off]]">Copy</button>
           <p class="install-note" data-mode="uninstall" hidden>This removes only the files the installer wrote (listed in <code>~/.kiro/harness-port.json</code>) and the harness- entries in the crew hooks; your own agents, skills and hooks stay. The last part deletes the clone.</p>
         </div>
-        <p class="install-note">The agent band above the prompt is a separate plugin: <a href="band.html">see its page</a>.</p>
+        <p class="install-note">The agent band above the prompt is a separate plugin: <a href="band.html">see its page</a>. How the parts call each other: <a href="flow.html">How it connects</a>.</p>
       </div>
     </header>
 
@@ -364,81 +89,12 @@
           </div>
         </section>
       </div>
-
-        <section class="card wire" aria-labelledby="wire-title">
-          <h2 class="wire-title" id="wire-title">How it connects</h2>
-          <p class="wire-intro">The main session spawns agents. Agents preload skills. Hooks inject text and check calls. Click a box to follow its links; click it again or press Escape to clear. Skill-to-skill pointers are off until you turn them on or pick a skill.</p>
-          [[@diagram]]
-        </section>
     </main>
+
+    [[@site-footer home]]
   </div>
 
+  <script defer src="site.js?v={{site_hash}}"></script>
   <script defer src="script.js?v={{script_hash}}"></script>
-  <script>
-    (() => {
-      const root = document.querySelector("[data-wire]");
-      if (!root) return;
-      const edges = [...root.querySelectorAll("[data-wire-edge]")];
-      const nodes = [...root.querySelectorAll("[data-wire-node]")];
-      const toggles = [...root.querySelectorAll("[data-wire-kind]")];
-      const status = root.querySelector("[data-wire-status]");
-      const visibleKinds = new Set(toggles.filter((toggle) => toggle.getAttribute("aria-pressed") === "true").map((toggle) => toggle.dataset.wireKind));
-      let selected = null;
-
-      const touches = (edge) => edge.dataset.wireSource === selected || edge.dataset.wireTarget === selected;
-
-      const render = () => {
-        const linkedNodes = new Set();
-        let linkCount = 0;
-        for (const edge of edges) {
-          const isLinked = selected !== null && touches(edge);
-          const isShown = visibleKinds.has(edge.dataset.wireEdge) || isLinked;
-          edge.classList.toggle("is-off", !isShown);
-          edge.classList.toggle("is-linked", isLinked);
-          edge.classList.toggle("is-dim", selected !== null && !isLinked);
-          if (isLinked) {
-            linkCount += 1;
-            linkedNodes.add(edge.dataset.wireSource);
-            linkedNodes.add(edge.dataset.wireTarget);
-          }
-        }
-        for (const node of nodes) {
-          const key = node.dataset.wireNode;
-          node.classList.toggle("is-dim", selected !== null && !linkedNodes.has(key) && key !== selected);
-          node.setAttribute("aria-pressed", String(key === selected));
-        }
-        status.textContent = selected === null ? "" : `${selected.split(":")[1]}: ${linkCount} links, ${linkedNodes.size - 1} linked parts.`;
-      };
-
-      const choose = (key) => {
-        selected = selected === key ? null : key;
-        render();
-      };
-
-      for (const node of nodes) {
-        node.addEventListener("click", () => choose(node.dataset.wireNode));
-        node.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          choose(node.dataset.wireNode);
-        });
-      }
-      for (const toggle of toggles) {
-        toggle.addEventListener("click", () => {
-          const kind = toggle.dataset.wireKind;
-          if (visibleKinds.has(kind)) visibleKinds.delete(kind);
-          else visibleKinds.add(kind);
-          toggle.setAttribute("aria-pressed", String(visibleKinds.has(kind)));
-          render();
-        });
-      }
-      document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape" || selected === null) return;
-        selected = null;
-        render();
-      });
-      render();
-    })();
-  </script>
 </body>
 </html>

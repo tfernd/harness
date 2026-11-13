@@ -232,3 +232,52 @@
     gap: var(--space-6);
   }
 }
+
+.bp-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
+}
+
+.bp-size-label {
+  font-size: var(--text-meta);
+  font-weight: 600;
+}
+
+.bp-range {
+  flex: 1 1 12rem;
+  min-inline-size: 8rem;
+  accent-color: var(--focus);
+}
+
+.bp-readout {
+  font-size: var(--text-body);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-stage {
+  overflow-x: auto;
+  padding-block-end: var(--space-2);
+}
+
+.bp-frame {
+  inline-size: 100%;
+  min-inline-size: 320px;
+  max-inline-size: 1600px;
+  overflow: hidden;
+  resize: horizontal;
+  background: var(--surface);
+  border-radius: var(--radius-large);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+.bp-frame .band {
+  border: 0;
+  border-radius: 0;
+}

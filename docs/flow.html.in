@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+[[@site-head flow]]
+</head>
+<body>
+  <div class="page">
+    [[@site-bar flow]]
+
+    <header class="page-intro">
+      <h1 class="page-title">How it connects</h1>
+      <p class="page-lede">The main session spawns agents. Agents preload skills. Hooks inject text and check calls. Click a box to follow its links.</p>
+    </header>
+
+    <main class="page-main">
+      <section class="card wire" aria-labelledby="wire-title">
+        <h2 class="wire-title" id="wire-title">Who calls whom</h2>
+        <p class="wire-intro">Click a box to follow its links; click it again or press Escape to clear. Skill-to-skill pointers are off until you turn them on or pick a skill.</p>
+        [[@diagram]]
+      </section>
+    </main>
+
+    [[@site-footer flow]]
+  </div>
+
+  <script defer src="site.js?v={{site_hash}}"></script>
+  <script defer src="flow.js?v={{flow_hash}}"></script>
+</body>
+</html>
