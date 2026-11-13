@@ -40,15 +40,13 @@ The hooks of a plugin sit in `hooks/hooks.json`: one entry per command, each wit
 
 ## What counts as built
 
-A rule is built when it has all four:
+A rule is built when it has all three:
 
 1. **Cases:** inputs that must refuse, inputs that must pass (the near misses most of all), run by the project's case runner.
-2. **A deliberate-bug control** that the cases catch (`harness:testing`): plant the bug in a copy of the hook, run
-   the cases, see the failing line. A rule that cannot fail is not a rule.
-3. **A replay on real data:** run the rule over real past commands or transcripts and read every hit. Passing cases only
+2. **A replay on real data:** run the rule over real past commands or transcripts and read every hit. Passing cases only
    show the code matches your assumption; a replay shows what agents really did, and finds false refusals. A replay
    where most fires are false is a reason to narrow the rule before the live run.
-4. **A live run:** the plugin loaded in a real session (`claude --plugin-dir .` for a plugin), the rule fired once and
+3. **A live run:** the plugin loaded in a real session (`claude --plugin-dir .` for a plugin), the rule fired once and
    its message read as an agent would read it.
 
 A judge that imports a hook by path loads the hook's sibling modules first.

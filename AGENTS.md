@@ -38,8 +38,8 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## Hooks
 - Writing a hook: `harness:authoring` (`references/hook.md`: events, fail open, the time budget, soft against hard, what counts as built). Hooks here are stdlib Python 3.12.
-- Each new rule gets a case in `tests/run_cases.py`; a new check is shown to fail once on a deliberate bug (`harness:testing`).
-- A rule is built when it has passed cases, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
+- Each new rule gets a case in `tests/run_cases.py`.
+- A rule is built when it has passing cases, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
 - A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.
 - The plugin keeps its state in `~/.local/state/harness/<project>/` (`$XDG_STATE_HOME` is honoured) and throwaway files in `/tmp/harness/<project>/`; a hook makes both, copies an old `__harness__/` into the new state folder once, and no agent deletes either.
 

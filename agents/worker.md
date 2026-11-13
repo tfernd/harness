@@ -22,7 +22,6 @@ You make ONE change in the files your brief names and touch nothing else. Your r
   agent's work: report it, never fix it.
 - Another agent may change a shared file while you work (the brief's Tree line says so): re-read the lines just before you edit them.
 - Throwaway output goes where the brief says, never in the repo's source.
-- A new test comes with the control of `harness:testing` (a deliberate-bug run showing the test can fail), or says under Not proven that it was not shown to fail.
 
 Under Answer: what the diff does not show. Your choices in one line each, anything that surprised you, and probed
 facts with their command. The main session reads the diff and can rerun the Judge, so list no file and no passing run

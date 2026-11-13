@@ -1,6 +1,6 @@
 ---
 name: testing
-description: What makes a judge (test, gate or check) good, how to prove a new judge can fail with a deliberate-bug control, and the facts that keep tests cheap and true. Load before writing or reviewing tests, or before trusting a passing run.
+description: What makes a judge (test, gate or check) good, and the facts that keep tests cheap and true. Load before writing or reviewing tests, or before trusting a passing run.
 ---
 
 # Testing
@@ -28,27 +28,6 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
 - **Tolerances are measured:** a bound is measured at the test's own sizes and seeds before it is asserted, and its
   constant says what it counts and its margin. Never loosen one to make a run pass.
 - **Deterministic:** seeded inputs, no clock, no network, no order dependence, no test that reads another's output.
-
-## The control: a new judge is shown to fail
-
-A judge that has never failed has not been shown to work. Before a new judge is accepted:
-
-1. **Name the bug** the judge is for, and say which result the bug changes before running anything.
-2. **Plant it in a copy,** never in the real source: copy the code under test into `/tmp/harness/<project>/`, apply the bug
-   there, and point the judge at the copy (a path setting or an environment variable the project documents; with none, copy the module and import the copy by
-   path, and if that is impossible report it under Open). A test that spawns a subprocess must pass the copy's path
-   to it too.
-3. **Run the judge:** it must fail, and fail on the bug's own assertion. Record the command and the failing line.
-4. **Run it on the real source:** it must pass.
-
-Ways a control proves nothing:
-
-- It fails nothing: it ran the real source, or changed no value the judge reads.
-- It breaks the import or setup, so every test fails for another reason.
-- It degrades every case alike, so an order or a ratio cancels: aim it at one side.
-- It changes something the judge does not read (a tie-break changes a choice, not a sum, so a sum judge cannot see it).
-
-A judge of a hook, gate or script is shown the same way: plant the bug in a copy of that script and run its cases.
 
 ## Cheap and true
 

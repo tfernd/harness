@@ -38,7 +38,7 @@ what order. Each step lands as its own commits, with `make check` green, before 
     bucket, `deploy`) asks the owner. The same for `sam` and `cdk` deploys and deletes.
   - `curl ... | sh`, `wget ... | bash` and the like ask the owner.
 - **Why:** a write to an AWS account cannot be undone from the session; a piped installer runs unseen code.
-- **Done:** cases and planted bugs for each, a replay over past transcripts with the count of new asks.
+- **Done:** cases for each, a replay over past transcripts with the count of new asks.
 
 ### 4. Skills for the work stack (done)
 

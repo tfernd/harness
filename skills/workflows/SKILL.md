@@ -66,7 +66,7 @@ A game, page, dashboard or UI: offer mocks and choose the look before any build:
 Use when the way is unknown.
 
 1. Build it in `/tmp/harness/<project>/`, loosely.
-2. Prove it works with a judge (`harness:testing`); show the judge fails under a deliberate bug.
+2. Prove it works with a judge (`harness:testing`).
 3. Freeze the judge as a test in the project, and record the judge file's sha256 (`sha256sum <file>`) in the report
    at the freeze.
 4. Clean the code into place with the judge unchanged. At the end of clean-up compare the file's sha256 with the

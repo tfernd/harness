@@ -12,7 +12,6 @@ The sender's checks before a brief goes out. They are not text of the brief. Che
 - In a shared tree the judge is scoped to the brief's files; a repo-wide one fails on other agents' live files.
 - The brief names every file the job writes, tests and docs included.
 - A change to a public name or path lists every hit of the old one, found by `rg`, hidden folders included.
-- A brief that asks for a new judge names the deliberate bug that must fail it (`harness:testing`).
 - The brief says what the agent cannot do (permissions, read-only, no network), so it reports `blocked` with the
   reason instead of going quiet.
 - Re-read the whole brief: no sentence contradicts another, and none says how to build what the Goal and the Judge

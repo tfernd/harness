@@ -18,7 +18,7 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 - A failure in a file outside the files the brief names is another agent's unfinished work: report it, never fix it.
 
 ## 4. Tests: the judges
-Judges and the control rule: `harness:testing`. A new judge is shown to fail once under a deliberate bug.
+Judges: `harness:testing`.
 
 ## 5. Commands, files, git
 - Never resolve, install or remove packages unless the owner says so.

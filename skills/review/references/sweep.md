@@ -52,8 +52,7 @@ Briefs follow `harness:orchestrator`; the lens brief's fields are in `lenses.md`
    fixed. Decisions only the owner can make are listed apart, each as one question with the main session's pick first;
    they are asked, never assumed.
 6. **Fix.** Workers on disjoint sets of files. Text fixes go in one pass, with checks run once at the end; C findings are
-   fixed in that pass when cheap, else listed. An enforcement fix gets its test case and a deliberate-bug control
-   (`harness:testing`).
+   fixed in that pass when cheap, else listed. An enforcement fix gets its test case.
 7. **Prevent.** A drift that can come back is fixed by a check, or by generating the text from its source, not only by
    editing the line again.
 8. **Record.** The verifier's report carries one Feedback line per CONFIRMED finding that needs a rule, naming the file
