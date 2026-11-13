@@ -349,6 +349,14 @@ export const recordTurnUsage = (store: AgentStore, input: { id: string; tokens: 
   return { ...store, rows: store.rows.map(row => (row.id === input.id ? grow(row) : row)) }
 }
 
+export type PendingUsage = { id: string; tokens: TurnTokens; model: string }
+
+export const applyPendingUsage = (store: AgentStore, pending: readonly PendingUsage[], now: number): { store: AgentStore; applied: readonly PendingUsage[] } => {
+  const applied = pending.filter(entry => store.rows.some(row => row.id === entry.id))
+
+  return { store: applied.reduce((current, entry) => recordTurnUsage(current, { ...entry, now }), store), applied }
+}
+
 export const noteAgentKind = (store: AgentStore, input: { id: string; type: string; model: string | undefined }): AgentStore => ({
   ...store,
   rows: store.rows.map(row => (row.id === input.id ? { ...row, type: input.type, ...(input.model === undefined || row.model !== undefined ? {} : { model: input.model }) } : row)),

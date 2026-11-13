@@ -412,3 +412,26 @@ test('every tile bottom line has the same strip and slot boxes, and no tile text
 
   await ui.unmount()
 })
+
+test('an agent that finishes before its spawn is recorded still has its tokens and cost counted', async ($, on) => {
+  mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS, usd: 35.63 }))
+  let release: () => void = () => undefined
+  const started = new Promise<void>(resolve => {
+    release = resolve
+  })
+  on('agent.spawn', async () => {
+    await started
+
+    return { model: 'claude-sonnet-4-5', agentId: 'a1' }
+  })
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const spawning = $.agent.spawn(SPAWN)
+  await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'answer', usage: { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-4-5' } })
+  release()
+  await spawning
+  const ui = await $.ui.mount(BAND)
+
+  expect(await textOf(ui, 'spend-agents')).toBe('agents est.~$4.50')
+  await ui.unmount()
+})

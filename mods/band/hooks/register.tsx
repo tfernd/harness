@@ -6,7 +6,7 @@ import type { AgentState, AgentStore, Gauges, Range, Roster } from '../types'
 import { type OpenCall, activityOf, withCall, withoutCall } from './calls'
 import { bandRefreshMs } from './desktop'
 import { EMPTY_GAUGES, isSameGauges, withCache, withCompaction, withTurn, withUsage } from './gauges'
-import { DIRECT_GROUP, DIRECT_LABEL, EMPTY_ROSTER, EMPTY_STORE, type MainActivity, addAgent, agentTypeName, closeOpen, lastEventAt, applyListing, MAIN_ID, endBackgroundTask, finishAgent, startBackgroundTask, isSameRoster, moveAgent, OWNER_QUESTION_TOOLS, moveMain, nextQuietChangeMs, newAgent, noteAgentKind, recordTurnUsage, rosterOf, sessionTotal } from './model'
+import { DIRECT_GROUP, DIRECT_LABEL, EMPTY_ROSTER, EMPTY_STORE, type MainActivity, addAgent, type PendingUsage, applyPendingUsage, agentTypeName, closeOpen, lastEventAt, applyListing, MAIN_ID, endBackgroundTask, finishAgent, startBackgroundTask, isSameRoster, moveAgent, OWNER_QUESTION_TOOLS, moveMain, nextQuietChangeMs, newAgent, noteAgentKind, recordTurnUsage, rosterOf, sessionTotal } from './model'
 import { nextLeaveMs } from './layout'
 import { terminalSchemeOf, themeOf } from './format'
 import { TICK_MS, frameAt } from './paint'
@@ -64,9 +64,27 @@ type Runtime = {
   listedIds: Set<string>
   openCalls: Map<string, readonly OpenCall[]>
   callSerial: number
+  pendingUsage: PendingUsage[]
 }
 
 const indexRows = (store: AgentStore | null): Rows => new Map([...(store?.main ? [store.main] : []), ...(store?.rows ?? [])].map(row => [row.id, row]))
+
+const settlePendingUsage = async ($: EngineInterface, runtime: Runtime): Promise<void> => {
+  const queued = [...runtime.pendingUsage]
+
+  if (queued.length === 0) {
+    return
+  }
+
+  let applied: readonly PendingUsage[] = []
+  await mutateAgents($, runtime, (store, now) => {
+    const result = applyPendingUsage(store, queued, now)
+    applied = result.applied
+
+    return result.store
+  })
+  runtime.pendingUsage = runtime.pendingUsage.filter(entry => !applied.includes(entry))
+}
 
 const mutateAgents = async ($: EngineInterface, runtime: Runtime, change: (store: AgentStore, now: number) => AgentStore): Promise<void> => {
   const run = async (): Promise<void> => {
@@ -184,6 +202,8 @@ const reconcile = async ($: EngineInterface, runtime: Runtime): Promise<void> =>
     for (const info of list) {
       runtime.listedIds.add(info.id)
     }
+
+    await settlePendingUsage($, runtime)
   } finally {
     runtime.isReconciling = false
   }
@@ -266,6 +286,7 @@ export const register: Register = on => {
     isDrawnByTree: false,
     isClearing: false,
     listedIds: new Set(),
+    pendingUsage: [],
     openCalls: new Map(),
     callSerial: 0,
   }
@@ -323,6 +344,8 @@ export const register: Register = on => {
 
       await mutateAgents($, runtime, (store, now) => noteAgentKind(addAgent(store, newAgent({ id, label: `${event.name ?? type}-${sessionTotal(store) + 1}`, group, groupLabel, now })), { id, type, model }))
     }
+
+    await settlePendingUsage($, runtime)
 
     return result
   })
@@ -389,7 +412,8 @@ export const register: Register = on => {
       const reason = FAIL_REASON_WORD[event.reason]
 
       if (usage !== undefined) {
-        await mutateAgents($, runtime, (store, now) => recordTurnUsage(store, { id: agentId, tokens: usage, model: usage.model, now }))
+        runtime.pendingUsage.push({ id: agentId, tokens: usage, model: usage.model })
+        await settlePendingUsage($, runtime)
       }
 
       await mutateAgents($, runtime, (store, now) => finishAgent(store, { id: agentId, state, now, ...(reason === undefined ? {} : { reason }) }))
