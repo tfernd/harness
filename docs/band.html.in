@@ -70,27 +70,10 @@
             <div class="install-panel">
               <code class="install-command" data-mode="install">[[@install-command band]]</code>
               <button type="button" class="install-copy" data-mode="install" data-copy="[[@install-copy band]]">Copy</button>
-              <p class="install-note" data-mode="install">Run it again to update. Then restart Claude Code or run <code>/reload-plugins</code>. It runs in Claude Code only.</p>
+              <p class="install-note" data-mode="install">Run it again to update. Then restart Claude Code or run <code>/reload-plugins</code>. It runs in Claude Code only, with or without the harness (installed from the <a href="index.html">Harness page</a>).</p>
               <code class="install-command" data-mode="uninstall" hidden>[[@install-command band-off]]</code>
               <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy band-off]]">Copy</button>
               <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. The harness plugin is not touched.</p>
-            </div>
-          </div>
-          <div class="card install" data-install>
-            <h3 class="install-title">The harness: agents, skills and hooks</h3>
-            <div class="install-bar">
-              <div class="install-tablist" role="group" aria-label="Install or uninstall the harness">
-                <button type="button" class="install-tab install-mode" data-mode-choice="install" aria-pressed="true">Install</button>
-                <button type="button" class="install-tab install-mode" data-mode-choice="uninstall" aria-pressed="false">Uninstall</button>
-              </div>
-            </div>
-            <div class="install-panel">
-              <code class="install-command" data-mode="install">[[@install-command claude]]</code>
-              <button type="button" class="install-copy" data-mode="install" data-copy="[[@install-copy claude]]">Copy</button>
-              <p class="install-note" data-mode="install">Needs <code>uv</code> on your <code>PATH</code>. Then restart Claude Code or run <code>/reload-plugins</code>, and <code>/harness:init</code> once per project. For Cortex Code and Kiro, see the <a href="index.html">Harness page</a>.</p>
-              <code class="install-command" data-mode="uninstall" hidden>[[@install-command claude-off]]</code>
-              <button type="button" class="install-copy" data-mode="uninstall" hidden data-copy="[[@install-copy claude-off]]">Copy</button>
-              <p class="install-note" data-mode="uninstall" hidden>Restart Claude Code or run <code>/reload-plugins</code>. The band plugin is not touched.</p>
             </div>
           </div>
         </section>
