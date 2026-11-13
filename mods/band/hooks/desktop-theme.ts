@@ -2,9 +2,9 @@ import type { ThemeSetting } from '../types'
 
 export type Tone = 'run' | 'done' | 'fail' | 'warn' | 'ink' | 'idle'
 
-export type ArcId = 'fiveHour' | 'week' | 'fable' | 'context'
+export type ArcId = 'fiveHour' | 'week' | 'fable' | 'other' | 'context'
 
-export const ARC_IDS: readonly ArcId[] = ['fiveHour', 'week', 'fable', 'context']
+export const ARC_IDS: readonly ArcId[] = ['fiveHour', 'week', 'fable', 'other', 'context']
 
 export type DesktopPalette = {
   run: string
@@ -23,6 +23,7 @@ export type DesktopPalette = {
   arcFiveHour: string
   arcWeek: string
   arcFable: string
+  arcOther: string
   arcContext: string
 }
 
@@ -43,6 +44,7 @@ const LIGHT: DesktopPalette = {
   arcFiveHour: '#2457c5',
   arcWeek: '#b02a8f',
   arcFable: '#0b8577',
+  arcOther: '#6f7d0a',
   arcContext: '#5d6b7a',
 }
 
@@ -63,6 +65,7 @@ const DARK: DesktopPalette = {
   arcFiveHour: '#6ea8ff',
   arcWeek: '#ff7ad1',
   arcFable: '#4fe0d0',
+  arcOther: '#c4e04f',
   arcContext: '#9aa8b8',
 }
 
@@ -83,12 +86,13 @@ const AUTO: DesktopPalette = {
   arcFiveHour: '#3b82f6',
   arcWeek: '#d946a8',
   arcFable: '#14a3b8',
+  arcOther: '#9ab300',
   arcContext: '#7a8794',
 }
 
 export const paletteOf = (setting: ThemeSetting): DesktopPalette => (setting === 'auto' ? AUTO : setting === 'dark' ? DARK : LIGHT)
 
-export const ARC_KEY: Readonly<Record<ArcId, keyof DesktopPalette>> = { fiveHour: 'arcFiveHour', week: 'arcWeek', fable: 'arcFable', context: 'arcContext' }
+export const ARC_KEY: Readonly<Record<ArcId, keyof DesktopPalette>> = { fiveHour: 'arcFiveHour', week: 'arcWeek', fable: 'arcFable', other: 'arcOther', context: 'arcContext' }
 
 export const arcColorOf = (palette: DesktopPalette, id: ArcId): string => palette[ARC_KEY[id]]
 
@@ -96,9 +100,9 @@ export const STATE_COLOR_KEYS: readonly (keyof DesktopPalette)[] = ['run', 'done
 
 const variablesOf = (palette: DesktopPalette, keys: readonly (keyof DesktopPalette)[]): string => keys.map(key => '--' + key + ':' + palette[key]).join(';')
 
-const SVG_KEYS: readonly (keyof DesktopPalette)[] = ['run', 'runSoft', 'done', 'doneSoft', 'fail', 'failSoft', 'warn', 'warnSoft', 'ink', 'inkSoft', 'muted', 'rail', 'arcFiveHour', 'arcWeek', 'arcFable', 'arcContext']
+const SVG_KEYS: readonly (keyof DesktopPalette)[] = ['run', 'runSoft', 'done', 'doneSoft', 'fail', 'failSoft', 'warn', 'warnSoft', 'ink', 'inkSoft', 'muted', 'rail', 'arcFiveHour', 'arcWeek', 'arcFable', 'arcOther', 'arcContext']
 
-const ARC_KEYS: readonly (keyof DesktopPalette)[] = ['arcFiveHour', 'arcWeek', 'arcFable', 'arcContext']
+const ARC_KEYS: readonly (keyof DesktopPalette)[] = ['arcFiveHour', 'arcWeek', 'arcFable', 'arcOther', 'arcContext']
 
 const SVG_RULES = SVG_KEYS.map(key => '.f-' + key + '{fill:var(--' + key + ')}.s-' + key + '{stroke:var(--' + key + ')}').join('')
 

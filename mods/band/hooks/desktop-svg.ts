@@ -6,25 +6,35 @@ import { type ArcId, svgStyleFor } from './desktop-theme'
 
 export type DrawnSvg = { source: string; width: number; height: number }
 
-const wrapSvg = (setting: ThemeSetting, width: number, height: number, body: string, aspect = ''): DrawnSvg => ({
-  source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '"' + aspect + '><style>' + svgStyleFor(setting) + '</style>' + body + '</svg>',
-  width,
-  height,
-})
+type Drawing = { setting: ThemeSetting; width: number; height: number; body: string; aspect?: string; pixelHeight?: number }
+
+const wrapSvg = (drawing: Drawing): DrawnSvg => {
+  const { setting, width, height, body, aspect = '' } = drawing
+  const pixelHeight = drawing.pixelHeight ?? height
+
+  return {
+    source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + pixelHeight + '"' + aspect + '><style>' + svgStyleFor(setting) + '</style>' + body + '</svg>',
+    width,
+    height: pixelHeight,
+  }
+}
 
 type Box = { x: number; y: number; width: number; height: number; radius: number; className: string }
 
 const rect = (box: Box): string => '<rect class="' + box.className + '" x="' + box.x + '" y="' + box.y + '" width="' + box.width + '" height="' + box.height + '" rx="' + box.radius + '"/>'
 
-const ARC_FILL: Readonly<Record<ArcId, string>> = { fiveHour: 'f-arcFiveHour', week: 'f-arcWeek', fable: 'f-arcFable', context: 'f-arcContext' }
+const ARC_FILL: Readonly<Record<ArcId, string>> = { fiveHour: 'f-arcFiveHour', week: 'f-arcWeek', fable: 'f-arcFable', other: 'f-arcOther', context: 'f-arcContext' }
 
-const ARC_STROKE: Readonly<Record<ArcId, string>> = { fiveHour: 's-arcFiveHour', week: 's-arcWeek', fable: 's-arcFable', context: 's-arcContext' }
+const ARC_STROKE: Readonly<Record<ArcId, string>> = { fiveHour: 's-arcFiveHour', week: 's-arcWeek', fable: 's-arcFable', other: 's-arcOther', context: 's-arcContext' }
 
 const STRETCH = ' preserveAspectRatio="none"'
 
 export const RING_SIZE = 26
 export const RING_OUTER_RADIUS = 11.5
 export const RING_STEP = 3
+export const RING_TIGHT_STEP = 2
+export const RING_MAX_ROOMY_ARCS = 4
+export const RING_MIN_RADIUS = 1
 export const RING_STROKE = 2
 export const BAR_HEIGHT = 4
 export const GUTTER_BAR_WIDTH = 150
@@ -34,14 +44,19 @@ export const STRIP_HEIGHT = 8
 export const MINI_LANES_WIDTH = 112
 export const MINI_LANE_HEIGHT = 3
 export const MINI_LANE_STEP = 4
+export const MINI_LANES_VIEW_HEIGHT = 16
+export const MINI_LANES_PIXEL_HEIGHT = 18
+export const MINI_LANE_TRACE_PX = (MINI_LANE_HEIGHT * MINI_LANES_PIXEL_HEIGHT) / MINI_LANES_VIEW_HEIGHT
 export const MINI_LANE_CELLS = 56
 
-export const ringRadiusOf = (index: number): number => RING_OUTER_RADIUS - index * RING_STEP
+export const ringStepOf = (arcCount: number): number => (arcCount <= RING_MAX_ROOMY_ARCS ? RING_STEP : RING_TIGHT_STEP)
+
+export const ringRadiusOf = (index: number, arcCount: number = RING_MAX_ROOMY_ARCS): number => Math.max(RING_MIN_RADIUS, RING_OUTER_RADIUS - index * ringStepOf(arcCount))
 
 export const ringSvg = (input: { arcs: readonly Arc[]; setting: ThemeSetting }): DrawnSvg => {
   const center = RING_SIZE / 2
   const circles = input.arcs.map((arc, index) => {
-    const radius = ringRadiusOf(index)
+    const radius = ringRadiusOf(index, input.arcs.length)
     const circumference = 2 * Math.PI * radius
     const filled = (circumference * Math.max(0, Math.min(100, arc.percent))) / 100
     const common = ' cx="' + center + '" cy="' + center + '" r="' + radius + '" fill="none" stroke-width="' + RING_STROKE + '"'
@@ -51,7 +66,7 @@ export const ringSvg = (input: { arcs: readonly Arc[]; setting: ThemeSetting }):
     return track + arcPath
   })
 
-  return wrapSvg(input.setting, RING_SIZE, RING_SIZE, circles.join(''))
+  return wrapSvg({ setting: input.setting, width: RING_SIZE, height: RING_SIZE, body: circles.join('') })
 }
 
 export const barSvg = (input: { percent: number; id: ArcId; width: number; setting: ThemeSetting }): DrawnSvg => {
@@ -61,11 +76,11 @@ export const barSvg = (input: { percent: number; id: ArcId; width: number; setti
   const track = rect({ x: 0, y: 0, width: input.width, height: BAR_HEIGHT, radius, className: 'f-rail' })
   const fill = fillWidth === 0 ? '' : rect({ x: 0, y: 0, width: fillWidth, height: BAR_HEIGHT, radius, className: ARC_FILL[input.id] })
 
-  return wrapSvg(input.setting, input.width, BAR_HEIGHT, track + fill)
+  return wrapSvg({ setting: input.setting, width: input.width, height: BAR_HEIGHT, body: track + fill })
 }
 
 export const ruleSvg = (input: { width: number; setting: ThemeSetting }): DrawnSvg =>
-  wrapSvg(input.setting, input.width, 1, '<line class="s-muted" x1="0" x2="' + input.width + '" y1="0.5" y2="0.5" stroke-width="1" stroke-dasharray="2 3" opacity="0.6"/>')
+  wrapSvg({ setting: input.setting, width: input.width, height: 1, body: '<line class="s-muted" x1="0" x2="' + input.width + '" y1="0.5" y2="0.5" stroke-width="1" stroke-dasharray="2 3" opacity="0.6"/>' })
 
 const CELL_CLASS: Readonly<Record<Exclude<CellKind, 'empty' | 'idle'>, string>> = {
   run: 'f-run',
@@ -100,7 +115,7 @@ export const stripWidthOf = (cellCount: number): number => cellCount * (STRIP_CE
 export const stripSvg = (input: { cells: readonly CellKind[]; setting: ThemeSetting }): DrawnSvg => {
   const shapes = input.cells.map((kind, index) => cellShapes(kind, { x: index * (STRIP_CELL_WIDTH + STRIP_CELL_GAP), width: STRIP_CELL_WIDTH, height: STRIP_HEIGHT, radius: 1 }))
 
-  return wrapSvg(input.setting, stripWidthOf(input.cells.length), STRIP_HEIGHT, shapes.join(''), STRETCH)
+  return wrapSvg({ setting: input.setting, width: stripWidthOf(input.cells.length), height: STRIP_HEIGHT, body: shapes.join(''), aspect: STRETCH })
 }
 
 const laneRunShape = (run: CellRun, y: number): string => {
@@ -120,14 +135,15 @@ const laneRunShape = (run: CellRun, y: number): string => {
 }
 
 export const miniLanesSvg = (input: { lanes: readonly (readonly CellKind[])[]; setting: ThemeSetting }): DrawnSvg => {
-  const height = Math.max(1, input.lanes.length) * MINI_LANE_STEP
+  const height = MINI_LANES_VIEW_HEIGHT
+  const nowLineHeight = MINI_LANE_HEIGHT + Math.max(0, input.lanes.length - 1) * MINI_LANE_STEP
   const bars = input.lanes.map((cells, index) => {
     const y = index * MINI_LANE_STEP
     const ground = rect({ x: 0, y, width: MINI_LANES_WIDTH, height: MINI_LANE_HEIGHT, radius: 0, className: 'f-rail' })
 
     return ground + runsOf(cells).map(run => laneRunShape(run, y)).join('')
   })
-  const nowLine = rect({ x: MINI_LANES_WIDTH - 1, y: 0, width: 1, height, radius: 0, className: 'f-ink' })
+  const nowLine = rect({ x: MINI_LANES_WIDTH - 1, y: 0, width: 1, height: nowLineHeight, radius: 0, className: 'f-ink' })
 
-  return wrapSvg(input.setting, MINI_LANES_WIDTH, height, bars.join('') + nowLine, STRETCH)
+  return wrapSvg({ setting: input.setting, width: MINI_LANES_WIDTH, height, body: bars.join('') + nowLine, aspect: STRETCH, pixelHeight: MINI_LANES_PIXEL_HEIGHT })
 }

@@ -1,5 +1,5 @@
 import type { Activity } from './activity'
-import { type Arc, apiBillingText, percentTextOf, resetClockOf } from './arcs'
+import { type Arc, apiBillingText, percentTextOf, resetInOf } from './arcs'
 import { formatUsd } from './cost'
 
 export const COLUMN_PX = 8
@@ -28,7 +28,7 @@ export const TILE_ROW_GAP_COLUMNS = 1
 export const pixelsOf = (columns: number): number => columns * COLUMN_PX
 
 const legendItemColumnsOf = (arc: Arc, now: number): number => {
-  const reset = arc.resetsAt === null ? (arc.usage === null ? '' : arc.usage) : '↻' + resetClockOf(arc.resetsAt, now)
+  const reset = arc.resetsAt === null ? (arc.usage === null ? '' : arc.usage) : '↻ ' + resetInOf(arc.resetsAt, now)
 
   return 1 + arc.short.length + percentTextOf(arc.percent).length + reset.length + LEGEND_ITEM_GAP_COLUMNS
 }

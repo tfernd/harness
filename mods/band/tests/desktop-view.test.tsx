@@ -62,9 +62,23 @@ type Finder = { find: (query: { key: string }) => Promise<FoundElement | undefin
 
 const isFound = (value: unknown): value is FoundElement => typeof value === 'object' && value !== null && 'type' in value && 'props' in value
 
+const childrenOf = (found: FoundElement | undefined): FoundElement[] => (found === undefined || !Array.isArray(found.children) ? [] : found.children.filter(isFound))
+
+type Described = { props?: Record<string, unknown>; children?: unknown[] }
+
+const isDescribed = (value: unknown): value is Described => typeof value === 'object' && value !== null
+
+const stringsOf = (node: unknown): string => (typeof node === 'string' ? node : isDescribed(node) && Array.isArray(node.children) ? node.children.map(stringsOf).join('') : '')
+
+const hiddenTextsOf = (node: unknown): string[] => (isDescribed(node) && Array.isArray(node.children) ? node.children.flatMap(child => (isDescribed(child) && child.props?.['display'] === 'none' ? [stringsOf(child)] : hiddenTextsOf(child))) : [])
+
 const textOf = async (ui: Finder, key: string): Promise<string | undefined> => (await ui.find({ key }))?.text
 
-const childrenOf = (found: FoundElement | undefined): FoundElement[] => (found === undefined || !Array.isArray(found.children) ? [] : found.children.filter(isFound))
+const shownTextOf = async (ui: Finder, key: string): Promise<string | undefined> => {
+  const found = await ui.find({ key })
+
+  return found === undefined ? undefined : hiddenTextsOf(found).reduce((text, hidden) => text.replace(hidden, ''), found.text)
+}
 
 const firstTextColorOf = (found: FoundElement | undefined): unknown => {
   const queue = childrenOf(found)
@@ -112,8 +126,8 @@ for (const theme of ['light', 'dark'] as const) {
     expect(source).toContain('class="s-arcFiveHour"')
     expect(source).toContain('class="s-arcFable"')
     expect(countOf(source, '<circle')).toBe(8)
-    expect(await textOf(ui, 'legend-fiveHour')).toMatch(/^●5h35%↻\d{2}:00$/)
-    expect(await textOf(ui, 'legend-fable')).toMatch(/^●Fable83% ▲↻\w{3} \d{2}:00$/)
+    expect(await shownTextOf(ui, 'legend-fiveHour')).toBe('●5h35%↻ in 5h 0m')
+    expect(await shownTextOf(ui, 'legend-fable')).toBe('●Fable83% ▲↻ in 4d 5h')
     expect(await textOf(ui, 'legend-context')).toBe('●Ctx28%56k/200k')
     await ui.unmount()
   })
@@ -341,7 +355,7 @@ test('nothing the owner reads in full is ellipsised: legend and header texts nev
   expect(await truncatingTextsIn(ui, 'header')).toEqual([])
 
   for (const id of ['fiveHour', 'week', 'fable', 'context']) {
-    const row = (await textOf(ui, 'arc-' + id)) ?? ''
+    const row = (await shownTextOf(ui, 'arc-' + id)) ?? ''
 
     expect(await truncatingTextsIn(ui, 'arc-' + id)).toEqual([])
     expect(row.length + GAP_ALLOWANCE_COLUMNS).toBeLessThanOrEqual(GUTTER_COLUMNS - GUTTER_PADDING_COLUMNS)
@@ -353,7 +367,7 @@ test('nothing the owner reads in full is ellipsised: legend and header texts nev
     expect(await truncatingTextsIn(ui, 'legend-' + id)).toEqual([])
   }
 
-  expect(await textOf(ui, 'legend-fable')).toMatch(/↻\w{3} \d{2}:00$/)
+  expect(await shownTextOf(ui, 'legend-fable')).toBe('●Fable100% ▲↻ in 4d 5h')
   expect((await ui.find({ key: 'legend' }))?.props['overflow']).toBeUndefined()
   await ui.unmount()
 })

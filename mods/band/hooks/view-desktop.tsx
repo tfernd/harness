@@ -3,7 +3,7 @@ import type { Elements, RenderElement } from 'claude-code'
 import type { Range } from '../types'
 
 import { type Activity, cellsOf } from './activity'
-import { type Arc, apiBillingText, arcsOf, isWarning, legendColumnsOf, percentTextOf, resetClockOf, toneOfPercent } from './arcs'
+import { type Arc, apiBillingText, arcsOf, isWarning, legendColumnsOf, percentTextOf, resetExactOf, resetInOf, toneOfPercent } from './arcs'
 import { COST_COLUMNS, GUTTER_COLUMNS, MAIN_COLUMN_PADDING_COLUMNS, SECTION_GAP_COLUMNS, STRIP_MIN_COLUMNS, TILE_PADDING_COLUMNS, TIME_COLUMNS, TOKENS_COLUMNS, legendColumnsWidthOf, miniLaneColumnsOf, pixelsOf, stripColumnsOf } from './desktop-fit'
 import { type DesktopPalette, type Tone, arcColorOf, paletteOf } from './desktop-theme'
 import { GUTTER_BAR_WIDTH, MINI_LANE_CELLS, STRIP_HEIGHT, barSvg, miniLanesSvg, ringSvg, ruleSvg, stripSvg } from './desktop-svg'
@@ -80,12 +80,20 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     </Button>
   )
 
+  const resetCard = (arc: Arc) =>
+    arc.resetsAt === null ? null : (
+      <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }} paddingX={FRAME_PAD_X} borderStyle="round" borderColor={palette.muted} backgroundColor={colors.selected}>
+        <Text>{arc.name + ' resets ' + resetExactOf(arc.resetsAt, now)}</Text>
+      </Box>
+    )
+
   const legendItem = (arc: Arc) => (
-    <Box key={'legend-' + arc.id} flexDirection="row" gap={ITEM_GAP} alignItems="center" flexShrink={0}>
+    <Box key={'legend-' + arc.key} flexDirection="row" gap={ITEM_GAP} alignItems="center" flexShrink={0}>
       <Text color={arcColorOf(palette, arc.id)}>●</Text>
       <Text bold>{arc.short}</Text>
       <Text bold={isWarning(arc.percent)} color={toneColorOfPercent(palette, arc.percent)}>{percentTextOf(arc.percent)}</Text>
-      {arc.resetsAt === null ? (arc.usage === null ? null : <Text dimColor>{arc.usage.replace(' of ', '/')}</Text>) : <Text dimColor>{'↻' + resetClockOf(arc.resetsAt, now)}</Text>}
+      {arc.resetsAt === null ? (arc.usage === null ? null : <Text dimColor>{arc.usage.replace(' of ', '/')}</Text>) : <Text dimColor>{'↻ ' + resetInOf(arc.resetsAt, now)}</Text>}
+      {resetCard(arc)}
     </Box>
   )
 
@@ -97,7 +105,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     const isShorter = column.length < firstColumnLines
     const lastArc = column[column.length - 1]
     const items = column.map((arc, position) => (isCostColumn && !isShorter && position === column.length - 1 ? (
-      <Box key={'legend-last-' + arc.id} flexDirection="row" gap={SECTION_GAP} flexShrink={0}>
+      <Box key={'legend-last-' + arc.key} flexDirection="row" gap={SECTION_GAP} flexShrink={0}>
         {legendItem(arc)}
         {costText}
       </Box>
@@ -163,14 +171,15 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     const bar = barSvg({ percent: arc.percent, id: arc.id, width: GUTTER_BAR_WIDTH, setting: input.scheme })
 
     return (
-      <Box key={'arc-' + arc.id} flexDirection="column">
+      <Box key={'arc-' + arc.key} flexDirection="column">
         <Box flexDirection="row" justifyContent="space-between" gap={ITEM_GAP}>
           <Box flexDirection="row" gap={ITEM_GAP} flexShrink={0}>
             <Text color={arcColorOf(palette, arc.id)}>●</Text>
             <Text bold>{arc.name}</Text>
             <Text bold={isWarning(arc.percent)} color={toneColorOfPercent(palette, arc.percent)}>{percentTextOf(arc.percent)}</Text>
           </Box>
-          {arc.resetsAt === null && arc.usage === null ? null : <Text dimColor>{arc.resetsAt === null ? (arc.usage ?? '') : '↻ ' + resetClockOf(arc.resetsAt, now)}</Text>}
+          {arc.resetsAt === null && arc.usage === null ? null : <Text dimColor>{arc.resetsAt === null ? (arc.usage ?? '') : '↻ ' + resetInOf(arc.resetsAt, now)}</Text>}
+          {resetCard(arc)}
         </Box>
         <Svg source={bar.source} alt={arc.name + ' ' + Math.round(arc.percent) + '%'} width={bar.width} height={bar.height} />
       </Box>

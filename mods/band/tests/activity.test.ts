@@ -3,10 +3,10 @@ import { expect, test } from 'claude-code/testing'
 import type { AgentRow, AgentState, Gauges, Roster } from '../types'
 
 import { ACTIVITY_ICON, ACTIVITY_KINDS, ACTIVITY_WORD, activityOf, cellsOf, runsOf, toolKindOf } from '../hooks/activity'
-import { arcsOf, legendColumnsOf } from '../hooks/arcs'
+import { arcsOf, legendColumnsOf, resetInOf } from '../hooks/arcs'
 import { ghostOf, mainEstimateLabelOf, mainEstimateOf, tileOf } from '../hooks/desktop'
 import { ARC_IDS, STATE_COLOR_KEYS, arcColorOf, paletteOf } from '../hooks/desktop-theme'
-import { stripSvg } from '../hooks/desktop-svg'
+import { miniLanesSvg, ringSvg, stripSvg } from '../hooks/desktop-svg'
 import { formatAge } from '../hooks/format'
 import { EMPTY_GAUGES } from '../hooks/gauges'
 import { EMPTY_ROSTER, newMainRow } from '../hooks/model'
@@ -194,4 +194,38 @@ test('a working main is ink and a working agent is violet, with thinking the sof
   expect(cellsOf(agentRow({ state: 'thinking', segments: segments('thinking') }), window, NOW)[0]).toBe('runSoft')
   expect(cellsOf(agentRow({ state: 'waiting', segments: segments('waiting') }), window, NOW)[0]).toBe('warn')
   expect(cellsOf(agentRow({ state: 'thinking', startedAt: NOW + MINUTE }), window, NOW)[0]).toBe('empty')
+})
+
+const DAY = 24 * HOUR
+const MOCK_LANE_TRACE_PX = 3.375
+
+test('a reset reads as time left in the largest two units, never a clock time or a weekday', () => {
+  expect(resetInOf(NOW + 2 * HOUR + 10 * MINUTE, NOW)).toBe('in 2h 10m')
+  expect(resetInOf(NOW + 6 * DAY + 4 * HOUR + 59 * MINUTE, NOW)).toBe('in 6d 4h')
+  expect(resetInOf(NOW + 45 * MINUTE, NOW)).toBe('in 45m')
+  expect(resetInOf(NOW + 1 * HOUR, NOW)).toBe('in 1h 0m')
+  expect(resetInOf(NOW + 30_000, NOW)).toBe('in <1m')
+  expect(resetInOf(NOW - MINUTE, NOW)).toBe('now')
+})
+
+test('a model-specific weekly limit becomes its own arc whatever its kind, and Fable keeps its own colour id', () => {
+  const gauges = { ...gaugesWith(['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_fable', 'spend_limit']), limits: ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_fable', 'spend_limit'].map(kind => ({ kind, name: kind, percent: 40, resetsAt: NOW + HOUR })) }
+  const arcs = arcsOf(gauges)
+
+  expect(arcs.map(arc => arc.id)).toEqual(['fiveHour', 'week', 'fable', 'other', 'other', 'context'])
+  expect(arcs.map(arc => arc.short)).toEqual(['5h', 'Wk', 'Fable', 'Opus', 'Spend', 'Ctx'])
+  expect(new Set(arcs.map(arc => arc.key)).size).toBe(arcs.length)
+  expect(ringSvg({ arcs, setting: 'light' }).source.match(/<circle/g)).toHaveLength(12)
+})
+
+test('a folded lane trace is at least as thick in pixels as the mock trace and its lanes keep the mock step', () => {
+  const { source, height } = miniLanesSvg({ lanes: [['run', 'run'], ['ink', 'ink']], setting: 'light' })
+  const viewBoxHeight = Number(/viewBox="0 0 \d+ (\d+)"/.exec(source)?.[1])
+  const scale = height / viewBoxHeight
+  const traceHeights = [...source.matchAll(/<rect class="f-rail" x="0" y="(\d+)" width="112" height="(\d+)"/g)].map(match => ({ y: Number(match[1]), height: Number(match[2]) }))
+
+  expect(traceHeights).toHaveLength(2)
+  expect(traceHeights[0]?.height ?? 0).toBeGreaterThanOrEqual(MOCK_LANE_TRACE_PX / scale)
+  expect((traceHeights[0]?.height ?? 0) * scale).toBeGreaterThanOrEqual(MOCK_LANE_TRACE_PX)
+  expect(((traceHeights[1]?.y ?? 0) - (traceHeights[0]?.y ?? 0)) * scale).toBeGreaterThanOrEqual(4.5)
 })
