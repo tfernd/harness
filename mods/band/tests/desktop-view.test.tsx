@@ -268,7 +268,7 @@ test('a tile shows name, model, state, detail, strip, time, tokens and cost, and
   expect(await textOf(ui, 'model-a1')).toBe('sonnet')
   expect(await textOf(ui, 'state-a1')).toBe('✕ failed')
   expect(await textOf(ui, 'detail-a1')).toBe('error')
-  expect(await textOf(ui, 'tokens-a1')).toBe('1M / 100k')
+  expect(await textOf(ui, 'tokens-a1')).toBe('1M↓ 100k↑')
   expect(await textOf(ui, 'cost-a1')).toBe('~$4.50')
   expect((await ui.findAll({ type: 'Svg' })).some(svg => svg.props['alt'] === 'build-1 activity over the range')).toBe(true)
   expect(await textOf(ui, 'tile-a1')).toContain('ran for')
@@ -375,8 +375,40 @@ test('a tile bottom line can shrink its strip, keeps time and cost at natural wi
     expect((await ui.find({ key: 'time-' + id }))?.props['flexShrink']).toBe(0)
   }
 
-  expect(await ui.find({ key: 'tokens-a1' })).toBeUndefined()
-  expect(await ui.find({ key: 'cost-a1' })).toBeUndefined()
+  expect(await textOf(ui, 'tokens-a1')).toBe('no usage')
+  expect(await textOf(ui, 'cost-a1')).toBe('')
   expect(await textOf(ui, 'bottom-a1')).not.toContain('—')
+  await ui.unmount()
+})
+
+test('every tile bottom line has the same strip and slot boxes, and no tile text is ellipsised, with usage or without', async ($, on) => {
+  const clock = mock.clock(on)
+  hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS }))
+  let spawned = 0
+  on('agent.spawn', () => ({ model: 'claude-sonnet-4-5', agentId: 'a' + ++spawned }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+  await $.agent.spawn(SPAWN)
+  await $.agent.spawn(SPAWN)
+  await $.turn.complete({ ...TURN, agentId: 'a1', reason: 'answer', usage: { input_tokens: 8_100_000, output_tokens: 92_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-4-5' } })
+  await clock.advance(SETTLE_MS)
+
+  const boxesOf = async (id: string) => {
+    const strip = await ui.find({ key: 'strip-' + id })
+    const tokens = await ui.find({ key: 'tokens-' + id })
+    const cost = await ui.find({ key: 'cost-' + id })
+
+    return [strip, tokens, cost].map(found => [found?.props['flexGrow'], found?.props['flexShrink'], found?.props['width']])
+  }
+
+  expect(await textOf(ui, 'tokens-a1')).toBe('8.1M↓ 92k↑')
+  expect(await textOf(ui, 'tokens-a2')).toBe('no usage')
+  expect(await boxesOf('a2')).toEqual(await boxesOf('a1'))
+  expect(await boxesOf('main')).toEqual(await boxesOf('a1'))
+
+  for (const id of ['tokens-a1', 'tokens-a2', 'cost-a1']) {
+    expect(await truncatingTextsIn(ui, id)).toEqual([])
+  }
+
   await ui.unmount()
 })

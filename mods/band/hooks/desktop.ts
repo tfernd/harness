@@ -36,7 +36,9 @@ const tokenCostOf = (row: AgentRow | undefined): number | null => (row?.usage ==
 
 const costTextOf = (usd: number | null): string => (usd === null ? '' : '~' + formatUsd(usd))
 
-const tokensTextOf = (row: AgentRow): string => (row.usage === undefined ? '' : formatTokens(tokensInOf(row.usage)) + ' / ' + formatTokens(row.usage.output))
+export const NO_USAGE_TEXT = 'no usage'
+
+const tokensTextOf = (row: AgentRow): string => (row.usage === undefined ? NO_USAGE_TEXT : formatTokens(tokensInOf(row.usage)) + '↓ ' + formatTokens(row.usage.output) + '↑')
 
 export type MainEstimate = { usd: number | null; isFromTotal: boolean }
 

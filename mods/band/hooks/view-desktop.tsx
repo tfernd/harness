@@ -25,6 +25,8 @@ export type DesktopView = {
 export const GUTTER_COLUMNS = 36
 export const AGENTS_LABEL = 'agents'
 export const MAIN_NAME = 'main'
+export const TOKENS_COLUMNS = 12
+export const COST_COLUMNS = 9
 
 const FRAME_PAD_X = 'sm'
 const SECTION_GAP = 'md'
@@ -240,8 +242,12 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
             <Svg source={strip.source} alt={tile.name + ' activity over the range'} height={STRIP_HEIGHT} />
           </Box>
           {field('time-' + tile.id, <Text bold>{tile.time}</Text>)}
-          {tile.tokens === '' ? null : field('tokens-' + tile.id, <Text dimColor wrap="truncate-end">{tile.tokens}</Text>, true)}
-          {tile.cost === '' ? null : field('cost-' + tile.id, <Text bold>{tile.cost}</Text>)}
+          <Box key={'tokens-' + tile.id} width={TOKENS_COLUMNS} flexShrink={0} justifyContent="flex-end">
+            <Text dimColor>{tile.tokens}</Text>
+          </Box>
+          <Box key={'cost-' + tile.id} width={COST_COLUMNS} flexShrink={0} justifyContent="flex-end">
+            <Text bold>{tile.cost}</Text>
+          </Box>
         </Box>
         {tileCard(tile)}
       </Box>
