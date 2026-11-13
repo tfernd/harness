@@ -2,6 +2,7 @@ import type { AgentRow, Gauges, Range, Roster, ThemeSetting } from '../types'
 
 export type SvgInput = {
   width: number
+  columns: number
   now: number
   isFolded: boolean
   range: Range

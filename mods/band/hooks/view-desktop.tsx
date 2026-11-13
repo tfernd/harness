@@ -27,6 +27,13 @@ export const AGENTS_LABEL = 'agents'
 export const MAIN_NAME = 'main'
 export const TOKENS_COLUMNS = 12
 export const COST_COLUMNS = 9
+export const STRIP_MIN_COLUMNS = 12
+export const TIME_COLUMNS = 6
+export const TILE_PADDING_COLUMNS = 4
+export const SECTION_GAP_COLUMNS = 2
+export const TILE_MIN_COLUMNS = TILE_PADDING_COLUMNS + STRIP_MIN_COLUMNS + TIME_COLUMNS + TOKENS_COLUMNS + COST_COLUMNS + 3 * SECTION_GAP_COLUMNS
+export const MAIN_COLUMN_PADDING_COLUMNS = 4
+export const TWO_TILES_MIN_COLUMNS = GUTTER_COLUMNS + 1 + MAIN_COLUMN_PADDING_COLUMNS + 2 * TILE_MIN_COLUMNS + 1
 
 const FRAME_PAD_X = 'sm'
 const SECTION_GAP = 'md'
@@ -42,7 +49,7 @@ const toneColorOfPercent = (palette: DesktopPalette, percent: number): string | 
 
 const percentTextOf = (percent: number): string => Math.round(percent) + '%' + (isWarning(percent) ? ' ▲' : '')
 
-const pairsOf = <Item,>(items: readonly Item[]): Item[][] => Array.from({ length: Math.ceil(items.length / 2) }, (_, index) => items.slice(index * 2, index * 2 + 2))
+const groupsOf = <Item,>(items: readonly Item[], size: number): Item[][] => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, index * size + size))
 
 export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const { Box, Text, Button, Svg } = view.ui
@@ -57,6 +64,8 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   const tiles = tilesOf({ roster: input.roster, rows: input.rows, now, window, gauges })
   const spend = spendOf({ gauges, rows: input.rows })
   const hasLimits = gauges.limits.length > 0
+  const tilesPerRow = input.columns >= TWO_TILES_MIN_COLUMNS ? 2 : 1
+  const tileWidth = tilesPerRow === 2 ? '50%' : undefined
 
   const countsBox = () => (
     <Box key="counts" flexDirection="row" gap={ITEM_GAP} flexShrink={0}>
@@ -230,7 +239,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
     const strip = stripSvg({ cells: tile.strip, setting: input.scheme })
 
     return (
-      <Box key={'tile-' + tile.id} flexDirection="column" flexGrow={1} flexShrink={1} width="50%" minWidth={0} paddingX={FRAME_PAD_X} backgroundColor={tile.isWaiting ? palette.warnWash : colors.tint}>
+      <Box key={'tile-' + tile.id} flexDirection="column" flexGrow={1} flexShrink={1} width={tileWidth} minWidth={TILE_MIN_COLUMNS} overflow="hidden" paddingX={FRAME_PAD_X} backgroundColor={tile.isWaiting ? palette.warnWash : colors.tint}>
         <Box key={'top-' + tile.id} flexDirection="row" alignItems="center" gap={ITEM_GAP} overflow="hidden">
           {field('name-' + tile.id, <Text bold wrap="truncate-end">{tile.name}</Text>)}
           {tile.model === null ? null : field('model-' + tile.id, <Text dimColor wrap="truncate-end">{tile.model}</Text>)}
@@ -238,10 +247,12 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
           {field('detail-' + tile.id, <Text dimColor wrap="truncate-end">{tile.activity.detail}</Text>, true)}
         </Box>
         <Box key={'bottom-' + tile.id} flexDirection="row" alignItems="center" gap={SECTION_GAP}>
-          <Box key={'strip-' + tile.id} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+          <Box key={'strip-' + tile.id} flexGrow={1} flexShrink={1} minWidth={STRIP_MIN_COLUMNS} overflow="hidden">
             <Svg source={strip.source} alt={tile.name + ' activity over the range'} height={STRIP_HEIGHT} />
           </Box>
-          {field('time-' + tile.id, <Text bold>{tile.time}</Text>)}
+          <Box key={'time-' + tile.id} flexShrink={0} minWidth={TIME_COLUMNS} overflow="hidden">
+            <Text bold>{tile.time}</Text>
+          </Box>
           <Box key={'tokens-' + tile.id} width={TOKENS_COLUMNS} flexShrink={0} justifyContent="flex-end">
             <Text dimColor>{tile.tokens}</Text>
           </Box>
@@ -255,7 +266,7 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
   }
 
   const ghostBox = (ghost: Ghost) => (
-    <Box key="ghost" flexDirection="row" justifyContent="center" flexGrow={1} flexShrink={1} width="50%" minWidth={0} borderStyle="round" borderDimColor>
+    <Box key="ghost" flexDirection="row" justifyContent="center" flexGrow={1} flexShrink={1} width={tileWidth} minWidth={ghost.text.length + 4} borderStyle="round" borderDimColor>
       {ghost.widensRange ? (
         <Button key="earlier" plain onPress={() => actions.setRange('session')}>
           {ghost.text}
@@ -268,10 +279,10 @@ export const buildDesktopBand = (view: DesktopView): RenderElement => {
 
   const slots = [tileBox(tiles.main), ...tiles.agents.map(tileBox), ...(tiles.ghost === null ? [] : [ghostBox(tiles.ghost)])]
 
-  const tileRows = pairsOf(slots).map((pair, index) => (
+  const tileRows = groupsOf(slots, tilesPerRow).map((pair, index) => (
     <Box key={'tile-row-' + index} flexDirection="row" gap={ITEM_GAP}>
       {pair}
-      {pair.length === 1 ? <Box key="slot" flexGrow={1} flexShrink={1} width="50%" /> : null}
+      {pair.length < tilesPerRow ? <Box key="slot" flexGrow={1} flexShrink={1} width={tileWidth} /> : null}
     </Box>
   ))
 

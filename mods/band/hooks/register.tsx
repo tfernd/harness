@@ -471,6 +471,7 @@ export const register: Register = on => {
     if (event.surface !== 'terminal') {
       const svgInput = {
         width: columnsToWidth(event.props.bodyColumns),
+        columns: event.props.bodyColumns,
         now,
         isFolded: folded,
         range: rangeValue,

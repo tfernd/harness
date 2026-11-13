@@ -1,7 +1,7 @@
 import { type FoundElement, expect, mock, test } from 'claude-code/testing'
 
 import { arcColorOf, paletteOf } from '../hooks/desktop-theme'
-import { GUTTER_COLUMNS } from '../hooks/view-desktop'
+import { GUTTER_COLUMNS, STRIP_MIN_COLUMNS, TWO_TILES_MIN_COLUMNS } from '../hooks/view-desktop'
 import { SETTLE_MS } from './settle'
 
 const GAP_ALLOWANCE_COLUMNS = 4
@@ -369,7 +369,7 @@ test('a tile bottom line can shrink its strip, keeps time and cost at natural wi
     const strip = await ui.find({ key: 'strip-' + id })
 
     expect(strip?.props['flexShrink']).toBe(1)
-    expect(strip?.props['minWidth']).toBe(0)
+    expect(strip?.props['minWidth']).toBe(STRIP_MIN_COLUMNS)
     expect(strip?.props['overflow']).toBe('hidden')
     expect(childrenOf(strip)[0]?.props['width']).toBeUndefined()
     expect((await ui.find({ key: 'time-' + id }))?.props['flexShrink']).toBe(0)
@@ -434,4 +434,34 @@ test('an agent that finishes before its spawn is recorded still has its tokens a
 
   expect(await textOf(ui, 'spend-agents')).toBe('agents est.~$4.50')
   await ui.unmount()
+})
+
+type TileLayout = { sizes: number[]; stripMinimums: unknown[] }
+
+const tileLayoutTest = (name: string, columns: number, check: (layout: TileLayout) => void) => {
+  test(name, async ($, on) => {
+    mock.clock(on)
+    hooksFor(on, usageOf({ percent: 28, tokens: 56_000, rateLimits: LIMITS }))
+    let spawned = 0
+    on('agent.spawn', () => ({ model: 'claude-sonnet-4-5', agentId: 'a' + ++spawned }))
+    await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+    await $.agent.spawn(SPAWN)
+    await $.agent.spawn(SPAWN)
+    const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: columns } })
+    const boxes = await ui.findAll({ type: 'Box' })
+    const keyOf = (box: FoundElement) => String(box.props['key'])
+    const sizes = boxes.filter(box => keyOf(box).startsWith('tile-row-')).map(row => childrenOf(row).filter(child => keyOf(child).startsWith('tile-')).length)
+    const stripMinimums = boxes.filter(box => keyOf(box).startsWith('strip-')).map(strip => strip.props['minWidth'])
+    await ui.unmount()
+    check({ sizes, stripMinimums })
+  })
+}
+
+tileLayoutTest('a narrow band stacks the tiles in one column and never lets a strip shrink below its minimum', TWO_TILES_MIN_COLUMNS - 1, layout => {
+  expect(layout.sizes).toEqual([1, 1, 1])
+  expect(layout.stripMinimums).toEqual([STRIP_MIN_COLUMNS, STRIP_MIN_COLUMNS, STRIP_MIN_COLUMNS])
+})
+
+tileLayoutTest('a wide band keeps two tile columns', TWO_TILES_MIN_COLUMNS, layout => {
+  expect(layout.sizes).toEqual([2, 1])
 })
