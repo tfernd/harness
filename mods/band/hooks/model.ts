@@ -416,7 +416,7 @@ const applyListed = (store: AgentStore, list: readonly Listing[], now: number): 
       return moveAgent(added, { id: info.id, state: stateFromStatus(info.status, 'launched'), command: null, now })
     }
 
-    const isEnded = info.status === 'failed' || info.status === 'killed'
+    const isEnded = info.status === 'failed' || info.status === 'killed' || info.status === 'completed'
     const cleared = isEnded ? settleHeld(withTasks(current, row.id, []), row.id, now) : current
     const state = row.isHeld === true && !isEnded ? row.state : stateFromStatus(info.status, row.state)
 

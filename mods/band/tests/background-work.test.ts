@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { AgentStore } from '../types'
 
-import { EMPTY_STORE, MAIN_ID, addAgent, endBackgroundTask, finishAgent, moveAgent, newAgent, rosterOf, startBackgroundTask, stateWordOf } from '../hooks/model'
+import { EMPTY_STORE, MAIN_ID, addAgent, applyListing, endBackgroundTask, finishAgent, moveAgent, newAgent, rosterOf, startBackgroundTask, stateWordOf } from '../hooks/model'
 import { countAgents } from '../hooks/layout'
 
 const BAND = {
@@ -104,7 +104,7 @@ test('a working agent with a background command keeps its own state word', () =>
 
 test('through the hooks, a sub-agent that answered stays live while its background command runs, until the notice', async ($, on) => {
   const clock = mock.clock(on)
-  const status: AgentStatus = 'completed'
+  const status: AgentStatus = 'running'
   on('session.start', (_, event) => ({ cwd: event.cwd }))
   on('session.usage', () => ({ value: USAGE }))
   on('config.list', () => ({ value: [] }))
@@ -134,4 +134,44 @@ test('through the hooks, a sub-agent that answered stays live while its backgrou
   await clock.advance(2000)
   expect(await ui.find({ type: 'Text', text: '● 0 live' })).toBeDefined()
   await ui.unmount()
+})
+
+test('through the hooks, a held sub-agent whose listing turns completed drops its background command with no session.append', async ($, on) => {
+  const clock = mock.clock(on)
+  let status: AgentStatus = 'running'
+  on('session.start', (_, event) => ({ cwd: event.cwd }))
+  on('session.usage', () => ({ value: USAGE }))
+  on('config.list', () => ({ value: [] }))
+  on('agent.list', () => ({ value: [{ id: 'sub1', type: 'scout', description: 'scout', status }] }))
+  on('agent.spawn', () => ({ model: 'm', agentId: 'sub1' }))
+  on('tool.call', () => ({ result: { backgroundTaskId: 'bg9', stdout: '', stderr: '', interrupted: false } }))
+  on('turn.start', (_, event) => ({ turnId: event.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(BAND)
+
+  await $.agent.spawn(SPAWN)
+  await $.tool.call({ tool: 'Bash', command: 'sleep 99', run_in_background: true, agentId: 'sub1' })
+  await $.turn.complete({ ...TURN, agentId: 'sub1', reason: 'answer' })
+  await clock.advance(6000)
+  expect(await ui.find({ type: 'Text', text: '● 1 live' })).toBeDefined()
+
+  status = 'completed'
+  await clock.advance(6000)
+  expect(await ui.find({ type: 'Text', text: '● 0 live' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the listing drops a held agent background commands once it is completed, and not while it runs', () => {
+  const listing = (status: AgentStatus) => [{ id: 'a', type: 'scout', status }]
+  let store = startBackgroundTask(withAgent(), { owner: 'a', taskId: 'b1', now: 10 })
+  store = finishAgent(store, { id: 'a', state: 'done', now: 20 })
+  store = applyListing(store, listing('running'), 30, new Set(['a']))
+
+  expect(liveOf(store)).toBe(1)
+
+  store = applyListing(store, listing('completed'), 40, new Set(['a']))
+
+  expect(liveOf(store)).toBe(0)
+  expect(store.tasks?.['a']).toBeUndefined()
 })

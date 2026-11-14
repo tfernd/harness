@@ -44,7 +44,7 @@ test('a held agent says BG n, not quiet, however long it has been silent', () =>
 })
 
 test('an agent that answered and is held by a background command ends as done when it leaves the listing', () => {
-  const listed = applyListing(heldAgent(), [{ id: 'a', type: 'scout', status: 'completed' }], 30, new Set())
+  const listed = applyListing(heldAgent(), [{ id: 'a', type: 'scout', status: 'running' }], 30, new Set())
   const gone = applyListing(listed, [], 40, new Set(['a']))
 
   expect(gone.rows[0]?.state).toBe('done')
