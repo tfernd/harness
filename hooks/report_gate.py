@@ -18,6 +18,7 @@ from typing import NamedTuple
 
 from budget import get_agent_path
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_fenced_indices, get_unfenced_lines, write_atomic
+from report_store import add_note, save_report
 
 ORDER = ("Answer", "Not proven", "Problems", "Next time", "Open", "Feedback", "Verdict")
 REQUIRED = ("Answer", "Not proven", "Verdict")
@@ -209,20 +210,46 @@ def wait_for_report(event: dict, path: str, kept: Kept | None, /) -> list[dict]:
     return blocks
 
 
+def accept_handback(event: dict, report: str, /) -> int:
+
+    saved_line = save_report(event, report)
+    if saved_line:
+        add_note(event, saved_line)
+        updated = {**event["tool_input"], "message": f"{report}\n\n{saved_line}"}
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}))
+
+    return 0
+
+
+def accept_stop(event: dict, report: str, /) -> dict:
+
+    saved_line = save_report(event, report)
+    if saved_line:
+        add_note(event, saved_line)
+
+    return {"systemMessage": saved_line} if saved_line else {}
+
+
 def check_handback(event: dict, /) -> int:
 
     report = (event.get("tool_input") or {}).get("message")
     if not event.get("agent_id") or not is_judged(event) or not isinstance(report, str):
         return 0
     if get_send_backs(event) >= MAX_SEND_BACKS:
-        return 0
+        return accept_handback(event, report)
     problems = check_report(report)
     if not problems:
-        return 0
+        return accept_handback(event, report)
     write_atomic(get_send_backs_path(event), str(get_send_backs(event) + 1))
     print(make_send_back(problems, is_handback=True), file=sys.stderr)
 
     return 2
+
+
+def print_saved(output: dict, /) -> None:
+
+    if output:
+        print(json.dumps(output))
 
 
 def is_judged(event: dict, /) -> bool:
@@ -246,13 +273,16 @@ def main() -> int:
     problems = check_report(report)
     if not problems:
         finish(event)
+        print_saved(accept_stop(event, report))
         return 0
     listed = "; ".join(problem.text for problem in problems)
     has_ended = bool(blocks) and blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)
     if has_ended or tries >= MAX_SEND_BACKS:
         finish(event)
         cause = "and it has already ended" if has_ended else f"after {tries} send-backs"
-        print(json.dumps({"systemMessage": f"Sub-agent {name} stopped with a bad report {cause}: {listed}"}))
+        message = f"Sub-agent {name} stopped with a bad report {cause}: {listed}"
+        saved = accept_stop(event, report)
+        print(json.dumps({"systemMessage": "\n".join(filter(None, [message, saved.get("systemMessage", "")]))}))
         return 0
     write_atomic(get_send_backs_path(event), str(tries + 1))
     write_atomic(get_kept_path(event), json.dumps({"raw": sent, "merged": report}))

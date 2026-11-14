@@ -1135,6 +1135,10 @@ def handback(name: str, report: str, blocks: bool, text: str = "", /, *, lines: 
 
 
 SEND_BACK_COUNT = "data/send-backs/a1.count"
+SAVED_REPORT = "state/harness/project/reports/*-worker-fix-the-gate.md"
+SAVED_META = ("s/subagents/agent-a1.meta.json", json.dumps({"description": "Fix the gate!"}))
+SAVED_STAMPS = [(datetime.now() + timedelta(minutes=minutes)).strftime("%Y-%m-%d-%H%M") for minutes in (0, 1)]
+TAKEN_NAMES = tuple((f"state/harness/project/reports/{stamp}-worker-fix-the-gate.md", "earlier") for stamp in SAVED_STAMPS)
 EXIT_REPORT = exit_report(0)
 FEEDBACK_ITEM = "skills/report/SKILL.md: add a rule to the report skill"
 BAD_REPORT = make_report(skip="Not proven", replace=("Feedback", f"- {FEEDBACK_ITEM}"))
@@ -1239,6 +1243,16 @@ GATE_CASES = (
     handback("a repo's own agent is not judged where the repo has no file", make_report(skip="Not proven"), False, config=None, agent_type="custom"),
     handback("a built-in helper's handback is never refused", make_report(skip="Not proven"), False, agent_type="Explore"),
     handback("a handback with no message is let go", "", False, event_input={}),
+    handback("a passing handback is saved with the path line in the message", make_report(), False, "Saved report: ", files=(SAVED_META,), wrote=(SAVED_REPORT, "## Verdict")),
+    handback("a saved handback carries the path line in updatedInput", make_report(), False, '"updatedInput": {"message": "## Answer', files=(SAVED_META,)),
+    handback("a saved handback also leaves a note for the main session", make_report(), False, files=(SAVED_META,), wrote=("data/saved/case-session.notes", "Saved report: ")),
+    handback("a sent-back handback is not saved", make_report(skip="Not proven"), True, lacks="Saved report", files=(SAVED_META,), not_wrote=(SAVED_REPORT, "##")),
+    handback("a handback accepted after the send-backs is saved", make_report(skip="Not proven"), False, "Saved report: ", files=((SEND_BACK_COUNT, "3"), SAVED_META), wrote=(SAVED_REPORT, "## Verdict")),
+    handback("a taken report name gets a suffix", make_report(), False, "fix-the-gate-2.md", files=(SAVED_META, *TAKEN_NAMES), wrote=("state/harness/project/reports/*-worker-fix-the-gate-2.md", "## Verdict")),
+    handback("a taken report name is not overwritten", make_report(), False, files=(SAVED_META, *TAKEN_NAMES), wrote=(TAKEN_NAMES[0][0], "earlier")),
+    handback("a handback with no description is named by the agent id", make_report(), False, "-worker-a1.md"),
+    handback("a write failure lets the handback run", make_report(), False, lacks="Saved report", files=(("state/harness/project/reports", "in the way"),)),
+    handback("a generic agent's handback is not saved", make_report(), False, lacks="Saved report", agent_type="Explore"),
     gate(
         "text with no report is sent back after the wait",
         {**stop_event("I am done"), "agent_transcript_path": "transcript.jsonl"},
@@ -1289,6 +1303,13 @@ GATE_CASES = (
     ),
 )
 
+
+GATE_SAVE_CASES = (
+    gate("a passing stop is saved", stop_event(make_report()), False, "Saved report: ", wrote=("state/harness/project/reports/*-worker-a1.md", "## Verdict")),
+    gate("a bad stop that is not sent back again is saved", stop_event(make_report(skip="Not proven")), False, "Saved report: ", files=((SEND_BACK_COUNT, "3"),), wrote=("state/harness/project/reports/*-worker-a1.md", "## Verdict")),
+    gate("a stop that is sent back is not saved", stop_event(make_report(skip="Not proven")), True, not_wrote=("state/harness/project/reports/*-worker-a1.md", "##")),
+    Case("the main session's next call is told where the stop's report is saved", ("budget.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {}}, False, config={}, context="Saved report: ", before=((("report_gate.py",), stop_event(make_report())),)),
+)
 
 STRAY = "\n## Note\nstray"
 BARE_REPORT = make_report(replace=("Answer", "FIRSTANSWER changed one file."), skip="Not proven")
@@ -2349,6 +2370,10 @@ OWNERSHIP_CASES = (
 
 def resolve(root: Path, name: str, /) -> Path:
 
+    if "*" in name:
+        matches = sorted(resolve(root, name.replace("*", "")).parent.glob(Path(name).name))
+
+        return matches[0] if matches else resolve(root, name.replace("*", ""))
     if name.startswith("state/"):
         return root / name
 
@@ -2505,7 +2530,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

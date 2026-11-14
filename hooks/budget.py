@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_turns, make_note_output, read_tail, write_atomic
+from report_store import take_notes
 
 STOP_TOOLS = ("TaskStop", "KillShell")
 TAIL_BYTES = 262144
@@ -215,7 +216,7 @@ def count_turns(path: Path, agent_id: str, /) -> TurnCount:
 def main() -> int:
     event = json.load(sys.stdin)
     if not event.get("agent_id"):
-        note = get_progress_text(read_new_progress(event))
+        note = "; ".join(filter(None, [take_notes(event), get_progress_text(read_new_progress(event))]))
         if note:
             print(json.dumps(make_note_output(note)))
         return 0

@@ -95,7 +95,8 @@ The sender's checks before a brief goes out: `references/brief-checks.md`.
 ## Accepting a unit
 
 How a unit is accepted, and the closing status: `references/accept.md`. Read each report's Problems, Next time and
-Feedback in the same turn and act on them then; nothing waits for later.
+Feedback in the same turn and act on them then; nothing waits for later. A hook saves each accepted harness report to
+`<state folder>/reports/` and shows the line `Saved report: <path>`; a brief's Input may name that path.
 
 ## Checkpoints and long sessions
 
