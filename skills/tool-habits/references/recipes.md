@@ -76,6 +76,22 @@ uv run pyright 2>&1 | tee /tmp/harness/<project>/types.txt | rg -F -e src/a.py -
 rg -c ' error' /tmp/harness/<project>/types.txt
 ```
 
+## Compare with HEAD
+
+A sub-agent runs no git write: `git stash`, `git worktree` and `git checkout` are refused. To run a check on HEAD's version, export the paths it needs into a fresh folder and run the check there, never in the tree.
+
+Make the folder in one call:
+
+```bash
+mktemp -d /tmp/harness/<project>/head.XXXX
+```
+
+Then export the paths into the folder it printed, and run the check with that folder as its working directory:
+
+```bash
+git archive HEAD src/a.py | tar -x -C <that folder>
+```
+
 ## Web and APIs: fail on HTTP errors, parse, cap
 
 `curl -f` turns a 4xx or 5xx into a non-zero exit, so an error page never reaches the parser as data.
