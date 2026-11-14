@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from budget import get_agent_path
+from progress import get_agent_path
 from common import EDIT_TOOLS, PLUGIN_PREFIX, find_project, get_scratch, get_scratch_folder, get_state_folder, make_note_output, read_tail, resolve
 from guard import Policy, get_git_subcommand, get_written_words, resolve_path
 from shell import get_segments

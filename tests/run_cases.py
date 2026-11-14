@@ -295,6 +295,13 @@ GUARD_CASES = (
     bash("uv sync is refused", "uv sync", True, "owner's to run"),
     bash("an unquoted glob is refused", "ls *.py", True, GLOB),
     bash("a quoted glob is allowed", "ls '*.py'", False),
+    pattern("an unquoted word starting with = is quoted", "echo ==", "echo '=='"),
+    pattern("an unquoted =word after a pipe is quoted", "echo a | grep =x", "echo a | grep '=x'"),
+    bash("a quoted = word is untouched", "echo '=='", False, is_unchanged=True),
+    bash("a double-quoted = word is untouched", 'echo "=="', False, is_unchanged=True),
+    bash("an assignment is untouched", "FOO=bar echo hi", False, is_unchanged=True),
+    bash("an option with = is untouched", "ls --color=auto", False, is_unchanged=True),
+    bash("a = word inside [[ ]] is untouched", "[[ a == b ]] && echo y", False, is_unchanged=True),
     pattern("an unquoted glob in an option is quoted", "grep --include=*.py x .", "grep --include='*.py' x ."),
     bash("a git clean dry run is allowed", "git clean -n", False),
     bash("a git clean long dry run is allowed", "git clean --dry-run -d", False),
@@ -1308,7 +1315,7 @@ GATE_SAVE_CASES = (
     gate("a passing stop is saved", stop_event(make_report()), False, "Saved report: ", wrote=("state/harness/project/reports/*-worker-a1.md", "## Verdict")),
     gate("a bad stop that is not sent back again is saved", stop_event(make_report(skip="Not proven")), False, "Saved report: ", files=((SEND_BACK_COUNT, "3"),), wrote=("state/harness/project/reports/*-worker-a1.md", "## Verdict")),
     gate("a stop that is sent back is not saved", stop_event(make_report(skip="Not proven")), True, not_wrote=("state/harness/project/reports/*-worker-a1.md", "##")),
-    Case("the main session's next call is told where the stop's report is saved", ("budget.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {}}, False, config={}, context="Saved report: ", before=((("report_gate.py",), stop_event(make_report())),)),
+    Case("the main session's next call is told where the stop's report is saved", ("progress.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {}}, False, config={}, context="Saved report: ", before=((("report_gate.py",), stop_event(make_report())),)),
 )
 
 STRAY = "\n## Note\nstray"
@@ -1438,8 +1445,11 @@ def turn(
 BLOCKS_FILE = f"data/turns/{SESSION}.blocks"
 CALLS_FILE = f"data/turns/{SESSION}.calls"
 DEFERRED_FILE = f"data/turns/{SESSION}.deferred"
+CARRIED_FILE = f"data/turns/{SESSION}.carried"
 TURN_CASES = (
     turn("the status is read from the transcript when the event has none", "", False, calls=BUSY_CALLS, transcript=(assistant({"type": "text", "text": FULL_STATUS}),)),
+    turn("a plain question after a turn that left agents running needs no status", "Plain answer.", False, lacks="Verdict", files=((CARRIED_FILE, "Agent\tOld agent\n"),)),
+    turn("a turn with its own calls still lists the agents carried from before", FULL_STATUS, False, "Missing: Old agent", calls=BUSY_CALLS, files=((CARRIED_FILE, "Agent\tOld agent\n"),)),
     turn("a transcript line that is no object is skipped", "", False, transcript=(12, assistant({"type": "text", "text": "Done."}))),
     turn("a last line that is a tool call does not crash", "", False, transcript=(assistant({"type": "text", "text": "Done."}), assistant({"type": "tool_use", "id": "t", "name": "Bash", "input": {}}))),
     Case("no mode does nothing", ("turn.py",), {"session_id": SESSION}, False, config={}),
@@ -1596,6 +1606,33 @@ TURN_CASES = (
         wrote=(CALLS_FILE, "Agent\nEdit\n"),
     ),
     Case(
+        "reset on an owner prompt drops the counted calls of a turn that left agents running",
+        ("turn.py", "reset"),
+        {"session_id": SESSION, "prompt": "what is the status?"},
+        False,
+        config={},
+        files=((CALLS_FILE, "Agent\tOld agent\nEdit\nEdit\n"), (DEFERRED_FILE, "1")),
+        not_wrote=(CALLS_FILE, "Edit"),
+    ),
+    Case(
+        "reset on an owner prompt carries the agents still running",
+        ("turn.py", "reset"),
+        {"session_id": SESSION, "prompt": "what is the status?"},
+        False,
+        config={},
+        files=((CALLS_FILE, "Agent\tOld agent\nEdit\nEdit\n"), (DEFERRED_FILE, "1")),
+        wrote=(CARRIED_FILE, "Agent\tOld agent"),
+    ),
+    Case(
+        "reset on an owner prompt carries no edit",
+        ("turn.py", "reset"),
+        {"session_id": SESSION, "prompt": "what is the status?"},
+        False,
+        config={},
+        files=((CALLS_FILE, "Agent\tOld agent\nEdit\nEdit\n"), (DEFERRED_FILE, "1")),
+        not_wrote=(CARRIED_FILE, "Edit"),
+    ),
+    Case(
         "reset still zeroes the blocks when a status is due",
         ("turn.py", "reset"),
         {"session_id": SESSION},
@@ -1626,7 +1663,7 @@ def budget(name: str, brief_text: str, blocks: bool, text: str = "", /, *, turns
     options["files"] = (transcript,) if files is None else (transcript, *files) if files else ()
     event = {"tool_name": "Bash", "agent_id": "a1", "agent_type": role, "transcript_path": "project/s.jsonl", "tool_use_id": f"t{turns - 1}"}
 
-    return Case(name, ("budget.py",), {**event, **options.pop("event", {})}, blocks, text, **options)
+    return Case(name, ("progress.py",), {**event, **options.pop("event", {})}, blocks, text, **options)
 
 
 def turn_line(index: int, message_id: str = "", /) -> str:
@@ -1635,7 +1672,7 @@ def turn_line(index: int, message_id: str = "", /) -> str:
 
 
 BUDGET_HEAD = json.dumps({"type": "user", "timestamp": OLD, "message": {"role": "user", "content": "Goal: x"}}) + "\n"
-BUDGET_STATE = "data/budget/a1.turns"
+BUDGET_STATE = "data/agent-turns/a1.turns"
 
 
 def saved_count(name: str, lines: str, saved: dict, blocks: bool, text: str = "", /, **options: object) -> Case:
@@ -1762,9 +1799,12 @@ PROGRESS_FILE = "data/progress/case-session.jsonl"
 PROGRESS_OFFSET = "data/progress/case-session.offset"
 
 
-def progress_line(agent: str, calls: int, limit: int | None, tool: str, summary: str, /, *, role: str = "harness:worker") -> str:
+TWELVE_MINUTES_AGO = (datetime.now(UTC) - timedelta(minutes=12, seconds=30)).isoformat(timespec="seconds")
 
-    return json.dumps({"time": "2026-01-01T00:00:00+00:00", "agent_id": agent, "agent_type": role, "calls": calls, "budget": limit, "tool": tool, "summary": summary}) + "\n"
+
+def progress_line(agent: str, calls: int, limit: int | None, tool: str, summary: str, /, *, role: str = "harness:worker", description: str = "", started: str = "") -> str:
+
+    return json.dumps({"time": "2026-01-01T00:00:00+00:00", "agent_id": agent, "agent_type": role, "calls": calls, "budget": limit, "tool": tool, "summary": summary, "description": description, "started": started}) + "\n"
 
 
 def agent_progress(name: str, turns: int, /, *, wrote: str = "", not_wrote: str = "", tool_input: dict | None = None, **options: object) -> Case:
@@ -1779,13 +1819,14 @@ def main_progress(name: str, text: str | None, /, *, offset: int | None = None, 
     files = ((PROGRESS_FILE, text),) if text is not None else ()
     files += ((PROGRESS_OFFSET, str(offset)),) if offset is not None else ()
 
-    return Case(name, ("budget.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {}}, False, config={}, files=files, wrote=(PROGRESS_OFFSET, wrote) if wrote else None, **options)
+    return Case(name, ("progress.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {}}, False, config={}, files=files, wrote=(PROGRESS_OFFSET, wrote) if wrote else None, **options)
 
 
 AGED_PROGRESS = (("data/progress/old.jsonl", "gone"), ("data/progress/old.offset", "1"), ("data/progress/recent.jsonl", "kept"))
 AGE_PROGRESS = ("touch -d '8 days ago' ../data/progress/old.jsonl ../data/progress/old.offset", "touch -d '6 days ago' ../data/progress/recent.jsonl")
 AGED_EVENT = {"session_id": SESSION, "tool_input": {}}
 
+NAMED = progress_line("abcdef123456", 30, 70, "Bash", "make check", description="Save every report", started=TWELVE_MINUTES_AGO)
 FIRST = progress_line("abcdef123456", 30, 70, "Bash", "make check")
 SECOND = progress_line("fedcba654321", 10, 35, "Read", "src/a.py", role="harness:scout")
 PARALLEL_TURNS = "".join(json.dumps({"type": "assistant", "timestamp": NEW, "message": {"id": f"m{index}", "content": [{"type": "tool_use", "id": f"t{index}", "name": "Bash", "input": {}}]}}) + "\n" for index in range(9))
@@ -1806,10 +1847,14 @@ PROGRESS_CASES = (
     agent_progress("progress: the line holds the agent and its role", 10, wrote='"agent_id": "a1", "agent_type": "harness:worker"'),
     agent_progress("progress: the first call of a turn writes", 10, wrote='"calls": 10', files=PARALLEL_FILES, event={"tool_use_id": "t9a"}),
     agent_progress("progress: a later call of the same turn writes nothing", 10, not_wrote='"calls"', files=PARALLEL_FILES, event={"tool_use_id": "t9b"}),
-    Case("progress: an agent call reads no notes", ("budget.py",), budget("x", "Goal: x", False, turns=3, event={"session_id": SESSION}).event, False, lacks="Agent progress", config={}, files=budget("x", "Goal: x", False, turns=3).files + ((PROGRESS_FILE, FIRST),)),
-    main_progress("progress: the main session gets the latest lines as one note", FIRST, context="Agent progress: worker abcdef at 30 turns, last: Bash make check"),
-    main_progress("progress: two agents share one note", FIRST + SECOND, context="; scout fedcba at 10 turns, last: Read src/a.py"),
-    main_progress("progress: an agent shows its latest line only", progress_line("abcdef123456", 10, 70, "Bash", "old") + FIRST, context="at 30 turns", context_lacks="at 10 turns"),
+    Case("progress: an agent call reads no notes", ("progress.py",), budget("x", "Goal: x", False, turns=3, event={"session_id": SESSION}).event, False, lacks="Agent progress", config={}, files=budget("x", "Goal: x", False, turns=3).files + ((PROGRESS_FILE, FIRST),)),
+    main_progress("progress: the main session gets the latest lines as one note", FIRST, context="Agent progress: worker abcdef, 30 turns, last: Bash make check"),
+    main_progress("progress: two agents share one note", FIRST + SECOND, context="; scout fedcba, 10 turns, last: Read src/a.py"),
+    main_progress("progress: an agent shows its latest line only", progress_line("abcdef123456", 10, 70, "Bash", "old") + FIRST, context=", 30 turns", context_lacks=", 10 turns"),
+    agent_progress("progress: the line holds the agent's description", 10, wrote='"description": "Save every report"', files=(("s/subagents/agent-a1.meta.json", json.dumps({"description": "Save every report"})),)),
+    agent_progress("progress: the line holds the agent's start", 10, wrote='"started": "20'),
+    main_progress("progress: the note names the agent by its description and minutes", NAMED, context='worker "Save every report" 12 min, 30 turns, last: Bash make check'),
+    main_progress("progress: an agent with minutes and no description keeps its id", progress_line("abcdef123456", 30, 70, "Bash", "make check", started=TWELVE_MINUTES_AGO), context="worker abcdef 12 min, 30 turns"),
     main_progress("progress: lines before the saved offset are not told again", FIRST + SECOND, offset=len(FIRST), context="scout fedcba", context_lacks="worker abcdef"),
     main_progress("progress: the offset moves past the lines read", FIRST + SECOND, wrote=str(len(FIRST + SECOND)), context="Agent progress"),
     main_progress("progress: nothing new is silent", FIRST, offset=len(FIRST), lacks="Agent progress", is_unchanged=True),

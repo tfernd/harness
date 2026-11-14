@@ -149,7 +149,7 @@ MESSAGES = {
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
-    "expansion.",
+    "expansion; an unquoted word starting with `=` was quoted too, since zsh expands it to a command's path.",
     "repo": "the guard lets this call pass, but project files change with the Write tool (new file) or Edit (change); a shell "
     "redirect, tee, sed -i, cp or mv belongs under `/tmp/harness/<project>/`.",
     "search": "a search that starts at `/`, `~` or a whole system or home folder walks the entire disk and runs for minutes, mostly "
@@ -162,7 +162,7 @@ MESSAGES = {
     "failed run looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note.",
 }
 PATTERN_REFUSAL = (
-    "this unquoted glob is a pattern for the command, which zsh would expand first, and the guard could not quote it safely. "
+    "this unquoted glob, or word starting with `=`, would be expanded by zsh first, and the guard could not quote it safely. "
     "Quote it (`--include='*.py'`), or use `rg -g '*.py'`."
 )
 HOME_WORDS = frozenset({"~", "$HOME", "${HOME}"})
@@ -1404,7 +1404,7 @@ def is_variable_delete(command: Command, text: str, /) -> bool:
         return False
     values = get_assigned_values(text)
     words = fill_parameters(command.name, values).split()
-    arguments = [Word(fill_parameters(word.text, values), word.is_glob) for word in command.arguments]
+    arguments = [Word(fill_parameters(word.text, values), word.is_glob, word.is_equals_start) for word in command.arguments]
     if words and "$" not in words[0] and "`" not in words[0]:
         return is_delete(Command(words[0], [*(Word(word, False) for word in words[1:]), *arguments]))
     heads = get_name_heads(text, values)
@@ -1484,6 +1484,11 @@ def get_pattern_globs(command: Command, /) -> list[str]:
             patterns.append(word.text)
 
     return patterns
+
+
+def get_equals_words(command: Command, /) -> list[str]:
+
+    return [word.text for word in command.arguments if word.is_equals_start]
 
 
 def get_failing_globs(command: Command, directory: str | None, may_have_written: bool, /) -> list[str]:
@@ -1843,7 +1848,7 @@ def get_command_breaches(
     is_unknown_write = bool(policy.scratch) and directory is None and not all(is_absolute(word) for word in words)
     is_deleting = is_delete(command) or is_variable_delete(command, text) or is_python_delete(command, text)
     missing = get_failing_globs(command, directory, globs[1]) if globs[0] else []
-    patterns = get_pattern_globs(command) if globs[0] else []
+    patterns = [*get_pattern_globs(command), *get_equals_words(command)] if globs[0] else []
     findings.missing_globs.extend(MissingGlob(text, directory or "an unknown folder") for text in missing)
     findings.pattern_globs.extend(patterns)
     denied = get_denied(command, directory)

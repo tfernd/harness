@@ -137,6 +137,19 @@ def get_agents_section(message: str, /) -> str:
     return "\n".join(lines)
 
 
+def read_lines(path: Path, /) -> list[str]:
+
+    return path.read_text().splitlines() if path.exists() else []
+
+
+def carry_agent_calls(session: str, calls_path: Path, /) -> None:
+
+    carried_path = get_state_path(session, "carried")
+    agent_lines = [line for line in read_lines(calls_path) if line.split("\t", 1)[0] in AGENT_TOOLS]
+    if agent_lines:
+        write_atomic(carried_path, "\n".join([*read_lines(carried_path), *agent_lines]) + "\n")
+
+
 def check_agents(message: str, call_lines: list[str], /) -> list[str]:
 
     agent_lines = [line.split("\t", 1) for line in call_lines if line.split("\t", 1)[0] in AGENT_TOOLS and "\t" in line]
@@ -158,7 +171,8 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
     calls_path, blocks_path = get_state_paths(session)
     deferred_path = get_state_path(session, "deferred")
     settings = config.get("stop", {})
-    call_lines = calls_path.read_text().splitlines() if calls_path.exists() else []
+    carried_path = get_state_path(session, "carried")
+    call_lines = read_lines(calls_path)
     calls = len(call_lines)
     min_calls = settings.get("min_calls", MIN_CALLS)
     transcript = read_transcript(event.get("transcript_path") or "")
@@ -178,7 +192,7 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
                 f'"## NAME" lines: {"; ".join(missing)}'
             )
         if not is_deferred:
-            soft += check_agents(message, call_lines)
+            soft += check_agents(message, [*read_lines(carried_path), *call_lines])
     count = blocks_path.read_text().strip() if blocks_path.exists() else ""
     blocks = int(count) if count.isdecimal() and count.isascii() else 0
     if hard and blocks < MAX_BLOCKS:
@@ -188,6 +202,7 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
         return 0
     if calls >= min_calls and not is_deferred:
         write_atomic(calls_path, "")
+        write_atomic(carried_path, "")
     if not is_deferred and deferred_path.exists():
         deferred_path.unlink()
     write_atomic(blocks_path, "0")
@@ -231,7 +246,12 @@ def main() -> int:
                     file.write(f"{line}\n")
     elif mode == "reset":
         is_app_prompt = bool(APP_PROMPT.search(str(event.get("prompt") or "")[:APP_PROMPT_HEAD]))
-        if not is_app_prompt and not get_state_path(event.get("session_id") or "unknown", "deferred").exists():
+        session = event.get("session_id") or "unknown"
+        deferred_path = get_state_path(session, "deferred")
+        if not is_app_prompt and deferred_path.exists():
+            carry_agent_calls(session, calls_path)
+            deferred_path.unlink()
+        if not is_app_prompt:
             write_atomic(calls_path, "")
         write_atomic(blocks_path, "0")
     elif mode == "stop":

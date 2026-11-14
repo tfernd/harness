@@ -77,7 +77,7 @@ HOOK_WIRES = (
     ("guard.py", "refuses risky calls", "check", ("main", "agents")),
     ("commit_gate.py", "commit message form", "check", ("main", "skill:git")),
     ("report_gate.py", "report sections", "check", ("agents", "skill:report")),
-    ("budget.py", "agent progress note", "inject", ("main",)),
+    ("progress.py", "agent progress note", "inject", ("main",)),
     ("turn.py", "closing status", "check", ("main",)),
 )
 WIRE_KINDS = (
@@ -282,13 +282,13 @@ SKILL_KINDS = (
 HOOK_KINDS = (
     Kind("Guards", "Refuse a risky call before it runs.", ("guard.py", "commit_gate.py")),
     Kind("Gates", "Check what crosses a hand-off.", ("report_gate.py",)),
-    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "budget.py")),
+    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "progress.py")),
     Kind("Closers", "Hold the turn until it is recorded.", ("turn.py",)),
 )
 HOOK_JOBS = {
     "guard.py": "Refuses deletes, history rewrites, a sub-agent's git writes and wildcards the shell would get wrong; asks you before a package change, an AWS write, a credential read or a piped installer.",
     "commit_gate.py": "Refuses a commit message out of form or crediting an AI, and a commit that drops tests without saying why.",
-    "budget.py": "Tells the main session what each agent is doing.",
+    "progress.py": "Tells the main session what each agent is doing.",
     "report_gate.py": "Sends a report back when a required section is missing or out of order.",
     "context.py": "Starts every session and agent with the tool habits.",
     "skill_gate.py": "Hands an agent the rules for a kind of file before its first edit of one, and the commit rules before a commit.",
@@ -335,7 +335,7 @@ RULES = (
     Rule("A long turn ends with a closing status", "turn", "turn.py"),
     Rule("A turn that ran agents names each one with its verdict", "reminder", "turn.py"),
     Rule("The rules for a kind of file arrive before its first edit", "reminder", "skill_gate.py"),
-    Rule("The main session gets a note of what each agent is doing", "reminder", "budget.py"),
+    Rule("The main session gets a note of what each agent is doing", "reminder", "progress.py"),
     Rule("A shell write outside the scratch folder gets a note", "reminder", "guard.py"),
     Rule("The tool habits go in front of every session and agent", "advice", "context.py"),
 )

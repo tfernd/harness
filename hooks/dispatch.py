@@ -20,7 +20,7 @@ ROUTES = {
     "SessionStart": (("", "context.py", ""),),
     "SubagentStart": (("", "context.py", ""),),
     "PreToolUse": (
-        ("", "budget.py", ""),
+        ("", "progress.py", ""),
         ("SubagentHandback", "report_gate.py", "handback"),
         ("Bash|Write|Edit|NotebookEdit|Read", "guard.py", ""),
         ("Bash|Write|Edit|NotebookEdit", "skill_gate.py", ""),

@@ -27,6 +27,7 @@ class Word(NamedTuple):
 
     text: str
     is_glob: bool
+    is_equals_start: bool = False
 
 
 class Segment(NamedTuple):
@@ -85,6 +86,7 @@ class Scanner:
         self.characters: list[str] = []
         self.is_word = False
         self.is_glob = False
+        self.is_equals_start = False
         self.is_quoted = False
         self.target = ""
         self.heredocs: list[Heredoc] = []
@@ -93,7 +95,7 @@ class Scanner:
     def end_word(self) -> None:
         if not self.is_word:
             return
-        word = Word("".join(self.characters), self.is_glob)
+        word = Word("".join(self.characters), self.is_glob, self.is_equals_start)
         match self.target:
             case "redirect":
                 self.redirects.append(word.text)
@@ -107,7 +109,7 @@ class Scanner:
             case _:
                 self.track_keyword(word.text)
                 self.words.append(word)
-        self.characters, self.is_word, self.is_glob, self.is_quoted, self.target = [], False, False, False, ""
+        self.characters, self.is_word, self.is_glob, self.is_equals_start, self.is_quoted, self.target = [], False, False, False, False, ""
 
     def track_keyword(self, word: str, /) -> None:
 
@@ -320,6 +322,7 @@ class Scanner:
             self.skip_heredocs()
 
     def read_plain(self, character: str, /) -> None:
+        self.is_equals_start = self.is_equals_start or (character == "=" and not self.is_word)
         self.characters.append(character)
         self.is_word = True
         self.is_glob = self.is_glob or character in GLOB_CHARACTERS

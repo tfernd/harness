@@ -22,14 +22,18 @@ def get_agent_transcript(event: dict, /) -> Path:
     return Path(session).with_suffix("") / "subagents" / f"agent-{event.get('agent_id') or 'unknown'}.jsonl"
 
 
-def get_slug(event: dict, /) -> str:
+def get_description(event: dict, /) -> str:
 
-    description = ""
     try:
         meta = json.loads(get_agent_transcript(event).with_suffix(".meta.json").read_text())
-        description = str(meta.get("description") or "")
+        return " ".join(str(meta.get("description") or "").split())
     except (OSError, ValueError, AttributeError):
-        pass
+        return ""
+
+
+def get_slug(event: dict, /) -> str:
+
+    description = get_description(event)
     slug = re.sub(r"[^a-z0-9]+", "-", description.lower())[:SLUG_CHARS].strip("-")
     agent_id = re.sub(r"[^A-Za-z0-9_-]", "", str(event.get("agent_id") or ""))[:80]
 

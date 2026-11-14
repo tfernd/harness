@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from budget import get_agent_path
+from progress import get_agent_path
 from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_fenced_indices, get_unfenced_lines, write_atomic
 from report_store import add_note, save_report
 
