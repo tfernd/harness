@@ -72,8 +72,8 @@ files, and count the rest. A failure in another file is another worker's live ed
 set -o pipefail
 files=(src/a.py src/b.py)
 uvx ruff format "${files[@]}" && uvx ruff check "${files[@]}" &&
-uv run pyright 2>&1 | tee /tmp/harness/project/types.txt | rg -F -e src/a.py -e src/b.py
-rg -c ' error' /tmp/harness/project/types.txt
+uv run pyright 2>&1 | tee /tmp/harness/<project>/types.txt | rg -F -e src/a.py -e src/b.py
+rg -c ' error' /tmp/harness/<project>/types.txt
 ```
 
 ## Web and APIs: fail on HTTP errors, parse, cap

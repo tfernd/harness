@@ -23,7 +23,7 @@ Large:
 3. One worker scripts everything mechanical.
 4. The shared plumbing and each serial step, one worker each; then the independent units (Parallel build below).
 5. Run the product: a smoke test first, then the gates.
-6. One reviewer reads the whole diff, once, at the end (`harness:review`); workers apply the fixes.
+6. One reviewer reads the whole diff at the end (`harness:review`), and in a long job each accepted group of units too; workers apply the fixes.
 7. The full test, in the background when it is long.
 
 The gates are the project's checks, named in its `AGENTS.md`. The product runs before any review, and polish waits
@@ -89,7 +89,7 @@ Use when units are independent.
 ## Relay
 
 Use when each unit needs the one before it. A chain of dependent briefs: each Input names the previous unit's saved
-report (a file in `/tmp/harness/<project>/`), and the worker builds on its `### For the next worker` part. Independent
+report (the file under `~/.local/state/harness/<project>/reports/`, named in the `Saved report: <path>` line), and the worker builds on its `### For the next worker` part. Independent
 relays run side by side, on disjoint files.
 
 ## Hillclimb

@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Reviews one unit of code and its tests, a design, a branch or a pull request against its spec by the review skill - severities A to C, each finding with the input that shows it. Read-only. Use once at the end of a round, on the whole diff, after the product has run; the brief names the lens if one applies.
+description: Reviews one unit of code and its tests, a design, a branch or a pull request against its spec by the review skill - severities A to C, each finding with the input that shows it. Read-only. Use at the end of a round on the whole diff, after the product has run, and in a long job on each accepted group of units; the brief names the lens if one applies.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 skills:
