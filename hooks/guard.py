@@ -109,7 +109,8 @@ DBT_RULE = "dbt"
 SNOW_RULE = "snow"
 AGENT_RULE = "agent"
 AGENT_DELETE_RULE = "agent_delete"
-REMOTE_RULES = frozenset({"denied", "hidden", "delete", AGENT_DELETE_RULE, *ASK_RULES})
+BYPASS_RULE = "bypass"
+REMOTE_RULES = frozenset({"denied", "hidden", "delete", AGENT_DELETE_RULE, BYPASS_RULE, *ASK_RULES})
 MESSAGES = {
     "delete": "Agents delete nothing. If this must go, give the owner the command in the chat and say why it is needed; the owner runs it. "
     "Throwaway files stay in `/tmp/harness/<project>/`, which is never cleaned: a fresh run takes a new subfolder.",
@@ -146,6 +147,9 @@ MESSAGES = {
     "rephrase it: describe the change in your handback and the main session commits it (`harness:git`). Read forms run "
     "freely: `git status`, `git diff`, `git log`, `git show`, `git branch --list`, `git stash list`, `git config --get <key>`, "
     "`gh pr view`, `gh pr list`, `gh api <path>` (a GET).",
+    BYPASS_RULE: "`{what}` starts Claude Code with its permission checks off, and no session or sub-agent turns them off: the owner decides what runs "
+    "unasked. Name the tools the run needs with `--allowedTools` (for example `--allowedTools Bash,Read`), or use `--permission-mode acceptEdits` "
+    "or the default mode.",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
@@ -1265,6 +1269,27 @@ def get_agent_gh_label(arguments: list[str], /) -> str:
     return f"gh {group} {action}" if action in GH_WRITES.get(group, frozenset()) else ""
 
 
+BYPASS_OPTIONS = frozenset({"--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"})
+BYPASS_MODE = "bypassPermissions"
+BYPASS_TOOLS = ("claude", "claude-code")
+
+
+def get_bypass_label(command: Command, /) -> str:
+
+    for tool in BYPASS_TOOLS:
+        arguments = get_tool_arguments(command, tool)
+        if arguments is None:
+            continue
+        for index, argument in enumerate(arguments):
+            is_flag = argument in BYPASS_OPTIONS
+            is_mode_pair = argument == "--permission-mode" and arguments[index + 1 : index + 2] == [BYPASS_MODE]
+            is_mode_joined = argument == f"--permission-mode={BYPASS_MODE}"
+            if is_flag or is_mode_pair or is_mode_joined:
+                return f"{tool} {argument}{' ' + BYPASS_MODE if is_mode_pair else ''}"
+
+    return ""
+
+
 def get_agent_label(command: Command, /) -> str:
 
     name = os.path.basename(command.name)
@@ -1797,6 +1822,7 @@ class Findings(NamedTuple):
     snow: list[str]
     agent: list[str]
     secret: list[str]
+    bypass: list[str]
 
 
 def new_findings() -> Findings:
@@ -1863,6 +1889,8 @@ def get_command_breaches(
     findings.snow.extend([snow] if snow else [])
     agent = get_agent_label(command) if policy.is_agent else ""
     findings.agent.extend([agent] if agent else [])
+    bypass = get_bypass_label(command)
+    findings.bypass.extend([bypass] if bypass else [])
     findings.denied.extend([denied] if denied else [])
     findings.hidden.extend([hidden] if hidden else [])
     is_asked = policy.ask_packages and is_package_change(command, policy.root)
@@ -1873,6 +1901,7 @@ def get_command_breaches(
         (AGENT_DELETE_RULE, is_deleting and policy.is_agent),
         ("denied", bool(denied)),
         (AGENT_RULE, bool(agent)),
+        (BYPASS_RULE, bool(bypass)),
         ("hidden", bool(hidden)),
         (ASK_RULE, is_asked and delay is None),
         ("delay", delay is not None and not delay.is_flagged),
@@ -2026,7 +2055,8 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     dbt = MESSAGES[DBT_RULE].format(what=(findings.dbt or ["this dbt command"])[0])
     snow = MESSAGES[SNOW_RULE].format(what=(findings.snow or ["this snow command"])[0])
     agent = MESSAGES[AGENT_RULE].format(what=(findings.agent or ["this command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, SECRET_RULE: secret, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent}
+    bypass = MESSAGES[BYPASS_RULE].format(what=(findings.bypass or ["this command"])[0])
+    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, SECRET_RULE: secret, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent, BYPASS_RULE: bypass}
     lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
         reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)

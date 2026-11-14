@@ -53,7 +53,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - `docs/index.html`, `docs/flow.html` and `docs/band.html` are generated and git-ignored: GitHub builds and publishes them on push (`.github/workflows/pages.yml`), and `make map` builds them locally for viewing. The band page bundles the band's own view with `bun` (`docs/band-host/`), so `make map` needs `bun` on `PATH`. The builder needs the port-loss phrases in `README.md`.
 - Commit from the main session only (`harness:git`); a sub-agent never writes to git.
 - Update the installed copy with `claude plugin marketplace update harness && claude plugin update harness@harness && claude plugin update harness-band@harness`, then restart Claude Code or run `/reload-plugins`: a running session keeps the hooks it loaded at start. Cortex Code and Kiro update with the lines under Install.
-- `.github/workflows/check.yml` runs the checks above on a push or pull request to `main`, and builds the page so a broken builder fails; `pages.yml` publishes `docs/` on a push to `main` (the repo's Pages source is "GitHub Actions").
+- `.github/workflows/check.yml` is disabled (the owner ran `gh workflow disable check`, because its failure emails were noise): `make check` and the pre-push hook are the check now. `pages.yml` still runs and publishes `docs/` on a push to `main` (the repo's Pages source is "GitHub Actions").
 
 ## Working efficiently
 - Tool turns and call habits: `skills/tool-habits/SKILL.md` is their one home; `hooks/context.py` puts its body in every session and sub-agent at start.

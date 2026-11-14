@@ -167,6 +167,7 @@ HEREDOC = "python3 - <<'EOF'\nfrom pathlib import Path\n{call}\nEOF"
 COMMIT = "git commit -m \"$(cat <<'EOF'\n{body}\nEOF\n)\""
 DELETE = "Agents delete nothing."
 AGENT_DELETE = "Sub-agents delete nothing."
+BYPASS = "starts Claude Code with its permission checks off"
 HISTORY = "owner's to run"
 ASK = '"permissionDecision": "ask"'
 CLOUD = "writes to an AWS account"
@@ -2363,6 +2364,17 @@ DELETE_ESCAPE_CASES = (
     bash("a python heredoc with shutil.rmtree is refused", "python3 - <<'EOF'\nimport shutil\nshutil.rmtree('d')\nEOF", True, DELETE),
     bash("a uv run python heredoc with os.remove is refused", "uv run python - <<'EOF'\nimport os\nos.remove('d')\nEOF", True, DELETE),
     agent_bash("a sub-agent's python delete is refused with its own message", "python3 -c \"import os; os.remove('a')\"", True, AGENT_DELETE, config=STRICT),
+    *(bash(f"bypass refused: {command!r}", command, True, BYPASS, config=None) for command in (
+        "claude --dangerously-skip-permissions", "claude -p x --allow-dangerously-skip-permissions", "claude --permission-mode bypassPermissions -p x",
+        "claude --permission-mode=bypassPermissions -p x", "env FOO=1 claude --dangerously-skip-permissions", "bash -c 'claude --dangerously-skip-permissions -p x'",
+        "cd /tmp && claude --dangerously-skip-permissions", "npx claude --dangerously-skip-permissions", "npx @anthropic-ai/claude-code --permission-mode bypassPermissions",
+        "/usr/local/bin/claude --dangerously-skip-permissions",
+    )),
+    agent_bash("bypass refused for a sub-agent too", "claude --dangerously-skip-permissions -p x", True, BYPASS, config=None),
+    *(bash(f"bypass runs: {command!r}", command, False, config=None) for command in (
+        "claude --allowedTools Bash -p x", "claude --permission-mode acceptEdits -p x", "rg -- --dangerously-skip-permissions README.md",
+        "echo \"--dangerously-skip-permissions\"", "grep -- --permission-mode bypassPermissions a.md", "claude -p \"explain --dangerously-skip-permissions\"",
+    )),
     bash("python -c without a delete runs", "python3 -c \"print(1)\"", False),
     bash("a python heredoc without a delete runs", "python3 - <<'EOF'\nprint(1)\nEOF", False),
     bash("a delete word in a heredoc of another command runs", "cat <<'EOF'\nos.remove('a')\nEOF", False),

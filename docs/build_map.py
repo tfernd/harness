@@ -330,6 +330,7 @@ RULES = (
     Rule("Writing to an AWS account asks you first", "asks", "guard.py"),
     Rule("Piping a downloaded script into a shell asks you first", "asks", "guard.py"),
     Rule("A sub-agent's git or gh command that writes is refused", "stopped", "guard.py"),
+    Rule("Starting Claude Code with its permission checks off is refused", "stopped", "guard.py"),
     Rule("A report needs its parts and a verdict", "sent-back", "report_gate.py"),
     Rule("An accepted report is saved to a file and its path told", "reminder", "report_gate.py"),
     Rule("A long turn ends with a closing status", "turn", "turn.py"),
