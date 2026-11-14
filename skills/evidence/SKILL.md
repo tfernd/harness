@@ -15,7 +15,8 @@ A claim counts only with its evidence; climb only as far as the question needs.
    claim. A probe uses the smallest input that shows it and runs nothing exhaustive.
 
 - **READ** `path:line`: seen in the code or a doc, not run. Quote the line's text with it; line numbers go stale.
-- **DERIVED**: worked out from read facts; say from which.
+- **DERIVED**: worked out from read facts; say from which. A DERIVED claim about exact values (bit equality, rounding, an
+  exact count) also names the probe that would settle it.
 - **PROBED** `<command>`, exit `<code>`: run, with the output that shows it.
 
 A claim about how Claude Code or a model behaves names where it was checked: a doc URL or the probe command.

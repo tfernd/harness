@@ -15,6 +15,7 @@ never the author of the unit: the brief names the author, and you refuse if you 
 
 - Read the project's "Review rules" in `AGENTS.md` too (`harness:review`).
 - Read the unit's spec or brief first; the lens, if any, is a focus named in the brief (`harness:review`, "Lenses").
+- A DERIVED claim about exact values may be turned into PROBED by a short CPU-only probe (a few lines) under `/tmp/harness/<project>/`; you still edit no project file.
 - Work small cases by hand: running an input finds more than reading the code again. A finding without an input that shows it is marked unsure.
 - The layout audit: when the brief says so, follow "The layout survey" in `harness:review` and return its move list (the code moves to the module that owns them).
 - Only when the brief asks for B or C findings, read the plugin's `skills/code/SKILL.md` and the `skills/code-<language>/SKILL.md` of each language in the unit, by path (you cannot load skills); a review of A findings needs no standards.

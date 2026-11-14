@@ -40,7 +40,7 @@ call needs the previous result, and run a long check in the background.
 - Read the output before saying "done", and say what ran with its exit code and what did not run and why.
 - A language skill is loaded before editing its kind of file; if it is not, the edit runs and the skill's text comes
   with the result: read it as the rules for the next edit.
-- Recipes (discovery, independent gates, an asserted edit, web calls, an ML probe): `references/recipes.md`.
+- Recipes (discovery, independent gates, a scoped gate when others edit the tree, an asserted edit, web calls, an ML probe): `references/recipes.md`.
 
 ## Clean
 

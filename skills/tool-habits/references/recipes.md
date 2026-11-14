@@ -63,6 +63,19 @@ make check 2>&1 | tail -20
 
 zsh trap: a line that starts with `! grep` after a `&&` on the line before is a parse error. Test a count instead.
 
+## A scoped gate when others edit the tree
+
+Format and lint only the files you changed. Run the type checker on the whole tree, read only the diagnostics in your
+files, and count the rest. A failure in another file is another worker's live edit: report it, never fix it.
+
+```bash
+set -o pipefail
+files=(src/a.py src/b.py)
+uvx ruff format "${files[@]}" && uvx ruff check "${files[@]}" &&
+uv run pyright 2>&1 | tee /tmp/harness/project/types.txt | rg -F -e src/a.py -e src/b.py
+rg -c ' error' /tmp/harness/project/types.txt
+```
+
 ## Web and APIs: fail on HTTP errors, parse, cap
 
 `curl -f` turns a 4xx or 5xx into a non-zero exit, so an error page never reaches the parser as data.

@@ -51,6 +51,12 @@ line; a failing command quoted with its exit code>
 A claim that something could not be done needs the quoted error of a real attempt; otherwise write
 `not attempted: <why>`, never "can't". A restriction is a conclusion earned from a real failure.
 
+When the brief says a later unit builds on this one, add `### For the next worker` under Answer (a `###`, since the gate refuses an
+extra `##`): the public names with full signatures, parameter or tensor names and option values that worker needs.
+
+When your judges pass and the whole-tree gate fails only in files you did not change (another agent's live edit), the
+Verdict is `done, gate red elsewhere`, naming those files; it is not `partial`, which is for your own unmet Judge line.
+
 Write the Verdict after the rest and let it follow from it. `done` means every Judge line of the brief is met;
 `partial` means a named Judge line is unmet; `blocked` means the job could not go on. Not proven may list limits (a run
 left to the main session, a path not exercised) without making the verdict `partial`. An owner reads the Verdict first, so it must be true on its own.

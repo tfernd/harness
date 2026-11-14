@@ -86,6 +86,12 @@ Use when units are independent.
 6. Integrate: one worker wires the units together and owns the shared files.
 7. Run the product and the full check, then one reviewer reads the whole diff.
 
+## Relay
+
+Use when each unit needs the one before it. A chain of dependent briefs: each Input names the previous unit's saved
+report (a file in `/tmp/harness/<project>/`), and the worker builds on its `### For the next worker` part. Independent
+relays run side by side, on disjoint files.
+
 ## Hillclimb
 
 Use when a metric can judge each change: one change, one measurement, keep or revert, until a stop predicate holds.
