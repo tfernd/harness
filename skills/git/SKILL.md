@@ -60,13 +60,25 @@ trailer, `--trailer` or `--author` whose name is an AI tool or model (`Jean-Clau
 
 - Commit only when the owner asks. A sub-agent never runs a git or gh command that writes.
 - Never `--no-verify`. A failing hook is a problem to fix, and a commit it stops did not happen, so never `--amend` after it.
-- `commit --amend`, `rebase` and every command that discards work are the owner's to run: the guard refuses them. Never force
-  a push unless the owner says so in words.
-- A history rewrite the owner asked for runs in a mirror clone first, and each branch's trees are compared before and after; the working repo moves only once the push is done.
+- `commit --amend`, `rebase` and every command that discards work are the owner's to run: the guard refuses them.
+- A force push is never made, by any agent, whoever asks: `--force`, `--force-with-lease`, `--force-if-includes`, `--mirror`, `--delete` and `--prune` on a push are refused. Pushed history changes only by the safe paths under "Pushed history".
+- A history rewrite is the owner's path, not an agent's: it runs in a mirror clone first, and each branch's trees are compared before and after; the working repo moves only once the push is done.
 - Commit on a branch when the project uses them; don't commit to the default branch unasked.
 - Pass a long message with `-F` from a file in `/tmp/harness/<project>/` written in an earlier call, or with a quoted heredoc. The hook
   refuses a message it cannot read: an editor, a variable or `$(...)`, or a file the same command writes.
 - After the commit, `git show --stat HEAD` must list the expected paths.
+
+## Pushed history
+
+Each case that tempts a force push has a safe path:
+
+| Case | Safe path |
+|---|---|
+| A pushed commit is wrong | `git revert` it: a new commit |
+| A pushed commit has a wrong message or a missed file | A new commit; never `--amend` |
+| The branch fell behind | Merge the base into it; never rebase pushed commits |
+| A pushed branch must be redone | Redo it on a new branch name; leave the old one for the owner |
+| A secret was pushed | Rotate the secret first; the history clean-up is the owner's to run |
 
 ## The commit proposal
 
@@ -128,6 +140,6 @@ CI file basics (pins, permissions, concurrency): `harness:code-yaml`.
 
 ## What the owner decides
 
-- A force push is never part of a plan. If history must change, say so under Open and stop.
+- Rewriting pushed history: the owner's alone (Safety). A plan uses the paths under "Pushed history"; if none fits, say so under Open and stop.
 - Push, opening the PR (`gh pr create`), merge, tag and release are the owner's words, relayed by the main session.
 - A review of the branch or PR before merge: `harness:review` (the branch and pull request steps).
