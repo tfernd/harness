@@ -37,10 +37,12 @@ call needs the previous result, and run a long check in the background.
   One-off Python in a tool call takes no PEP 723 header and no dependencies: `python3 -` and the standard library.
 - Without `pipefail`, a pipe into `tail` hides a test's exit code. Do not end a check in `|| true` or `|| echo`, and
   print no `echo ----` separators; zsh expands `=` at a word start, so quote an `echo` separator made of `=`.
+- Never filter a check's output by a word (`rg fail`, `grep error`): test names hold those words and the verdict line is lost. Send the output to a file under `/tmp/harness/<project>/`, print its last lines, and read the file for the rest (recipe: a long check).
+- After an edit of a `.py` file a lint note may list new findings (a comment, a docstring, a statement on more than one line, a signature with no annotation). Fix them in the next edit of that file, not at the end: a commit that adds one is refused. The note comes from a hook, so no project file needs reading to know the rule.
 - Read the output before saying "done", and say what ran with its exit code and what did not run and why.
 - A language skill is loaded before editing its kind of file; if it is not, the edit runs and the skill's text comes
   with the result: read it as the rules for the next edit.
-- Recipes (discovery, independent gates, a scoped gate when others edit the tree, an asserted edit, web calls, an ML probe): `references/recipes.md`.
+- Recipes (discovery, independent gates, a long check, a scoped gate when others edit the tree, an asserted edit, comparing with HEAD, a throwaway repository, web calls, an ML probe): `references/recipes.md`.
 
 ## Clean
 

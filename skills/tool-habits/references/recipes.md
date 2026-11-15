@@ -40,6 +40,20 @@ done
 
 Gates that depend on each other (format, then lint, then test) chain with `&&` instead, as in the tool-habits body.
 
+## A long check: keep the log, print the verdict
+
+A check that prints thousands of lines goes to a file. The call prints only the last lines, where the verdict is, and its exit code is the check's own. Never pipe it through a word filter: a test named "a failed agent ends failed" matches `fail`, and the summary line falls off the end.
+
+```bash
+set -o pipefail
+mkdir -p /tmp/harness/<project>/check &&
+make check >/tmp/harness/<project>/check/check.log 2>&1; rc=$?
+tail -n 5 /tmp/harness/<project>/check/check.log
+(( rc == 0 ))
+```
+
+When it fails, read the file around the first failure with Read and `offset`, not the whole log.
+
 ## A one-line edit: assert before and after
 
 One exact change is the Edit tool. Several changes, or an edit joined to a check, use a script that asserts each target
@@ -90,6 +104,26 @@ Then export the paths into the folder it printed, and run the check with that fo
 
 ```bash
 git archive HEAD src/a.py | tar -x -C <that folder>
+```
+
+One file's committed text needs no folder: `git show HEAD:src/a.py` prints it, and `git diff --stat HEAD -- src/a.py` says how far the working copy has moved.
+
+## A throwaway repository for a probe
+
+A rule about commits, staging or history is probed in a repository of its own, never in the project's. Only the main session can make one (`git init` and `git commit` are git writes, refused from a sub-agent), so a brief whose judge needs one names a folder the main session prepared.
+
+The commit rule holds there too: the message has the project's form and comes from a file written in an earlier call. First call, the Write tool: the message file at `/tmp/harness/<project>/probe-message.txt`. Second call:
+
+```bash
+mktemp -d /tmp/harness/<project>/repo.XXXX
+```
+
+Third call, with the folder it printed written out:
+
+```bash
+cd <that folder> && git init -q && print -r -- 'x = 1' > a.py && git add a.py &&
+git -c user.name=probe -c user.email=probe@example.com commit -q -F /tmp/harness/<project>/probe-message.txt &&
+git log --oneline
 ```
 
 ## Web and APIs: fail on HTTP errors, parse, cap
