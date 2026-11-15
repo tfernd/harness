@@ -20,6 +20,7 @@ The main session asks (step 2) and writes the proposal; the owner approves it; a
    file). An existing target is overwritten only on the owner's word: keep, replace, or merge; ask. On the owner's yes,
    brief a `harness:worker` to install the proposal. When merging into an existing `AGENTS.md`, it adds the missing
    sections and leaves the owner's lines as they are.
+   For a Python project whose formatter config turns the lint hook's `split` rule off (`[tool.black]`, or a ruff config other than `line-length = 320` with `skip-magic-trailing-comma = true`), also offer the 320 lines of the starter config in `harness:code-python` as a diff; the owner accepts or declines.
 5. **Report** the file written or skipped and why, and the choices left to the owner.
 
 ## What the plugin keeps outside the project

@@ -88,4 +88,4 @@ is_valid = is_positive and has_label and is_allowed
 ## What no tool checks
 
 Whether a name says enough without a comment ("would the code be harder to read without this name being clearer?"), whether a name is true to the body, whether two names mean one concept, and whether a domain word is the owners'.
-A linter checks casing and length at most; the reviewer reads for the rest (`harness:review`).
+A linter checks casing and length at most; the reviewer reads for the rest (`harness:review`). Python comments, docstrings, split statements and missing annotations are checked by the lint hook (`harness:code-python`); other languages are not.

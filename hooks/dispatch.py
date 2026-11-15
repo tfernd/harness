@@ -26,7 +26,10 @@ ROUTES = {
         ("Bash|Write|Edit|NotebookEdit", "skill_gate.py", ""),
         ("Bash", "commit_gate.py", ""),
     ),
-    "PostToolUse": (("Agent|Task|Edit|Write|NotebookEdit|Bash", "turn.py", "add"),),
+    "PostToolUse": (
+        ("Agent|Task|Edit|Write|NotebookEdit|Bash", "turn.py", "add"),
+        ("Edit|Write", "lint.py", ""),
+    ),
     "UserPromptSubmit": (("", "turn.py", "reset"),),
     "SubagentStop": (("", "report_gate.py", ""),),
     "Stop": (("", "turn.py", "stop"),),

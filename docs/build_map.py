@@ -78,6 +78,7 @@ HOOK_WIRES = (
     ("commit_gate.py", "commit message form", "check", ("main", "skill:git")),
     ("report_gate.py", "report sections", "check", ("agents", "skill:report")),
     ("progress.py", "agent progress note", "inject", ("main",)),
+    ("lint.py", "Python style findings", "inject", ("main", "agents", "skill:code-python")),
     ("turn.py", "closing status", "check", ("main",)),
 )
 WIRE_KINDS = (
@@ -282,7 +283,7 @@ SKILL_KINDS = (
 HOOK_KINDS = (
     Kind("Guards", "Refuse a risky call before it runs.", ("guard.py", "commit_gate.py")),
     Kind("Gates", "Check what crosses a hand-off.", ("report_gate.py",)),
-    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "progress.py")),
+    Kind("Teachers", "Add a note when it helps.", ("context.py", "skill_gate.py", "progress.py", "lint.py")),
     Kind("Closers", "Hold the turn until it is recorded.", ("turn.py",)),
 )
 HOOK_JOBS = {
@@ -293,6 +294,7 @@ HOOK_JOBS = {
     "context.py": "Starts every session and agent with the tool habits.",
     "skill_gate.py": "Hands an agent the rules for a kind of file before its first edit of one, and the commit rules before a commit.",
     "turn.py": "Holds the main session's turn until it ends with a closing status.",
+    "lint.py": "Notes a new comment, docstring, split statement or missing annotation in a Python file after an edit.",
 }
 LEVELS = (
     Level("stopped", "Stops the call", "never runs", "The call never runs; the agent is told which rule fired and what to do instead.", "stop the call"),
@@ -337,6 +339,7 @@ RULES = (
     Rule("A turn that ran agents names each one with its verdict", "reminder", "turn.py"),
     Rule("The rules for a kind of file arrive before its first edit", "reminder", "skill_gate.py"),
     Rule("The main session gets a note of what each agent is doing", "reminder", "progress.py"),
+    Rule("A new Python comment, docstring, split statement or missing annotation gets a note", "reminder", "lint.py"),
     Rule("A shell write outside the scratch folder gets a note", "reminder", "guard.py"),
     Rule("The tool habits go in front of every session and agent", "advice", "context.py"),
 )

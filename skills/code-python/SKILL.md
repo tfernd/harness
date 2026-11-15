@@ -60,9 +60,8 @@ No comments or docstrings: `harness:code`. Tests: `harness:testing`.
 - One job per module, the one its name says.
 - A module with more than one topic is split into modules. Within a module, types come first, then functions, a helper
   before its first caller.
-- A call or signature that fits the line limit is one line, however many arguments. One that does not gets one
-  argument per line with a trailing comma and the closer on its own line. Name an intermediate rather than hugging
-  all arguments on one middle line. (Unenforced: `ruff format` keeps a left-over magic trailing comma exploded.)
+- A call, signature or condition is one line, however long (`harness:code`); name an intermediate rather than split it.
+  The starter config sets `line-length = 320` and ignores magic trailing commas, so `ruff format` joins every statement.
 - A constant is defined once and imported, never copied into a test or script.
 - Imports point down a fixed order of layers; a step two layers need moves to the earlier one.
 - An `__init__.py` holds only imports and `__all__`. A new module stays out of it until accepted.
@@ -72,6 +71,12 @@ No comments or docstrings: `harness:code`. Tests: `harness:testing`.
 `ruff format` and `ruff check`, plus a type checker (`ty`) on the same files. Run them as the project's `make`/`uv`
 targets say; a project without a config starts from `references/pyproject-ruff.md`, which holds the line length, the
 rule set and the complexity limit.
+
+The plugin's lint hook (`hooks/lint.py`, rules `comment`, `docstring`, `split`, `untyped`) notes each new finding after
+an edit of a `.py` file and refuses a commit that adds one; `bin/harness-lint [--all] [paths...]` runs it by hand. It
+reports only findings new against `HEAD`. It flags comments, docstrings, a statement on more than one line and a missing
+annotation; a table (an assignment of a list, tuple, set or dict with each element on its own single line) is not a
+split; `split` is off when the project's formatter config owns layout, `docstring` when ruff selects `D`.
 
 ## Scripts and dependencies
 
@@ -88,10 +93,7 @@ Verbs and nouns, one word per idea, one job per function and module, phases and 
 no-`dict` results, a module of one topic, import layering. The reviewer reads for these; a rule that keeps failing gets a
 project gate.
 
-Ruff and the type checker also let these through unless the project adds a check of its own:
+Ruff, the type checker and the lint hook also let these through unless the project adds a check of its own:
 
-- `typing.cast` and ignore comments (`# type: ignore`, `# noqa`): the config in `references/pyproject-ruff.md` does not
-  ban them; a project check (a grep in its gate) does.
-- Missing annotations on a signature: the selected ruff rules do not require them; the project needs a check.
-- One-line calls: `ruff format` keeps a call with a magic trailing comma exploded, one argument per line, so a
-  call that fits one line stays long if someone left the comma. Only a project script catches it.
+- `typing.cast` and ignore comments (`# type: ignore`, `# noqa`): the hook allows tool directives and the ruff config does
+  not ban them; a project check (a grep in its gate) does.

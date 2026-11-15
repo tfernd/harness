@@ -4,7 +4,7 @@ A starter. Copy only when the project has none.
 
 ```toml
 [tool.ruff]
-line-length = 130
+line-length = 320
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -21,10 +21,16 @@ max-complexity = 9
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
 
 [tool.uv]
 exclude-newer = "7 days"
 ```
+
+Why 320 and no magic trailing comma: ruff then joins every statement onto one line itself, and the lint hook's `split` rule is on only with this config or with none.
 
 Meaning of the selected sets: pycodestyle errors and warnings (`E`, `W`), pyflakes (`F`), import order (`I`),
 bugbear (`B`), pyupgrade (`UP`), complexity (`C90`), simplify (`SIM`), flat returns (`RET`), no `global`

@@ -18,10 +18,12 @@ import sys
 import time
 import unicodedata
 from collections.abc import Set
+from pathlib import Path
 from typing import NamedTuple
 
 from common import find_project, get_git_index, get_inner_segments, resolve
 from guard import get_directory_after, get_written_paths, get_written_words, is_long_prefix
+from lint import find_new_findings, get_rules, is_in_scope
 from shell import Segment, get_segments
 
 SUBJECT = re.compile(r"(feat|fix|perf|refactor|test|docs|style|build|ci|chore|revert)(\([^()\s]+\))?!?: \S")
@@ -57,6 +59,9 @@ IDENTITY_KEYS = frozenset({"user.name", "user.email", "author.name", "author.ema
 
 GIT_SECONDS = 3
 MAX_TEST_FILES = 100
+LINT_SECONDS = 4
+MAX_LINT_FILES = 200
+MAX_LINT_LINES = 20
 TEST_FILE_NAMES = ("test_*.py", "*_test.py", "*_test.go", "*.test.*", "*.spec.*", "*.rs")
 TEST_FOLDERS = frozenset({"tests", "test"})
 PYTHON_TEST = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+test_", re.M)
@@ -552,9 +557,17 @@ def describe_drops(counts: list[FileCount], /) -> str:
     )
 
 
-def find_test_drops(command: str, cwd: str, /) -> list[str]:
+class CommitScope(NamedTuple):
 
-    problems: list[str] = []
+    directory: str | None
+    is_all: bool
+    paths: list[str]
+    message: str
+
+
+def get_commit_scopes(command: str, cwd: str, /) -> list[CommitScope]:
+
+    scopes: list[CommitScope] = []
     is_staged_here = False
     for call in find_calls(command, cwd):
         arguments = call.words[1:]
@@ -568,13 +581,67 @@ def find_test_drops(command: str, cwd: str, /) -> list[str]:
         parsed = parse_options(arguments[index + 1 :], COMMIT_OPTIONS)
         directory = get_git_directory(call.words, call.directory)
         message = get_commit_message(parsed, call._replace(directory=directory), command)[0]
-        if directory is None or TESTS_REMOVED.search(message if message is not None else get_text_up_to_call(command)):
+        scopes.append(CommitScope(directory, "--all" in parsed.flags or is_staged_here, parsed.operands, message if message is not None else get_text_up_to_call(command)))
+
+    return scopes
+
+
+def find_test_drops(command: str, cwd: str, /) -> list[str]:
+
+    problems: list[str] = []
+    for scope in get_commit_scopes(command, cwd):
+        if scope.directory is None or TESTS_REMOVED.search(scope.message):
             continue
-        is_all = "--all" in parsed.flags or is_staged_here
-        counts = get_file_counts(directory, is_all, parsed.operands)
+        counts = get_file_counts(scope.directory, scope.is_all, scope.paths)
         problem = describe_drops(counts) if counts else ""
         if problem:
             problems.append(problem)
+
+    return list(dict.fromkeys(problems))
+
+
+def describe_lint(lines: list[str], /) -> str:
+
+    shown = lines[:MAX_LINT_LINES]
+    if len(lines) > MAX_LINT_LINES:
+        shown.append(f"and {len(lines) - MAX_LINT_LINES} more")
+
+    return "this commit adds Python lint findings, fix each (or turn a rule off in the owner file under `lint`):\n" + "\n".join(shown)
+
+
+def get_lint_lines(directory: str, is_all: bool, paths: list[str], rules: list[str], /) -> list[str]:
+
+    deadline = time.monotonic() + LINT_SECONDS
+    top = run_git(["rev-parse", "--show-toplevel"], directory, deadline)
+    has_head = run_git(["rev-parse", "--verify", "-q", "HEAD"], directory, deadline) is not None
+    from_tree = (is_all or bool(paths)) and has_head
+    names = run_git(["diff", *(["HEAD"] if from_tree else ["--cached"]), "--name-status", "-M", "-z", "--diff-filter=ACMR", *(["--", *paths] if paths else [])], directory, deadline)
+    is_merging = run_git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], directory, deadline) is not None
+    if top is None or names is None or is_merging:
+        return []
+    root = Path(top.strip())
+    changes = [(old, new) for old, new in get_changed_paths(names) if new and is_in_scope(root / new, root)]
+    if len(changes) > MAX_LINT_FILES:
+        return []
+    lines: list[str] = []
+    for old, new in changes:
+        if time.monotonic() >= deadline:
+            return []
+        text = read_new_file(str(root), directory, new or "", from_tree, deadline)
+        head = run_git(["show", f"HEAD:{old}"], directory, deadline) if old and has_head else None
+        if text is not None:
+            lines += [f"{new}:{finding.line}: {finding.rule}: {finding.change}" for finding in find_new_findings(text, head, root, rules)]
+
+    return lines if time.monotonic() < deadline else []
+
+
+def find_lint_problems(command: str, cwd: str, rules: list[str], /) -> list[str]:
+
+    problems: list[str] = []
+    for scope in get_commit_scopes(command, cwd):
+        lines = get_lint_lines(scope.directory, scope.is_all, scope.paths, rules) if scope.directory is not None else []
+        if lines:
+            problems.append(describe_lint(lines))
 
     return list(dict.fromkeys(problems))
 
@@ -589,6 +656,9 @@ def main() -> int:
         problems += find_problems(command, cwd)
     if config.get("tests_kept", {}).get("enabled") is not False and "commit" in command:
         problems += find_test_drops(command, cwd)
+    rules = get_rules(config)
+    if rules and "commit" in command:
+        problems += find_lint_problems(command, cwd, rules)
     if not problems:
         return 0
     print(f"Blocked by the harness commit rule (`harness:git`): {'; '.join(problems)}", file=sys.stderr)

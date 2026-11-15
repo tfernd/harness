@@ -25,6 +25,7 @@ Text in front of an agent costs on every turn. Put a fact where its reader alrea
 | Session start | main session | a line to load `harness:orchestrator`, the ownership line, the `tool-habits` body, the setup line (search tools, shell, scratch folder) | `hooks/context.py` |
 | Agent start | a harness role | its agent file and each skill in its `skills:` list, whole | `agents/<name>.md` |
 | Agent start | every sub-agent | the `tool-habits` body without its Git section (a read-only role also loses the edit and clean sections) and the setup line; an agent that is no harness role also gets the report headings in one line | `hooks/context.py` |
+| After an edit of a `.py` file; before a commit | the agent that edited; the committer | a note of each new Python finding (comment, docstring, split statement, missing annotation); a commit with one is refused | `hooks/lint.py`, `hooks/commit_gate.py` |
 | First edit of a kind of file, first commit | an agent that has not seen the skill | that skill's text, once | `hooks/skill_gate.py` |
 | On demand | an agent with the Skill tool | a skill, chosen by its description; a `references/` file, read by path when the body names it | the agent |
 

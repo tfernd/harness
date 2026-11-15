@@ -1867,7 +1867,7 @@ PROGRESS_CASES = (
 
 
 def commit(name: str, command: str, blocks: bool, text: str = "", /, **options: object) -> Case:
-    options.setdefault("config", {})
+    options.setdefault("config", {"lint": {"rules": []}})
 
     return Case(name, ("commit_gate.py",), {"tool_name": "Bash", "tool_input": {"command": command}}, blocks, text, **options)
 
@@ -2425,6 +2425,115 @@ OWNERSHIP_CASES = (
 )
 
 
+def lint(name: str, text: str, found: str = "", /, *, path: str = "a.py", head: str | None = None, rules: tuple[str, ...] | None = None, setup: tuple[str, ...] | None = None, files: tuple[tuple[str, str], ...] = (), **options: object) -> Case:
+
+    event = {"tool_name": "Write", "tool_input": {"file_path": f"{PROJECT}/{path}"}}
+    config = {} if rules is None else {"lint": {"rules": list(rules)}}
+    if head is None:
+        placed = ((path, text), *files)
+        git = setup if setup is not None else ()
+    else:
+        placed = ((path, head), *files)
+        git = setup if setup is not None else (BASE, f"printf %s {shlex.quote(text)} > {path}")
+    silent = {} if found else {"is_silent": True}
+
+    return Case(name, ("lint.py",), event, False, found, config, files=placed, git=git, **silent, **options)
+
+
+STAGED_NEW = ("git init -q",)
+SPLIT_ONLY = ("split",)
+CALL_SPLIT = "x = f(\n    1,\n)\n"
+BLACK_CONFIG = (("pyproject.toml", "[tool.black]\nline-length = 88\n"),)
+RUFF_88 = (("pyproject.toml", "[tool.ruff]\nline-length = 88\n"),)
+RUFF_320 = (("pyproject.toml", "[tool.ruff]\nline-length = 320\n\n[tool.ruff.format]\nskip-magic-trailing-comma = true\n"),)
+RUFF_320_ONLY = (("pyproject.toml", "[tool.ruff]\nline-length = 320\n"),)
+RUFF_TOML_88 = (("ruff.toml", "line-length = 88\n"),)
+RUFF_DOCS = (("pyproject.toml", '[tool.ruff.lint]\nselect = ["E", "D"]\n'),)
+RUFF_DOCS_EXTENDED = (("ruff.toml", '[lint]\nextend-select = ["D100"]\n'),)
+RUFF_SELECT_OTHER = (("pyproject.toml", '[tool.ruff.lint]\nselect = ["E", "DTZ"]\n'),)
+LINT_CASES = (
+    lint("lint: a comment is reported with its line and the change", "x = 1  # why\n", "a.py:1: comment: delete the comment"),
+    lint("lint: a comment on its own line is reported", "x = 1\n# why\ny = 2\n", "a.py:2: comment:"),
+    lint("lint: a shebang and an encoding line are not findings", "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\nx = 1\n"),
+    lint("lint: a coding line on line 2 after a blank shebang pair is not a finding", "#!/usr/bin/env python3\n# vim: set fileencoding=utf-8 :\nx = 1\n"),
+    lint("lint: a PEP 723 block is not a finding", "# /// script\n# requires-python = \">=3.12\"\n# dependencies = []\n# ///\nx = 1\n"),
+    lint("lint: a comment after a PEP 723 block is a finding", "# /// script\n# dependencies = []\n# ///\nx = 1  # why\n", "a.py:4: comment:"),
+    *(lint(f"lint: a {directive} directive is not a finding", f"x = 1  # {directive}{rest}\n") for directive, rest in (("type:", " ignore[x]"), ("noqa", ""), ("pyright:", " ignore"), ("ruff:", " noqa"), ("fmt:", " off"), ("pragma:", " no cover"), ("mypy:", " ignore"), ("pylint:", " disable=x"), ("isort:", " skip"), ("ty:", " ignore"))),
+    lint("lint: a license block before the first statement is not a finding", "# Copyright 2026\n# All rights reserved\nx = 1\n"),
+    lint("lint: an SPDX line before the first statement is not a finding", "# spdx-license-identifier: MIT\nx = 1\n"),
+    lint("lint: a license word after the first statement is a finding", "x = 1\n# license note\n", "a.py:2: comment:"),
+    lint("lint: a plain header comment without a license word is a finding", "# helpers\nx = 1\n", "a.py:1: comment:"),
+    lint("lint: a hash inside a string is not a comment", 'x = "# not a comment"\n'),
+    lint("lint: a module docstring is reported", '"""about"""\nx = 1\n', "a.py:1: docstring: delete the docstring"),
+    lint("lint: a function docstring is reported on its own line", 'def f() -> None:\n    """about"""\n    return None\n', "a.py:2: docstring:"),
+    lint("lint: a class docstring is reported", 'class A:\n    """about"""\n', "a.py:2: docstring:"),
+    lint("lint: a plain string statement that is not first is no docstring", 'def f() -> None:\n    x = 1\n    "text"\n    return None\n', rules=("docstring",)),
+    lint("lint: a docstring is silent when ruff selects D", '"""about"""\nx = 1\n', files=RUFF_DOCS),
+    lint("lint: a docstring is silent when ruff extend-selects D100", '"""about"""\nx = 1\n', files=RUFF_DOCS_EXTENDED),
+    lint("lint: a docstring is reported when ruff selects only DTZ", '"""about"""\nx = 1\n', "a.py:1: docstring:", files=RUFF_SELECT_OTHER),
+    lint("lint: a call over lines is reported", CALL_SPLIT, "a.py:1: split: join it onto one line"),
+    lint("lint: a compound header over lines is reported", "if (\n    True\n):\n    pass\n", "a.py:1: split:"),
+    lint("lint: a signature over lines is reported", "def f(\n    a: int,\n) -> int:\n    return a\n", "a.py:1: split:"),
+    lint("lint: a decorator over lines is reported on its own line", "import functools\n\n" + "@" + "functools.lru_cache(\n    maxsize=1\n)\ndef f() -> int:\n    return 1\n", "a.py:3: split:", rules=SPLIT_ONLY),
+    lint("lint: an except header over lines is reported", "try:\n    pass\nexcept (\n    ValueError\n):\n    pass\n", "a.py:3: split:"),
+    lint("lint: a statement spanning lines only by one triple-quoted string is not a finding", 'x = """a\nb"""\n', rules=SPLIT_ONLY),
+    lint("lint: a call holding a multi-line string but closing on a later line is reported", 'x = f("""a\nb""",\n    1)\n', "a.py:1: split:", rules=SPLIT_ONLY),
+    lint("lint: a multi-line f-string statement is not a finding", 'name = 1\nx = f"""a {name}\nb"""\n', rules=SPLIT_ONLY),
+    lint("lint: a parenthesised value over lines inside a block is reported", "if True:\n    x = (\n        1\n    )\n", "a.py:2: split:", rules=SPLIT_ONLY),
+    lint("lint: a header on one line is not a finding", "if True:\n    x = 1\n", rules=SPLIT_ONLY),
+    lint("lint: split goes silent under a ruff line-length 88 config", CALL_SPLIT, files=RUFF_88),
+    lint("lint: split goes silent under a ruff.toml", CALL_SPLIT, files=RUFF_TOML_88),
+    lint("lint: split goes silent under a black config", CALL_SPLIT, files=BLACK_CONFIG),
+    lint("lint: split stays on under line-length 320 with skip-magic-trailing-comma", CALL_SPLIT, "a.py:1: split:", files=RUFF_320),
+    lint("lint: split goes silent under line-length 320 without skip-magic-trailing-comma", CALL_SPLIT, files=RUFF_320_ONLY),
+    lint("lint: split stays on with no config", CALL_SPLIT, "a.py:1: split:"),
+    lint("lint: an unannotated parameter is reported by name", "def f(a: int, b) -> int:\n    return a\n", "a.py:1: untyped: annotate b"),
+    lint("lint: a missing return annotation is reported", "def f(a: int):\n    return a\n", "a.py:1: untyped: annotate the return type"),
+    lint("lint: a keyword-only and a star parameter are checked", "def f(a: int, *rest, key, **more) -> int:\n    return a\n", "annotate rest, key, more"),
+    lint("lint: an async def is checked", "async def f(a) -> int:\n    return 1\n", "a.py:1: untyped: annotate a"),
+    lint("lint: an unannotated self and cls are not findings", "class A:\n\n    def f(self, a: int) -> int:\n        return a\n\n    @classmethod\n    def g(cls) -> int:\n        return 1\n"),
+    lint("lint: an unannotated second method parameter is reported", "class A:\n\n    def f(self, a) -> int:\n        return 1\n", "a.py:3: untyped: annotate a"),
+    lint("lint: a first parameter named self outside a class is reported", "def f(self) -> int:\n    return 1\n", "a.py:1: untyped: annotate self"),
+    lint("lint: a lambda is not a finding", "f = lambda a: a\n"),
+    lint("lint: a fully typed def is not a finding", "def f(a: int, *, b: str = '') -> int:\n    return a\n"),
+    lint("lint: an unchanged pre-existing finding stays silent", "x = 1  # old\ny = 2\n", head="x = 1  # old\n"),
+    lint("lint: a pre-existing finding that moved stays silent", "y = 2\nx = 1  # old\n", head="x = 1  # old\n"),
+    lint("lint: a second copy of an old finding is new", "x = 1  # old\nx = 1  # old\n", "a.py:2: comment:", head="x = 1  # old\n"),
+    lint("lint: a new finding beside an old one is the only one reported", "x = 1  # old\ny = 2  # new\n", "a.py:2: comment:", head="x = 1  # old\n", lacks="a.py:1:"),
+    lint("lint: a file absent from HEAD has an empty baseline", "x = 1  # new\n", "a.py:1: comment:", setup=("git init -q && git commit -qm base --allow-empty",)),
+    lint("lint: a folder with no repository has an empty baseline", "x = 1  # new\n", "a.py:1: comment:"),
+    lint("lint: a file with a syntax error gives no note", "x = (\n# why\n"),
+    lint("lint: a head version with a syntax error gives no note", "x = 1  # new\n", head="x = (\n"),
+    lint("lint: a file that is not python gives no note", "x = 1  # why\n", path="a.txt"),
+    lint("lint: a file under a virtual environment gives no note", "x = 1  # why\n", path=".venv/lib/a.py"),
+    lint("lint: a file outside the project gives no note", "x = 1  # why\n", path="../outside.py"),
+    lint("lint: the owner file can turn every rule off", "x = 1  # why\n", rules=()),
+    lint("lint: the owner file can turn one rule off", "x = 1  # why\n", rules=("docstring", "split", "untyped")),
+    lint("lint: the owner file keeps another rule on", "x = 1  # why\n", "a.py:1: comment:", rules=("comment",)),
+    lint("lint: a note holds at most ten lines then counts the rest", "".join(f"# c{number}\n" for number in range(13)) + "x = 1\n", "and 3 more"),
+    Case("lint: the dispatcher routes a Write to the lint hook", ("hooks.json", "PostToolUse"), {"hook_event_name": "PostToolUse", "tool_name": "Write", "tool_input": {"file_path": f"{PROJECT}/a.py"}}, False, "a.py:1: comment:", {}, files=(("a.py", "x = 1  # why\n"),)),
+    Case("lint: the dispatcher does not route a Bash call to the lint hook", ("hooks.json", "PostToolUse"), {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "true"}}, False, lacks="comment:", config={}, files=(("a.py", "x = 1  # why\n"),)),
+    lint("lint: a table of calls on their own lines is not a finding", "CASES = (\n    f(1),\n    f(2),\n)\n", rules=SPLIT_ONLY),
+    lint("lint: a dict of entries on their own lines is not a finding", 'TABLE = {\n    "a": 1,\n    "b": 2,\n}\n', rules=SPLIT_ONLY),
+    lint("lint: an annotated list on its own lines is not a finding", "ROWS: list[int] = [\n    1,\n    2,\n]\n", rules=SPLIT_ONLY),
+    lint("lint: a table with an element over lines is reported", "ROWS = [\n    f(\n        1\n    ),\n]\n", "a.py:1: split:", rules=SPLIT_ONLY),
+    lint("lint: a table with two elements on one line is reported", "ROWS = [\n    1, 2,\n    3,\n]\n", "a.py:1: split:", rules=SPLIT_ONLY),
+    lint("lint: a list opened on its first element's line is reported", "ROWS = [1,\n    2]\n", "a.py:1: split:", rules=SPLIT_ONLY),
+    lint("lint: a comprehension over lines is reported", "ROWS = [\n    x\n    for x in y\n]\n", "a.py:1: split:", rules=SPLIT_ONLY),
+    lint("lint: a returned table over lines is reported", "def f() -> list[int]:\n    return [\n        1,\n    ]\n", "a.py:2: split:", rules=SPLIT_ONLY),
+    lint("lint: an empty table over lines is reported", "ROWS = [\n]\n", "a.py:1: split:", rules=SPLIT_ONLY),
+    lint("lint: a changed comment after a form feed is a new finding at its line", "x = 1\n\x0c\ny = 2  # two\n", "a.py:3: comment:", head="x = 1\n\x0c\ny = 2  # one\n"),
+    lint("lint: a file that is not UTF-8 is read without a hook error", "", "a.py:1: comment:", setup=("printf 'x = 1  # caf\\351\\n' > a.py",)),
+    lint("lint: a comment that only holds the word coding on line 1 is a finding", "# the coding: standard\nx = 1\n", "a.py:1: comment:"),
+    lint("lint: a coding declaration of a known codec is not a finding", "# coding: latin-1\nx = 1\n"),
+    lint("lint: noqatest is a comment", "x = 1  # noqatest\n", "a.py:1: comment:"),
+    lint("lint: ty followed by prose is a comment", "x = 1  # ty: prose\n", "a.py:1: comment:"),
+    lint("lint: noqa with a code is a directive", "x = 1  # noqa: E501\n"),
+    lint("lint: type ignore with a code is a directive", "x = 1  # type: ignore[arg-type]\n"),
+    lint("lint: ty ignore with a code is a directive", "x = 1  # ty: ignore[invalid-assignment]\n"),
+)
+
+
 def resolve(root: Path, name: str, /) -> Path:
 
     if "*" in name:
@@ -2581,13 +2690,60 @@ def run_case(case: Case, hooks: Path, /) -> str:
         return check_output(case, run, root) or check_files(case, root)
 
 
+COMMIT_COMMAND = f"git commit -m '{GOOD_MESSAGE}'"
+LINT_NEW_FILE = ("git init -q", "git add -A")
+LINT_BASE = ("git init -q", "git add -A", "git commit -qm base")
+LINT_ALL_RULES = {}
+
+
+def rewrite(path: str, text: str, /) -> str:
+
+    return f"printf %s {shlex.quote(text)} > {path}"
+
+
+def linted(name: str, command: str, blocks: bool, text: str = "", /, *, files: tuple[tuple[str, str], ...], setup: tuple[str, ...] = LINT_NEW_FILE, **options: object) -> Case:
+    options.setdefault("config", LINT_ALL_RULES)
+
+    return commit(name, command, blocks, text, files=files, git=setup, **options)
+
+
+LINT_COMMIT_CASES = (
+    linted("commit lint: a new comment is refused with path, line, rule and change", COMMIT_COMMAND, True, "a.py:1: comment: delete the comment", files=(("a.py", "x = 1  # why\n"),)),
+    linted("commit lint: a new docstring is refused", COMMIT_COMMAND, True, "a.py:1: docstring: delete the docstring", files=(("a.py", '"""about"""\nx: int = 1\n'),)),
+    linted("commit lint: a new split statement is refused", COMMIT_COMMAND, True, "a.py:1: split: join it onto one line", files=(("a.py", CALL_SPLIT),)),
+    linted("commit lint: a new untyped def is refused", COMMIT_COMMAND, True, "a.py:1: untyped: annotate a, the return type", files=(("a.py", "def f(a):\n    return a\n"),)),
+    linted("commit lint: a finding in a folder names the path from the repository root", COMMIT_COMMAND, True, "src/a.py:2: comment:", files=(("src/a.py", "x = 1\ny = 2  # why\n"),)),
+    linted("commit lint: every finding of a commit is named", COMMIT_COMMAND, True, "a.py:3: comment:", files=(("a.py", "x = 1  # one\ny = 2\nz = 3  # two\n"),)),
+    linted("commit lint: the first commit of a repository is judged", COMMIT_COMMAND, True, "a.py:1: comment:", files=(("a.py", "x = 1  # why\n"),)),
+    linted("commit lint: the refusal says how to turn a rule off", COMMIT_COMMAND, True, "owner file under `lint`", files=(("a.py", "x = 1  # why\n"),)),
+    linted("commit lint: more than twenty findings are cut with a count", COMMIT_COMMAND, True, "and 5 more", files=(("a.py", "x = 1  # why\n" * 25),)),
+    linted("commit lint: findings already in HEAD pass", COMMIT_COMMAND, False, files=(("a.py", "x = 1  # why\n"),), setup=(*LINT_BASE, rewrite("a.py", "y = 2\nx = 1  # why\n"), "git add -A")),
+    linted("commit lint: one more copy of a finding in HEAD is refused", COMMIT_COMMAND, True, "a.py:2: comment:", files=(("a.py", "x = 1  # why\n"),), setup=(*LINT_BASE, rewrite("a.py", "x = 1  # why\nx = 1  # why\n"), "git add -A")),
+    linted("commit lint: a non-python file passes", COMMIT_COMMAND, False, files=(("a.txt", "x = 1  # why\n"),)),
+    linted("commit lint: a staged file with a syntax error passes", COMMIT_COMMAND, False, files=(("a.py", "x = (\n"),)),
+    linted("commit lint: split under a ruff line length of 88 passes", COMMIT_COMMAND, False, files=(("a.py", CALL_SPLIT), *RUFF_88)),
+    linted("commit lint: split with the formatter-free 320 config is refused", COMMIT_COMMAND, True, "a.py:1: split:", files=(("a.py", CALL_SPLIT), *RUFF_320)),
+    linted("commit lint: the owner config with no rules passes", COMMIT_COMMAND, False, files=(("a.py", "x = 1  # why\n"),), config={"lint": {"rules": []}}),
+    linted("commit lint: a rule left out of the owner list is not judged", COMMIT_COMMAND, False, files=(("a.py", "x = 1  # why\n"),), config={"lint": {"rules": ["untyped"]}}),
+    linted("commit lint: a finding left unstaged does not refuse clean staged text", COMMIT_COMMAND, False, files=(("a.py", "x = 1\n"),), setup=(*LINT_BASE, rewrite("a.py", "x = 2\n"), "git add -A", rewrite("a.py", "x = 2  # why\n"))),
+    linted("commit lint: an unstaged finding is refused with -a", f"git commit -a -m '{GOOD_MESSAGE}'", True, "a.py:1: comment:", files=(("a.py", "x = 1\n"),), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"))),
+    linted("commit lint: an unstaged finding in a tracked file is not judged without -a", COMMIT_COMMAND, False, files=(("a.py", "x = 1\n"), ("b.py", "y = 1\n")), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"), rewrite("b.py", "y = 2\n"), "git add b.py")),
+    linted("commit lint: a staged finding is refused although the working tree is clean", COMMIT_COMMAND, True, "a.py:1: comment:", files=(("a.py", "x = 1\n"),), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"), "git add -A", rewrite("a.py", "x = 2\n"))),
+    linted("commit lint: named paths judge the working tree of those paths", f"git commit a.py -m '{GOOD_MESSAGE}'", True, "a.py:1: comment:", files=(("a.py", "x = 1\n"), ("b.py", "y = 1\n")), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"))),
+    linted("commit lint: named paths skip a finding in another file", f"git commit b.py -m '{GOOD_MESSAGE}'", False, files=(("a.py", "x = 1\n"), ("b.py", "y = 1\n")), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"), rewrite("b.py", "y = 2\n"))),
+    linted("commit lint: a finding staged by an add in the same command is refused", f"git add -A && git commit -m '{GOOD_MESSAGE}'", True, "a.py:1: comment:", files=(("a.py", "x = 1\n"),), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"))),
+    linted("commit lint: a rename keeps the findings of the old file", COMMIT_COMMAND, False, files=(("a.py", "x = 1  # why\n"),), setup=(*LINT_BASE, "git mv a.py b.py")),
+    linted("commit lint: a commit completing a merge is not judged", COMMIT_COMMAND, False, files=(("a.py", "x = 1\n"),), setup=(*LINT_BASE, rewrite("a.py", "x = 2  # why\n"), "git add -A", "git rev-parse HEAD > .git/MERGE_HEAD")),
+)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the hook cases: what the guard refuses, when a report goes back, when the Stop hook holds a turn, and what the context hook says.")
     parser.add_argument("--only", default="", help="run the cases whose name holds this text")
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

@@ -23,6 +23,7 @@ DEFAULTS: dict = {
     "guard": {"ask_packages": True, "ask_cloud": True, "ask_installers": True, "tool_delay_days": 7},
     "progress": {"every": 10},
     "tests_kept": {"enabled": True},
+    "lint": {"rules": ["comment", "docstring", "split", "untyped"]},
     "skill_gate": {
         "*.py": ["harness:code-python"],
         "*.js": ["harness:code-js"],
