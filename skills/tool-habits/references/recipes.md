@@ -42,17 +42,16 @@ Gates that depend on each other (format, then lint, then test) chain with `&&` i
 
 ## A long check: keep the log, print the verdict
 
-A check that prints thousands of lines goes to a file. The call prints only the last lines, where the verdict is, and its exit code is the check's own. Never pipe it through a word filter: a test named "a failed agent ends failed" matches `fail`, and the summary line falls off the end.
+A check that prints thousands of lines goes to a file, and a slow one runs with `run_in_background: true` (the call is moved to the background after 180 s anyway). Make the folder first, then send this call in the background and end the turn with no further tool call: the exit wakes you. Never pipe it through a word filter: a test named "a failed agent ends failed" matches `fail`, and the summary line falls off the end.
 
 ```bash
 set -o pipefail
-mkdir -p /tmp/harness/<project>/check &&
 make check >/tmp/harness/<project>/check/check.log 2>&1; rc=$?
-tail -n 5 /tmp/harness/<project>/check/check.log
+echo "exit $rc" >>/tmp/harness/<project>/check/check.log
 (( rc == 0 ))
 ```
 
-When it fails, read the file around the first failure with Read and `offset`, not the whole log.
+When woken, print `tail -n 5` of the log; when it failed, read the file around the first failure with Read and `offset`, not the whole log. A quick check runs in the foreground with `tail -n 5` of the same file.
 
 ## A one-line edit: assert before and after
 

@@ -12,8 +12,9 @@ call needs the previous result, and run a long check in the background.
 
 ## Read
 
-- Several files, or a file and its matches, in one script that prints only what you need, not a run of `cat`, `sed -n`,
-  `grep` and `ls`. Locate and read in one call: print each match with three lines around it.
+- Several files, or a file and its matches, in one script that prints only the ranges or definitions you need, not a run
+  of `cat`, `sed -n`, `grep` and `ls`, and never `for f in ...; do cat` or `cat a b c` over whole files. Locate and read
+  in one call: print each match with three lines around it.
 - One file: the Read tool with `offset` and `limit`. Search: `rg` and `find` through Bash; Grep and Glob only when
   listed among your tools.
 - Find a path you have not seen listed first (`rg --files -g '<name>'`), then read it. Confirm with `ls` on its parent
@@ -22,7 +23,8 @@ call needs the previous result, and run a long check in the background.
   over about 4,000 characters costs context for the rest of the session.
 - A deferred tool has no schema until you load it: ToolSearch with `select:<name>` first, several names in one call.
 - Do not reread an unchanged file or rerun an unchanged command.
-- Output too long for the result is saved to a file the result names: read that file with `offset` and `limit`.
+- Output too long for the result is saved to a file the result names (under `tool-results/`): read it with `offset` and
+  `limit`, or search it with `rg`, never whole.
 
 ## Edit and check in one call
 
@@ -35,7 +37,7 @@ call needs the previous result, and run a long check in the background.
   edit, check on one file costs a turn per step: batch the edits, or put edit and check in one script.
 - The project's Python runs through `uv run python`, its linter through `uvx ruff` when `ruff` is not on PATH.
   One-off Python in a tool call takes no PEP 723 header and no dependencies: `python3 -` and the standard library.
-- Without `pipefail`, a pipe into `tail` hides a test's exit code. Do not end a check in `|| true` or `|| echo`, and
+- Without `pipefail`, a pipe into `tail` hides a test's exit code, and a `git commit` piped into `tail` hides a pre-commit refusal behind exit 0. Do not end a check in `|| true` or `|| echo`, and
   print no `echo ----` separators; zsh expands `=` at a word start, so quote an `echo` separator made of `=`.
 - Never filter a check's output by a word (`rg fail`, `grep error`): test names hold those words and the verdict line is lost. Send the output to a file under `/tmp/harness/<project>/`, print its last lines, and read the file for the rest (recipe: a long check).
 - After an edit of a `.py` file a lint note may list new findings (a comment, a docstring, a statement on more than one line, a signature with no annotation). Fix them in the next edit of that file, not at the end: a commit that adds one is refused. The note comes from a hook, so no project file needs reading to know the rule.
@@ -62,13 +64,16 @@ call needs the previous result, and run a long check in the background.
 
 ## Waiting
 
-- Run a long job with `run_in_background: true`, then do other work or end the turn; its exit wakes you. Do not poll in
-  a foreground loop.
-- A condition on this machine runs its wait in the background with a bound:
+- A job you start yourself (a build, a test run, a long check) runs with `run_in_background: true`, its output to a file
+  under `/tmp/harness/<project>/`. End the turn with no further tool call: a task notification wakes you, main session
+  or sub-agent, about 3 s after it exits. Then read the file's last lines. It needs no polling loop.
+- Claude Code moves any foreground Bash call to the background after 180 s, so a foreground wait loop never reaches its
+  bound; you are cut and wait again. Never `sleep N; <read>`.
+- A wait loop is only for a condition that is not a command you started, and it goes out with `run_in_background: true`:
   `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`. A service coming up:
   `curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL`. A process: `timeout 5 tail --pid=PID -f /dev/null`.
-- A wait names its job by PID (`cmd & pid=$!`) or by a done file. Never `pgrep -f` with a pattern that also occurs in
-  the waiter's own command line.
+- A wait names its condition by PID or by a done file. Never `pgrep -f` with a pattern that also occurs in the waiter's
+  own command line.
 - Something off this machine (CI, a deploy): ask its tool once, say it is still running and end the turn.
 - Stop a background command you no longer need (TaskStop) before you report. Never search the whole filesystem
   (`find /`, `find ~`): `command -v <tool>` or `rg --files -g '<name>'` answer it.
