@@ -51,7 +51,7 @@ LOOKALIKES = str.maketrans(dict(zip(
 TRAILER_EQUALS = re.compile(r"^([A-Za-z][A-Za-z-]*)[ \t]*=")
 CALL = re.compile(r"\b(git\b[^\n]*?\b(commit|tag|merge)|gh\s+pr\s+(create|edit|comment)|gh\s+api)\b")
 CALL_END = re.compile(r"\n|;|&&|\|\|")
-HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n\s*\1\b", re.S)
+HEREDOC_OPERATOR = re.compile(r"(?<!<)<<(?!<)-?[ \t]*['\"]?(\w+)['\"]?")
 SHELL_VALUE_START = re.compile(r"[\"']|(?:^|(?<=[\s;&|(]))[A-Za-z_][A-Za-z0-9_]*=")
 ATTRIBUTION_ONLY = frozenset({"tag", "merge", "commit-tree"})
 IDENTITY_KEYS = frozenset({"user.name", "user.email", "author.name", "author.email", "committer.name", "committer.email"})
@@ -87,6 +87,12 @@ class ParsedOptions(NamedTuple):
     values: dict[str, list[str]]
     flags: set[str]
     operands: list[str]
+
+
+class Heredoc(NamedTuple):
+
+    position: int
+    body: str
 
 
 class Call(NamedTuple):
@@ -192,11 +198,37 @@ def get_text_up_to_call(command: str, /) -> str:
     return command[: end.start()] if end else command
 
 
+def find_heredocs(command: str, /) -> list[Heredoc]:
+
+    lines = command.split("\n")
+    heredocs: list[Heredoc] = []
+    line_start = 0
+    index = 0
+    while index < len(lines):
+        operators = list(HEREDOC_OPERATOR.finditer(lines[index]))
+        operator_line_start = line_start
+        line_start += len(lines[index]) + 1
+        index += 1
+        for operator in operators:
+            terminator = re.compile(rf"\s*{re.escape(operator.group(1))}\b")
+            body: list[str] = []
+            while index < len(lines) and not terminator.match(lines[index]):
+                body.append(lines[index])
+                line_start += len(lines[index]) + 1
+                index += 1
+            line_start += len(lines[index]) + 1 if index < len(lines) else 0
+            index += 1
+            heredocs.append(Heredoc(operator_line_start + operator.start(), "\n".join(body)))
+
+    return heredocs
+
+
 def read_message(values: list[str], command: str, /) -> str | None:
 
     if any("$" in value or "`" in value or value == "-" for value in values):
-        heredoc = HEREDOC.search(command, get_tail_start(command))
-        return heredoc.group(2) if heredoc else None
+        tail_start = get_tail_start(command)
+        own = [heredoc for heredoc in find_heredocs(command) if heredoc.position >= tail_start]
+        return own[0].body if own else None
 
     return "\n\n".join(values)
 
