@@ -16,6 +16,7 @@ import shlex
 import sys
 from collections.abc import Callable, Mapping, Set
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import NamedTuple
 
 from common import (
@@ -87,8 +88,12 @@ PIPEFAIL_CHECKS = {
     "terraform": frozenset({"validate", "plan"}),
     "dbt": frozenset({"build", "test", "run"}),
     "gradle": frozenset({"test"}),
+    "git": frozenset({"commit"}),
     "mvn": frozenset({"test"}),
 }
+SPILL_RULE = "spill"
+SPILL_FOLDER = "tool-results"
+SPILL_LINE_LIMIT = 200
 PIPEFAIL_PYTHON_NAMES = frozenset({"python", "python3"})
 PIPEFAIL_TEST_FOLDER = "tests/"
 PIPEFAIL_KEPT_OPTION = "-m"
@@ -162,8 +167,10 @@ MESSAGES = {
     "pkill": "`pkill -f`, `pkill` without `-x` and `killall -r` match a pattern against every process, and a broad pattern kills "
     "unrelated ones (`pkill -f cat` matched \"Applications\" and closed every app). Find the process with `pgrep -x <name>` (or "
     "`pgrep -af <pattern>` to look), then `kill <pid>`. `kill <pid>` and `pkill -x <name>` run.",
-    PIPEFAIL_RULE: "this command pipes a test, check or build into `tail` or `grep`, where the exit code is the last command's and a "
-    "failed run looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note.",
+    PIPEFAIL_RULE: "this command pipes a test, check, build or `git commit` into `tail` or `grep`, where the exit code is the last command's "
+    "and a failed run or a refused commit looks like a pass, so `set -o pipefail; ` was put in front and the call ran. Write it yourself to skip this note.",
+    SPILL_RULE: "this file is a saved tool output, and a Read with no `limit` pulls all of it into the context, so the call was capped at "
+    "{lines} lines. Page with `offset` and `limit`, or search it with `rg` first. Pass a `limit` yourself to skip this note.",
 }
 PATTERN_REFUSAL = (
     "this unquoted glob, or word starting with `=`, would be expanded by zsh first, and the guard could not quote it safely. "
@@ -2068,6 +2075,24 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     return 2
 
 
+def is_uncapped_spill_read(tool_input: dict, /) -> bool:
+
+    path = str(tool_input.get("file_path") or "")
+
+    return SPILL_FOLDER in Path(path).parts[:-1] and tool_input.get("limit") is None
+
+
+def cap_spill_read(tool_input: dict, /) -> int:
+
+    if not is_uncapped_spill_read(tool_input):
+        return 0
+    capped = {**tool_input, "limit": SPILL_LINE_LIMIT}
+    note = f"The harness guard changed this call: {MESSAGES[SPILL_RULE].format(lines=SPILL_LINE_LIMIT)}"
+    print(json.dumps(make_soft_output(Rewrite(capped, [note], []), tool_input)))
+
+    return 0
+
+
 def refuse_read(tool_input: dict, cwd: str, /) -> int:
 
     label = get_read_secret_label(tool_input)
@@ -2084,7 +2109,7 @@ def main() -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     if event.get("tool_name") == "Read":
-        return refuse_read(tool_input, cwd)
+        return refuse_read(tool_input, cwd) or cap_spill_read(tool_input)
     policy = get_policy(cwd)._replace(is_agent=bool(event.get("agent_id")))
     findings = new_findings()
     if event.get("tool_name") == "Bash":

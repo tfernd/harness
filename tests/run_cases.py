@@ -973,6 +973,26 @@ def read_call(name: str, path: str, blocks: bool, text: str = "", /, **options: 
     return Case(name, ("guard.py",), event, blocks, text, **options)
 
 
+def spill_read(name: str, tool_input: dict, fixed: dict | None, /) -> Case:
+    event = {"tool_name": "Read", "tool_input": tool_input}
+    if fixed is None:
+        return Case(name, ("guard.py",), event, False, config=STRICT, is_unchanged=True, lacks="saved tool output")
+
+    return Case(name, ("guard.py",), event, False, "saved tool output", STRICT, updated=fixed, context="Page with `offset` and `limit`")
+
+
+SPILL_PATH = "/srv/u/state/projects/p/s/tool-results/b1.txt"
+SPILL_CASES = (
+    spill_read("spill read: a spilled output with no limit is capped", {"file_path": SPILL_PATH}, {"file_path": SPILL_PATH, "limit": 200}),
+    spill_read("spill read: the offset is kept", {"file_path": SPILL_PATH, "offset": 300}, {"file_path": SPILL_PATH, "offset": 300, "limit": 200}),
+    spill_read("spill read: a null limit is capped", {"file_path": SPILL_PATH, "limit": None}, {"file_path": SPILL_PATH, "limit": 200}),
+    spill_read("spill read: a limit is kept", {"file_path": SPILL_PATH, "limit": 50}, None),
+    spill_read("spill read: a normal path is untouched", {"file_path": "/srv/u/app/main.py"}, None),
+    spill_read("spill read: a similar folder name is untouched", {"file_path": "/srv/u/app/tool-results-old/a.txt"}, None),
+    spill_read("spill read: a file named tool-results is untouched", {"file_path": "/srv/u/app/tool-results"}, None),
+)
+
+
 SECRET = "reads or prints a credential"
 SECRET_FILES = (
     "cat .env", "cat .env.local", "cat .env.production", "head -n 3 .env.staging", "cat '.env*'", "source .env", ". .env", "cat .envrc", "grep KEY .env",
@@ -1974,6 +1994,9 @@ COMMIT_CASES = (
     commit("a pull request heredoc is read", "gh pr create -b \"$(cat <<'EOF'\nCo-Authored-By: Claude\nEOF\n)\"", True, "AI attribution"),
     commit("a trailer in a variable is refused", "T='Co-Authored-By: Claude <noreply@anthropic.com>' && git commit -m \"feat: add y $T\"", True, "AI attribution"),
     commit("an earlier heredoc is not the message", "python3 - <<'EOF'\nprint(1)\nEOF\ngit commit -m \"$(cat <<'EOF'\nfeat: add y\n\n* did it\nEOF\n)\"", False),
+    commit("a python heredoc then a commit heredoc on later lines reads the commit's own", "python3 - <<'EOF'\nimport pathlib\nEOF\n&& git commit -q -F - <<'MSG'\nfix(x): subject\n\n- body\nMSG", False),
+    commit("two heredoc operators on one line read the commit's body", "python3 - <<'EOF' && git commit -q -F - <<'MSG'\nimport pathlib\nEOF\nfix(x): subject\n\n- body\nMSG", False),
+    commit("a bad commit subject after a python heredoc is refused for its own subject", "python3 - <<'EOF' && git commit -q -F - <<'MSG'\nimport pathlib\nEOF\nadd y\n\n- body\nMSG", True, "not `type(scope): summary`: add y"),
     commit("a body that says commit is still read", "git commit -m \"$(cat <<'EOF'\nFix stuff\n\n* split the commit in two\nEOF\n)\"", True, "not `type(scope)"),
     commit("a trailer option is refused", "git commit -m 'feat: add y' -m '* did it' --trailer 'Co-Authored-By: Claude'", True, "AI attribution"),
     commit("a trailer in an earlier script is no attribution", "python3 - <<'EOF'\nprint('Co-Authored-By: Claude')\nEOF\ngit commit -m 'feat: add y' -m '* did it'", False),
@@ -1994,9 +2017,6 @@ COMMIT_CASES = (
     commit("a substitution with no heredoc is refused", "git commit -m \"$(printf 'feat: add y')\"", True, "-F <file>"),
     commit("a message file written by the same command is refused", "printf 'feat: add y\\n\\n* did it\\n' > m.txt; git commit -F m.txt", True, "written by the same command"),
     commit("stdin with no heredoc is refused", "git commit -F -", True, "reads stdin"),
-    commit("a python heredoc then a commit heredoc on later lines reads the commit's own", "python3 - <<'EOF'\nimport pathlib\nEOF\n&& git commit -q -F - <<'MSG'\nfix(x): subject\n\n- body\nMSG", False),
-    commit("two heredoc operators on one line read the commit's body", "python3 - <<'EOF' && git commit -q -F - <<'MSG'\nimport pathlib\nEOF\nfix(x): subject\n\n- body\nMSG", False),
-    commit("a bad commit subject after a python heredoc is refused for its own subject", "python3 - <<'EOF' && git commit -q -F - <<'MSG'\nimport pathlib\nEOF\nadd y\n\n- body\nMSG", True, "not `type(scope): summary`: add y"),
     commit("a heredoc on stdin is read", "git commit -F - <<'EOF'\nfeat: add y\n\n* did it\nEOF", False),
     commit("a reused message is refused", "git commit -C HEAD", True, "reuses"),
     commit("a fixup with no message passes", "git commit --fixup HEAD", False),
@@ -2229,6 +2249,9 @@ def kill(name: str, command: str, blocks: bool, /, *, agent: bool = False) -> Ca
 PIPEFAIL = "set -o pipefail; "
 PIPEFAIL_REWRITES = (
     "pytest -q | tail -5",
+    "git commit -m 'feat: x' | tail -5",
+    "git commit -m 'feat: x' 2>&1 | grep -v hint",
+    "git add -A && git commit -m 'feat: x' | tail",
     "pytest -q 2>&1 | tail -5",
     "pytest -q 2>&1 |tail",
     "pytest | tail -q",
@@ -2293,6 +2316,10 @@ PIPEFAIL_UNCHANGED = (
     "uv run python script.py | tail",
     "python tests/run_cases.py | tail",
     "sh -c 'cd src; pytest | tail -5'",
+    "git commit -m 'feat: x'",
+    "git commit -m 'feat: x' && git log | tail -3",
+    "git status | tail -3",
+    "git commit -m 'feat: x' | wc -l",
 )
 PIPEFAIL_CASES = (
     *(pipefail(f"pipefail is set before {command!r}", command, PIPEFAIL + command) for command in PIPEFAIL_REWRITES),
@@ -2747,7 +2774,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:
