@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import sys
+import time
 from collections.abc import Callable, Mapping, Set
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,9 +31,12 @@ from common import (
     get_git_index,
     get_git_subcommand,
     get_inner_segments,
+    get_look_wait_seconds,
+    get_pending_jobs,
     get_scratch,
     get_shell_string,
     is_cluster,
+    mark_looked,
     resolve,
     skip_options,
 )
@@ -91,6 +95,18 @@ PIPEFAIL_CHECKS = {
     "git": frozenset({"commit"}),
     "mvn": frozenset({"test"}),
 }
+WAIT_RULE = "wait"
+WAIT_ONLY = "only"
+WAIT_FOLLOWED = "followed"
+WAIT_PEEKERS = frozenset({"pgrep", "ps", "pidof"})
+WAIT_NO_OPS = frozenset({"true", ":", "date"})
+WAIT_PRINTERS = frozenset({"echo", "printf"})
+WAIT_STRUCTURE = frozenset({"done", "fi", "esac", "for", "if", "case", "select", "}", ")"})
+WAIT_LONG_SLEEP_SECONDS = 5
+WAIT_LOOK_WINDOW_SECONDS = 300
+SLEEP_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+SLEEP_AMOUNT = re.compile(r"(\d+(?:\.\d+)?)([smhd]?)")
+TASK_OUTPUT_PATH = re.compile(r"/tasks/([A-Za-z0-9_-]+)\.output")
 SPILL_RULE = "spill"
 SPILL_FOLDER = "tool-results"
 SPILL_LINE_LIMIT = 200
@@ -172,6 +188,9 @@ MESSAGES = {
     SPILL_RULE: "this file is a saved tool output, and a Read with no `limit` pulls all of it into the context, so the call was capped at "
     "{lines} lines. Page with `offset` and `limit`, or search it with `rg` first. Pass a `limit` yourself to skip this note.",
 }
+WAIT_MESSAGE = "background job {task_id} of this session is still running and its task notification wakes you when it exits, so a call that only waits spends a turn for nothing. End the turn now with no tool call. To wait on something that is not that job, send the same command with `run_in_background: true`."
+WAIT_FOLLOWED_NOTE = " This call also holds work after the wait: that work goes in its own call once the notification arrives, or send the whole command with `run_in_background: true`."
+WAIT_LOOK_MESSAGE = "you already looked at the output of job {task_id} and it is still running; the next look is allowed in {seconds} s (at {at}). Until then end the turn with no tool call: the task notification wakes you when the job exits, and after it every read is allowed."
 PATTERN_REFUSAL = (
     "this unquoted glob, or word starting with `=`, would be expanded by zsh first, and the guard could not quote it safely. "
     "Quote it (`--include='*.py'`), or use `rg -g '*.py'`."
@@ -2104,8 +2123,146 @@ def refuse_read(tool_input: dict, cwd: str, /) -> int:
     return refuse([SECRET_RULE], findings)
 
 
-def main() -> int:
-    event = json.load(sys.stdin)
+class WaitPiece(NamedTuple):
+
+    name: str
+    arguments: list[str]
+    has_redirect: bool
+    is_in_loop: bool
+
+
+def get_sleep_seconds(arguments: list[str], /) -> float:
+
+    amounts = [SLEEP_AMOUNT.fullmatch(argument) for argument in arguments]
+
+    return sum(float(amount.group(1)) * SLEEP_UNIT_SECONDS[amount.group(2) or "s"] for amount in amounts if amount)
+
+
+def get_wait_pieces(segments: list[Segment], /, *, depth: int = 0) -> list[WaitPiece]:
+
+    pieces: list[WaitPiece] = []
+    for segment in segments:
+        command = resolve(segment)
+        name = os.path.basename(command.name)
+        inner = get_inner_segments(command) if name in SHELLS and depth < 3 else []
+        if inner:
+            pieces.extend(get_wait_pieces(inner, depth=depth + 1))
+            continue
+        pieces.append(WaitPiece(name, [word.text for word in command.arguments], bool(segment.redirects), segment.in_loop))
+
+    return pieces
+
+
+def is_pid_tail_piece(piece: WaitPiece, /) -> bool:
+
+    return piece.name == "tail" and any(argument.startswith("--pid") for argument in piece.arguments)
+
+
+def is_wait_piece(piece: WaitPiece, /) -> bool:
+
+    return piece.name in WAIT_PEEKERS or piece.name in ("sleep", "wait") or is_pid_tail_piece(piece)
+
+
+def is_no_op_piece(piece: WaitPiece, /) -> bool:
+
+    if piece.has_redirect:
+        return False
+    if piece.name in WAIT_NO_OPS:
+        return True
+
+    return piece.name in WAIT_PRINTERS and not any("$" in argument or "`" in argument for argument in piece.arguments)
+
+
+def get_loop_groups(pieces: list[WaitPiece], /) -> list[list[WaitPiece]]:
+
+    groups: list[list[WaitPiece]] = []
+    current: list[WaitPiece] = []
+    for piece in pieces:
+        if piece.is_in_loop:
+            current.append(piece)
+        elif current:
+            groups.append(current)
+            current = []
+    if current:
+        groups.append(current)
+
+    return groups
+
+
+def has_sleeping_loop(pieces: list[WaitPiece], /) -> bool:
+
+    return any(group[0].name != "read" and any(piece.name == "sleep" for piece in group) for group in get_loop_groups(pieces))
+
+
+def classify_wait(pieces: list[WaitPiece], /) -> str:
+
+    if not pieces:
+        return ""
+    is_pid_tail = any(is_pid_tail_piece(piece) for piece in pieces)
+    is_long_start = pieces[0].name == "sleep" and get_sleep_seconds(pieces[0].arguments) > WAIT_LONG_SLEEP_SECONDS
+    is_each_waiting = all(piece.name in WAIT_STRUCTURE or is_wait_piece(piece) or is_no_op_piece(piece) for piece in pieces)
+    if not (is_pid_tail or is_long_start or has_sleeping_loop(pieces) or is_each_waiting):
+        return ""
+    is_bare = all(piece.is_in_loop or piece.name in WAIT_STRUCTURE or is_wait_piece(piece) or is_no_op_piece(piece) for piece in pieces)
+
+    return WAIT_ONLY if is_bare else WAIT_FOLLOWED
+
+
+class WaitVerdict(NamedTuple):
+
+    reason: str = ""
+    looked: tuple[str, ...] = ()
+
+
+def get_wait_verdict(event: dict, /) -> WaitVerdict:
+
+    tool_input = event.get("tool_input") or {}
+    session = str(event.get("session_id") or "")
+    is_read = event.get("tool_name") == "Read"
+    text = str(tool_input.get("file_path") or "") if is_read else str(tool_input.get("command") or "")
+    if not session or not text or tool_input.get("run_in_background") is True:
+        return WaitVerdict()
+    pieces = [] if is_read else get_wait_pieces(get_segments(text))
+    kind = classify_wait(pieces)
+    words = text if is_read else " ".join(word for piece in pieces for word in (piece.name, *piece.arguments))
+    named = list(dict.fromkeys(TASK_OUTPUT_PATH.findall(words)))
+    if not kind and not named:
+        return WaitVerdict()
+    pending = get_pending_jobs(session, str(event.get("agent_id") or ""))
+    if not pending:
+        return WaitVerdict()
+    if kind:
+        followed = WAIT_FOLLOWED_NOTE if kind == WAIT_FOLLOWED else ""
+
+        return WaitVerdict(WAIT_MESSAGE.format(task_id=pending[0].task_id) + followed)
+    looked = [job.task_id for job in pending if job.task_id in named]
+    seconds = {task_id: get_look_wait_seconds(session, task_id, WAIT_LOOK_WINDOW_SECONDS) for task_id in looked}
+    waiting = {task_id: left for task_id, left in seconds.items() if left}
+    if waiting:
+        task_id, left = max(waiting.items(), key=lambda item: item[1])
+
+        return WaitVerdict(WAIT_LOOK_MESSAGE.format(task_id=task_id, seconds=left, at=time.strftime("%H:%M:%S", time.localtime(time.time() + left))))
+
+    return WaitVerdict("", tuple(looked))
+
+
+def judge_wait(event: dict, /) -> WaitVerdict:
+
+    try:
+        return get_wait_verdict(event)
+    except Exception:
+        return WaitVerdict()
+
+
+def commit_looks(event: dict, verdict: WaitVerdict, /) -> None:
+
+    try:
+        mark_looked(str(event.get("session_id") or ""), list(verdict.looked))
+    except Exception:
+        return
+
+
+def judge_call(event: dict, /) -> int:
     tool_input = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
     if event.get("tool_name") == "Read":
@@ -2127,6 +2284,19 @@ def main() -> int:
         hard = rewrite.refused
 
     return refuse(hard, findings)
+
+
+def main() -> int:
+    event = json.load(sys.stdin)
+    verdict = judge_wait(event)
+    if verdict.reason:
+        print(f"Blocked by the harness guard: {WAIT_RULE}: {verdict.reason}", file=sys.stderr)
+        return 2
+    code = judge_call(event)
+    if code == 0 and verdict.looked:
+        commit_looks(event, verdict)
+
+    return code
 
 
 if __name__ == "__main__":

@@ -8,10 +8,12 @@
 from __future__ import annotations
 
 import fnmatch
+import glob
 import json
 import os
 import re
 import shutil
+import time
 from collections.abc import Set
 from pathlib import Path
 from typing import NamedTuple
@@ -455,3 +457,158 @@ def get_inner_segments(command: Command, /) -> list[Segment]:
         return get_alias_runs(name, arguments)
 
     return []
+
+
+JOBS_FOLDER = "waits"
+JOBS_KEEP = 200
+JOBS_MAX_BYTES = 65536
+OUTPUT_DESCRIPTORS = ("1", "2")
+PROC_FOLDER = os.environ.get("HARNESS_PROC_FOLDER", "/proc")
+
+
+class BackgroundJob(NamedTuple):
+
+    task_id: str
+    output_path: str
+    agent_id: str
+    pid: int
+    started: int
+
+
+class Holder(NamedTuple):
+
+    pid: int
+    started: int
+
+
+def get_jobs_path(session: str, kind: str, /) -> Path:
+
+    folder = data_folder() / JOBS_FOLDER
+    folder.mkdir(exist_ok=True)
+
+    return folder / f"{session}.{kind}"
+
+
+def get_tasks_folder(event: dict, session: str, /) -> Path | None:
+
+    scratchpad = str(event.get("scratchpad_dir") or "")
+    if scratchpad:
+        return Path(scratchpad).parent / "tasks"
+    matches = sorted(glob.glob(f"/tmp/claude-{os.getuid()}/*/{session}/tasks"))
+
+    return Path(matches[0]) if matches else None
+
+
+def get_start_time(pid: int, /) -> int | None:
+
+    try:
+        stat = Path(f"{PROC_FOLDER}/{pid}/stat").read_text()
+        return int(stat.rpartition(")")[2].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def does_hold_output(pid: int, output_path: str, /) -> bool:
+
+    for descriptor in OUTPUT_DESCRIPTORS:
+        try:
+            if os.readlink(f"{PROC_FOLDER}/{pid}/fd/{descriptor}") == output_path:
+                return True
+        except OSError:
+            continue
+
+    return False
+
+
+def find_holders(output_path: str, /) -> list[Holder]:
+
+    if not os.path.isdir(PROC_FOLDER):
+        return []
+    holders = []
+    for name in os.listdir(PROC_FOLDER):
+        if not name.isdigit() or not does_hold_output(int(name), output_path):
+            continue
+        started = get_start_time(int(name))
+        if started is not None:
+            holders.append(Holder(int(name), started))
+
+    return holders
+
+
+def record_background_job(event: dict, /) -> None:
+
+    response = event.get("tool_response")
+    session = str(event.get("session_id") or "")
+    task_id = response.get("backgroundTaskId") if isinstance(response, dict) else None
+    if event.get("tool_name") != "Bash" or not session or not isinstance(task_id, str) or not re.fullmatch(r"[\w-]+", task_id):
+        return
+    folder = get_tasks_folder(event, session)
+    if folder is None:
+        return
+    output_path = str(folder / f"{task_id}.output")
+    holders = find_holders(output_path)
+    if not holders:
+        return
+    shell = min(holders, key=lambda holder: (holder.started, holder.pid))
+    path = get_jobs_path(session, "jobs")
+    with open(path, "a") as file:
+        file.write(f"{task_id}\t{output_path}\t{event.get('agent_id') or ''}\t{shell.pid}\t{shell.started}\n")
+    if path.stat().st_size > JOBS_MAX_BYTES:
+        write_atomic(path, "\n".join(path.read_text().splitlines()[-JOBS_KEEP:]) + "\n")
+
+
+def parse_background_job(line: str, /) -> BackgroundJob | None:
+
+    row = line.split("\t")
+    if len(row) != 5:
+        return None
+    try:
+        return BackgroundJob(row[0], row[1], row[2], int(row[3]), int(row[4]))
+    except ValueError:
+        return None
+
+
+def read_background_jobs(session: str, /) -> list[BackgroundJob]:
+
+    path = get_jobs_path(session, "jobs")
+    if not path.exists():
+        return []
+    jobs = [parse_background_job(line) for line in path.read_text().splitlines()]
+
+    return [job for job in jobs if job is not None]
+
+
+def is_job_running(job: BackgroundJob, /) -> bool:
+
+    return get_start_time(job.pid) == job.started and does_hold_output(job.pid, job.output_path)
+
+
+def get_pending_jobs(session: str, agent_id: str, /) -> list[BackgroundJob]:
+
+    jobs = [job for job in read_background_jobs(session) if job.agent_id == agent_id]
+
+    return [job for job in jobs if is_job_running(job)]
+
+
+def read_looks(session: str, /) -> dict:
+
+    path = get_jobs_path(session, "looks")
+    looks = json.loads(path.read_text()) if path.exists() else {}
+
+    return looks if isinstance(looks, dict) else {}
+
+
+def get_look_wait_seconds(session: str, task_id: str, window_seconds: int, /) -> int:
+
+    last = read_looks(session).get(task_id)
+    if not isinstance(last, (int, float)):
+        return 0
+
+    return max(0, int(last + window_seconds - time.time()) + 1)
+
+
+def mark_looked(session: str, task_ids: list[str], /) -> None:
+
+    looks = read_looks(session)
+    looks.update({task_id: time.time() for task_id in task_ids})
+    write_atomic(get_jobs_path(session, "looks"), json.dumps(looks))

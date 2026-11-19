@@ -67,8 +67,10 @@ call needs the previous result, and run a long check in the background.
 - A job you start yourself (a build, a test run, a long check) runs with `run_in_background: true`, its output to a file
   under `/tmp/harness/<project>/`. End the turn with no further tool call: a task notification wakes you, main session
   or sub-agent, about 3 s after it exits. Then read the file's last lines. It needs no polling loop.
-- Claude Code moves any foreground Bash call to the background after 180 s, so a foreground wait loop never reaches its
+- Claude Code moves a foreground Bash call to the background at the call's own timeout (120 s by default), so a foreground wait loop never reaches its
   bound; you are cut and wait again. Never `sleep N; <read>`.
+- While a background job of yours still runs, the guard refuses a foreground call that only waits (`echo`, `sleep`, `pgrep`,
+  `ps`, a wait loop, `tail --pid`) and a second read of its output file within 5 minutes: end the turn instead.
 - A wait loop is only for a condition that is not a command you started, and it goes out with `run_in_background: true`:
   `timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'`. A service coming up:
   `curl --retry 30 --retry-connrefused --retry-delay 1 -sf URL`. A process: `timeout 5 tail --pid=PID -f /dev/null`.

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
@@ -114,6 +115,8 @@ class Case(NamedTuple):
     is_silent: bool = False
     start: str = ""
     max_seconds: float = 0.0
+    holds: tuple[str, ...] = ()
+    env: tuple[tuple[str, str], ...] = ()
 
 
 
@@ -990,6 +993,103 @@ SPILL_CASES = (
     spill_read("spill read: a normal path is untouched", {"file_path": "/srv/u/app/main.py"}, None),
     spill_read("spill read: a similar folder name is untouched", {"file_path": "/srv/u/app/tool-results-old/a.txt"}, None),
     spill_read("spill read: a file named tool-results is untouched", {"file_path": "/srv/u/app/tool-results"}, None),
+)
+
+
+TASK_OUTPUT = ROOT + "/project/tasks/x.output"
+TASK_HOLD = "tasks/x.output"
+JOBS_FILE = f"data/waits/{SESSION}.jobs"
+LOOKS_FILE = f"data/waits/{SESSION}.looks"
+MAIN_JOB = ((JOBS_FILE, f"x\t{TASK_OUTPUT}\t\t@PID@\t@START@\n"),)
+AGENT_JOB = ((JOBS_FILE, f"x\t{TASK_OUTPUT}\tagent-case1\t@PID@\t@START@\n"),)
+GONE_SHELL_JOB = ((JOBS_FILE, f"x\t{TASK_OUTPUT}\t\t99999999\t1\n"),)
+REUSED_PID_JOB = ((JOBS_FILE, f"x\t{TASK_OUTPUT}\t\t@PID@\t1\n"),)
+MALFORMED_THEN_JOB = ((JOBS_FILE, f"garbage\nx\t{TASK_OUTPUT}\t\tnot-a-pid\t1\nx\t{TASK_OUTPUT}\t\t@PID@\t@START@\n"),)
+MALFORMED_JOB = ((JOBS_FILE, f"garbage\nx\t{TASK_OUTPUT}\t\tnot-a-pid\t1\n"),)
+LOOKS_LIST = ((LOOKS_FILE, "[]"),)
+LOOKED_NOW = ((LOOKS_FILE, '{"x": 99999999999}'),)
+LOOKED_LONG_AGO = ((LOOKS_FILE, '{"x": 1}'),)
+NO_PROC = (("HARNESS_PROC_FOLDER", "/nonexistent-proc"),)
+
+
+def waiting(name: str, tool_input: dict, blocks: bool, text: str = "", /, *, tool: str = "Bash", files: tuple[tuple[str, str], ...] = MAIN_JOB, holds: tuple[str, ...] = (TASK_HOLD,), event: dict | None = None, **options: object) -> Case:
+    call = {"session_id": SESSION, "tool_name": tool, "tool_input": tool_input, **(event or {})}
+
+    return Case(name, ("guard.py",), call, blocks, text, STRICT, files=files, holds=holds, **options)
+
+
+def waits(name: str, command: str, blocks: bool, text: str = "", /, **options: object) -> Case:
+
+    return waiting(name, {"command": command}, blocks, text, **options)
+
+
+def read_output(name: str, blocks: bool, text: str = "", /, **options: object) -> Case:
+
+    return waiting(name, {"file_path": TASK_OUTPUT}, blocks, text, tool="Read", **options)
+
+
+def recorded(name: str, response: dict, /, *, wrote: str = "", not_wrote: str = "", event: dict | None = None, holds: tuple[str, ...] = (TASK_HOLD,)) -> Case:
+    call = {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": "sleep 30", "run_in_background": True}, "tool_response": response, "scratchpad_dir": ROOT + "/project/scratchpad", **(event or {})}
+
+    return Case(name, ("turn.py", "add"), call, False, config={}, holds=holds, wrote=(JOBS_FILE, wrote) if wrote else None, not_wrote=(JOBS_FILE, not_wrote) if not_wrote else None)
+
+
+REFUSED_WAITS = ("echo waiting", "echo stop; true", "true", ":", "date", "sleep 30", "sleep 2m", "sleep 3", "sleep 1; sleep 1", "wait", "wait 3", "pgrep -x node", "pgrep -x node && echo up || echo down", "ps -p 4242 -o etime=", "date '+%H:%M'; ps -o etime= -p 4242", "until [ -f done ]; do sleep 5; done", "until curl -sf http://localhost:5173; do sleep 1; done", "while pgrep -x node; do sleep 2; done", "while true; do python3 poll.py; sleep 60; done", "timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'", "timeout 5 tail --pid=4242 -f /dev/null", "tail --pid 4242 -f /dev/null; git status", "sleep 60; git status", "sleep 6; python3 run.py", "until [ -f done ]; do sleep 5; done; python3 run.py", "until [ -f done ]; do sleep 5; done; tail -n 5 out.log", "cd sub; timeout 590 sh -c 'until grep -q exit out.log; do sleep 3; done'; cat out.log", "while [ ! -f done ]; do sleep 2; done; echo ok", "sleep 1m && cat out.log",)
+PASSED_NEAR_MISSES = ("pkill -x x; sleep 1; python3 run.py", "pgrep node && pkill -x node", "sleep 3; git status", "sleep 5; python3 run.py", "ls", "echo hi > notes.txt", 'echo "$(curl -s localhost:80)"', "echo $HOME", "git status && echo ok", "python3 run.py", "ps aux | rg node", "for i in 1 2 3; do curl -sf http://localhost:5173; sleep 1; done", "while read line; do sleep 1; echo $line; done < list.txt", "while IFS= read -r line; do sleep 0.2; done < list.txt", "while read line; do echo $line; done < list.txt", "for i in 1 2; do sleep 1; done; python3 run.py", "tail -n 5 out.log", "sleep 0.5 && python3 run.py", "make test; echo done",)
+WAIT_CASES = (
+    *(waits(f"wait: {command!r} is refused while a job runs", command, True, "wait: ") for command in REFUSED_WAITS),
+    *(waits(f"wait: {command!r} passes while a job runs", command, False) for command in PASSED_NEAR_MISSES),
+    waits("wait: a refusal tells to end the turn and where to wait instead", "echo waiting", True, "End the turn now with no tool call"),
+    waits("wait: a refusal names the run_in_background form", "sleep 30", True, "run_in_background: true"),
+    waits("wait: a refusal names the job", "sleep 30", True, "job x"),
+    waits("wait: a backgrounded sleep passes", "sleep 30", False, event={"tool_input": {"command": "sleep 30", "run_in_background": True}}),
+    waits("wait: a backgrounded until loop with a trailing read passes", "until [ -f done ]; do sleep 5; done; tail out.log", False, event={"tool_input": {"command": "until [ -f done ]; do sleep 5; done; tail out.log", "run_in_background": True}}),
+    waits("wait: a backgrounded curl loop passes", "for i in 1 2 3; do curl -sf http://localhost:5173; sleep 1; done", False, event={"tool_input": {"command": "for i in 1 2 3; do curl -sf http://localhost:5173; sleep 1; done", "run_in_background": True}}),
+    waits("wait: a backgrounded wait loop passes", "until [ -f done ]; do sleep 5; done", False, event={"tool_input": {"command": "until [ -f done ]; do sleep 5; done", "run_in_background": True}}),
+    waits("wait: a wait with no job recorded passes", "echo waiting", False, files=(), holds=()),
+    waits("wait: a recorded job that no process holds passes", "echo waiting", False, holds=()),
+    waits("wait: a recorded job that has exited passes a sleep", "sleep 30", False, holds=()),
+    waits("wait: a process holding another file is no pending job", "echo waiting", False, holds=("tasks/other.output",)),
+    waits("wait: no /proc lets a wait pass", "echo waiting", False, env=NO_PROC),
+    waits("wait: a sub-agent is refused for its own job", "echo waiting", True, "wait: ", files=AGENT_JOB, event={"agent_id": "agent-case1"}),
+    waits("wait: a sub-agent is not refused for the main session's job", "echo waiting", False, event={"agent_id": "agent-case1"}),
+    waits("wait: the main session is not refused for a sub-agent's job", "echo waiting", False, files=AGENT_JOB),
+    waits("wait: another session's job does not count", "echo waiting", False, event={"session_id": "other-session"}),
+    read_output("wait: the first look at a running job's output passes", False, wrote=(LOOKS_FILE, '"x"')),
+    read_output("wait: a second look inside the window is refused", True, "next look is allowed in", files=(*MAIN_JOB, *LOOKED_NOW)),
+    read_output("wait: the refusal names the rule and the job", True, "wait: you already looked at the output of job x", files=(*MAIN_JOB, *LOOKED_NOW)),
+    read_output("wait: a look older than five minutes passes", False, files=(*MAIN_JOB, *LOOKED_LONG_AGO)),
+    read_output("wait: a read after the job exited passes", False, files=(*MAIN_JOB, *LOOKED_NOW), holds=()),
+    read_output("wait: a read with no /proc passes", False, files=(*MAIN_JOB, *LOOKED_NOW), env=NO_PROC),
+    waiting("wait: a read of another file passes", {"file_path": ROOT + "/project/a.py"}, False, tool="Read", files=(*MAIN_JOB, *LOOKED_NOW)),
+    waiting("wait: a read of a job that is not recorded passes", {"file_path": ROOT + "/project/tasks/y.output"}, False, tool="Read", files=(*MAIN_JOB, *LOOKED_NOW)),
+    waits(f"wait: a cat of the output the first time passes", f"cat {TASK_OUTPUT}", False),
+    waits(f"wait: a cat of the output inside the window is refused", f"cat {TASK_OUTPUT}", True, "next look is allowed in", files=(*MAIN_JOB, *LOOKED_NOW)),
+    waits(f"wait: a tail of the output inside the window is refused", f"tail -n 5 {TASK_OUTPUT}", True, "wait: ", files=(*MAIN_JOB, *LOOKED_NOW)),
+    waits(f"wait: a cat of the output after the job exited passes", f"cat {TASK_OUTPUT}", False, files=(*MAIN_JOB, *LOOKED_NOW), holds=()),
+    waits(f"wait: a backgrounded cat of the output inside the window passes", f"cat {TASK_OUTPUT}", False, files=(*MAIN_JOB, *LOOKED_NOW), event={"tool_input": {"command": f"cat {TASK_OUTPUT}", "run_in_background": True}}),
+    Case("wait: the second look is refused after the first one was let through", ("guard.py",), {"session_id": SESSION, "tool_name": "Read", "tool_input": {"file_path": TASK_OUTPUT}}, True, "next look is allowed in", STRICT, files=MAIN_JOB, holds=(TASK_HOLD,), before=((("guard.py",), {"session_id": SESSION, "tool_name": "Read", "tool_input": {"file_path": TASK_OUTPUT}}),)),
+    waits("wait: a refusal of a wait followed by work says to put the work in its own call", "sleep 60; git status", True, "its own call"),
+    waits("wait: a refusal of a sleeping loop followed by work says to put the work in its own call", "until [ -f done ]; do sleep 5; done; tail out.log", True, "its own call"),
+    waits("wait: a refusal of a bare wait does not talk of work after it", "echo waiting", True, lacks="its own call"),
+    waits("wait: the recorded shell gone while another process holds the file is not pending", "echo waiting", False, files=GONE_SHELL_JOB),
+    waits("wait: a reused pid with another start time is not pending", "echo waiting", False, files=REUSED_PID_JOB),
+    read_output("wait: a read with the recorded shell gone passes inside the window", False, files=(*GONE_SHELL_JOB, *LOOKED_NOW)),
+    waits("wait: a jobs file with a malformed line still finds the valid job", "echo waiting", True, "wait: ", files=MALFORMED_THEN_JOB),
+    waits("wait: a jobs file with only malformed lines passes", "echo waiting", False, files=MALFORMED_JOB),
+    read_output("wait: a looks file holding a list passes", False, files=(*MAIN_JOB, *LOOKS_LIST)),
+    waits("wait: a looks file holding a list does not stop the later rules", f"cat {TASK_OUTPUT}; rm x.txt", True, "Agents delete nothing", files=(*MAIN_JOB, *LOOKS_LIST)),
+    Case("wait: a look refused by another rule does not use up the window", ("guard.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": f"cat {TASK_OUTPUT}"}}, False, config=STRICT, files=MAIN_JOB, holds=(TASK_HOLD,), before=((("guard.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": f"cat {TASK_OUTPUT}; rm x.txt"}}),)),
+    Case("wait: a look let through uses up the window", ("guard.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": f"cat {TASK_OUTPUT}"}}, True, "next look is allowed in", STRICT, files=MAIN_JOB, holds=(TASK_HOLD,), before=((("guard.py",), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": f"cat {TASK_OUTPUT}"}}),)),
+    recorded("wait: a background start with no process holding its output is not recorded", {"backgroundTaskId": "x"}, not_wrote="x\t", holds=()),
+    recorded("wait: a record keeps the pid and the start time of the holder", {"backgroundTaskId": "x"}, wrote="\t"),
+    Case("wait: a second record is appended and the first stays", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": "sleep 30", "run_in_background": True}, "tool_response": {"backgroundTaskId": "y"}, "scratchpad_dir": ROOT + "/project/scratchpad"}, False, config={}, files=MAIN_JOB, holds=(TASK_HOLD, "tasks/y.output"), wrote=(JOBS_FILE, "x\t")),
+    Case("wait: a second record is appended", ("turn.py", "add"), {"session_id": SESSION, "tool_name": "Bash", "tool_input": {"command": "sleep 30", "run_in_background": True}, "tool_response": {"backgroundTaskId": "y"}, "scratchpad_dir": ROOT + "/project/scratchpad"}, False, config={}, files=MAIN_JOB, holds=(TASK_HOLD, "tasks/y.output"), wrote=(JOBS_FILE, "y\t")),
+    recorded("wait: a background start is recorded with its output path", {"backgroundTaskId": "x"}, wrote="x\t"),
+    recorded("wait: a sub-agent's background start is recorded with its agent", {"backgroundTaskId": "x"}, wrote="/tasks/x.output\tagent-case1", event={"agent_id": "agent-case1"}),
+    recorded("wait: a call moved to the background at its timeout is recorded", {"stdout": "", "stderr": "", "interrupted": False, "isImage": False, "noOutputExpected": False, "backgroundTaskId": "x", "timedOutAfterMs": 120000}, wrote="x\t", event={"tool_input": {"command": "python3 -c 'import time; time.sleep(400)'"}}),
+    recorded("wait: a foreground result records nothing", {"stdout": "", "stderr": ""}, not_wrote="x\t"),
+    recorded("wait: an id with a path separator records nothing", {"backgroundTaskId": "../x"}, not_wrote="x"),
 )
 
 
@@ -2663,8 +2763,11 @@ def run_hook(hooks: Path, script: tuple[str, ...], event: dict, environment: dic
 def run_case(case: Case, hooks: Path, /) -> str:
 
     WORK.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=WORK) as directory:
+    with tempfile.TemporaryDirectory(dir=WORK) as directory, ExitStack() as stack:
         root = Path(directory).resolve()
+        holders = start_holders(root, case.holds)
+        stack.callback(stop_holders, holders)
+        holder_tokens = get_holder_tokens(holders)
         project = root / "project"
         (project / "__scratch__" / "t").mkdir(parents=True)
         (root / "data").mkdir()
@@ -2675,7 +2778,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
             path = resolve(root, name)
             path.parent.mkdir(parents=True, exist_ok=True)
             twelve_minutes_ago = (datetime.now(UTC) - timedelta(minutes=12, seconds=30)).isoformat(timespec="seconds")
-            path.write_text(text.replace(ROOT, str(root)).replace(TWELVE_MINUTES_AGO, twelve_minutes_ago))
+            path.write_text(fill_holder_tokens(text.replace(ROOT, str(root)).replace(TWELVE_MINUTES_AGO, twelve_minutes_ago), holder_tokens))
         for command in case.git:
             subprocess.run(command, shell=True, cwd=project, check=True, capture_output=True, env={**os.environ, "HOME": str(root), **GIT_IDENTITY})
         for name, target in case.links:
@@ -2693,32 +2796,78 @@ def run_case(case: Case, hooks: Path, /) -> str:
         environment["SHELL"] = case.shell
         if case.project_dir:
             environment["CLAUDE_PROJECT_DIR"] = str(root / case.project_dir)
-        for script, event in case.before:
-            run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
-        if not (hooks / case.script[0]).is_file():
-            return f"the hook is missing: {case.script[0]}"
-        started = time.monotonic()
-        run = run_hook(hooks, case.script, {"cwd": str(root / case.cwd), **case.event}, environment, root, folder=root / case.start if case.start else None)
-        elapsed = time.monotonic() - started
-        message = run.stderr + run.stdout
-        if case.max_seconds and elapsed > case.max_seconds:
-            return f"the hook took {elapsed:.2f} s, over the {case.max_seconds} s bound"
-        if case.is_exit_one:
-            if run.returncode != 1:
-                return f"expected exit 1, got {run.returncode}"
-        elif run.returncode not in (0, 2):
-            return f"the hook crashed, exit {run.returncode}: {message.strip()[-300:]!r}"
-        elif is_blocked(run) != case.blocks:
-            return f"expected blocks={case.blocks}, got {is_blocked(run)}: {message.strip()[:200]!r}"
-        if case.is_silent and (run.returncode != 0 or run.stdout or run.stderr):
-            return f"expected exit 0 and no output, got {run.returncode}: {message.strip()[:200]!r}"
-        text, lacks = case.text.replace(ROOT, str(root)), case.lacks.replace(ROOT, str(root))
-        if text and text not in message:
-            return f"the message lacks {text!r}: {message.strip()[:200]!r}"
-        if lacks and lacks in message:
-            return f"the message holds {lacks!r}: {message.strip()[:200]!r}"
+        environment.update(dict(case.env))
+        return run_prepared_case(case, hooks, root, environment)
 
-        return check_output(case, run, root) or check_files(case, root)
+
+def stop_holders(holders: list[subprocess.Popen], /) -> None:
+
+    for holder in holders:
+        holder.kill()
+        holder.wait()
+
+
+def get_holder_start(pid: int, /) -> int:
+
+    return int(Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()[19])
+
+
+def get_holder_tokens(holders: list[subprocess.Popen], /) -> dict[str, str]:
+
+    if not holders:
+        return {}
+
+    return {"@PID@": str(holders[0].pid), "@START@": str(get_holder_start(holders[0].pid))}
+
+
+def fill_holder_tokens(text: str, tokens: dict[str, str], /) -> str:
+
+    for token, value in tokens.items():
+        text = text.replace(token, value)
+
+    return text
+
+
+def start_holders(root: Path, names: tuple[str, ...], /) -> list[subprocess.Popen]:
+
+    holders = []
+    for name in names:
+        path = resolve(root, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as output:
+            holders.append(subprocess.Popen(["sleep", "60"], stdout=output, stderr=output))
+
+    return holders
+
+
+def run_prepared_case(case: Case, hooks: Path, root: Path, environment: dict[str, str], /) -> str:
+
+    for script, event in case.before:
+        run_hook(hooks, script, {"cwd": str(root / case.cwd), **event}, environment, root)
+    if not (hooks / case.script[0]).is_file():
+        return f"the hook is missing: {case.script[0]}"
+    started = time.monotonic()
+    run = run_hook(hooks, case.script, {"cwd": str(root / case.cwd), **case.event}, environment, root, folder=root / case.start if case.start else None)
+    elapsed = time.monotonic() - started
+    message = run.stderr + run.stdout
+    if case.max_seconds and elapsed > case.max_seconds:
+        return f"the hook took {elapsed:.2f} s, over the {case.max_seconds} s bound"
+    if case.is_exit_one:
+        if run.returncode != 1:
+            return f"expected exit 1, got {run.returncode}"
+    elif run.returncode not in (0, 2):
+        return f"the hook crashed, exit {run.returncode}: {message.strip()[-300:]!r}"
+    elif is_blocked(run) != case.blocks:
+        return f"expected blocks={case.blocks}, got {is_blocked(run)}: {message.strip()[:200]!r}"
+    if case.is_silent and (run.returncode != 0 or run.stdout or run.stderr):
+        return f"expected exit 0 and no output, got {run.returncode}: {message.strip()[:200]!r}"
+    text, lacks = case.text.replace(ROOT, str(root)), case.lacks.replace(ROOT, str(root))
+    if text and text not in message:
+        return f"the message lacks {text!r}: {message.strip()[:200]!r}"
+    if lacks and lacks in message:
+        return f"the message holds {lacks!r}: {message.strip()[:200]!r}"
+
+    return check_output(case, run, root) or check_files(case, root)
 
 
 COMMIT_COMMAND = f"git commit -m '{GOOD_MESSAGE}'"
@@ -2774,7 +2923,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *WAIT_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

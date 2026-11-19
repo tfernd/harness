@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from common import EDIT_TOOLS, data_folder, find_project, get_unfenced_lines, write_atomic
+from common import EDIT_TOOLS, data_folder, find_project, get_unfenced_lines, record_background_job, write_atomic
 from skill_gate import get_written_project_files
 
 MIN_CALLS = 3
@@ -239,6 +239,10 @@ def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     calls_path, blocks_path = get_state_paths(event.get("session_id") or "unknown")
     if mode == "add":
+        try:
+            record_background_job(event)
+        except Exception:
+            pass
         if not event.get("agent_id"):
             line = get_call_line(event, root, event.get("cwd") or os.getcwd())
             if line:
