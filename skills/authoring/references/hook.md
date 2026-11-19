@@ -13,6 +13,8 @@ fails open.
 | `Stop`, `SubagentStop` | Hold the stop: print `{"decision": "block", "reason": ...}`; the agent must act, then stop again |
 | `SessionStart`, `SubagentStart` | Add context at the start |
 
+A PostToolUse payload for a Bash call that runs in the background, or was moved there at its timeout, carries `tool_response.backgroundTaskId`; every payload carries `session_id` and `scratchpad_dir`, and a sub-agent's also `agent_id`.
+
 The hooks of a plugin sit in `hooks/hooks.json`: one entry per command, each with a `matcher` (a tool name or
 `A|B|C`; no matcher means every call) and a `timeout`. Read the event as JSON on stdin; use the fields you need.
 
