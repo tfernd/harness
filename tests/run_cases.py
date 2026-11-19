@@ -1800,7 +1800,7 @@ PROGRESS_FILE = "data/progress/case-session.jsonl"
 PROGRESS_OFFSET = "data/progress/case-session.offset"
 
 
-TWELVE_MINUTES_AGO = (datetime.now(UTC) - timedelta(minutes=12, seconds=30)).isoformat(timespec="seconds")
+TWELVE_MINUTES_AGO = "__TWELVE_MINUTES_AGO__"
 
 
 def progress_line(agent: str, calls: int, limit: int | None, tool: str, summary: str, /, *, role: str = "harness:worker", description: str = "", started: str = "") -> str:
@@ -2647,7 +2647,8 @@ def run_case(case: Case, hooks: Path, /) -> str:
         for name, text in case.files:
             path = resolve(root, name)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text.replace(ROOT, str(root)))
+            twelve_minutes_ago = (datetime.now(UTC) - timedelta(minutes=12, seconds=30)).isoformat(timespec="seconds")
+            path.write_text(text.replace(ROOT, str(root)).replace(TWELVE_MINUTES_AGO, twelve_minutes_ago))
         for command in case.git:
             subprocess.run(command, shell=True, cwd=project, check=True, capture_output=True, env={**os.environ, "HOME": str(root), **GIT_IDENTITY})
         for name, target in case.links:
