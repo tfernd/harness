@@ -34,7 +34,7 @@ you ── ask ──> main session (follows the orchestrator skill)
                  │  plans, briefs, checks, commits; edits no product file
                  │  every change goes to a worker
                  ▼
-        agents: planner · scout · researcher · worker · designer · reviewer
+        agents: planner · sage · scout · researcher · worker · designer · reviewer
                  │  each ends with a REPORT
 
  at every start     context: orchestrator pointer (main session), tool-habits
@@ -94,7 +94,7 @@ commands to find false refusals.
 - **It is not a sandbox.** The guard reads command text. A script that deletes files from inside Python, or a command
   built from variables it cannot see, gets through.
 - **It fails open.** A bug in a hook, or a broken owner file, lets the call run. A hook never blocks on its own error.
-- **Read-only agents still have Bash.** `scout`, `reviewer` and the others have no Edit or Write tool, but a shell command
+- **Read-only agents still have Bash.** `scout`, `reviewer`, `sage` and the others have no Edit or Write tool, but a shell command
   can write; only the guard applies to it.
 - **Skills are mostly advice.** `skill_gate` reads a script's text, so a path built at run time gets past it. `tool-habits` is injected, but nothing checks that it is followed.
 - **Reports are checked for form only** (the sections, in order). Whether a claim or the conclusion is right is not
@@ -107,6 +107,7 @@ commands to find false refusals.
 | Kind | Agent | Model | Edits files | Job |
 |---|---|---|---|---|
 | Thinker | `planner` | sonnet | no | Turns a request into options, one recommendation, an order and judges |
+| Thinker | `sage` | fable | no | Reads a whole project or area and returns the few findings that matter most; costly, used rarely |
 | Finder | `scout` | haiku | no | Settles one fact with `path:line` evidence |
 | Finder | `researcher` | sonnet | no | Answers one question from outside sources, each claim with its URL |
 | Doer | `worker` | sonnet | yes | Makes one change in the files its brief names, with its tests |

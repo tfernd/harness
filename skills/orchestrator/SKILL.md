@@ -49,6 +49,7 @@ before any worker starts.
 | `worker` | sonnet | one change in the files its brief names, with its tests |
 | `designer` | sonnet | pages, layouts, diagrams and mock-ups; distinct variants when asked (`harness:design`) |
 | `reviewer` | sonnet | read-only; reads code against its spec (`harness:review`), never the author |
+| `sage` | fable | read-only; a deep look at a project or area for the few findings that matter most; costly, so only before a big change, a release or "what is wrong here?" |
 
 Spawn a role by name. A generic agent (`general-purpose`, `Explore`, `Plan`, no type) has no role skills, and no hook
 checks its report.

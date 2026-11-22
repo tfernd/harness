@@ -27,7 +27,7 @@ from common import (
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
-READ_ONLY_ROLES = frozenset({"scout", "planner", "researcher", "reviewer"})
+READ_ONLY_ROLES = frozenset({"scout", "planner", "researcher", "reviewer", "sage"})
 MAIN_SESSION_SECTIONS = frozenset({"Git"})
 WRITER_SECTIONS = frozenset({"Edit, then one batch", "Clean"})
 SECTION_START = re.compile(r"^(?=## )", re.M)

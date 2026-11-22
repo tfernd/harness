@@ -262,7 +262,7 @@ class PortNote(NamedTuple):
 
 
 AGENT_KINDS = (
-    Kind("Thinkers", "Work out what to do; write no files.", ("planner",)),
+    Kind("Thinkers", "Work out what to do; write no files.", ("planner", "sage")),
     Kind("Finders", "Look things up and answer with sources.", ("scout", "researcher")),
     Kind("Doers", "Change the files their brief names.", ("worker", "designer")),
     Kind("Checkers", "Test someone else's work.", ("reviewer",)),

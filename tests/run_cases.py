@@ -61,8 +61,8 @@ REPORT_SECTIONS = (
 )
 REQUIRED_HEADINGS = ("Answer", "Not proven", "Verdict")
 OPTIONAL_HEADINGS = ("Problems", "Next time", "Open", "Feedback")
-AGENT_TYPES = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "Explore", "custom")
-HARNESS_AGENTS = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "harness:researcher")
+AGENT_TYPES = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "harness:sage", "Explore", "custom")
+HARNESS_AGENTS = ("harness:worker", "harness:scout", "harness:planner", "harness:reviewer", "harness:designer", "harness:researcher", "harness:sage")
 
 
 def build_report(sections: list[tuple[str, str]], /) -> str:
@@ -1979,6 +1979,7 @@ STALE_CASES = (
 CONTEXT_CASES = (
     context("a worker start carries the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Edit, then one batch"),
     context("a scout start leaves out the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "## Read", lacks="## Edit, then one batch"),
+    context("a sage start leaves out the clean and git habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:sage"}, "## When a call is refused", lacks="## Clean"),
     context("a reviewer start leaves out the clean and git habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:reviewer"}, "## When a call is refused", lacks="## Clean"),
     context("a helper start keeps the editing habits and leaves out the git one", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## Clean", lacks="## Git"),
     context("a worker start leaves out the git habit", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Clean", lacks="## Git"),
