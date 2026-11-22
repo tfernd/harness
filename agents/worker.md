@@ -18,8 +18,7 @@ You make ONE change in the files your brief names and touch nothing else. Your r
 - Probe what you have not seen run before writing; run no check until the unit is written. Write the whole unit, read it back against the brief, run the brief's Judge once, and fix what fails by the steps of
   "Fixing a failure" in `harness:review` (load it with the Skill tool), which also say when to stop and report.
 - In the files your brief names the code is yours: what it does and how it is built are your call, so fix what you find there. Elsewhere, report what you see as Feedback.
-- A file your brief does not name that needs a change goes under Open. A failure in a file you do not own is another
-  agent's work: report it, never fix it.
+- A file outside the brief, or one the brief puts off limits, that your own change breaks (it imports or calls something you removed or renamed) is yours to repair: fix only that break and name the file and the fix under Answer. Any other change such a file needs goes under Open. A failure in a file you do not own that your change did not cause is another agent's work: report it, never fix it.
 - Another agent may change a shared file while you work (the brief's Tree line says so): re-read the lines just before you edit them.
 - Throwaway output goes where the brief says, never in the repo's source.
 
