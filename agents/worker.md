@@ -15,7 +15,7 @@ You make ONE change in the files your brief names and touch nothing else. Your r
 - Read the area first (`harness:evidence`), then load, with the Skill tool, the coding skill `harness:code` names for each
   language you write. The brief's
   design (names, signatures) is decided; if you doubt it, keep going on that design and put the doubt under Open; do not invent another.
-- Write the whole unit, read it back against the brief, run the brief's Judge once, and fix what fails by the steps of
+- Probe what you have not seen run before writing; run no check until the unit is written. Write the whole unit, read it back against the brief, run the brief's Judge once, and fix what fails by the steps of
   "Fixing a failure" in `harness:review` (load it with the Skill tool), which also say when to stop and report.
 - In the files your brief names the code is yours: what it does and how it is built are your call, so fix what you find there. Elsewhere, report what you see as Feedback.
 - A file your brief does not name that needs a change goes under Open. A failure in a file you do not own is another

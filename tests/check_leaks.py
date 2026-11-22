@@ -35,6 +35,18 @@ def private_words() -> list[str]:
     return [w for w in lines if w and not w.startswith("#")]
 
 
+def folder_allowances() -> dict[str, list[str]]:
+    path = ROOT / "tests" / "leak_allow.txt"
+    if not path.is_file():
+        return {}
+    allowances: dict[str, list[str]] = {}
+    for line in path.read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            prefix, _, words = line.partition(":")
+            allowances[prefix.strip()] = words.lower().split()
+    return allowances
+
+
 def files() -> list[str]:
     out = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
@@ -44,7 +56,8 @@ def files() -> list[str]:
 
 
 def main() -> int:
-    words = private_words()
+    all_words = private_words()
+    allowances = folder_allowances()
     bad = 0
     for rel in files():
         path = ROOT / rel
@@ -54,6 +67,8 @@ def main() -> int:
             text = path.read_text()
         except (UnicodeDecodeError, OSError):
             continue
+        allowed = {w for prefix, ws in allowances.items() if rel.startswith(prefix) for w in ws}
+        words = [w for w in all_words if w not in allowed]
         for n, line in enumerate(text.splitlines(), 1):
             low = line.lower().replace(REPO_PATH, "").replace(PAGES_URL, "")
             if rel == OWNER_FILE:

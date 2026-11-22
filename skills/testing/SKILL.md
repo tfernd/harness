@@ -27,6 +27,7 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
   test that runs the real value and fails when the value breaks a property. One no test can defend is listed as open work in the plan.
 - **Tolerances are measured:** a bound is measured at the test's own sizes and seeds before it is asserted, and its
   constant says what it counts and its margin. Never loosen one to make a run pass.
+- Property and metamorphic tests for tensor code: `harness:code-tensor`.
 - **Deterministic:** seeded inputs, no clock, no network, no order dependence, no test that reads another's output.
 
 ## Cheap and true
@@ -41,7 +42,7 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
 - A test of a script that reads its environment clears those variables first, since the runner may set them.
 - A run that cannot happen here (a missing tool or device) is listed under Not proven with the command for the owner,
   never replaced by a looser check.
-- A passing run counts only for the code it ran. After a change, rerun; a run from before it is not evidence.
+- A passing run counts only for the code it ran: the last batch run after the last edit is the evidence, and a run from before it is not.
 - More tips for writing a judge: `references/judge-tips.md`.
 
 ## Where judges come from

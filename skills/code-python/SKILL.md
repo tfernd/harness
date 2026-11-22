@@ -31,7 +31,7 @@ No comments or docstrings: `harness:code`. Tests: `harness:testing`.
 - No default for a value the caller must decide (a path, a unit, a size).
 - A small closed set is a `Literal`, with the tuple of all its values beside it
   (`Mode = Literal["fast", "exact"]` and `MODES: tuple[Mode, ...] = ("fast", "exact")`). A size that is not a finite set is
-  an `int`, checked once where it enters.
+  an `int`, checked once where it enters. Tensor projects: `harness:code-tensor`.
 - No `typing.cast` and no checker ignore comment (`# type: ignore`, `# noqa`, `# pyright:`). Narrow with
   `isinstance`, `assert`, `match` or a lookup table typed to the `Literal`; if a third-party stub forces one, narrow
   with `isinstance` or `assert` and say why in the report.
@@ -72,7 +72,7 @@ No comments or docstrings: `harness:code`. Tests: `harness:testing`.
 targets say; a project without a config starts from `references/pyproject-ruff.md`, which holds the line length, the
 rule set and the complexity limit.
 
-The plugin's lint hook (`hooks/lint.py`, rules `comment`, `docstring`, `split`, `untyped`) notes each new finding after
+The plugin's lint hook (`hooks/lint.py`, rules `comment`, `docstring`, `split`, `untyped`, `tensor`, `tolerance`) notes each new finding after
 an edit of a `.py` file and refuses a commit that adds one; `bin/harness-lint [--all] [paths...]` runs it by hand. It
 reports only findings new against `HEAD`. It flags comments, docstrings, a statement on more than one line and a missing
 annotation; a table (an assignment of a list, tuple, set or dict with each element on its own single line) is not a

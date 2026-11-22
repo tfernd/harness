@@ -44,6 +44,12 @@ RETRY_MIN_SIMILARITY = 0.9
 SIGNATURE_CHARS = 600
 MAX_LINES_PER_SECTION = 10
 DEFAULT_DAYS = 7
+EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+SCRATCH_PARTS = ("/tmp/", "/.local/state/", "/.claude/", "/.cache/")
+BASH_WRITE_PATTERN = re.compile(r"write_text\(|\.write\(|\bsed\s+-i|\bperl\s+-pi|\bapply_patch\b|\bgit\s+apply\b|>\s*[^\s&|<>]+\s*<<|\btee\s+[^\s|]+\s*<<")
+HEREDOC_PATTERN = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n.*?\n\s*\1\b", re.S)
+CHECK_PATTERN = re.compile(r"(?:^|&&|\|\||;|\n|\(|\bthen\b|\bdo\b)\s*(?:(?:uv\s+run\s+(?:--\S+\s+)*|uvx\s+|npx\s+|python3?\s+-m\s+)*)(?:pytest|make\s+(?:-\S+\s+)*(?:test|check|lint|types?|typecheck|band|cases)|ruff\s+check|ty\s+check|mypy|pyright|tsc|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|lint|check|typecheck)|cargo\s+(?:test|check|clippy)|go\s+(?:test|vet)|\S*(?:run_cases|check_skills|check_leaks)\.py|claude\s+plugin\s+(?:validate|test))\b")
+RHYTHM_MANY_CHECKS = 4
 
 
 class Refusal(NamedTuple):
@@ -61,6 +67,14 @@ class Scan(NamedTuple):
     sendbacks: list[tuple[str, str, str]]
     stop_blocks: list[str]
     versions: dict[str, set[str]]
+
+
+class Rhythm(NamedTuple):
+    is_sub_agent: bool
+    num_edits: int
+    num_checks: int
+    num_checks_after_few_edits: int
+    num_checks_with_edit_in_call: int
 
 
 class ReportNotes(NamedTuple):
@@ -255,6 +269,68 @@ def scan_transcript(path: Path, cutoff: datetime, /) -> Scan:
     return Scan(found, sendbacks, stop_blocks, versions)
 
 
+def is_project_edit(name: str, tool_input: dict, /) -> bool:
+    if name in EDIT_TOOLS:
+        path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        return bool(path) and not any(part in path for part in SCRATCH_PARTS)
+    if name != "Bash":
+        return False
+    command = str(tool_input.get("command") or "")
+    if not BASH_WRITE_PATTERN.search(command):
+        return False
+    return "/tmp/" not in command
+
+
+def is_check_command(name: str, tool_input: dict, /) -> bool:
+    if name != "Bash" or tool_input.get("run_in_background"):
+        return False
+    bare = HEREDOC_PATTERN.sub("\n", str(tool_input.get("command") or ""))
+    return CHECK_PATTERN.search(bare) is not None
+
+
+def scan_rhythm(path: Path, cutoff: datetime, /) -> Rhythm:
+    is_sub = "subagents" in path.parts
+    num_edits = num_checks = num_few = num_same_call = 0
+    edits_since_check = 0
+    for entry in read_entries(path):
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if entry.get("type") != "assistant" or not isinstance(content, list) or not is_in_window(entry, cutoff):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name = str(block.get("name"))
+            tool_input = block.get("input") if isinstance(block.get("input"), dict) else {}
+            is_edit = is_project_edit(name, tool_input)
+            is_check = is_check_command(name, tool_input)
+            num_edits += is_edit
+            edits_since_check += is_edit
+            if is_check:
+                num_checks += 1
+                num_few += edits_since_check <= 1
+                num_same_call += is_edit
+                edits_since_check = 0
+    return Rhythm(is_sub, num_edits, num_checks, num_few, num_same_call)
+
+
+def format_rhythm(rhythms: list[Rhythm], /) -> list[str]:
+    lines = []
+    for label, is_sub in (("main session", False), ("sub-agent", True)):
+        group = [rhythm for rhythm in rhythms if rhythm.is_sub_agent == is_sub]
+        editing = [rhythm for rhythm in group if rhythm.num_edits]
+        edits = sum(rhythm.num_edits for rhythm in group)
+        checks = sum(rhythm.num_checks for rhythm in group)
+        if not checks:
+            lines.append(f"  {label}: {edits} edits, no checks, {len(editing)} editing of {len(group)}")
+            continue
+        few = sum(rhythm.num_checks_after_few_edits for rhythm in group)
+        same = sum(rhythm.num_checks_with_edit_in_call for rhythm in group)
+        many = len([rhythm for rhythm in editing if rhythm.num_checks >= RHYTHM_MANY_CHECKS])
+        lines.append(f"  {label}: {edits} edits, {checks} checks, {edits / checks:.2f} edits per check, {100 * few // checks}% of checks after one or no edits, {100 * same // checks}% in the same call as an edit, {many} of {len(editing)} editing agents with {RHYTHM_MANY_CHECKS} or more checks")
+    return lines
+
+
 def find_transcripts(project_folder: Path, cutoff: datetime, /) -> list[Path]:
     if not project_folder.is_dir():
         return []
@@ -362,11 +438,11 @@ def describe_source(log: list[Refusal], /) -> str:
     return f"refusal log {LOG_NAME} from {first} (older guard refusals and commit-rule refusals from transcripts)"
 
 
-def make_output(project_name: str, days: int, transcripts: list[Path], scans: list[Scan], notes: ReportNotes, installed: str, log: list[Refusal], /) -> list[str]:
+def make_output(project_name: str, days: int, transcripts: list[Path], scans: list[Scan], notes: ReportNotes, installed: str, log: list[Refusal], rhythms: list[Rhythm], /) -> list[str]:
     refusals = merge_log_refusals(log, [refusal for scan in scans for refusal in scan.refusals])
     sendbacks = [sendback for scan in scans for sendback in scan.sendbacks]
     stops = Counter(text for scan in scans for text in scan.stop_blocks)
-    if not (refusals or sendbacks or stops or notes.problems or notes.feedback or notes.num_project_items):
+    if not (refusals or sendbacks or stops or notes.problems or notes.feedback or notes.num_project_items or any(rhythm.num_checks for rhythm in rhythms)):
         return [f"introspect: project {project_name}, last {days} days, {len(transcripts)} transcripts: nothing found"]
     lines = [f"introspect: project {project_name}, last {days} days, {len(transcripts)} transcripts"]
     lines.append(f"== guard and commit refusals: {len(refusals)}")
@@ -387,6 +463,8 @@ def make_output(project_name: str, days: int, transcripts: list[Path], scans: li
     lines.append(f"== plugin feedback from agent reports: {len(notes.feedback)}")
     lines.extend(f"  {line}" for line in notes.feedback[:MAX_LINES_PER_SECTION])
     lines.append(f"== project items (not shown): {notes.num_project_items}")
+    lines.append("== check rhythm (edits and checks, aggregate)")
+    lines.extend(format_rhythm(rhythms))
     lines.append("== plugin version")
     lines.extend(format_versions(scans, installed))
     return lines
@@ -403,10 +481,11 @@ def main() -> int:
     project_dir = arguments.project_dir.resolve()
     transcripts = find_transcripts(arguments.claude_dir / "projects" / make_slug(project_dir), cutoff)
     scans = [scan_transcript(path, cutoff) for path in transcripts]
+    rhythms = [scan_rhythm(path, cutoff) for path in transcripts]
     notes = read_report_notes(arguments.state_dir / project_dir.name / "reports", cutoff)
     log = read_refusal_log(arguments.state_dir / project_dir.name / LOG_NAME, cutoff)
     installed = read_installed_version(arguments.claude_dir)
-    print("\n".join(make_output(project_dir.name, arguments.days, transcripts, scans, notes, installed, log)))
+    print("\n".join(make_output(project_dir.name, arguments.days, transcripts, scans, notes, installed, log, rhythms)))
     return 0
 
 

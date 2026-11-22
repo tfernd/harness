@@ -29,7 +29,7 @@ SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:or
 HABITS_SKILL = Path("skills") / "tool-habits" / "SKILL.md"
 READ_ONLY_ROLES = frozenset({"scout", "planner", "researcher", "reviewer"})
 MAIN_SESSION_SECTIONS = frozenset({"Git"})
-WRITER_SECTIONS = frozenset({"Edit and check in one call", "Clean"})
+WRITER_SECTIONS = frozenset({"Edit, then one batch", "Clean"})
 SECTION_START = re.compile(r"^(?=## )", re.M)
 HABITS_FALLBACK = "Use few tool turns; each one costs the owner time. Load the `harness:tool-habits` skill before shell work."
 OWNERSHIP_TEXT = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."

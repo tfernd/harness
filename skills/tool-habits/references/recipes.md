@@ -23,14 +23,17 @@ print(f"{hits} matches, {min(hits, 40)} shown")
 EOF
 ```
 
-## Independent gates or builds: run all, show only failures, exit non-zero
+## The batch: formatter first, every gate, show only failures
 
-Every gate runs even after one fails; a passing gate prints one line, a failing one its log tail; the last line makes
-the call's exit code honest.
+The default call at the seam of a unit, run once and again after the fixes. The formatter runs on your files only; every
+gate then runs even after one fails; a passing gate prints one line, a failing one its log tail; the last line makes the
+call's exit code honest. Read every failure of the run and fix them together before the second run.
 
 ```bash
 set -o pipefail
 mkdir -p /tmp/harness/<project>/gate && rc=0
+files=(src/a.py src/b.py)
+uvx ruff format "${files[@]}" >"/tmp/harness/<project>/gate/format.log" 2>&1
 for g in lint types test build; do
   if make "$g" >"/tmp/harness/<project>/gate/$g.log" 2>&1; then print -r -- "$g ok"
   else rc=1; print -r -- "$g FAILED"; tail -20 "/tmp/harness/<project>/gate/$g.log"; fi
@@ -38,41 +41,7 @@ done
 (( rc == 0 ))
 ```
 
-Gates that depend on each other (format, then lint, then test) chain with `&&` instead, as in the tool-habits body.
-
-## A long check: keep the log, print the verdict
-
-A check that prints thousands of lines goes to a file, and a slow one runs with `run_in_background: true` (the call is moved to the background at its timeout, 120 s by default, and after 180 s at the latest with a longer timeout, anyway). Make the folder first, then send this call in the background and end the turn with no further tool call: the exit wakes you. Never pipe it through a word filter: a test named "a failed agent ends failed" matches `fail`, and the summary line falls off the end.
-
-```bash
-set -o pipefail
-make check >/tmp/harness/<project>/check/check.log 2>&1; rc=$?
-echo "exit $rc" >>/tmp/harness/<project>/check/check.log
-(( rc == 0 ))
-```
-
-When woken, print `tail -n 5` of the log; when it failed, read the file around the first failure with Read and `offset`, not the whole log. A quick check runs in the foreground with `tail -n 5` of the same file.
-
-## A one-line edit: assert before and after
-
-One exact change is the Edit tool. Several changes, or an edit joined to a check, use a script that asserts each target
-occurs once, as below. `sed -i` is for files under `/tmp/harness/<project>/`: on a project file the guard lets it run
-with a note.
-
-```bash
-set -o pipefail
-python3 - <<'EOF' &&
-from pathlib import Path
-
-path = Path("src/core/shape.ts")
-old = "export interface Span {"
-text = path.read_text()
-assert text.count(old) == 1, old
-path.write_text(text.replace(old, "interface Span {"))
-EOF
-git diff --stat -- src/core/shape.ts &&
-make check 2>&1 | tail -20
-```
+A gate that needs another's output (a build before its test) is the one place to chain with `&&` inside the loop body.
 
 zsh trap: a line that starts with `! grep` after a `&&` on the line before is a parse error. Test a count instead.
 

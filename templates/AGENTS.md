@@ -12,7 +12,7 @@ How every agent works here. What we build and what is open is in <plan file>. Th
 ## 3. Writing code
 - Before touching a file, load the skill for its kind (`harness:code` lists them); a hook hands you its text on your first edit if you have not.
 - Run the project's lint, format and type checks before the report; a failing one goes in it with its exit code.
-- Checks, cited by name: the check gate `<command>` (run once, when the unit is written); the full gate
+- Checks, cited by name: the check gate `<command>` (run once in the unit's batch, when it is written); the full gate
   `<command>`.
 - A bug fix starts with a test that fails for the reported cause (`harness:workflows`).
 - A failure in a file outside the files the brief names is another agent's unfinished work: report it, never fix it.

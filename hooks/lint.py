@@ -26,9 +26,13 @@ from typing import NamedTuple
 
 from common import find_project
 
-RULES = ("comment", "docstring", "split", "untyped")
+RULES = ("comment", "docstring", "split", "untyped", "tensor", "tolerance")
 MAX_LINES = 10
 GIT_TIMEOUT_SECONDS = 5
+TOLERANCE_FUNCTIONS = frozenset({"assert_close", "allclose", "isclose"})
+TOLERANCE_KEYWORDS = frozenset({"rtol", "atol"})
+STANDARD_LIBRARY_MATH_MODULES = frozenset({"math", "cmath"})
+POSITIONAL_TOLERANCE_COUNTS = {"allclose": 4, "isclose": 4}
 SKIPPED_FOLDERS = frozenset({".venv", "node_modules", "site-packages"})
 DIRECTIVE = re.compile(r"(?:type:\s*ignore(?:\[[^\]]*\])?|noqa(?::\s*[A-Za-z]+\d+(?:\s*,\s*[A-Za-z]+\d+)*)?|pyright:\s*(?:ignore|basic|strict|standard)\b.*|ruff:\s*(?:noqa|isort:\s*\w+).*|fmt:\s*(?:off|on|skip)|pragma:\s*no (?:cover|branch).*|mypy:\s*(?:ignore\S*|strict|(?:dis|en)able-error-code.*|[a-z_-]+\s*=.*)|pylint:\s*(?:disable|enable)\b.*|isort:\s*\w+|ty:\s*ignore(?:\[[^\]]*\])?)\s*(?:#.*)?")
 LICENSE_WORDS = ("license", "copyright", "spdx")
@@ -43,6 +47,8 @@ CHANGES = {
     "comment": "delete the comment; put the meaning in a name or a named intermediate",
     "docstring": "delete the docstring; the name says what it does",
     "split": "join it onto one line; name an intermediate if it is hard to read",
+    "tensor": "annotate the tensor with a jaxtyping dtype and axes",
+    "tolerance": "default tolerances; pass rtol and atol measured from the dtype",
 }
 
 
@@ -277,6 +283,79 @@ def find_untyped(tree: ast.Module, /) -> Iterator[tuple[str, int, str]]:
                 yield "untyped", node.lineno, f"annotate {', '.join(names)}"
 
 
+def imports_jaxtyping(tree: ast.Module, /) -> bool:
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None and node.module.split(".")[0] == "jaxtyping":
+            return True
+        if isinstance(node, ast.Import) and any(alias.name.split(".")[0] == "jaxtyping" for alias in node.names):
+            return True
+
+    return False
+
+
+def is_bare_tensor(annotation: ast.expr, /) -> bool:
+
+    if isinstance(annotation, ast.Name):
+        return annotation.id == "Tensor"
+    if isinstance(annotation, ast.Attribute):
+        return annotation.attr == "Tensor" and isinstance(annotation.value, ast.Name) and annotation.value.id == "torch"
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return is_bare_tensor(annotation.left) or is_bare_tensor(annotation.right)
+
+    return False
+
+
+def find_bare_tensors(tree: ast.Module, /) -> Iterator[tuple[str, int, str]]:
+
+    if not imports_jaxtyping(tree):
+        return
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            arguments = node.args
+            every = [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, *([arguments.vararg] if arguments.vararg else []), *([arguments.kwarg] if arguments.kwarg else [])]
+            annotations = [argument.annotation for argument in every if argument.annotation is not None]
+            if node.returns is not None:
+                annotations.append(node.returns)
+            for annotation in annotations:
+                if is_bare_tensor(annotation):
+                    yield "tensor", annotation.lineno, CHANGES["tensor"]
+
+
+def has_explicit_tolerances(call: ast.Call, name: str, is_torch_function: bool, /) -> bool:
+
+    if any(keyword.arg is None for keyword in call.keywords):
+        return True
+    given = {keyword.arg for keyword in call.keywords}
+    if TOLERANCE_KEYWORDS <= given:
+        return True
+    needed = POSITIONAL_TOLERANCE_COUNTS.get(name)
+    if needed is None:
+        return False
+
+    return len(call.args) >= (needed if is_torch_function else needed - 1)
+
+
+def find_default_tolerances(tree: ast.Module, /) -> Iterator[tuple[str, int, str]]:
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if isinstance(function, ast.Attribute) and function.attr in TOLERANCE_FUNCTIONS:
+            if isinstance(function.value, ast.Name) and function.value.id in STANDARD_LIBRARY_MATH_MODULES:
+                continue
+            name = function.attr
+            is_torch_function = isinstance(function.value, ast.Name) and function.value.id == "torch"
+        elif isinstance(function, ast.Name) and function.id == "assert_close":
+            name = function.id
+            is_torch_function = False
+        else:
+            continue
+        if not has_explicit_tolerances(node, name, is_torch_function):
+            yield "tolerance", node.lineno, CHANGES["tolerance"]
+
+
 def find_findings(text: str, style: Style, rules: Sequence[str], /) -> list[Finding] | None:
 
     try:
@@ -290,6 +369,8 @@ def find_findings(text: str, style: Style, rules: Sequence[str], /) -> list[Find
         *(find_docstrings(tree) if "docstring" in wanted else ()),
         *(find_split_statements(tree, scan.interior_lines) if "split" in wanted else ()),
         *(find_untyped(tree) if "untyped" in wanted else ()),
+        *(find_bare_tensors(tree) if "tensor" in wanted else ()),
+        *(find_default_tolerances(tree) if "tolerance" in wanted else ()),
     ]
     lines = split_lines(text)
 
@@ -347,7 +428,7 @@ def make_note(findings: list[Finding], name: str, /) -> str:
     if len(findings) > MAX_LINES:
         lines.append(f"and {len(findings) - MAX_LINES} more")
 
-    return "New lint findings in the file you just wrote (fix them; the call has run):\n" + "\n".join(lines)
+    return "New lint findings in the file you just wrote (fix them with the unit's batch):\n" + "\n".join(lines)
 
 
 def main() -> int:

@@ -74,7 +74,7 @@ Local modules live in `./modules/<module_name>`.
 - Declare apply order between workspaces (platform before project) where the repo's deploy tool supports it.
 - `validate` misses plan-time errors (invalid index, unsupported attribute): read the empty-input and `count = 0` paths
   by hand, and say what only a plan can prove.
-- The repo's own pre-commit hook is the gate; run it once per unit, not after each edit. `fmt` and `validate` (below)
+- The repo's own pre-commit hook is the gate; run it once per unit, in its batch. `fmt` and `validate` (below)
   are the fallback when the repo has none.
 - Never commit build artifacts (zips, plans, state, `.terraform/`).
 - A branch gone stale after another merge is updated from the base before pushing.

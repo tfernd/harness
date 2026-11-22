@@ -1,0 +1,2 @@
+skills/code-tensor/: triton float8 cuda
+tests/leak_allow.txt: triton float8 cuda

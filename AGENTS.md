@@ -57,7 +57,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 
 ## Working efficiently
 - Tool turns and call habits: `skills/tool-habits/SKILL.md` is their one home; `hooks/context.py` puts its body in every session and sub-agent at start.
-- Test once per unit, when it is done, not after each edit. When moving or migrating files, change first and test at the
+- Test once per unit, in one batch when it is done (`skills/tool-habits/SKILL.md`: "Edit, then one batch"). When moving or migrating files, change first and test at the
   end. Run the smallest check that can fail, never the whole suite twice, and never a check to confirm what a tool
   already confirmed (a write that succeeded, a file just read).
 - Never run `ruff format` (or any formatter) over the whole repo; format only files you changed. Run no formatter on

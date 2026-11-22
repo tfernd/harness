@@ -45,6 +45,20 @@ def make_hook_block(hook_name: str, text: str, agent_id: str | None, days_ago: f
     return entry
 
 
+def make_tool_call(call_id: str, name: str, tool_input: dict, days_ago: float, /) -> dict:
+    return {"type": "assistant", "timestamp": stamp(days_ago), "sessionId": "s1", "message": {"content": [{"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]}}
+
+
+def build_rhythm_project(root: Path, /) -> None:
+    slug = "".join(char if char.isalnum() else "-" for char in str(root / "proj"))
+    folder = root / "claude" / "projects" / slug
+    edits = [make_tool_call(f"e{number}", "Write", {"file_path": f"/work/src/f{number}.py", "content": "x"}, 1) for number in range(3)]
+    scratch = make_tool_call("scratch", "Write", {"file_path": "/tmp/harness/proj/probe.py", "content": "x"}, 1)
+    same_call = make_call("same", "python3 - <<'EOF' &&\nfrom pathlib import Path\nPath('src/a.py').write_text('x')\nEOF\nmake check", 1)
+    sub = edits + [scratch, make_call("k1", "make check", 1), make_call("k2", "uv run pytest -q", 1), same_call]
+    write_lines(folder / "main" / "subagents" / "agent-agentrhythm.jsonl", sub)
+
+
 def write_lines(path: Path, entries: list[dict], /) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
@@ -131,6 +145,11 @@ def main() -> int:
     failures += check("problem caused by the agent itself dropped", "I misread the brief" not in out, out)
     failures += check("feedback listed, old report dropped", "name the rule in the message" in out and "stale" not in out, out)
     failures += check("version loaded and installed differ", "installed: 999999aaaaaa" in out and "loaded abc123def456  (not the installed one)" in out, out)
+    rhythm = make_root()
+    build_rhythm_project(rhythm)
+    result = run_script(rhythm)
+    failures += check("check rhythm of a sub-agent: edits per check, share after few edits, same-call share", "sub-agent: 4 edits, 3 checks, 1.33 edits per check, 66% of checks after one or no edits, 33% in the same call as an edit, 0 of 1 editing agents with 4 or more checks" in result.stdout, result.stdout + result.stderr)
+    failures += check("check rhythm names a main session with no checks", "main session: 0 edits, no checks" in result.stdout, result.stdout)
     logged = make_root()
     build_logged_project(logged)
     result = run_script(logged)

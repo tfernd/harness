@@ -1321,8 +1321,7 @@ def handback(name: str, report: str, blocks: bool, text: str = "", /, *, lines: 
 SEND_BACK_COUNT = "data/send-backs/a1.count"
 SAVED_REPORT = "state/harness/project/reports/*-worker-fix-the-gate.md"
 SAVED_META = ("s/subagents/agent-a1.meta.json", json.dumps({"description": "Fix the gate!"}))
-SAVED_STAMPS = [(datetime.now() + timedelta(minutes=minutes)).strftime("%Y-%m-%d-%H%M") for minutes in (0, 1)]
-TAKEN_NAMES = tuple((f"state/harness/project/reports/{stamp}-worker-fix-the-gate.md", "earlier") for stamp in SAVED_STAMPS)
+TAKE_NAMES = "mkdir -p ../state/harness/project/reports && for offset in '+0 minute' '+1 minute'; do printf earlier > \"../state/harness/project/reports/$(date -d \"$offset\" +%Y-%m-%d-%H%M)-worker-fix-the-gate.md\"; done"
 EXIT_REPORT = exit_report(0)
 FEEDBACK_ITEM = "skills/report/SKILL.md: add a rule to the report skill"
 BAD_REPORT = make_report(skip="Not proven", replace=("Feedback", f"- {FEEDBACK_ITEM}"))
@@ -1445,8 +1444,8 @@ GATE_CASES = (
     handback("a saved handback also leaves a note for the main session", make_report(), False, files=(SAVED_META,), wrote=("data/saved/case-session.notes", "Saved report: ")),
     handback("a sent-back handback is not saved", make_report(skip="Not proven"), True, lacks="Saved report", files=(SAVED_META,), not_wrote=(SAVED_REPORT, "##")),
     handback("a handback accepted after the send-backs is saved", make_report(skip="Not proven"), False, "Saved report: ", files=((SEND_BACK_COUNT, "3"), SAVED_META), wrote=(SAVED_REPORT, "## Verdict")),
-    handback("a taken report name gets a suffix", make_report(), False, "fix-the-gate-2.md", files=(SAVED_META, *TAKEN_NAMES), wrote=("state/harness/project/reports/*-worker-fix-the-gate-2.md", "## Verdict")),
-    handback("a taken report name is not overwritten", make_report(), False, files=(SAVED_META, *TAKEN_NAMES), wrote=(TAKEN_NAMES[0][0], "earlier")),
+    handback("a taken report name gets a suffix", make_report(), False, "fix-the-gate-2.md", files=(SAVED_META,), git=(TAKE_NAMES,), wrote=("state/harness/project/reports/*-worker-fix-the-gate-2.md", "## Verdict")),
+    handback("a taken report name is not overwritten", make_report(), False, files=(SAVED_META,), git=(TAKE_NAMES,), wrote=(SAVED_REPORT, "earlier")),
     handback("a handback with no description is named by the agent id", make_report(), False, "-worker-a1.md"),
     handback("a write failure lets the handback run", make_report(), False, lacks="Saved report", files=(("state/harness/project/reports", "in the way"),)),
     handback("a generic agent's handback is not saved", make_report(), False, lacks="Saved report", agent_type="Explore"),
@@ -1978,8 +1977,8 @@ STALE_CASES = (
 )
 
 CONTEXT_CASES = (
-    context("a worker start carries the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Edit and check in one call"),
-    context("a scout start leaves out the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "## Read", lacks="## Edit and check in one call"),
+    context("a worker start carries the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Edit, then one batch"),
+    context("a scout start leaves out the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "## Read", lacks="## Edit, then one batch"),
     context("a reviewer start leaves out the clean and git habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:reviewer"}, "## When a call is refused", lacks="## Clean"),
     context("a helper start keeps the editing habits and leaves out the git one", {"hook_event_name": "SubagentStart", "agent_type": "Explore"}, "## Clean", lacks="## Git"),
     context("a worker start leaves out the git habit", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Clean", lacks="## Git"),
@@ -2705,6 +2704,8 @@ def lint(name: str, text: str, found: str = "", /, *, path: str = "a.py", head: 
 
 STAGED_NEW = ("git init -q",)
 SPLIT_ONLY = ("split",)
+TENSOR_ONLY = ("tensor",)
+TOLERANCE_ONLY = ("tolerance",)
 CALL_SPLIT = "x = f(\n    1,\n)\n"
 BLACK_CONFIG = (("pyproject.toml", "[tool.black]\nline-length = 88\n"),)
 RUFF_88 = (("pyproject.toml", "[tool.ruff]\nline-length = 88\n"),)
@@ -2794,6 +2795,21 @@ LINT_CASES = (
     lint("lint: noqa with a code is a directive", "x = 1  # noqa: E501\n"),
     lint("lint: type ignore with a code is a directive", "x = 1  # type: ignore[arg-type]\n"),
     lint("lint: ty ignore with a code is a directive", "x = 1  # ty: ignore[invalid-assignment]\n"),
+    lint("lint: a bare Tensor parameter in a jaxtyping file is reported", "from jaxtyping import Float\nfrom torch import Tensor\n\ndef f(x: Tensor) -> int:\n    return 1\n", "a.py:4: tensor: annotate the tensor with a jaxtyping dtype and axes", rules=TENSOR_ONLY),
+    lint("lint: a bare torch.Tensor return in a jaxtyping file is reported", "import jaxtyping\nimport torch\n\ndef f() -> torch.Tensor:\n    return torch.zeros(1)\n", "a.py:4: tensor:", rules=TENSOR_ONLY),
+    lint("lint: a bare Tensor in a union in a jaxtyping file is reported", "from jaxtyping import Float\nfrom torch import Tensor\n\ndef f(x: Tensor | None) -> int:\n    return 1\n", "a.py:4: tensor:", rules=TENSOR_ONLY),
+    lint("lint: a bare Tensor without a jaxtyping import is not a finding", "from torch import Tensor\n\ndef f(x: Tensor) -> Tensor:\n    return x\n", rules=TENSOR_ONLY),
+    lint("lint: a jaxtyping-annotated Tensor is not a finding", "from jaxtyping import Float\nfrom torch import Tensor\n\ndef f(x: Float[Tensor, \"n\"]) -> Float[Tensor, \"n\"]:\n    return x\n", rules=TENSOR_ONLY),
+    lint("lint: assert_close without tolerances is reported", "import torch\n\ntorch.testing.assert_close(1, 2)\n", "a.py:3: tolerance: default tolerances; pass rtol and atol measured from the dtype", rules=TOLERANCE_ONLY),
+    lint("lint: assert_close with only rtol is reported", "import torch\n\ntorch.testing.assert_close(1, 2, rtol=0.0)\n", "a.py:3: tolerance:", rules=TOLERANCE_ONLY),
+    lint("lint: torch.allclose and an isclose method without tolerances are reported", "import torch\n\ntorch.allclose(1, 2)\ny = x.isclose(2)\n", "a.py:3: tolerance:", rules=TOLERANCE_ONLY),
+    lint("lint: assert_close with rtol and atol is not a finding", "import torch\n\ntorch.testing.assert_close(1, 2, rtol=0.0, atol=0.0)\n", rules=TOLERANCE_ONLY),
+    lint("lint: allclose with positional tolerances is not a finding", "import torch\n\ntorch.allclose(1, 2, 0.0, 0.0)\ny = x.allclose(2, 0.0, 0.0)\n", rules=TOLERANCE_ONLY),
+    lint("lint: the default config reports a bare Tensor in a jaxtyping file", "from jaxtyping import Float\nfrom torch import Tensor\n\ndef f(x: Tensor) -> int:\n    return 1\n", "a.py:4: tensor:"),
+    lint("lint: the default config reports a default-tolerance assert_close", "import torch\n\ntorch.testing.assert_close(1, 2)\n", "a.py:3: tolerance:"),
+    lint("lint: the default config keeps a bare Tensor quiet without jaxtyping", "from torch import Tensor\n\ndef f(x: Tensor) -> int:\n    return 1\n"),
+    lint("lint: math and cmath isclose are not tolerance findings", "import cmath\nimport math\n\nmath.isclose(1, 2, rel_tol=1e-9, abs_tol=0.0)\ncmath.isclose(1, 2)\n", rules=TOLERANCE_ONLY),
+    lint("lint: an unrelated call is not a tolerance finding", "import torch\n\ntorch.equal(1, 2)\n", rules=TOLERANCE_ONLY),
 )
 
 

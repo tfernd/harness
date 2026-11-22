@@ -26,25 +26,29 @@ call needs the previous result, and run a long check in the background.
 - Output too long for the result is saved to a file the result names (under `tool-results/`): read it with `offset` and
   `limit`, or search it with `rg`, never whole.
 
-## Edit and check in one call
+## Edit, then one batch
 
-- One exact change: the Edit tool. A new file: the Write tool. Several changes, or the last edit of a unit: one script
-  that asserts each target occurs once, so a missing text fails loudly and never edits nothing in silence.
-- Join steps with `&&`, never `;`: a failed edit must not feed a test, a build or a commit.
-- The order is the edit, the formatter, the linter, a compile or type check, the tests, then `git diff --stat`. Use the
-  project's own commands (`AGENTS.md` names them). A check that cannot run for want of a tool is said, not skipped.
-- Run the chain once, when the unit is written, not after each edit; after a fix, the whole chain again. Edit, check,
-  edit, check on one file costs a turn per step: batch the edits, or put edit and check in one script.
+- One exact change: the Edit tool. A new file: the Write tool. Several changes: one script that asserts each target
+  occurs once, so a missing text fails loudly and never edits nothing in silence. Join steps with `&&`, never `;`.
+- Probe only an assumption that would waste the unit if wrong (a library call never run here, a data format, a tool's
+  output), one smallest command each. What you read in the source needs none.
+- Write the whole unit with no test, linter, formatter or type check between edits; an edit script ends in `git diff --stat`.
+- At the seam (every file the brief names is written) one call runs the formatter on your files, then every gate even
+  after one fails, output to a file (recipe: the batch). Use the project's own commands (`AGENTS.md` names them); a
+  check that cannot run for want of a tool is said, not skipped.
+- Fix every failure of that run in one pass, then run the batch once more. A third run is the limit. One extra seam
+  only where a later file depends on an earlier file's behaviour, not its signature. A slow suite runs once, in the
+  background, at the seam.
 - The project's Python runs through `uv run python`, its linter through `uvx ruff` when `ruff` is not on PATH.
   One-off Python in a tool call takes no PEP 723 header and no dependencies: `python3 -` and the standard library.
 - Without `pipefail`, a pipe into `tail` hides a test's exit code, and a `git commit` piped into `tail` hides a pre-commit refusal behind exit 0. Do not end a check in `|| true` or `|| echo`, and
   print no `echo ----` separators; zsh expands `=` at a word start, so quote an `echo` separator made of `=`.
 - Never filter a check's output by a word (`rg fail`, `grep error`): test names hold those words and the verdict line is lost. Send the output to a file under `/tmp/harness/<project>/`, print its last lines, and read the file for the rest (recipe: a long check).
-- After an edit of a `.py` file a lint note may list new findings (a comment, a docstring, a statement on more than one line, a signature with no annotation). Fix them in the next edit of that file, not at the end: a commit that adds one is refused. The note comes from a hook, so no project file needs reading to know the rule.
+- After an edit of a `.py` file a lint note may list new findings (a comment, a docstring, a statement on more than one line, a signature with no annotation). Fix them in the unit's batch: a commit that adds one is refused. The note comes from a hook, so no project file needs reading to know the rule.
 - Read the output before saying "done", and say what ran with its exit code and what did not run and why.
 - A language skill is loaded before editing its kind of file; if it is not, the edit runs and the skill's text comes
-  with the result: read it as the rules for the next edit.
-- Recipes (discovery, independent gates, a long check, a scoped gate when others edit the tree, an asserted edit, comparing with HEAD, a throwaway repository, web calls, an ML probe): `references/recipes.md`.
+  with the result: read it as the rules for the rest of the unit.
+- Recipes (discovery, the batch, a long check, a scoped gate when others edit the tree, an asserted edit, comparing with HEAD, a throwaway repository, web calls, an ML probe): `references/recipes.md`.
 
 ## Clean
 

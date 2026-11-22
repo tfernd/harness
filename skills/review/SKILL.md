@@ -74,6 +74,7 @@ before relaying it (`harness:orchestrator`, its accept reference).
 - **Holes:** what the change promises that nothing checks; detail in the lens reference (`references/lenses.md`).
 - **Drift:** which docs, examples or counts the change makes false; detail in the lens reference (`references/lenses.md`).
 - **Security:** untrusted input reaching a shell, path, query or template; a secret in a log. Checklist and what not to report: `references/security.md`.
+- **Tensor:** `harness:code-tensor` and its review reference.
 
 ## The layout survey
 
@@ -93,12 +94,12 @@ pull request. Scope, run, read order and checklist: `references/branch.md`.
 
 For the worker or author fixing its own failing test or gate; a reviewer only reports.
 
-1. **Reproduce** with the smallest case (one test id, one input); one you cannot reproduce is reported.
-2. **Read the failure** (summary and last frames; one error at one line is one cause) and **find the cause** (the line
-   and the input; probe if reading cannot settle it) before changing code.
+1. **Reproduce** with the smallest case (one test id, one input) only when the run's output does not show the cause; one you cannot reproduce is reported.
+2. **Read every failure of the run** (summary and last frames; one error at one line is one cause), group them by cause
+   and **find each cause** (the line and the input; probe if reading cannot settle it) before changing code.
 3. **Fix it in the unit that made it,** not where it shows. Never loosen a test, bound or tolerance, never guard
    downstream of the bug. A failure in a file your brief does not name is reported, not fixed.
-4. **Grep the callers,** verify again once. A failed call is split, never retried unchanged.
+4. **Grep the callers,** fix every cause, then rerun the whole batch once. A failed call is split, never retried unchanged.
 
 A third failing run of the judge stops the worker: it reports what fails, the cause and what it tried. Two failed fixes
 on one hypothesis end the work too (`references/debug.md`).
