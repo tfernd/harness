@@ -30,7 +30,7 @@ ROUTES = {
         ("Agent|Task|Edit|Write|NotebookEdit|Bash", "turn.py", "add"),
         ("Edit|Write", "lint.py", ""),
     ),
-    "UserPromptSubmit": (("", "turn.py", "reset"),),
+    "UserPromptSubmit": (("", "turn.py", "reset"), ("", "context.py", "")),
     "SubagentStop": (("", "report_gate.py", ""),),
     "Stop": (("", "turn.py", "stop"),),
 }

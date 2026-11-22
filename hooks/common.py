@@ -180,6 +180,48 @@ def ensure_state_folder(root: Path, /) -> Path:
     return folder
 
 
+REFUSAL_LOG_NAME = "refusals.jsonl"
+REFUSAL_LOG_MAX_BYTES = 1_000_000
+UNLOGGED_RULES = frozenset({"secret", "installer"})
+REFUSAL_TEXT_CHARS = 160
+
+
+def trim_refusal_log(path: Path, /) -> None:
+
+    try:
+        if path.stat().st_size <= REFUSAL_LOG_MAX_BYTES:
+            return
+        data = path.read_bytes()
+        kept = data[len(data) // 2 :]
+        newline = kept.find(b"\n")
+        write_atomic(path, kept[newline + 1 :].decode(errors="replace") if newline >= 0 else "")
+        os.chmod(path, 0o600)
+    except OSError:
+        return
+
+
+def append_refusal_log(event: dict, rules: list[str], /) -> None:
+
+    try:
+        logged = [rule for rule in dict.fromkeys(rules) if rule not in UNLOGGED_RULES]
+        if not logged:
+            return
+        tool_input = event.get("tool_input") or {}
+        text = str(tool_input.get("file_path") if event.get("tool_name") == "Read" else tool_input.get("command") or "")
+        root = find_project(str(event.get("cwd") or os.getcwd())).root
+        folder = ensure_state_folder(root)
+        role = "sub-agent" if event.get("agent_id") else "main"
+        lines = "".join(json.dumps({"time": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "rule": rule, "role": role, "text": text[:REFUSAL_TEXT_CHARS]}) + "\n" for rule in logged)
+        trim_refusal_log(folder / REFUSAL_LOG_NAME)
+        descriptor = os.open(folder / REFUSAL_LOG_NAME, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(descriptor, lines.encode())
+        finally:
+            os.close(descriptor)
+    except Exception:
+        return
+
+
 def get_scratch(root: Path, config: dict, /) -> str:
 
     scratch = config.get("guard", {}).get("scratch")
@@ -461,6 +503,7 @@ def get_inner_segments(command: Command, /) -> list[Segment]:
 
 JOBS_FOLDER = "waits"
 JOBS_KEEP = 200
+TRANSCRIPT_TAIL_BYTES = 262144
 JOBS_MAX_BYTES = 65536
 OUTPUT_DESCRIPTORS = ("1", "2")
 PROC_FOLDER = os.environ.get("HARNESS_PROC_FOLDER", "/proc")
@@ -588,6 +631,120 @@ def get_pending_jobs(session: str, agent_id: str, /) -> list[BackgroundJob]:
     jobs = [job for job in read_background_jobs(session) if job.agent_id == agent_id]
 
     return [job for job in jobs if is_job_running(job)]
+
+
+def get_transcript_file(event: dict, /) -> Path | None:
+
+    transcript = str(event.get("transcript_path") or "")
+    agent_id = str(event.get("agent_id") or "")
+    if not transcript:
+        return None
+    if not agent_id:
+        return Path(transcript)
+
+    return Path(transcript).with_suffix("") / "subagents" / f"agent-{agent_id}.jsonl"
+
+
+def read_transcript_tail(path: Path, /) -> list[dict]:
+
+    with open(path, "rb") as file:
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(max(0, size - TRANSCRIPT_TAIL_BYTES))
+        raw = file.read()
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    entries = []
+    for line in lines[1:] if size > TRANSCRIPT_TAIL_BYTES else lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+
+    return entries
+
+
+def get_unanswered_background_starts(event: dict, /) -> list[str]:
+
+    path = get_transcript_file(event)
+    if path is None:
+        return []
+    try:
+        entries = read_transcript_tail(path)
+    except OSError:
+        return []
+    started: list[str] = []
+    answered: set[str] = set()
+    for entry in entries:
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if entry.get("type") not in ("assistant", "user") or not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_result":
+                answered.add(str(block.get("tool_use_id")))
+            tool_input = block.get("input")
+            if block.get("type") == "tool_use" and block.get("name") == "Bash" and isinstance(tool_input, dict) and tool_input.get("run_in_background") is True:
+                started.append(str(block.get("id")))
+    own = str(event.get("tool_use_id") or "")
+
+    return [tool_use_id for tool_use_id in dict.fromkeys(started) if tool_use_id not in answered and tool_use_id != own]
+
+
+def get_pending_or_starting_jobs(event: dict, session: str, agent_id: str, /) -> list[BackgroundJob]:
+
+    pending = get_pending_jobs(session, agent_id)
+    if pending:
+        return pending
+
+    return [BackgroundJob(tool_use_id, "", agent_id, 0, 0) for tool_use_id in get_unanswered_background_starts(event)]
+
+
+def get_request_shape(event: dict, /) -> str:
+
+    transcript = str(event.get("transcript_path") or "")
+    agent_id = str(event.get("agent_id") or "")
+    if not transcript or not agent_id:
+        return ""
+    try:
+        meta = json.loads((Path(transcript).with_suffix("") / "subagents" / f"agent-{agent_id}.meta.json").read_text())
+        shape = meta.get("requestShape") if isinstance(meta, dict) else None
+    except (OSError, ValueError):
+        return ""
+
+    return shape if isinstance(shape, str) else ""
+
+
+def is_foreground_agent(event: dict, /) -> bool:
+
+    return get_request_shape(event) == "foreground"
+
+
+def get_running_shell_ids(event: dict, /) -> list[str] | None:
+
+    tasks = event.get("background_tasks")
+    if not isinstance(tasks, list):
+        return None
+    shells = [task for task in tasks if isinstance(task, dict) and task.get("type") == "shell" and task.get("status") == "running"]
+
+    return [str(task.get("id")) for task in shells]
+
+
+def has_pending_job_of_agent(event: dict, /) -> bool:
+
+    session = str(event.get("session_id") or "")
+    agent_id = str(event.get("agent_id") or "")
+    if not session or not agent_id:
+        return False
+    running = get_running_shell_ids(event)
+    if running is None:
+        return bool(get_pending_jobs(session, agent_id))
+    owners = {job.task_id: job.agent_id for job in read_background_jobs(session)}
+
+    return any(owners.get(task_id, agent_id) == agent_id for task_id in running)
 
 
 def read_looks(session: str, /) -> dict:

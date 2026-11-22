@@ -20,7 +20,9 @@ from common import (
     ensure_state_folder,
     find_project,
     get_scratch_folder,
+    data_folder,
     is_project_root,
+    write_atomic,
 )
 
 SESSION_TEXT = "This project runs under the harness plugin. Load the `harness:orchestrator` skill before anything else."
@@ -81,6 +83,32 @@ def get_habits_text(agent_type: str, /, *, is_main: bool) -> str:
     return body or HABITS_FALLBACK
 
 
+def get_installed_versions(plugin_key: str, /) -> list[str]:
+
+    path = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+    entries = json.loads(path.read_text()).get("plugins", {}).get(plugin_key, [])
+
+    return [str(entry["version"]) for entry in entries if isinstance(entry, dict) and entry.get("version")]
+
+
+def get_stale_text(session: str, /) -> str:
+
+    root = Path(os.environ.get("CLAUDE_PLUGIN_ROOT") or "")
+    is_cached = root.parent.parent.parent.name == "cache" and bool(root.name)
+    if not is_cached:
+        return ""
+    installed = get_installed_versions(f"{root.parent.name}@{root.parent.parent.name}")
+    if not installed or root.name in installed:
+        return ""
+    marker = data_folder() / "turns" / f"{session}.stale"
+    if marker.exists() and marker.read_text() == installed[0]:
+        return ""
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic(marker, installed[0])
+
+    return f"The harness plugin was updated to version {installed[0]} after this session started; its hooks and skills still run from version {root.name}, so new rules do not apply here. Tell the owner to run `/reload-plugins` or restart Claude Code."
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     root, _ = find_project(event.get("cwd") or os.getcwd())
@@ -95,6 +123,11 @@ def main() -> int:
     elif name == "SubagentStart":
         form = "" if is_harness_role(agent_type) else FORM_TEXT
         text = "\n\n".join(part for part in (form, get_habits_text(agent_type, is_main=False), get_setup_text(root)) if part)
+    elif name == "UserPromptSubmit":
+        try:
+            text = get_stale_text(str(event.get("session_id") or "unknown"))
+        except Exception:
+            text = ""
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}))
 

@@ -100,7 +100,11 @@ class Call(NamedTuple):
     words: list[str]
     directory: str | None
     written: list[str]
+    variables: dict[str, str]
 
+
+LONE_DOLLAR = re.compile(r"\$(?![A-Za-z_])")
+VARIABLE_REFERENCE = re.compile(r"\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})")
 
 COMMIT_OPTIONS = OptionSpec(
     {"m": "--message", "F": "--file", "C": "--reuse-message", "c": "--reedit-message", "t": "--template", "a": "--all", "i": "--include", "o": "--only"},
@@ -113,6 +117,7 @@ COMMIT_OPTIONS = OptionSpec(
         "--no-gpg-sign", "--untracked-files", "--no-post-rewrite", "--pathspec-file-nul",
     }),
 )
+ADD_OPTIONS = OptionSpec({"A": "--all", "u": "--update"}, frozenset(), frozenset({"--all", "--update"}))
 MESSAGE_OPTIONS = OptionSpec(
     {"m": "--message", "F": "--file", "u": "--local-user", "s": "--strategy", "X": "--strategy-option", "p": "--parent"},
     frozenset({"--message", "--file", "--local-user", "--strategy", "--strategy-option", "--parent"}),
@@ -241,11 +246,21 @@ def get_file_path(name: str, call: Call, /) -> str | None:
     return os.path.join(call.directory, name) if call.directory is not None else None
 
 
+def expand_variables(name: str, variables: dict[str, str], /) -> str:
+
+    return VARIABLE_REFERENCE.sub(lambda match: variables.get(match.group(1) or match.group(2), match.group(0)), name)
+
+
 def read_file(name: str, call: Call, command: str, /) -> tuple[str | None, str]:
 
     if name == "-":
         text = read_message(["-"], command)
         return text, "" if text is not None else "`-F -` reads stdin, which the command does not show"
+    name = expand_variables(name, call.variables)
+    if LONE_DOLLAR.search(name):
+        return None, "a variable or a substitution with no heredoc"
+    if "$" in name:
+        return None, f"`{name}` holds a variable, and the path must be written out literally"
     path = get_file_path(name, call)
     if path is None:
         return None, f"`{name}` is relative to a folder the command moves to unseen"
@@ -275,15 +290,29 @@ def get_commit_message(parsed: ParsedOptions, call: Call, command: str, /) -> tu
     return None, "with no `-m` or `-F`, git opens an editor"
 
 
-def get_calls(segments: list[Segment], directory: str | None, written: list[str], calls: list[Call], /) -> str | None:
+def get_plain_assignments(segment: Segment, /) -> dict[str, str]:
+
+    assignments: dict[str, str] = {}
+    for word in segment.words:
+        name, separator, value = word.text.partition("=")
+        if not (separator and name.isidentifier()) or "$" in value or "`" in value or word.is_glob:
+            return {}
+        assignments[name] = value
+
+    return assignments
+
+
+def get_calls(segments: list[Segment], directory: str | None, written: list[str], variables: dict[str, str], calls: list[Call], /) -> str | None:
 
     for segment in segments:
         command = resolve(segment)
         name = os.path.basename(command.name)
         if name in ("git", "gh"):
-            calls.append(Call([command.name, *(word.text for word in command.arguments)], directory, list(written)))
+            calls.append(Call([command.name, *(word.text for word in command.arguments)], directory, list(written), dict(variables)))
+        if not command.name:
+            variables.update(get_plain_assignments(segment))
         written.extend(os.path.realpath(path) for path in get_written_paths(get_written_words(segment, command, directory), directory))
-        get_calls(get_inner_segments(command), directory, written, calls)
+        get_calls(get_inner_segments(command), directory, written, variables, calls)
         directory = get_directory_after(command, segment.in_group, directory)
 
     return directory
@@ -292,7 +321,7 @@ def get_calls(segments: list[Segment], directory: str | None, written: list[str]
 def find_calls(command: str, cwd: str, /) -> list[Call]:
 
     calls: list[Call] = []
-    get_calls(get_segments(command), cwd, [], calls)
+    get_calls(get_segments(command), cwd, [], {}, calls)
 
     return calls
 
@@ -537,15 +566,18 @@ def get_changed_paths(output: str, /) -> list[tuple[str | None, str | None]]:
     return changes
 
 
-def get_file_counts(directory: str, is_all: bool, paths: list[str], /) -> list[FileCount] | None:
+def get_file_counts(directory: str, is_all: bool, paths: list[str], is_adding: bool, added_paths: list[str], /) -> list[FileCount] | None:
 
     deadline = time.monotonic() + GIT_SECONDS
     from_tree = is_all or bool(paths)
     top = run_git(["rev-parse", "--show-toplevel", "HEAD"], directory, deadline)
     names = run_git(["diff", *(["HEAD"] if from_tree else ["--cached"]), "--name-status", "-M", "-z", *(["--", *paths] if paths else [])], directory, deadline)
-    if top is None or names is None:
+    untracked_paths = added_paths or paths
+    untracked = run_git(["ls-files", "--others", "--exclude-standard", "-z", *(["--", *untracked_paths] if untracked_paths else [])], directory, deadline) if is_adding and from_tree else ""
+    if top is None or names is None or untracked is None:
         return None
     changes = [(old, new) for old, new in get_changed_paths(names) if (old and is_test_file(old)) or (new and is_test_file(new))]
+    changes += [(None, path) for path in untracked.split("\0") if path and is_test_file(path)]
     if len(changes) > MAX_TEST_FILES:
         return None
     counts: list[FileCount] = []
@@ -595,12 +627,16 @@ class CommitScope(NamedTuple):
     is_all: bool
     paths: list[str]
     message: str
+    is_adding: bool
+    added_paths: list[str]
 
 
 def get_commit_scopes(command: str, cwd: str, /) -> list[CommitScope]:
 
     scopes: list[CommitScope] = []
     is_staged_here = False
+    is_adding_everything = False
+    added_paths: list[str] = []
     for call in find_calls(command, cwd):
         arguments = call.words[1:]
         index = get_git_index(arguments)
@@ -609,11 +645,16 @@ def get_commit_scopes(command: str, cwd: str, /) -> list[CommitScope]:
             continue
         if subcommand in STAGING_COMMANDS:
             is_staged_here = True
+            if subcommand == "add":
+                add_operands = parse_options(arguments[index + 1 :], ADD_OPTIONS)
+                is_everything = bool(add_operands.flags & {"--all", "--update"}) or not add_operands.operands or "." in add_operands.operands
+                is_adding_everything = is_adding_everything or is_everything
+                added_paths.extend(add_operands.operands)
             continue
         parsed = parse_options(arguments[index + 1 :], COMMIT_OPTIONS)
         directory = get_git_directory(call.words, call.directory)
         message = get_commit_message(parsed, call._replace(directory=directory), command)[0]
-        scopes.append(CommitScope(directory, "--all" in parsed.flags or is_staged_here, parsed.operands, message if message is not None else get_text_up_to_call(command)))
+        scopes.append(CommitScope(directory, "--all" in parsed.flags or is_staged_here, parsed.operands, message if message is not None else get_text_up_to_call(command), is_staged_here, [] if is_adding_everything else list(added_paths)))
 
     return scopes
 
@@ -624,7 +665,7 @@ def find_test_drops(command: str, cwd: str, /) -> list[str]:
     for scope in get_commit_scopes(command, cwd):
         if scope.directory is None or TESTS_REMOVED.search(scope.message):
             continue
-        counts = get_file_counts(scope.directory, scope.is_all, scope.paths)
+        counts = get_file_counts(scope.directory, scope.is_all, scope.paths, scope.is_adding, scope.added_paths)
         problem = describe_drops(counts) if counts else ""
         if problem:
             problems.append(problem)

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from progress import get_agent_path
-from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_fenced_indices, get_unfenced_lines, write_atomic
+from common import HANDBACK_TOOL, PLUGIN_PREFIX, data_folder, find_project, get_fenced_indices, get_unfenced_lines, has_pending_job_of_agent, write_atomic
 from report_store import add_note, save_report
 
 ORDER = ("Answer", "Not proven", "Problems", "Next time", "Open", "Feedback", "Verdict")
@@ -257,6 +257,13 @@ def is_judged(event: dict, /) -> bool:
     return str(event.get("agent_type") or "").startswith(PLUGIN_PREFIX)
 
 
+def has_pending_job(event: dict, /) -> bool:
+    try:
+        return has_pending_job_of_agent(event)
+    except Exception:
+        return False
+
+
 def main() -> int:
     event = json.load(sys.stdin)
     if sys.argv[1:2] == ["handback"]:
@@ -274,6 +281,8 @@ def main() -> int:
     if not problems:
         finish(event)
         print_saved(accept_stop(event, report))
+        return 0
+    if has_pending_job(event):
         return 0
     listed = "; ".join(problem.text for problem in problems)
     has_ended = bool(blocks) and blocks[-1].get("name") == HANDBACK_TOOL or (os.path.isfile(path) and not sent)

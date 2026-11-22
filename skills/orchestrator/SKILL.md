@@ -12,6 +12,7 @@ those from a sub-agent.
 It edits no product file. Code, tests, hooks, skills, docs and pages change only through a `harness:worker`, however
 small the change. The main session writes its plan or resume file, a commit message, and scratch files in
 `/tmp/harness/<project>/`. Wide reading goes to a `harness:scout`. Size tiers and job shapes: `harness:workflows`.
+When a hook refusal or send-back repeats, or the owner asks how the plugin is doing, load `harness:introspect`.
 
 ## What each round costs
 
@@ -79,7 +80,8 @@ The sender's checks before a brief goes out: `references/brief-checks.md`.
 
 ## Running agents
 
-- Independent agents go out in one message, with `run_in_background`. Parallel workers get different files. A worktree
+- Independent agents go out in one message, with `run_in_background`: only a background agent is woken when a job of its own
+  exits, a foreground one ends at its turn's end and the job dies. Parallel workers get different files. A worktree
   pays only when two agents must change the same file; the main session then merges each branch and rebuilds the
   generated files.
 - While agents run, do the independent work at hand (reads for the next step, a brief, a check); with none, end the

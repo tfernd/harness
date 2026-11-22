@@ -16,3 +16,5 @@ The sender's checks before a brief goes out. They are not text of the brief. Che
   reason instead of going quiet.
 - Re-read the whole brief: no sentence contradicts another, and none says how to build what the Goal and the Judge
   already settle.
+- A brief that needs a wait says "start it with `run_in_background`, end the turn, report when woken", and never asks for
+  a wait loop.

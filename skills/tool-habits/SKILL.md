@@ -67,7 +67,11 @@ call needs the previous result, and run a long check in the background.
 - A job you start yourself (a build, a test run, a long check) runs with `run_in_background: true`, its output to a file
   under `/tmp/harness/<project>/`. End the turn with no further tool call: a task notification wakes you, main session
   or sub-agent, about 3 s after it exits. Then read the file's last lines. It needs no polling loop.
-- Claude Code moves a foreground Bash call to the background at the call's own timeout (120 s by default), so a foreground wait loop never reaches its
+- Ending the turn is the one way to wait on a job you started, in the main session and in a sub-agent started in the
+  background; the report gate does not ask a sub-agent for its report while its job runs. A sub-agent started in the
+  foreground ends when it ends its turn, and its job dies with it: it waits with one bounded foreground loop on a done
+  file or `tail --pid`, never by ending its turn (the guard lets its waits through).
+- Claude Code moves a foreground Bash call to the background at its own timeout (120 s by default), and after 180 s at the latest in a session with a longer timeout, so a foreground wait loop never reaches its
   bound; you are cut and wait again. Never `sleep N; <read>`.
 - While a background job of yours still runs, the guard refuses a foreground call that only waits (`echo`, `sleep`, `pgrep`,
   `ps`, a wait loop, `tail --pid`) and a second read of its output file within 5 minutes: end the turn instead.

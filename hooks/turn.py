@@ -180,9 +180,9 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
     hard: list[str] = []
     soft: list[str] = []
     is_deferred = False
+    found = {line.strip() for line in message.splitlines()}
+    missing = [name for name in settings.get("headings", HEADINGS) if f"## {name}" not in found]
     if calls >= min_calls:
-        found = {line.strip() for line in message.splitlines()}
-        missing = [name for name in settings.get("headings", HEADINGS) if f"## {name}" not in found]
         if missing and count_running_agents(transcript) > 0:
             is_deferred = True
             write_atomic(deferred_path, "1")
@@ -200,8 +200,10 @@ def stop(event: dict, root: Path, config: dict, /) -> int:
         listed = "\n".join([*(f"- {problem}" for problem in hard), *(f"- note, does not hold the turn: {problem}" for problem in soft)])
         print(json.dumps({"decision": "block", "reason": f"This turn ends with open checks:\n{listed}\nFix each, then stop."}))
         return 0
+    has_status = calls >= min_calls or not missing
     if calls >= min_calls and not is_deferred:
         write_atomic(calls_path, "")
+    if has_status and not is_deferred:
         write_atomic(carried_path, "")
     if not is_deferred and deferred_path.exists():
         deferred_path.unlink()

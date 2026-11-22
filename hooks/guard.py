@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping, Set
@@ -32,10 +33,12 @@ from common import (
     get_git_subcommand,
     get_inner_segments,
     get_look_wait_seconds,
-    get_pending_jobs,
+    get_pending_or_starting_jobs,
+    append_refusal_log,
     get_scratch,
     get_shell_string,
     is_cluster,
+    is_foreground_agent,
     mark_looked,
     resolve,
     skip_options,
@@ -96,6 +99,9 @@ PIPEFAIL_CHECKS = {
     "mvn": frozenset({"test"}),
 }
 WAIT_RULE = "wait"
+DELETE_QUOTE_CHARS = 80
+GIT_PROBE_SECONDS = 2
+MAX_PROBED_OPERANDS = 3
 WAIT_ONLY = "only"
 WAIT_FOLLOWED = "followed"
 WAIT_PEEKERS = frozenset({"pgrep", "ps", "pidof"})
@@ -1849,6 +1855,8 @@ class Findings(NamedTuple):
     agent: list[str]
     secret: list[str]
     bypass: list[str]
+    deletes: list[str]
+    delete_words: list[list[str]]
 
 
 def new_findings() -> Findings:
@@ -1918,6 +1926,8 @@ def get_command_breaches(
     bypass = get_bypass_label(command)
     findings.bypass.extend([bypass] if bypass else [])
     findings.denied.extend([denied] if denied else [])
+    findings.deletes.extend([" ".join(word.text for word in segment.words)] if is_deleting else [])
+    findings.delete_words.extend([[word.text for word in segment.words]] if is_deleting else [])
     findings.hidden.extend([hidden] if hidden else [])
     is_asked = policy.ask_packages and is_package_change(command, policy.root)
     delay = get_delay_run(segment, command, policy) if is_asked and policy.tool_delay_days else None
@@ -2069,7 +2079,55 @@ def make_soft_output(rewrite: Rewrite, tool_input: dict, /) -> dict:
     return {"hookSpecificOutput": output}
 
 
-def refuse(rules: list[str], findings: Findings, /) -> int:
+def quote_delete_segment(segment: str, /) -> str:
+
+    cut = segment if len(segment) <= DELETE_QUOTE_CHARS else segment[:DELETE_QUOTE_CHARS] + "..."
+
+    return f"`{cut}`"
+
+
+def run_git_probe(arguments: list[str], deadline: float, /) -> subprocess.CompletedProcess | None:
+
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+
+    return subprocess.run(["git", *arguments], capture_output=True, text=True, timeout=remaining)
+
+
+def get_owner_delete_command(words: list[str], cwd: str, /) -> str:
+
+    deadline = time.monotonic() + GIT_PROBE_SECONDS
+    names = [index for index, word in enumerate(words) if os.path.basename(word) == "rm"]
+    operands = [word for word in words[names[0] + 1 :] if not word.startswith("-")] if names else []
+    try:
+        for operand in operands[:MAX_PROBED_OPERANDS]:
+            path = operand if os.path.isabs(operand) else os.path.join(cwd, operand)
+            tracked = run_git_probe(["-C", cwd, "ls-files", "--error-unmatch", "--", path], deadline)
+            changed = run_git_probe(["-C", cwd, "status", "--porcelain", "--", path], deadline)
+            if tracked is None or changed is None:
+                return ""
+            if tracked.returncode == 0 and changed.stdout.strip():
+                flags = "-rf" if os.path.isdir(path) else "-f"
+                return f"git rm {flags} {shlex.quote(operand)}"
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return ""
+
+    return ""
+
+
+def get_delete_text(rule: str, findings: Findings, cwd: str, /) -> str:
+
+    segment = findings.deletes[0] if findings.deletes else ""
+    if not segment:
+        return MESSAGES[rule]
+    text = f"{MESSAGES[rule]} Tripped by: {quote_delete_segment(segment)}."
+    command = get_owner_delete_command(findings.delete_words[0], cwd) if rule == "delete" and cwd else ""
+
+    return text + (f" The owner's command, since the file is tracked and changed: `{command}`." if command else "")
+
+
+def refuse(rules: list[str], findings: Findings, /, *, cwd: str = "") -> int:
 
     missing = findings.missing_globs[0] if findings.missing_globs else MissingGlob("*", "this folder")
     glob_text = MESSAGES["glob"].format(folder=missing.folder, pattern=missing.pattern)
@@ -2082,8 +2140,8 @@ def refuse(rules: list[str], findings: Findings, /) -> int:
     snow = MESSAGES[SNOW_RULE].format(what=(findings.snow or ["this snow command"])[0])
     agent = MESSAGES[AGENT_RULE].format(what=(findings.agent or ["this command"])[0])
     bypass = MESSAGES[BYPASS_RULE].format(what=(findings.bypass or ["this command"])[0])
-    texts = {**MESSAGES, "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, SECRET_RULE: secret, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent, BYPASS_RULE: bypass}
-    lines = list(dict.fromkeys(f"Blocked by the harness guard: {texts[rule]}" for rule in rules if rule not in ASK_RULES))
+    texts = {**MESSAGES, "delete": get_delete_text("delete", findings, cwd), AGENT_DELETE_RULE: get_delete_text(AGENT_DELETE_RULE, findings, cwd), "glob": glob_text, "pattern": PATTERN_REFUSAL, "denied": denied, "hidden": hidden, CLOUD_RULE: cloud, SECRET_RULE: secret, INSTALLER_RULE: installer, DBT_RULE: dbt, SNOW_RULE: snow, AGENT_RULE: agent, BYPASS_RULE: bypass}
+    lines = list(dict.fromkeys(f"Blocked by the harness guard (rule: {rule}): {texts[rule]}" for rule in rules if rule not in ASK_RULES))
     if not lines:
         reason = " ".join(f"The harness guard: {texts[rule]}" for rule in ASK_RULES if rule in rules)
         decision = {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": reason}
@@ -2222,13 +2280,15 @@ def get_wait_verdict(event: dict, /) -> WaitVerdict:
     text = str(tool_input.get("file_path") or "") if is_read else str(tool_input.get("command") or "")
     if not session or not text or tool_input.get("run_in_background") is True:
         return WaitVerdict()
+    if is_foreground_agent(event):
+        return WaitVerdict()
     pieces = [] if is_read else get_wait_pieces(get_segments(text))
     kind = classify_wait(pieces)
     words = text if is_read else " ".join(word for piece in pieces for word in (piece.name, *piece.arguments))
     named = list(dict.fromkeys(TASK_OUTPUT_PATH.findall(words)))
     if not kind and not named:
         return WaitVerdict()
-    pending = get_pending_jobs(session, str(event.get("agent_id") or ""))
+    pending = get_pending_or_starting_jobs(event, session, str(event.get("agent_id") or ""))
     if not pending:
         return WaitVerdict()
     if kind:
@@ -2283,14 +2343,19 @@ def judge_call(event: dict, /) -> int:
             return 0
         hard = rewrite.refused
 
-    return refuse(hard, findings)
+    code = refuse(hard, findings, cwd=cwd)
+    if code == 2:
+        append_refusal_log(event, [rule for rule in hard if rule not in ASK_RULES])
+
+    return code
 
 
 def main() -> int:
     event = json.load(sys.stdin)
     verdict = judge_wait(event)
     if verdict.reason:
-        print(f"Blocked by the harness guard: {WAIT_RULE}: {verdict.reason}", file=sys.stderr)
+        print(f"Blocked by the harness guard (rule: {WAIT_RULE}): {verdict.reason}", file=sys.stderr)
+        append_refusal_log(event, [WAIT_RULE])
         return 2
     code = judge_call(event)
     if code == 0 and verdict.looked:

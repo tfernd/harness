@@ -41,7 +41,7 @@ How to work on this repo, a Claude Code plugin (`harness`) that is also its own 
 - Each new rule gets a case in `tests/run_cases.py`.
 - A rule is built when it has passing cases, a replay (`hooks/replay.py`) and a live run under `claude --plugin-dir .`.
 - A new guard rule is checked with `hooks/replay.py` for false refusals against real commands.
-- The plugin keeps its state in `~/.local/state/harness/<project>/` (`$XDG_STATE_HOME` is honoured) and throwaway files in `/tmp/harness/<project>/`; a hook makes both, copies an old `__harness__/` into the new state folder once, and no agent deletes either.
+- Per-machine data (turn counters, send-backs, waits, progress) lives in `data_folder()`: `$CLAUDE_PLUGIN_DATA`, else `~/.cache/harness`. Reports and the rest of the plugin's state live in `~/.local/state/harness/<project>/` (`$XDG_STATE_HOME` is honoured), and throwaway files in `/tmp/harness/<project>/`; a hook makes both, copies an old `__harness__/` into the new state folder once, and no agent deletes either.
 
 ## Ports and sync
 - The Claude plugin (`skills/`, `agents/`, `hooks/`) is the only source. `bin/harness-port` (runs `port/harness_port.py`) converts it into `~/.kiro` or `~/.snowflake/cortex`; rerun it after `git pull`, since hook commands point at the checkout.

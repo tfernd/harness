@@ -169,6 +169,8 @@ UV_CACHE = os.environ.get("UV_CACHE_DIR") or str(ACCOUNT_HOME / ".cache" / "uv")
 HEREDOC = "python3 - <<'EOF'\nfrom pathlib import Path\n{call}\nEOF"
 COMMIT = "git commit -m \"$(cat <<'EOF'\n{body}\nEOF\n)\""
 DELETE = "Agents delete nothing."
+TRACKED_CLEAN = ("git init -q", "git add -A", "git commit -qm base")
+TRACKED_CHANGED = (*TRACKED_CLEAN, "echo two >> tracked.txt")
 AGENT_DELETE = "Sub-agents delete nothing."
 BYPASS = "starts Claude Code with its permission checks off"
 HISTORY = "owner's to run"
@@ -206,6 +208,26 @@ GUARD_CASES = (
     bash("an override lets uvx run", "uvx ruff check src", False, config={"guard": {"ask_packages": False}}),
     bash("a package change beside a delete is refused outright", "pip install x; rm a", True, "Blocked by the harness guard", lacks="permissionDecision"),
     bash("a history rewrite is refused, not asked", "git push --force", True, "Blocked by the harness guard", lacks="permissionDecision"),
+    bash("rule id: a delete refusal names its rule", "rm a", True, "Blocked by the harness guard (rule: delete): "),
+    bash("rule id: a history rewrite names its rule", "git push --force", True, "(rule: denied): "),
+    agent_bash("rule id: a sub-agent delete names its rule", "rm a", True, "(rule: agent_delete): "),
+    bash("rule id: a hidden command names its rule", "$CMD x", True, "(rule: hidden): "),
+    bash("delete: the refusal quotes the segment that tripped it inside a long command", "echo " + "a" * 100 + "; rm -f /dev/null; echo b", True, "Tripped by: `rm -f /dev/null`."),
+    bash("delete: a long segment is cut to 80 characters", "rm -f xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", True, "Tripped by: `rm -f xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...`."),
+    bash("delete: a tracked file with changes gets the owner's command", "rm tracked.txt", True, "`git rm -f tracked.txt`", git=TRACKED_CHANGED, files=(("tracked.txt", "one\n"),)),
+    bash("delete: a tracked file with no changes gets no git rm", "rm tracked.txt", True, "Tripped by", lacks="git rm -f", git=TRACKED_CLEAN, files=(("tracked.txt", "one\n"),)),
+    bash("delete: an untracked file gets no git rm", "rm loose.txt", True, "Tripped by", lacks="git rm -f", files=(("loose.txt", "one\n"),)),
+    bash("delete: a tracked folder with changes gets git rm -rf", "rm -r tracked_dir", True, "`git rm -rf tracked_dir`", git=(*TRACKED_CLEAN, "echo two >> tracked_dir/a.txt"), files=(("tracked_dir/a.txt", "one\n"),)),
+    bash("delete: a name with spaces stays one path in the owner's command", 'rm "my file.txt"', True, "`git rm -f 'my file.txt'`", git=(*TRACKED_CLEAN, "echo two >> 'my file.txt'"), files=(("my file.txt", "one\n"),)),
+    bash("delete: a git that hangs still refuses within the budget and gives no owner command", "rm tracked.txt", True, "Tripped by", lacks="git rm -f", git=(*TRACKED_CHANGED, "mkdir -p bin", "printf '#!/bin/sh\\nexec sleep 30\\n' > bin/git", "chmod +x bin/git"), files=(("tracked.txt", "one\n"),), env=(("PATH", ROOT + "/project/bin:" + os.environ["PATH"]),)),
+    agent_bash("delete: a sub-agent never gets a git rm command", "rm tracked.txt", True, "Tripped by", lacks="git rm -f", git=TRACKED_CHANGED, files=(("tracked.txt", "one\n"),)),
+    bash("refusal log: a refusal appends one line with the rule and the role", "rm a", True, wrote=("state/harness/project/refusals.jsonl", '"rule": "delete", "role": "main", "text": "rm a"')),
+    agent_bash("refusal log: a sub-agent's refusal is logged as a sub-agent", "rm a", True, wrote=("state/harness/project/refusals.jsonl", '"role": "sub-agent"')),
+    bash("refusal log: a secret refusal is not logged", "cat server.pem", True, "secret", not_wrote=("state/harness/project/refusals.jsonl", '"rule": "secret"')),
+    bash("refusal log: a file past 1 MB keeps its last half", "rm a", True, wrote=("state/harness/project/refusals.jsonl", '"rule": "delete"'), not_wrote=("state/harness/project/refusals.jsonl", "FIRSTLINE"), files=(("state/harness/project/refusals.jsonl", "FIRSTLINE\n" + "x" * 99 + "\n" * 1 + ("y" * 99 + "\n") * 11000),)),
+    bash("refusal log: a passing call writes no line", "echo hi", False, not_wrote=("state/harness/project/refusals.jsonl", "rule")),
+    bash("refusal log: a command is cut to 160 characters", "rm " + "y" * 200, True, not_wrote=("state/harness/project/refusals.jsonl", "y" * 161)),
+    bash("refusal log: an unwritable state folder lets the refusal stand", "rm a", True, "(rule: delete)", files=(("state/harness/project", "in the way"),)),
     bash("a bare uv run does not crash", "uv run", False),
     bash("a bare tar does not crash", "tar", False),
     bash("a quote in a quoted parameter opens nothing", """echo "${X:-it's}"; uv pip install y""", True),
@@ -1009,6 +1031,19 @@ MALFORMED_JOB = ((JOBS_FILE, f"garbage\nx\t{TASK_OUTPUT}\t\tnot-a-pid\t1\n"),)
 LOOKS_LIST = ((LOOKS_FILE, "[]"),)
 LOOKED_NOW = ((LOOKS_FILE, '{"x": 99999999999}'),)
 LOOKED_LONG_AGO = ((LOOKS_FILE, '{"x": 1}'),)
+FOREGROUND_META = (("s/subagents/agent-agent-case1.meta.json", '{"requestShape": "foreground"}'),)
+BACKGROUND_META = (("s/subagents/agent-agent-case1.meta.json", '{"requestShape": "background"}'),)
+FOREGROUND_EVENT = {"agent_id": "agent-case1", "transcript_path": "project/s.jsonl"}
+NO_JOB = ((JOBS_FILE, ""),)
+START_EVENT = {"agent_id": "agent-case1", "transcript_path": "project/s.jsonl", "tool_use_id": "toolu_echo"}
+MAIN_START_EVENT = {"transcript_path": "project/s.jsonl", "tool_use_id": "toolu_echo"}
+START_CALL = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "toolu_sleep", "name": "Bash", "input": {"command": "sleep 45 && echo job-done", "description": "d", "run_in_background": True}}, {"type": "tool_use", "id": "toolu_echo", "name": "Bash", "input": {"command": "echo waiting", "description": "d"}}]}}
+FOREGROUND_CALL = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "toolu_sleep", "name": "Bash", "input": {"command": "sleep 45", "description": "d"}}, {"type": "tool_use", "id": "toolu_echo", "name": "Bash", "input": {"command": "echo waiting", "description": "d"}}]}}
+START_ANSWER = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_sleep", "content": "Command running in background with ID: b1."}]}}
+AGENT_START_PENDING = (("s/subagents/agent-agent-case1.jsonl", json.dumps(START_CALL) + "\n"),)
+AGENT_START_ANSWERED = (("s/subagents/agent-agent-case1.jsonl", json.dumps(START_CALL) + "\n" + json.dumps(START_ANSWER) + "\n"),)
+AGENT_FOREGROUND_START = (("s/subagents/agent-agent-case1.jsonl", json.dumps(FOREGROUND_CALL) + "\n"),)
+MAIN_START_PENDING = (("s.jsonl", json.dumps(START_CALL) + "\n"),)
 NO_PROC = (("HARNESS_PROC_FOLDER", "/nonexistent-proc"),)
 
 
@@ -1037,7 +1072,7 @@ def recorded(name: str, response: dict, /, *, wrote: str = "", not_wrote: str = 
 REFUSED_WAITS = ("echo waiting", "echo stop; true", "true", ":", "date", "sleep 30", "sleep 2m", "sleep 3", "sleep 1; sleep 1", "wait", "wait 3", "pgrep -x node", "pgrep -x node && echo up || echo down", "ps -p 4242 -o etime=", "date '+%H:%M'; ps -o etime= -p 4242", "until [ -f done ]; do sleep 5; done", "until curl -sf http://localhost:5173; do sleep 1; done", "while pgrep -x node; do sleep 2; done", "while true; do python3 poll.py; sleep 60; done", "timeout 600 sh -c 'until [ -f done ]; do sleep 5; done'", "timeout 5 tail --pid=4242 -f /dev/null", "tail --pid 4242 -f /dev/null; git status", "sleep 60; git status", "sleep 6; python3 run.py", "until [ -f done ]; do sleep 5; done; python3 run.py", "until [ -f done ]; do sleep 5; done; tail -n 5 out.log", "cd sub; timeout 590 sh -c 'until grep -q exit out.log; do sleep 3; done'; cat out.log", "while [ ! -f done ]; do sleep 2; done; echo ok", "sleep 1m && cat out.log",)
 PASSED_NEAR_MISSES = ("pkill -x x; sleep 1; python3 run.py", "pgrep node && pkill -x node", "sleep 3; git status", "sleep 5; python3 run.py", "ls", "echo hi > notes.txt", 'echo "$(curl -s localhost:80)"', "echo $HOME", "git status && echo ok", "python3 run.py", "ps aux | rg node", "for i in 1 2 3; do curl -sf http://localhost:5173; sleep 1; done", "while read line; do sleep 1; echo $line; done < list.txt", "while IFS= read -r line; do sleep 0.2; done < list.txt", "while read line; do echo $line; done < list.txt", "for i in 1 2; do sleep 1; done; python3 run.py", "tail -n 5 out.log", "sleep 0.5 && python3 run.py", "make test; echo done",)
 WAIT_CASES = (
-    *(waits(f"wait: {command!r} is refused while a job runs", command, True, "wait: ") for command in REFUSED_WAITS),
+    *(waits(f"wait: {command!r} is refused while a job runs", command, True, "(rule: wait): ") for command in REFUSED_WAITS),
     *(waits(f"wait: {command!r} passes while a job runs", command, False) for command in PASSED_NEAR_MISSES),
     waits("wait: a refusal tells to end the turn and where to wait instead", "echo waiting", True, "End the turn now with no tool call"),
     waits("wait: a refusal names the run_in_background form", "sleep 30", True, "run_in_background: true"),
@@ -1051,13 +1086,18 @@ WAIT_CASES = (
     waits("wait: a recorded job that has exited passes a sleep", "sleep 30", False, holds=()),
     waits("wait: a process holding another file is no pending job", "echo waiting", False, holds=("tasks/other.output",)),
     waits("wait: no /proc lets a wait pass", "echo waiting", False, env=NO_PROC),
-    waits("wait: a sub-agent is refused for its own job", "echo waiting", True, "wait: ", files=AGENT_JOB, event={"agent_id": "agent-case1"}),
+    waits("wait: a sub-agent is refused for its own job", "echo waiting", True, "(rule: wait): ", files=AGENT_JOB, event={"agent_id": "agent-case1"}),
     waits("wait: a sub-agent is not refused for the main session's job", "echo waiting", False, event={"agent_id": "agent-case1"}),
     waits("wait: the main session is not refused for a sub-agent's job", "echo waiting", False, files=AGENT_JOB),
     waits("wait: another session's job does not count", "echo waiting", False, event={"session_id": "other-session"}),
+    waits("wait: a foreground sub-agent is not refused for its own job", "echo waiting", False, files=(*AGENT_JOB, *FOREGROUND_META), event=FOREGROUND_EVENT),
+    waits("wait: a background sub-agent is refused for its own job", "echo waiting", True, "(rule: wait): ", files=(*AGENT_JOB, *BACKGROUND_META), event=FOREGROUND_EVENT),
+    waits("wait: a sub-agent with no meta file is refused for its own job", "echo waiting", True, "(rule: wait): ", files=AGENT_JOB, event=FOREGROUND_EVENT),
+    waits("wait: a sub-agent with a broken meta file is refused for its own job", "echo waiting", True, "(rule: wait): ", files=(*AGENT_JOB, ("s/subagents/agent-agent-case1.meta.json", "{bad")), event=FOREGROUND_EVENT),
+    waits("wait: the main session is refused though a foreground meta file exists", "echo waiting", True, "(rule: wait): ", files=(*MAIN_JOB, *FOREGROUND_META), event={"transcript_path": "project/s.jsonl"}),
     read_output("wait: the first look at a running job's output passes", False, wrote=(LOOKS_FILE, '"x"')),
     read_output("wait: a second look inside the window is refused", True, "next look is allowed in", files=(*MAIN_JOB, *LOOKED_NOW)),
-    read_output("wait: the refusal names the rule and the job", True, "wait: you already looked at the output of job x", files=(*MAIN_JOB, *LOOKED_NOW)),
+    read_output("wait: the refusal names the rule and the job", True, "(rule: wait): you already looked at the output of job x", files=(*MAIN_JOB, *LOOKED_NOW)),
     read_output("wait: a look older than five minutes passes", False, files=(*MAIN_JOB, *LOOKED_LONG_AGO)),
     read_output("wait: a read after the job exited passes", False, files=(*MAIN_JOB, *LOOKED_NOW), holds=()),
     read_output("wait: a read with no /proc passes", False, files=(*MAIN_JOB, *LOOKED_NOW), env=NO_PROC),
@@ -1065,7 +1105,7 @@ WAIT_CASES = (
     waiting("wait: a read of a job that is not recorded passes", {"file_path": ROOT + "/project/tasks/y.output"}, False, tool="Read", files=(*MAIN_JOB, *LOOKED_NOW)),
     waits(f"wait: a cat of the output the first time passes", f"cat {TASK_OUTPUT}", False),
     waits(f"wait: a cat of the output inside the window is refused", f"cat {TASK_OUTPUT}", True, "next look is allowed in", files=(*MAIN_JOB, *LOOKED_NOW)),
-    waits(f"wait: a tail of the output inside the window is refused", f"tail -n 5 {TASK_OUTPUT}", True, "wait: ", files=(*MAIN_JOB, *LOOKED_NOW)),
+    waits(f"wait: a tail of the output inside the window is refused", f"tail -n 5 {TASK_OUTPUT}", True, "(rule: wait): ", files=(*MAIN_JOB, *LOOKED_NOW)),
     waits(f"wait: a cat of the output after the job exited passes", f"cat {TASK_OUTPUT}", False, files=(*MAIN_JOB, *LOOKED_NOW), holds=()),
     waits(f"wait: a backgrounded cat of the output inside the window passes", f"cat {TASK_OUTPUT}", False, files=(*MAIN_JOB, *LOOKED_NOW), event={"tool_input": {"command": f"cat {TASK_OUTPUT}", "run_in_background": True}}),
     Case("wait: the second look is refused after the first one was let through", ("guard.py",), {"session_id": SESSION, "tool_name": "Read", "tool_input": {"file_path": TASK_OUTPUT}}, True, "next look is allowed in", STRICT, files=MAIN_JOB, holds=(TASK_HOLD,), before=((("guard.py",), {"session_id": SESSION, "tool_name": "Read", "tool_input": {"file_path": TASK_OUTPUT}}),)),
@@ -1074,8 +1114,16 @@ WAIT_CASES = (
     waits("wait: a refusal of a bare wait does not talk of work after it", "echo waiting", True, lacks="its own call"),
     waits("wait: the recorded shell gone while another process holds the file is not pending", "echo waiting", False, files=GONE_SHELL_JOB),
     waits("wait: a reused pid with another start time is not pending", "echo waiting", False, files=REUSED_PID_JOB),
+    waits("refusal log: a wait refusal is logged with its rule", "echo waiting", True, wrote=("state/harness/project/refusals.jsonl", '"rule": "wait"')),
+    waits("wait: a background sub-agent's echo beside its own unanswered background start is refused", "echo waiting", True, "(rule: wait): ", files=(*NO_JOB, *BACKGROUND_META, *AGENT_START_PENDING), event=START_EVENT),
+    waits("wait: the main session's echo beside its own unanswered background start is refused", "echo waiting", True, "(rule: wait): ", files=(*NO_JOB, *MAIN_START_PENDING), event=MAIN_START_EVENT),
+    waits("wait: an answered background start is no pending job", "echo waiting", False, files=(*NO_JOB, *BACKGROUND_META, *AGENT_START_ANSWERED), event=START_EVENT),
+    waits("wait: a foreground sub-agent beside an unanswered background start is not refused", "echo waiting", False, files=(*NO_JOB, *FOREGROUND_META, *AGENT_START_PENDING), event=START_EVENT),
+    waits("wait: an unanswered start of another tool use that is not in the background passes", "echo waiting", False, files=(*NO_JOB, *BACKGROUND_META, *AGENT_FOREGROUND_START), event=START_EVENT),
+    waits("wait: a transcript path that does not exist passes", "echo waiting", False, files=NO_JOB, event={**START_EVENT, "transcript_path": "project/missing.jsonl"}),
+    waits("wait: a backgrounded start is never refused beside another unanswered start", "sleep 30", False, event={"tool_input": {"command": "sleep 30", "run_in_background": True}, **START_EVENT}, files=(*NO_JOB, *BACKGROUND_META, *AGENT_START_PENDING)),
     read_output("wait: a read with the recorded shell gone passes inside the window", False, files=(*GONE_SHELL_JOB, *LOOKED_NOW)),
-    waits("wait: a jobs file with a malformed line still finds the valid job", "echo waiting", True, "wait: ", files=MALFORMED_THEN_JOB),
+    waits("wait: a jobs file with a malformed line still finds the valid job", "echo waiting", True, "(rule: wait): ", files=MALFORMED_THEN_JOB),
     waits("wait: a jobs file with only malformed lines passes", "echo waiting", False, files=MALFORMED_JOB),
     read_output("wait: a looks file holding a list passes", False, files=(*MAIN_JOB, *LOOKS_LIST)),
     waits("wait: a looks file holding a list does not stop the later rules", f"cat {TASK_OUTPUT}; rm x.txt", True, "Agents delete nothing", files=(*MAIN_JOB, *LOOKS_LIST)),
@@ -1179,6 +1227,14 @@ SECRET_CASES = (
 )
 
 
+
+
+OWN_AGENT_TASK = {"id": "agent-case1", "type": "subagent", "status": "running"}
+
+
+def shell_task(task_id: str, status: str, /) -> dict:
+
+    return {"id": task_id, "type": "shell", "status": status}
 
 
 def stop_event(report: str, /, *, agent_type: str = "harness:worker", agent_id: str = "a1") -> dict:
@@ -1293,6 +1349,19 @@ GATE_CASES = (
     handback("a handback quoting an exit code and a cannot runs", QUOTING_REPORT, False),
     handback("a handback missing a heading is refused naming it", make_report(skip="Not proven"), True, "- Not proven: missing: Not proven"),
     handback("a handback with headings out of order is refused naming them", OUT_OF_ORDER_REPORT, True, "out of order: Answer"),
+    gate("a stop with a pending job of its own agent is not sent back", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), False, files=AGENT_JOB, holds=(TASK_HOLD,)),
+    gate("a stop with a pending job of its own agent does not count a send-back", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), False, files=AGENT_JOB, holds=(TASK_HOLD,), not_wrote=("data/send-backs/agent-case1.count", "")),
+    gate("a stop after its job exited is judged", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), True, "missing: Verdict", files=AGENT_JOB, holds=()),
+    gate("a stop with a pending job of another agent is judged", stop_event(make_report(skip="Verdict"), agent_id="agent-other"), True, "missing: Verdict", files=AGENT_JOB, holds=(TASK_HOLD,)),
+    gate("a stop with a pending job of the main session is judged", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), True, "missing: Verdict", files=MAIN_JOB, holds=(TASK_HOLD,)),
+    gate("a stop with a broken jobs file is judged", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), True, "missing: Verdict", files=MALFORMED_JOB, holds=(TASK_HOLD,)),
+    gate("a stop with a jobs file that is a folder is judged", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), True, "missing: Verdict", files=((JOBS_FILE + "/x", ""),), holds=(TASK_HOLD,)),
+    gate("a stop whose payload lists a running shell passes with no jobs file", {**stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), "background_tasks": [OWN_AGENT_TASK, shell_task("z", "running")]}, False),
+    gate("a stop whose payload lists only its own agent is judged", {**stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), "background_tasks": [OWN_AGENT_TASK]}, True, "missing: Verdict"),
+    gate("a stop whose payload lists an exited shell is judged", {**stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), "background_tasks": [shell_task("z", "completed")]}, True, "missing: Verdict"),
+    gate("a stop whose payload lists a shell recorded for another agent is judged", {**stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), "background_tasks": [shell_task("x", "running")]}, True, "missing: Verdict", files=((JOBS_FILE, f"x\t{TASK_OUTPUT}\tagent-other\t1\t1\n"),)),
+    gate("a stop whose payload lists a shell recorded for its own agent passes", {**stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), "background_tasks": [shell_task("x", "running")]}, False, files=((JOBS_FILE, f"x\t{TASK_OUTPUT}\tagent-case1\t1\t1\n"),)),
+    gate("a stop whose payload has no task list falls back to the jobs file", stop_event(make_report(skip="Verdict"), agent_id="agent-case1"), True, "missing: Verdict", files=AGENT_JOB, holds=()),
     gate("a repeated heading goes back", stop_event(make_report() + "\n## Answer\nagain"), True, "duplicated: Answer"),
     gate("a heading in a fence does not count", stop_event(make_report() + "\n```\n## Answer\n```"), False),
     gate("an unprefixed project role is not judged", stop_event(make_report(skip="Not proven"), agent_type="worker"), False),
@@ -1571,6 +1640,11 @@ TURN_CASES = (
     turn("the status is read from the transcript when the event has none", "", False, calls=BUSY_CALLS, transcript=(assistant({"type": "text", "text": FULL_STATUS}),)),
     turn("a plain question after a turn that left agents running needs no status", "Plain answer.", False, lacks="Verdict", files=((CARRIED_FILE, "Agent\tOld agent\n"),)),
     turn("a turn with its own calls still lists the agents carried from before", FULL_STATUS, False, "Missing: Old agent", calls=BUSY_CALLS, files=((CARRIED_FILE, "Agent\tOld agent\n"),)),
+    turn("a full status on a short turn clears the agents carried from before", FULL_STATUS, False, files=((CARRIED_FILE, "Agent\tOld agent\n"),), not_wrote=(CARRIED_FILE, "Old agent")),
+    turn("a full status on a short turn that names the carried agents clears them", f"{FULL_STATUS}\n## Agents\n- old agent: done, problems none", False, files=((CARRIED_FILE, "Agent\tOld agent\n"),), not_wrote=(CARRIED_FILE, "Old agent")),
+    turn("a plain answer on a short turn keeps the agents carried from before", "Plain answer.", False, files=((CARRIED_FILE, "Agent\tOld agent\n"),), wrote=(CARRIED_FILE, "Old agent")),
+    turn("a status short of a heading on a short turn keeps the agents carried from before", "## Verdict\ndone", False, files=((CARRIED_FILE, "Agent\tOld agent\n"),), wrote=(CARRIED_FILE, "Old agent")),
+    turn("a turn deferred again keeps the agents carried from before", PROGRESS, False, calls=BUSY_CALLS, transcript=launch("t1"), files=((CARRIED_FILE, "Agent\tOld agent\n"),), wrote=(CARRIED_FILE, "Old agent")),
     turn("a transcript line that is no object is skipped", "", False, transcript=(12, assistant({"type": "text", "text": "Done."}))),
     turn("a last line that is a tool call does not crash", "", False, transcript=(assistant({"type": "text", "text": "Done."}), assistant({"type": "tool_use", "id": "t", "name": "Bash", "input": {}}))),
     Case("no mode does nothing", ("turn.py",), {"session_id": SESSION}, False, config={}),
@@ -1873,6 +1947,36 @@ def context(name: str, event: dict, text: str = "", /, **options: object) -> Cas
 
 
 FORM_FRAGMENT = "Answer, Not proven, then only if they have something to say Problems, Next time, Open and Feedback, then Verdict"
+INSTALLED_FILE = "/".join(("state", "..", "home", ".claude", "plugins", "installed_plugins.json"))
+STALE_MARKER = f"data/turns/{SESSION}.stale"
+CACHED_ROOT = "cache/harness/harness/v1"
+
+
+def installed(version: str, /) -> tuple[str, str]:
+
+    return INSTALLED_FILE, json.dumps({"version": 2, "plugins": {"harness@harness": [{"scope": "user", "version": version}]}})
+
+
+def stale(name: str, text: str = "", /, *, plugin_root: str = CACHED_ROOT, **options: object) -> Case:
+
+    return context(name, {"hook_event_name": "UserPromptSubmit", "session_id": SESSION}, text, plugin_root=plugin_root, home="home", **options)
+
+
+STALE_CASES = (
+    stale("a session on an older plugin version is told to reload", "updated to version v2", files=(installed("v2"),)),
+    stale("the stale note names the reload command", "/reload-plugins", files=(installed("v2"),)),
+    stale("the stale note names the version the session runs", "from version v1", files=(installed("v2"),)),
+    stale("a session on the installed version hears nothing", lacks="updated", files=(installed("v1"),)),
+    stale("a checkout under plugin-dir hears nothing", lacks="updated", plugin_root="checkout", files=(installed("v2"),)),
+    stale("the warning is written once per version", wrote=(STALE_MARKER, "v2"), files=(installed("v2"),)),
+    stale("a version already warned about is not repeated", lacks="updated", files=(installed("v2"), (STALE_MARKER, "v2"))),
+    stale("a newer version after the warning warns again", "updated to version v3", files=(installed("v3"), (STALE_MARKER, "v2"))),
+    stale("a missing installed list hears nothing", lacks="updated"),
+    stale("a broken installed list hears nothing", lacks="updated", files=((INSTALLED_FILE, "{not json"),)),
+    stale("an installed list whose plugins is a list hears nothing", lacks="updated", files=((INSTALLED_FILE, json.dumps({"plugins": []})),)),
+    stale("an installed list without the plugin hears nothing", lacks="updated", files=((INSTALLED_FILE, json.dumps({"plugins": {}})),)),
+)
+
 CONTEXT_CASES = (
     context("a worker start carries the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:worker"}, "## Edit and check in one call"),
     context("a scout start leaves out the editing habits", {"hook_event_name": "SubagentStart", "agent_type": "harness:scout"}, "## Read", lacks="## Edit and check in one call"),
@@ -1913,6 +2017,7 @@ CONTEXT_CASES = (
     context("no project file still gets the context", {"hook_event_name": "SessionStart"}, "orchestrator", config=None),
     context("a broken owner file still starts the session with its context", {"hook_event_name": "SessionStart"}, "orchestrator", config=None, files=(("data/user.json", "{not json"),)),
     context("the project variable finds the project", {"hook_event_name": "SessionStart"}, "orchestrator", cwd="elsewhere", project_dir="project"),
+    *STALE_CASES,
 )
 
 
@@ -2023,6 +2128,8 @@ KEPT_CASES = (
     kept("an unstaged drop is refused with a -am cluster", f"git commit -am '{GOOD_MESSAGE}'", True, DROP, setup=(BASE, "printf 'def test_a():\\n    assert 1\\n' > tests/test_x.py")),
     kept("an unstaged drop is refused with --all", f"git commit --all -m '{GOOD_MESSAGE}'", True, DROP, setup=(BASE, "printf 'def test_a():\\n    assert 1\\n' > tests/test_x.py")),
     kept("a drop staged by an add in the same command is refused", f"git add -A && git commit -m '{GOOD_MESSAGE}'", True, DROP, setup=(BASE, "printf 'def test_a():\\n    assert 1\\n' > tests/test_x.py")),
+    kept("an add of one path does not let an unrelated untracked test hide a drop", f"git add src/x.py && git commit -m '{GOOD_MESSAGE}'", True, DROP, setup=(BASE, "rm tests/test_x.py", "mkdir -p src", "echo x=1 > src/x.py", f"printf 'def test_a():\\n    assert 1\\n\\ndef test_b():\\n    assert 1\\n' > tests/test_new.py")),
+    kept("an add of every path counts an untracked test", f"git add -A && git commit -m '{GOOD_MESSAGE}'", False, setup=(BASE, "rm tests/test_x.py", f"printf 'def test_a():\\n    assert 1\\n\\ndef test_b():\\n    assert 1\\n' > tests/test_new.py")),
     kept("a first commit passes", f"git commit -m '{GOOD_MESSAGE}'", False, setup=("git init -q", STAGE_ONE)),
     kept("a folder that is no repository passes", f"git commit -m '{GOOD_MESSAGE}'", False, setup=()),
     kept("the rule can be turned off", f"git commit -m '{GOOD_MESSAGE}'", False, config={"tests_kept": {"enabled": False}}),
@@ -2055,8 +2162,34 @@ KEPT_CASES = (
     kept("a drop through git -C is judged from there", f"git -C project commit -m '{GOOD_MESSAGE}'", True, DROP, cwd=""),
     kept("a drop after a cd is judged from there", f"cd project && git commit -m '{GOOD_MESSAGE}'", True, DROP, cwd=""),
 )
+VARIABLE_PATH = f"M={ROOT}/project/msgs"
+VARIABLE_FILES = (("msgs/msg.txt", f"{GOOD_MESSAGE}\n"),)
+RENAME_SETUP = (BASE, "git mv tests/test_x.py tests/test_y.py")
+COMMIT_VARIABLE_CASES = (
+    commit("a message file named by a variable assigned before is read", f"{VARIABLE_PATH} && git commit -F $M/msg.txt", False, files=VARIABLE_FILES),
+    commit("a message file named by a braced variable is not resolved", f"{VARIABLE_PATH} && git commit -F ${{M}}/msg.txt", True, "a variable or a substitution with no heredoc", lacks="does not exist yet", files=VARIABLE_FILES),
+    commit("a variable that expands to a bad message is judged", f"{VARIABLE_PATH} && git commit -F $M/msg.txt", True, "not `type(scope)", files=(("msgs/msg.txt", "add y\n"),)),
+    commit("a message file named by a quoted variable is read", f'{VARIABLE_PATH} && git commit -F "$M/msg.txt"', False, files=VARIABLE_FILES),
+    commit("a variable assigned on the line before is read", f"{VARIABLE_PATH}\ngit commit -F $M/msg.txt", False, files=VARIABLE_FILES),
+    commit("a variable that is assigned and does not exist yet is the missing file", f"{VARIABLE_PATH} && git commit -F $M/nope.txt", True, "msgs/nope.txt` does not exist yet"),
+    commit("a variable never assigned asks for a literal path", "git commit -F $M/msg.txt", True, "must be written out literally"),
+    commit("a variable assigned from a substitution asks for a literal path", "M=$(pwd) && git commit -F $M/msg.txt", True, "must be written out literally"),
+    commit("a variable assigned after the commit asks for a literal path", f"git commit -F $M/msg.txt; {VARIABLE_PATH}", True, "must be written out literally"),
+    commit("a variable set only in front of the commit asks for a literal path", f"{VARIABLE_PATH} git commit -F $M/msg.txt", True, "must be written out literally"),
+    commit("a path with a variable is not called missing", f"{VARIABLE_PATH} && git commit -F $N/msg.txt", True, "$N/msg.txt", lacks="does not exist yet", files=VARIABLE_FILES),
+    commit("a substitution in the file path gets the variable or substitution text", "git commit -F \"$(cat list.txt)\"", True, "a variable or a substitution with no heredoc", lacks="`$` does not exist yet"),
+    commit("a commit heredoc first and a python heredoc after it reads the commit's own", f"git add -A && git commit -q -F - <<'MSG' && git show --stat HEAD ; python3 - <<'PY'\n{GOOD_MESSAGE}\nMSG\nimport pathlib\nPY", False),
+    commit("a python heredoc, an add and a commit heredoc read the commit's own", f"python3 - <<'PY' && git add -A && git commit -q -F - <<'MSG' && git show --stat HEAD\nimport pathlib\nPY\n{GOOD_MESSAGE}\nMSG", False),
+    commit("a commit heredoc with a pathspec reads the commit's own", f"git commit -q -F - -- tests <<'MSG'\n{GOOD_MESSAGE}\nMSG", False),
+    kept("a rename inside a pathspec commit keeps its tests", f"git commit -q -F - -- tests <<'MSG'\n{GOOD_MESSAGE}\nMSG", False, setup=RENAME_SETUP),
+    kept("a rename staged by an add with a pathspec commit keeps its tests", f"git add -A -- tests && git commit -q -F - -- tests <<'MSG'\n{GOOD_MESSAGE}\nMSG", False, setup=(BASE, "git mv tests/test_x.py tests/test_y.py && git reset -q")),
+    kept("an untracked test beside a commit -a with no add is not counted", f"git commit -a -m '{GOOD_MESSAGE}'", True, "tests/test_x.py (deleted) 2 -> 0", setup=(BASE, "mv tests/test_x.py tests/test_y.py")),
+    commit("a backtick in the file path gets the variable or substitution text", "git commit -F `cat list.txt`", True, "a variable or a substitution with no heredoc"),
+)
+
 COMMIT_CASES = (
     *KEPT_CASES,
+    *COMMIT_VARIABLE_CASES,
     commit("a good message passes", f"git commit -m '{GOOD_MESSAGE}'", False),
     commit("a subject with no scope passes", "git commit -m 'fix: keep it\n\n* did it'", False),
     commit("a breaking mark passes", "git commit -m 'feat(x)!: drop it\n\n* did it'", False),
@@ -2796,7 +2929,7 @@ def run_case(case: Case, hooks: Path, /) -> str:
         environment["SHELL"] = case.shell
         if case.project_dir:
             environment["CLAUDE_PROJECT_DIR"] = str(root / case.project_dir)
-        environment.update(dict(case.env))
+        environment.update({key: value.replace(ROOT, str(root)) for key, value in case.env})
         return run_prepared_case(case, hooks, root, environment)
 
 
