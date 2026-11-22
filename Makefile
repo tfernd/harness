@@ -38,10 +38,11 @@ band: ## Test and type-check the band mod (mods/band)
 
 CHANGED = $(shell { git diff --name-only @{u}...HEAD 2>/dev/null; git diff --name-only HEAD; } | sort -u)
 
-check: ## What the pre-push hook runs: skill form, leaks; cases only when hooks changed, band only when mods/band changed
+check: ## What the pre-push hook runs: skill form, leaks, page build; cases only when hooks changed, band only when mods/band changed
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
 	uv run python tests/check_introspect.py
+	uv run python docs/build_map.py
 	@if printf '%s\n' $(CHANGED) | grep -qE '^(hooks/|tests/run_cases)'; then uv run python tests/run_cases.py; else echo "cases skipped: no hook changed"; fi
 	@if printf '%s\n' $(CHANGED) | grep -q '^mods/band/'; then $(MAKE) band; else echo "band skipped: mods/band unchanged"; fi
 

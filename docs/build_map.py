@@ -273,11 +273,11 @@ SKILL_KINDS = (
     Kind(
         "Build",
         "Write code, commits and pages.",
-        ("code-python", "code-js", "code-html-css", "code-shell", "code-terraform", "code-sql", "code-yaml", "code-make", "code", "git", "design"),
+        ("code-python", "code-js", "code-html-css", "code-shell", "code-terraform", "code-sql", "code-yaml", "code-make", "code-tensor", "code", "git", "design"),
     ),
     Kind("Tools", "Run a command-line tool without breaking an account.", ("aws-cli", "snowflake-cli")),
     Kind("Check", "Judge work against its spec.", ("testing", "review")),
-    Kind("Report", "Close a job; write hooks, skills and agents.", ("report", "authoring")),
+    Kind("Report", "Close a job; write hooks, skills and agents.", ("report", "authoring", "introspect")),
     Kind("Habits", "Cheap tool calls, every session.", ("tool-habits",)),
 )
 HOOK_KINDS = (
