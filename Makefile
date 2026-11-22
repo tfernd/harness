@@ -41,6 +41,7 @@ CHANGED = $(shell { git diff --name-only @{u}...HEAD 2>/dev/null; git diff --nam
 check: ## What the pre-push hook runs: skill form, leaks; cases only when hooks changed, band only when mods/band changed
 	uv run python tests/check_skills.py
 	uv run python tests/check_leaks.py
+	uv run python tests/check_introspect.py
 	@if printf '%s\n' $(CHANGED) | grep -qE '^(hooks/|tests/run_cases)'; then uv run python tests/run_cases.py; else echo "cases skipped: no hook changed"; fi
 	@if printf '%s\n' $(CHANGED) | grep -q '^mods/band/'; then $(MAKE) band; else echo "band skipped: mods/band unchanged"; fi
 
