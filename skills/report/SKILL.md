@@ -57,7 +57,7 @@ extra `##`): the public names with full signatures, parameter or tensor names an
 When your judges pass and the whole-tree gate fails only in files you did not change (another agent's live edit), the
 Verdict is `done, gate red elsewhere`, naming those files; it is not `partial`, which is for your own unmet Judge line.
 
-Write the Verdict after the rest and let it follow from it. `done` means every Judge line of the brief is met;
+Write the Verdict after the rest and let it follow from it. `done` means every Judge line of the brief is met (with `Judge: main session`, the unit is written as briefed and the report says "nothing ran");
 `partial` means a named Judge line is unmet; `blocked` means the job could not go on. Not proven may list limits (a run
 left to the main session, a path not exercised) without making the verdict `partial`. An owner reads the Verdict first, so it must be true on its own.
 

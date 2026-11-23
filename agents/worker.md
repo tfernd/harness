@@ -1,6 +1,6 @@
 ---
 name: worker
-description: Makes one change in the files its brief names, with its tests, and checks it with the brief's judges. Use for every change to a product file, large or small; the brief names the files and the judge.
+description: Makes one change in the files its brief names, with its tests, and runs only a Judge the brief names, by default none. Use for every change to a product file, large or small; the brief names the files and the judge.
 tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 model: sonnet
 skills:
