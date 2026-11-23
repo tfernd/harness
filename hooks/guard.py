@@ -201,6 +201,7 @@ MESSAGES = {
     "{lines} lines. Page with `offset` and `limit`, or search it with `rg` first. Pass a `limit` yourself to skip this note.",
 }
 WAIT_MESSAGE = "background job {task_id} of this session is still running and its task notification wakes you when it exits, so a call that only waits spends a turn for nothing. End the turn now with no tool call. To wait on something that is not that job, send the same command with `run_in_background: true`."
+WAIT_LOOP_MESSAGE = "a foreground call that waits for a condition is cut by Claude Code's foreground timeout and then sent again, and no job of yours is running that would wake you. Send the same command with `run_in_background: true` and end the turn with no tool call: the task notification wakes you when the condition is met."
 WAIT_FOLLOWED_NOTE = " This call also holds work after the wait: that work goes in its own call once the notification arrives, or send the whole command with `run_in_background: true`."
 WAIT_LOOK_MESSAGE = "you already looked at the output of job {task_id} and it is still running; the next look is allowed in {seconds} s (at {at}). Until then end the turn with no tool call: the task notification wakes you when the job exits, and after it every read is allowed."
 PATTERN_REFUSAL = (
@@ -2281,14 +2282,22 @@ def has_sleeping_loop(pieces: list[WaitPiece], /) -> bool:
     return any(group[0].name != "read" and any(piece.name == "sleep" for piece in group) for group in get_loop_groups(pieces))
 
 
+def is_blocking_wait(pieces: list[WaitPiece], /) -> bool:
+
+    if not pieces:
+        return False
+    is_pid_tail = any(is_pid_tail_piece(piece) for piece in pieces)
+    is_long_start = pieces[0].name == "sleep" and get_sleep_seconds(pieces[0].arguments) > WAIT_LONG_SLEEP_SECONDS
+
+    return is_pid_tail or is_long_start or has_sleeping_loop(pieces)
+
+
 def classify_wait(pieces: list[WaitPiece], /) -> str:
 
     if not pieces:
         return ""
-    is_pid_tail = any(is_pid_tail_piece(piece) for piece in pieces)
-    is_long_start = pieces[0].name == "sleep" and get_sleep_seconds(pieces[0].arguments) > WAIT_LONG_SLEEP_SECONDS
     is_each_waiting = all(piece.name in WAIT_STRUCTURE or is_wait_piece(piece) or is_no_op_piece(piece) for piece in pieces)
-    if not (is_pid_tail or is_long_start or has_sleeping_loop(pieces) or is_each_waiting):
+    if not (is_blocking_wait(pieces) or is_each_waiting):
         return ""
     is_bare = all(piece.is_in_loop or piece.name in WAIT_STRUCTURE or is_wait_piece(piece) or is_no_op_piece(piece) for piece in pieces)
 
@@ -2318,11 +2327,13 @@ def get_wait_verdict(event: dict, /) -> WaitVerdict:
     if not kind and not named:
         return WaitVerdict()
     pending = get_pending_or_starting_jobs(event, session, str(event.get("agent_id") or ""))
+    followed = WAIT_FOLLOWED_NOTE if kind == WAIT_FOLLOWED else ""
     if not pending:
+        if kind and is_blocking_wait(pieces):
+            return WaitVerdict(WAIT_LOOP_MESSAGE + followed)
+
         return WaitVerdict()
     if kind:
-        followed = WAIT_FOLLOWED_NOTE if kind == WAIT_FOLLOWED else ""
-
         return WaitVerdict(WAIT_MESSAGE.format(task_id=pending[0].task_id) + followed)
     looked = [job.task_id for job in pending if job.task_id in named]
     seconds = {task_id: get_look_wait_seconds(session, task_id, WAIT_LOOK_WINDOW_SECONDS) for task_id in looked}

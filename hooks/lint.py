@@ -428,7 +428,7 @@ def make_note(findings: list[Finding], name: str, /) -> str:
     if len(findings) > MAX_LINES:
         lines.append(f"and {len(findings) - MAX_LINES} more")
 
-    return "New lint findings in the file you just wrote (fix them with the unit's batch):\n" + "\n".join(lines)
+    return "New lint findings in the file you just wrote (fix these in the unit's final batch, together with the rest, and do not rerun the linter after each edit):\n" + "\n".join(lines)
 
 
 def main() -> int:
