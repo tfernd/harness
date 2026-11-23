@@ -889,8 +889,8 @@ GUARD_CASES = (
     bash("strict: a later command after a pipeline keeps the folder", "cd __scratch__ && echo a | cat && echo hi > ok.txt", False),
     bash("strict: a redirect at a pipeline's end keeps the folder", "cd __scratch__ && git log | head -3 > out.txt", False),
     bash("strict: a cd in a pipeline leaves the folder unknown", "cd __scratch__ | cat; echo hi > ok.txt", False, REPO, is_unchanged=True),
-    bash("strict: a cd in the background leaves the folder unknown", "cd __scratch__ & echo hi > ok.txt", False, REPO, is_unchanged=True),
-    bash("strict: a cd and its list in the background", "cd __scratch__ && echo a &\necho hi > ok.txt", False, REPO, is_unchanged=True),
+    bash("strict: a cd in the background leaves the folder unknown", "cd __scratch__ & echo hi > ok.txt; wait", False, REPO, is_unchanged=True),
+    bash("strict: a cd and its list in the background", "cd __scratch__ && echo a &\necho hi > ok.txt\nwait", False, REPO, is_unchanged=True),
     bash("strict: a cd in a substitution leaves the folder", "x=$(cd __scratch__); echo hi > AGENTS.md", False, REPO, is_unchanged=True),
     bash("strict: a command after a redirect target is no target", "echo a >&2; rm x", True, DELETE),
     bash("strict: a malformed redirect does not swallow the next command", "echo a > ; rm x", True, DELETE),
@@ -2679,6 +2679,16 @@ KILL_CASES = (
 
 
 
+JUDGE_DETACH = "(nohup uv run python judge.py run2 > run2/out.txt 2>&1; echo $? > run2/done) > /dev/null 2>&1 &"
+DETACH_REFUSED = ("nohup x", "setsid x", "x & disown", "sleep 9 &", "(a; b) &", "bash -c 'a &'", "a & b")
+DETACH_RUNS = ("a & b & wait", "a & wait", "(a & b &) ; wait", "cmd > f 2>&1", "a && b", "echo 'a & b'", "rg '&'", "cmd &> f", "cmd >& f", "a |& b", 'echo "a &"')
+DETACH_CASES = (
+    bash("the detached judge wrapper is refused", JUDGE_DETACH, True, "rule: detach"),
+    background_bash("the detached judge wrapper is refused in the background too", JUDGE_DETACH + "; sleep 20; tail -5 run2/out.txt", True, "rule: detach"),
+    agent_bash("a sub-agent's detached wrapper is refused", JUDGE_DETACH, True, "rule: detach"),
+    *(bash(f"{command!r} is refused as a detach", command, True, "rule: detach") for command in DETACH_REFUSED),
+    *(bash(f"{command!r} is not a detach", command, False) for command in DETACH_RUNS),
+)
 OWNERSHIP_LINE = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."
 OWNERSHIP_CASES = (
     context("a session start says the codebase is the model's", {"hook_event_name": "SessionStart"}, OWNERSHIP_LINE),
@@ -3073,7 +3083,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *WAIT_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *WAIT_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *DETACH_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

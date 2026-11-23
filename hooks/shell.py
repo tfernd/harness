@@ -36,6 +36,7 @@ class Segment(NamedTuple):
     redirects: list[str]
     in_loop: bool
     in_group: bool
+    is_detached: bool = False
 
 
 class Heredoc(NamedTuple):
@@ -310,6 +311,8 @@ class Scanner:
         elif has_command or operator != "\n":
             self.in_pipeline = False
         if operator == "&":
+            if self.segments:
+                self.segments[-1] = self.segments[-1]._replace(is_detached=True)
             for index in range(self.list_start, len(self.segments)):
                 self.segments[index] = self.segments[index]._replace(in_group=True)
         if operator in (";", "&", ";;", ";&", ";;&", "\n"):

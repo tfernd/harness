@@ -99,6 +99,9 @@ PIPEFAIL_CHECKS = {
     "mvn": frozenset({"test"}),
 }
 WAIT_RULE = "wait"
+DETACH_RULE = "detach"
+DETACH_COMMANDS = frozenset({"nohup", "setsid", "disown"})
+WAIT_COMMAND = "wait"
 DELETE_QUOTE_CHARS = 80
 GIT_PROBE_SECONDS = 2
 MAX_PROBED_OPERANDS = 3
@@ -177,6 +180,9 @@ MESSAGES = {
     BYPASS_RULE: "`{what}` starts Claude Code with its permission checks off, and no session or sub-agent turns them off: the owner decides what runs "
     "unasked. Name the tools the run needs with `--allowedTools` (for example `--allowedTools Bash,Read`), or use `--permission-mode acceptEdits` "
     "or the default mode.",
+    DETACH_RULE: "this command detaches a job from the tool call (`&`, `nohup`, `setsid` or `disown`), so the task Claude Code tracks is only the wrapper and its "
+    "notification fires while the job still runs. Run the job itself as the Bash command with `run_in_background: true` (no `&`, no `nohup`), so the task "
+    "notification fires when the job exits, then end the turn. Parallel steps joined in one call are fine when a bare `wait` follows every `&`.",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
@@ -1864,6 +1870,28 @@ def new_findings() -> Findings:
     return Findings(*([] for _ in Findings._fields))
 
 
+def has_detach_command(segment: Segment, /) -> bool:
+
+    command = resolve(segment)
+    prefix = segment.words[: len(segment.words) - len(command.arguments)]
+
+    return any(os.path.basename(word.text) in DETACH_COMMANDS for word in prefix)
+
+
+def is_waiting_segment(segment: Segment, /) -> bool:
+
+    return resolve(segment).name == WAIT_COMMAND
+
+
+def has_detach(segments: list[Segment], /) -> bool:
+
+    has_detach_word = any(has_detach_command(segment) for segment in segments)
+    waits = [index for index, segment in enumerate(segments) if is_waiting_segment(segment)]
+    is_unwaited = any(segment.is_detached and not any(wait > index for wait in waits) for index, segment in enumerate(segments))
+
+    return has_detach_word or is_unwaited
+
+
 def find_breaches(
     segments: list[Segment], cwd: str | None, judges_globs: bool, policy: Policy, findings: Findings, text: str, /, *, scope: Scope | None = None
 ) -> list[str]:
@@ -1872,6 +1900,7 @@ def find_breaches(
     installers = find_installers(segments) if policy.ask_installers else []
     findings.installer.extend(installers)
     breaches.extend([INSTALLER_RULE] if installers else [])
+    breaches.extend([DETACH_RULE] if has_detach(segments) else [])
     directory = cwd
     may_have_written = False
     for segment in segments:

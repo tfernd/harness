@@ -77,6 +77,7 @@ call needs the previous result, and run a long check in the background.
   file or `tail --pid`, never by ending its turn (the guard lets its waits through).
 - Claude Code moves a foreground Bash call to the background at its own timeout (120 s by default), and after 180 s at the latest in a session with a longer timeout, so a foreground wait loop never reaches its
   bound; you are cut and wait again. Never `sleep N; <read>`.
+- Never detach a job with `&`, `nohup`, `setsid` or `disown`: the tracked task is then the wrapper and its notification fires early. Run the job itself with `run_in_background: true`; the guard refuses a detach.
 - While a background job of yours still runs, the guard refuses a foreground call that only waits (`echo`, `sleep`, `pgrep`,
   `ps`, a wait loop, `tail --pid`) and a second read of its output file within 5 minutes: end the turn instead.
 - A wait loop is only for a condition that is not a command you started, and it goes out with `run_in_background: true`:
