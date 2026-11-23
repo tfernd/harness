@@ -25,7 +25,7 @@ EOF
 
 ## The batch: formatter first, every gate, show only failures
 
-The default call at the seam of a unit, run once and again after the fixes. The formatter runs on your files only; every
+The call at the seam of a unit, run once and again after the fixes; a sub-agent runs only what its Judge names (`SKILL.md`: Edit, then one batch). The formatter runs on your files only; every
 gate then runs even after one fails; a passing gate prints one line, a failing one its log tail; the last line makes the
 call's exit code honest. Read every failure of the run and fix them together before the second run.
 

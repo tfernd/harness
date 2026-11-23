@@ -6,12 +6,13 @@
    in any other file is sent back, not kept.
 2. Future-reader test: would a fresh agent reading this cold find it easier or harder? Names say what a thing is, docs
    are true of the code under them. If harder, the unit goes back to its writer.
-3. Run the gates of the unit's tier (`harness:workflows`). Rerun the worker's Judge only when its report is the sole
-   evidence of a claim. After a review, rerun each finding's command, drop a finding whose output does not show its
-   stated cause, and brief workers for the rest. A gate that could not run is accepted only as "not run" and listed.
+3. Run no gate per unit: the gates wait for the checkpoint (`harness:orchestrator`, "Checkpoints and long sessions").
+   Rerun a worker's Judge only when its report is the sole evidence of a claim. After a review, rerun each finding's
+   command, drop a finding whose output does not show its stated cause, and brief workers for the rest. A gate that
+   could not run is accepted only as "not run" and listed.
 4. A new module is wired where the project registers modules.
 5. Update the plan: the unit's row leaves "Next", a decision it settled is recorded, a line it made false is removed.
-6. Write the commit proposal (`harness:git`) before the next unit starts.
+6. Write the commit proposal (`harness:git`) at the checkpoint, once the check passes, not after each unit.
 
 ## The closing status
 

@@ -8,7 +8,7 @@ The sender's checks before a brief goes out. They are not text of the brief. Che
 - Every "or" in the job is decided, or asked of the owner.
 - Every command the brief names exists and was run just before it goes out. A judge that already fails says so; the
   agent then reports a failure it did not cause as a problem with cause `other agent`.
-- A brief's Judge is one command that runs every gate; never ask a worker to check after each step.
+- A brief's Judge is `main session` unless the run is the job itself (a hillclimb metric, a bug's reproducing test, a probe the design hinges on). Then it is one command, the smallest that can fail, never the whole suite and never a check after each step. The report of a `main session` worker says "nothing ran".
 - A judge that runs tests says how many should run: a run of zero tests exits 0.
 - In a shared tree the judge is scoped to the brief's files; a repo-wide one fails on other agents' live files.
 - The brief names every file the job writes, tests and docs included.

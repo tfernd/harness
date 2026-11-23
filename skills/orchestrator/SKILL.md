@@ -72,7 +72,7 @@ agent reads, edits, checks and reports, so a brief repeats none of that. One spa
 Role:   the role, and any change to it (a model step, a lens) with its why
 Goal:   the outcome in one sentence, with the why
 Input:  the files the job writes, and the paths worth reading first; never pasted code
-Judge:  the commands that decide it is done, and what they print today when "unchanged" or "already failing" matters
+Judge:  `main session` by default: the worker writes the unit and runs nothing. A command only when the run is the job itself (a hillclimb metric, a bug's reproducing test, a probe the design hinges on), with what it prints today when "unchanged" or "already failing" matters
 Tree:   only when others edit the tree: the base commit and their folders
 Runs:   only when something is off limits: what the agent may not run or reach
 ```
@@ -106,9 +106,15 @@ Feedback in the same turn and act on them then; nothing waits for later. A hook 
 
 ## Checkpoints and long sessions
 
-- After a batch: run the project's full check, act on the reports and write the resume file
-  (`references/resume.md`). Then take the plan's next unit. End the turn, with the closing status, when the plan is
-  done or a step needs the owner.
+- Build first, check later. Units are accepted on their diff and report, with no gate per unit. A checkpoint comes after
+  a batch of units, or at the end of the plan's build phase, never after each unit.
+- At a checkpoint the main session runs the project's full check once, in the background. It briefs one fix worker per
+  disjoint file set, each fixing every failure of its files in one pass, then runs the check once more. A third run is
+  the limit; past it, report to the owner.
+- Commit proposals (`harness:git`) come at the checkpoint, once the check passes, not after each unit.
+- Then act on the reports and write the resume file (`references/resume.md`), and take the plan's next unit. End the
+  turn, with the closing status, when the plan is done or a step needs the owner.
+- A main session working alone follows the same pattern: edits now, one batch later.
 - When the session's goal is met, or the owner's next ask is another subject, write the resume file and tell the owner
   in one line that a fresh session is cheaper. The owner decides.
 

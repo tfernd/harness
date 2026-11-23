@@ -12,8 +12,8 @@ Pick the tier, then the shape. This skill holds the steps only. Who does what, t
 
 | Tier | Is | Steps |
 |---|---|---|
-| Small | one file, no public contract | one worker, the gates |
-| Medium | one unit across several files, no public contract | read-back, one worker, run the product, the gates, one reviewer |
+| Small | one file, no public contract | one worker; the gates at the checkpoint |
+| Medium | one unit across several files, no public contract | read-back, one worker, run the product, the gates once, one reviewer |
 | Large | several units, or any public contract | the numbered steps below |
 
 Large:
@@ -22,12 +22,12 @@ Large:
 2. A spec, written by a worker from the main session's decisions, then a cold read of it (`harness:spec`).
 3. One worker scripts everything mechanical.
 4. The shared plumbing and each serial step, one worker each; then the independent units (Parallel build below).
-5. Run the product: a smoke test first, then the gates.
+5. Build all units, then run the product: a smoke test first, then the gates once (the checkpoint, `harness:orchestrator`).
 6. One reviewer reads the whole diff at the end (`harness:review`), and in a long job each accepted group of units too; workers apply the fixes.
 7. The full test, in the background when it is long.
 
-The gates are the project's checks, named in its `AGENTS.md`. The product runs before any review, and polish waits
-until it runs.
+The gates are the project's checks, named in its `AGENTS.md`. They run at the checkpoint, not per unit. The product runs
+before any review, and polish waits until it runs. Hillclimb and the bug fix keep their per-change judge.
 
 ## Scout fan-out: settle facts
 
@@ -49,13 +49,13 @@ without a scout.
 1. A bug claim is probed before any fix (`harness:evidence`).
 2. Write a test that fails for the reported cause, and run it.
 3. Fix the code with the test unchanged.
-4. Gates. The test stays.
+4. The test stays; the gates run at the checkpoint.
 
 ## Spec-first feature
 
 1. The spec (`harness:spec`): goal, non-goals, decisions, files, judges.
 2. A cold read of the spec (`harness:spec`); settle the differences.
-3. Build against the judges, run the product, then one reviewer reads against the spec.
+3. Build all units, run the product, the gates once, then one reviewer reads against the spec.
 
 ## Visual or interactive build
 
@@ -82,7 +82,7 @@ Use when units are independent.
 3. Disjoint files: no path appears in two units. A change needed in another unit's file is reported, not made.
 4. Split by work, not by topic: many fixes in one file, a rewrite and a measurement are three units. Start each unit as
    soon as what it needs exists, the slowest first and on its own files, and check finished units while others build.
-5. Check each unit's judges.
+5. Accept each unit on its diff and report; the judges run at the checkpoint.
 6. Integrate: one worker wires the units together and owns the shared files.
 7. Run the product and the full check, then one reviewer reads the whole diff.
 

@@ -33,9 +33,12 @@ call needs the previous result, and run a long check in the background.
 - Probe only an assumption that would waste the unit if wrong (a library call never run here, a data format, a tool's
   output), one smallest command each. What you read in the source needs none.
 - Write the whole unit with no test, linter, formatter or type check between edits; an edit script ends in `git diff --stat`.
-- At the seam (every file the brief names is written) one call runs the formatter on your files, then every gate even
-  after one fails, output to a file (recipe: the batch). Use the project's own commands (`AGENTS.md` names them); a
-  check that cannot run for want of a tool is said, not skipped.
+- At the seam (every file the brief names is written) a sub-agent runs the commands its brief's Judge names, once, plus
+  the formatter on its own files only when the Judge or `AGENTS.md` asks for it. The default Judge is `main session`,
+  and so is none: it runs nothing and says "nothing ran" in its report. A main session working alone edits now and runs
+  the project's own gates once, later, at a checkpoint, even after one fails, output to a file
+  (recipe: the batch). `AGENTS.md` wins over this skill on what a worker runs; a check
+  that cannot run for want of a tool is said, not skipped.
 - Fix every failure of that run in one pass, then run the batch once more. A third run is the limit. One extra seam
   only where a later file depends on an earlier file's behaviour, not its signature. A slow suite runs once, in the
   background, at the seam.
