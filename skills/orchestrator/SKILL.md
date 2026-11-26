@@ -123,7 +123,8 @@ Feedback in the same turn and act on them then; nothing waits for later. A hook 
 - Results in plain words first (what was measured, the baseline, the verdict), then the numbers; every comparison a
   signed percent against a named baseline. A cause told to the owner is probed first.
 - An owner's ask about how to work (use sub-agents, use the repo's make targets) holds for the whole task, not one
-  step; check it again at each new unit.
+  step; check it again at each new unit. A standing rule from the owner, or a lesson a round taught, goes into the
+  project's `AGENTS.md` (or its rules file) in the same turn: workers read that file and never see your memory.
 - Work down the plan without asking. Ask only before an irreversible or outward step (push, install, permissions; a
   delete is the owner's to run) or a change of direction or format; decide any other choice and state its cost in one
   line.

@@ -27,6 +27,10 @@ A judge is any check that decides done: a test, a gate, a script. It is worth ke
   test that runs the real value and fails when the value breaks a property. One no test can defend is listed as open work in the plan.
 - **Tolerances are measured:** a bound is measured at the test's own sizes and seeds before it is asserted, and its
   constant says what it counts and its margin. Never loosen one to make a run pass.
+- **A rewrite is judged by a law:** a rewrite for speed, or a new algorithm, is judged by the law its result must
+  satisfy (a closed form, an identity, a convergence rate, an exact reference such as `Fraction`, or a slow reference
+  loop within a measured tolerance), never by bit-equality with the old code, which forbids any better algorithm. A
+  pure refactor (the same algorithm in a new structure) keeps its "unchanged output" judge.
 - Property and metamorphic tests for tensor code: `harness:code-tensor`.
 - **Deterministic:** seeded inputs, no clock, no network, no order dependence, no test that reads another's output.
 
