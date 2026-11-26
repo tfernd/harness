@@ -2697,6 +2697,19 @@ DETACH_CASES = (
     *(bash(f"{command!r} is refused as a detach", command, True, "rule: detach") for command in DETACH_REFUSED),
     *(bash(f"{command!r} is not a detach", command, False) for command in DETACH_RUNS),
 )
+PGREP_REFUSED = (
+    "until ! pgrep -f train.py; do sleep 5; done",
+    "timeout 60 sh -c 'while pgrep -f x >/dev/null; do sleep 2; done'",
+    "tail --pid=$(pgrep -f run_all | head -1) -f /dev/null",
+    "while pgrep -af worker >/dev/null; do sleep 2; done",
+    "kill $(pgrep --full train.py)",
+    'until [ -z "$(pgrep -fl train.py)" ]; do sleep 5; done',
+)
+PGREP_RUNS = ("pgrep -af python", "pgrep -af python | head -3", "pgrep -x python", "ps aux | rg train", "until ! pgrep -x python; do sleep 5; done", "pgrep -af x | head; kill $(pgrep -x y)", "pgrep -f train.py | xargs kill")
+PGREP_CASES = (
+    *(bash(f"{command!r} is refused as a pgrep wait", command, True, "rule: pgrep_wait") for command in PGREP_REFUSED),
+    *(bash(f"{command!r} is not a pgrep wait", command, False) for command in PGREP_RUNS),
+)
 OWNERSHIP_LINE = "This codebase is yours: what it is for and how it is built are your call, and you will keep building on it."
 OWNERSHIP_CASES = (
     context("a session start says the codebase is the model's", {"hook_event_name": "SessionStart"}, OWNERSHIP_LINE),
@@ -3091,7 +3104,7 @@ def main() -> int:
     parser.add_argument("--hooks", type=Path, default=HOOKS, help="the hooks folder to judge")
     parser.add_argument("--threads", type=int, default=JOBS, help="cases at once")
     arguments = parser.parse_args()
-    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *WAIT_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *DETACH_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
+    every = [*COMMIT_CASES, *GUARD_CASES, *SPILL_CASES, *WAIT_CASES, *SECRET_CASES, *GATE_CASES, *RESEND_CASES, *GATE_SAVE_CASES, *TURN_CASES, *BUDGET_CASES, *PROGRESS_CASES, *SKILL_GATE_CASES, *TOOL_CASES, *CONTEXT_CASES, *COMMAND_CASES, *DISPATCH_CASES, *PIPEFAIL_CASES, *DELETE_ESCAPE_CASES, *KILL_CASES, *DETACH_CASES, *PGREP_CASES, *OWNERSHIP_CASES, *LINT_CASES, *LINT_COMMIT_CASES]
     cases = [case for case in every if arguments.only in case.name]
     failures = 0
     with ThreadPoolExecutor(arguments.threads) as pool:

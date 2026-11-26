@@ -101,6 +101,9 @@ PIPEFAIL_CHECKS = {
 WAIT_RULE = "wait"
 DETACH_RULE = "detach"
 DETACH_COMMANDS = frozenset({"nohup", "setsid", "disown"})
+PGREP_RULE = "pgrep_wait"
+PGREP_VALUE_LETTERS = frozenset("dgGPstuUF")
+PGREP_CONSUMERS = frozenset({"kill", "tail"})
 WAIT_COMMAND = "wait"
 DELETE_QUOTE_CHARS = 80
 GIT_PROBE_SECONDS = 2
@@ -183,6 +186,10 @@ MESSAGES = {
     DETACH_RULE: "this command detaches a job from the tool call (`&`, `nohup`, `setsid` or `disown`), so the task Claude Code tracks is only the wrapper and its "
     "notification fires while the job still runs. Run the job itself as the Bash command with `run_in_background: true` (no `&`, no `nohup`), so the task "
     "notification fires when the job exits, then end the turn. Parallel steps joined in one call are fine when a bare `wait` follows every `&`.",
+    PGREP_RULE: "`pgrep -f <pattern>` inside a wait (a loop condition or body, or `$(...)` feeding `tail --pid=` or `kill`) matches its own shell, because the shell "
+    "Claude Code runs holds the whole command text, and a `sh -c '... pgrep -f pat ...'` wrapper holds the pattern too, so the wait never ends. Wait on the PID "
+    "you got when you started the job (`tail --pid=PID`), or on a done file the job writes (`until [ -f done ]`), or run the job with `run_in_background: true` "
+    "and end the turn. `pgrep -af <pattern>` on its own, to look, runs.",
     "glob": "this glob matches no file from {folder}, so zsh fails with 'no matches found'. cd to the right folder, or use "
     "`rg --files -g '{pattern}'` or `git ls-files`.",
     "pattern": "an unquoted glob in a pattern position (--include, -name, -g) was quoted so the tool gets the pattern, not zsh's "
@@ -1893,6 +1900,48 @@ def has_detach(segments: list[Segment], /) -> bool:
     return has_detach_word or is_unwaited
 
 
+def is_pgrep_full(segment: Segment, /) -> bool:
+
+    command = resolve(segment)
+    if os.path.basename(command.name) != "pgrep":
+        return False
+    arguments = [word.text for word in command.arguments]
+    letters: set[str] = set()
+    for argument in arguments:
+        if is_cluster(argument):
+            for letter in argument[1:]:
+                letters.add(letter)
+                if letter in PGREP_VALUE_LETTERS:
+                    break
+
+    return ("f" in letters or "--full" in arguments) and "x" not in letters and "--exact" not in arguments
+
+
+def is_substitution_consumer(segment: Segment, /) -> bool:
+
+    command = resolve(segment)
+    is_consumer = os.path.basename(command.name) in PGREP_CONSUMERS
+    is_fed = any("$" in word.text for word in command.arguments)
+
+    return is_consumer and is_fed and not segment.in_group
+
+
+def has_pgrep_wait(segments: list[Segment], /) -> bool:
+
+    is_in_loop = any(segment.in_loop and is_pgrep_full(segment) for segment in segments)
+    for index, segment in enumerate(segments):
+        if not is_substitution_consumer(segment):
+            continue
+        start = index
+        while start > 0 and segments[start - 1].in_group:
+            start -= 1
+        peekers = [earlier for earlier in segments[start:index] if os.path.basename(resolve(earlier).name) in WAIT_PEEKERS]
+        if peekers and is_pgrep_full(peekers[-1]):
+            return True
+
+    return is_in_loop
+
+
 def find_breaches(
     segments: list[Segment], cwd: str | None, judges_globs: bool, policy: Policy, findings: Findings, text: str, /, *, scope: Scope | None = None
 ) -> list[str]:
@@ -1902,6 +1951,7 @@ def find_breaches(
     findings.installer.extend(installers)
     breaches.extend([INSTALLER_RULE] if installers else [])
     breaches.extend([DETACH_RULE] if has_detach(segments) else [])
+    breaches.extend([PGREP_RULE] if has_pgrep_wait(segments) else [])
     directory = cwd
     may_have_written = False
     for segment in segments:
