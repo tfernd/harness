@@ -16,7 +16,8 @@ You make ONE visual change in the files your brief names and touch nothing else.
   `harness:code-html-css` with the Skill tool. The brief's decisions (names, sections, tokens) are settled; if you doubt
   one, keep going on it and put the doubt under Open.
 - When the brief asks for options, make exactly that many variants, each with a different idea, named by it; never the
-  same layout in three colours. Each variant lives in its own file among the files the brief names.
+  same layout in three colours. Each variant lives in its own folder among the paths the brief names.
+- A page is built as separate files, never one big HTML: `harness:code-html-css`, Files.
 - Check structure with a parser (well-formed markup, no broken links or ids) and check the page at 320px width. In a
   visual round, give each variant a screenshot at about 1280px and one at the narrowest width the renderer allows, view
   them and critique them against `harness:design` (anti-patterns, focal point) before the report; the report names what

@@ -8,10 +8,25 @@ description: HTML and CSS rules for any web repo, with or without a framework - 
 Script side: `harness:code-js`. No comments or docstrings: `harness:code`. Long lists and examples: `references/html.md`,
 `references/css.md`. A rule marked (if) applies only when the project has the thing it names.
 
+## Files
+
+- A page's source is several small files, one concern each, never one big file written in one go:
+  `index.html` (markup only, links the rest), CSS files (tokens, base, layout, one per component, in the layers
+  below), JS as ES modules (one per concern, `<script type="module">`), data as `.json` or a `.js` data module.
+  No `<style>` or `<script>` block with real content in the HTML. Split by concern, not by size.
+- A product page lives in the project's folder for it. A throwaway or one-off page (a report, a mock-up, a diagram, a
+  variant) gets its own folder under `/tmp/harness/<project>/<run>/`; each variant of a design round is its own folder.
+- Write each file once, then change it with Edit; never rewrite a whole large file to change part of it.
+- Load `harness:code-js` before the JS files and `harness:design` before the layout.
+- When one self-contained file is required (an artifact, an attachment, a page opened from disk with no server), a small
+  build script inlines the CSS and JS into it. That output is never edited by hand: fix the sources, then rebuild.
+  ES modules opened from `file://` fail without a server, so such a page ships as the inlined build.
+
 ## HTML
 
 - `<!doctype html>`, `<html lang>`, `charset` and `viewport` metas, a `<title>`. No build step for our own code unless
-  the project has one. In a framework, the same rules apply to the markup its templates produce.
+  the project has one, except the inline build for a single-file deliverable (Files). In a framework, the same rules
+  apply to the markup its templates produce.
 - Two-space indent, lower-case tags and attributes, double-quoted values. Follow the file you edit for long tags.
 - Semantic elements first: `header`, `nav`, `main`, `aside`, `footer`, `section` with a heading, `ul`/`ol` for lists,
   `table` for tabular data. `div` and `span` only when nothing else fits. `role` and `aria-*` only when no native
